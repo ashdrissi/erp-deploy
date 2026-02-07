@@ -58,11 +58,12 @@ def _get_or_create(doctype: str, filters: dict, values: dict):
 
 
 def _ensure_company(company_name: str, abbr: str, currency: str, parent_company: str | None, country: str):
+    is_group = 1 if (parent_company is None and company_name == "Orderlift Group (Global)") else 0
     values = {
         "abbr": abbr,
         "default_currency": currency,
         "country": country,
-        "is_group": 0,
+        "is_group": is_group,
         "parent_company": parent_company,
         "default_holiday_list": None,
         "domain": None,
