@@ -10,11 +10,10 @@ RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 # Switch to the frappe user (Security Requirement)
 USER frappe
 
-# NOTE: Custom apps (like HRMS) should be installed AFTER deployment
-# using the bench command inside the running container:
-#   bench get-app hrms
-#   bench --site $SITE_NAME install-app hrms
-#   bench build
+# Pre-fetch HRMS app code so it persists across redeploys.
+# Site installation and migrations are handled by create-site.sh.
+WORKDIR /home/frappe/frappe-bench
+RUN bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
 
 # Expose ports so reverse proxies can auto-detect.
 EXPOSE 8000 8080 9000

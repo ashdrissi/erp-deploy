@@ -50,6 +50,66 @@ fi
 
 cd "$BENCH_DIR"
 
+ensure_site_db_user_access() {
+  local site="$1"
+  local cfg_path="/home/frappe/frappe-bench/sites/${site}/site_config.json"
+
+  if [[ ! -f "$cfg_path" ]]; then
+    return 0
+  fi
+
+  local db_name
+  local db_pass
+  db_name="$(CFG_PATH="$cfg_path" python3 - <<'PY'
+import json
+import os
+cfg_path = os.environ['CFG_PATH']
+with open(cfg_path, 'r', encoding='utf-8') as f:
+    cfg = json.load(f)
+print(cfg.get('db_name',''))
+PY
+  )"
+  db_pass="$(CFG_PATH="$cfg_path" python3 - <<'PY'
+import json
+import os
+cfg_path = os.environ['CFG_PATH']
+with open(cfg_path, 'r', encoding='utf-8') as f:
+    cfg = json.load(f)
+print(cfg.get('db_password',''))
+PY
+  )"
+
+  if [[ -z "$db_name" || -z "$db_pass" ]]; then
+    return 0
+  fi
+
+  # Escape single quotes in password for SQL.
+  local db_pass_sql
+  db_pass_sql=${db_pass//"'"/"''"}
+  mysql -h "$db_host" -P "$db_port" -uroot -p"$db_root_password" --protocol=tcp \
+    -e "CREATE USER IF NOT EXISTS \`$db_name\`@'%' IDENTIFIED BY '$db_pass_sql'; \
+        ALTER USER \`$db_name\`@'%' IDENTIFIED BY '$db_pass_sql'; \
+        GRANT ALL PRIVILEGES ON \`$db_name\`.* TO \`$db_name\`@'%'; \
+        FLUSH PRIVILEGES;"
+}
+
+ensure_app_installed() {
+  local site="$1"
+  local app="$2"
+
+  # Check if already installed for this site.
+  if bench --site "$site" list-apps 2>/dev/null | tr -d '\r' | grep -qx "$app"; then
+    echo "App already installed: ${app}"
+    return 0
+  fi
+
+  echo "Installing app: ${app}"
+  bench --site "$site" install-app "$app"
+  bench --site "$site" migrate
+  # Build just the newly installed app's assets.
+  bench build --app "$app"
+}
+
 echo "Waiting for MariaDB at ${db_host}:${db_port} ..."
 python3 - <<'PY'
 import socket, time, os, sys
@@ -138,36 +198,10 @@ PY
 
 if [[ -f "sites/${site_name}/site_config.json" ]]; then
   echo "Site already exists: ${site_name} (skipping create)"
-  # Ensure DB user can connect from other containers.
-  cfg_path="/home/frappe/frappe-bench/sites/${site_name}/site_config.json"
-  db_name="$(CFG_PATH="$cfg_path" python3 - <<'PY'
-import json
-import os
-cfg_path = os.environ['CFG_PATH']
-with open(cfg_path, 'r', encoding='utf-8') as f:
-    cfg = json.load(f)
-print(cfg.get('db_name',''))
-PY
-  )"
-  db_pass="$(CFG_PATH="$cfg_path" python3 - <<'PY'
-import json
-import os
-cfg_path = os.environ['CFG_PATH']
-with open(cfg_path, 'r', encoding='utf-8') as f:
-    cfg = json.load(f)
-print(cfg.get('db_password',''))
-PY
-  )"
+  ensure_site_db_user_access "$site_name"
 
-  if [[ -n "$db_name" && -n "$db_pass" ]]; then
-    # Escape single quotes in password for SQL.
-    db_pass_sql=${db_pass//"'"/"''"}
-    mysql -h "$db_host" -P "$db_port" -uroot -p"$db_root_password" --protocol=tcp \
-      -e "CREATE USER IF NOT EXISTS \`$db_name\`@'%' IDENTIFIED BY '$db_pass_sql'; \
-          ALTER USER \`$db_name\`@'%' IDENTIFIED BY '$db_pass_sql'; \
-          GRANT ALL PRIVILEGES ON \`$db_name\`.* TO \`$db_name\`@'%'; \
-          FLUSH PRIVILEGES;"
-  fi
+  # Install HRMS permanently on this site (idempotent).
+  ensure_app_installed "$site_name" "hrms"
 
   exit 0
 fi
@@ -178,5 +212,10 @@ bench new-site "$site_name" \
   --mariadb-root-password "$db_root_password" \
   --db-user-host "%" \
   --install-app erpnext
+
+ensure_site_db_user_access "$site_name"
+
+# Install HRMS on fresh sites.
+ensure_app_installed "$site_name" "hrms"
 
 echo "Site created: ${site_name}"
