@@ -24,8 +24,8 @@ services:
 
   # --- 2. The Face (Frontend) ---
   frontend:
-    build: .
-    command: nginx-entrypoint
+    image: frappe/frappe-nginx:v15
+    command: nginx-entrypoint.sh
     environment:
       - BACKEND=backend:8000
       - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
