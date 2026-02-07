@@ -2,6 +2,11 @@
 # ERPNext and Frappe are pre-installed in this image
 FROM frappe/erpnext:v15
 
+USER root
+
+COPY --chown=frappe:frappe scripts/ /opt/erp-deploy/scripts/
+RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
+
 # Switch to the frappe user (Security Requirement)
 USER frappe
 
@@ -11,5 +16,5 @@ USER frappe
 #   bench --site $SITE_NAME install-app hrms
 #   bench build
 
-# Expose port 8000 for Coolify/Traefik to detect
-EXPOSE 8000
+# Expose ports so reverse proxies can auto-detect.
+EXPOSE 8000 8080 9000

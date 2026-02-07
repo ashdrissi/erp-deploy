@@ -1,4 +1,34 @@
+version: "3.9"
+
 services:
+  # --- One-off init (writes common_site_config + creates site) ---
+  create-site:
+    build: .
+    command: /opt/erp-deploy/scripts/create-site.sh
+    environment:
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+      - REDIS_SOCKETIO=redis-socketio:6379
+      - SOCKETIO_PORT=9000
+      - SITE_NAME=${SITE_NAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - mariadb
+      - redis-cache
+      - redis-queue
+      - redis-socketio
+    restart: "no"
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+
   # --- Backend (Gunicorn - serves web requests) ---
   backend:
     build: .
@@ -12,7 +42,7 @@ services:
       - SITE_NAME=${SITE_NAME}
       - PORT=8000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/ping"]
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/ || true); echo $$code | grep -Eq '^(200|302|401|403|404)$'"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -20,17 +50,35 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
     depends_on:
-      - mariadb
-      - redis-cache
-      - redis-queue
-      - redis-socketio
+      create-site:
+        condition: service_completed_successfully
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+
+  # --- Frontend (Nginx - routes /socket.io to websocket) ---
+  frontend:
+    build: .
+    command: nginx-entrypoint
+    environment:
+      - BACKEND=backend:8000
+      - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
+      - SOCKETIO=websocket:9000
+      - UPSTREAM_REAL_IP_ADDRESS=127.0.0.1
+      - UPSTREAM_REAL_IP_HEADER=X-Forwarded-For
+      - UPSTREAM_REAL_IP_RECURSIVE=off
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites:ro
+    depends_on:
+      - backend
+      - websocket
     networks:
       - default
       - coolify
-    # Tell Traefik to route to port 8000
     labels:
       - "traefik.enable=true"
-      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
 
   # --- WebSocket (for real-time updates) ---
   websocket:
@@ -41,9 +89,12 @@ services:
     volumes:
       - sites:/home/frappe/frappe-bench/sites
     depends_on:
-      - redis-socketio
+      create-site:
+        condition: service_completed_successfully
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   # --- Queue Workers (background jobs) ---
   queue-short:
@@ -57,9 +108,12 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
     depends_on:
-      - backend
+      create-site:
+        condition: service_completed_successfully
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   queue-default:
     build: .
@@ -72,9 +126,12 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
     depends_on:
-      - backend
+      create-site:
+        condition: service_completed_successfully
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   queue-long:
     build: .
@@ -87,9 +144,12 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
     depends_on:
-      - backend
+      create-site:
+        condition: service_completed_successfully
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   # --- Scheduler (cron jobs) ---
   scheduler:
@@ -103,9 +163,12 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
     depends_on:
-      - backend
+      create-site:
+        condition: service_completed_successfully
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   # --- Database (MariaDB) ---
   mariadb:
@@ -121,24 +184,32 @@ services:
       - db-data:/var/lib/mysql
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   # --- Redis Cache ---
   redis-cache:
     image: redis:6.2-alpine
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   # --- Redis Queue ---
   redis-queue:
     image: redis:6.2-alpine
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
   # --- Redis SocketIO ---
   redis-socketio:
     image: redis:6.2-alpine
     networks:
       - default
+    labels:
+      - "traefik.enable=false"
 
 # --- Volumes ---
 volumes:
