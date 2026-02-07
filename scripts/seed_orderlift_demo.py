@@ -22,8 +22,12 @@ MARKER = "OL-DEMO"
 def _connect(site: str) -> None:
     import frappe
 
-    # We run from inside the bench container.
-    frappe.init(site=site, sites_path="sites", force=True)
+    # This stack runs gunicorn with working_dir=/home/frappe/frappe-bench/sites and SITES_PATH=.
+    # Frappe resolves some site-relative paths (notably site log handlers) relative to CWD,
+    # so we enforce the same CWD here.
+    os.chdir("/home/frappe/frappe-bench/sites")
+
+    frappe.init(site=site, sites_path=".", force=True)
     frappe.connect()
 
 
