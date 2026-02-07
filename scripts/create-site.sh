@@ -50,6 +50,48 @@ fi
 
 cd "$BENCH_DIR"
 
+normalize_apps_txt() {
+  local apps_txt="/home/frappe/frappe-bench/sites/apps.txt"
+
+  # Normalize to one app per line. This prevents accidental concatenation like "erpnexthrms"
+  # when the file is missing a trailing newline.
+  python3 - <<'PY'
+import os
+import re
+
+path = "/home/frappe/frappe-bench/sites/apps.txt"
+if not os.path.exists(path):
+    # Default minimal set.
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("frappe\nerpnext\n")
+    raise SystemExit(0)
+
+with open(path, "r", encoding="utf-8", errors="ignore") as f:
+    raw = f.read().replace("\r", "\n")
+
+tokens = [t for t in re.split(r"\s+", raw) if t]
+
+seen = set()
+apps = []
+for t in tokens:
+    if not re.fullmatch(r"[a-z0-9_]+", t):
+        continue
+    if t in seen:
+        continue
+    seen.add(t)
+    apps.append(t)
+
+# Ensure core apps present.
+for required in ("frappe", "erpnext"):
+    if required not in seen:
+        apps.insert(0, required)
+        seen.add(required)
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write("\n".join(apps) + "\n")
+PY
+}
+
 ensure_site_db_user_access() {
   local site="$1"
   local cfg_path="/home/frappe/frappe-bench/sites/${site}/site_config.json"
@@ -97,6 +139,8 @@ ensure_app_installed() {
   local site="$1"
   local app="$2"
 
+  normalize_apps_txt
+
   # Ensure app code exists in bench. If the image was built without it for some reason,
   # fetch it at runtime.
   if [[ ! -d "/home/frappe/frappe-bench/apps/${app}" ]]; then
@@ -125,10 +169,10 @@ ensure_app_installed() {
   fi
 
   echo "Installing app: ${app}"
-  bench --site "$site" install-app "$app"
-  bench --site "$site" migrate
+  bench --site "$site" install-app "$app" || return 1
+  bench --site "$site" migrate || return 1
   # Build just the newly installed app's assets.
-  bench build --app "$app"
+  bench build --app "$app" || return 1
 }
 
 echo "Waiting for MariaDB at ${db_host}:${db_port} ..."
@@ -222,7 +266,7 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   ensure_site_db_user_access "$site_name"
 
   # Install HRMS permanently on this site (idempotent).
-  ensure_app_installed "$site_name" "hrms"
+  ensure_app_installed "$site_name" "hrms" || echo "WARN: HRMS install failed; continuing"
 
   exit 0
 fi
