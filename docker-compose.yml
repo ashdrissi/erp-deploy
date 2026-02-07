@@ -20,9 +20,9 @@ services:
       - redis-cache
       - redis-queue
       - redis-socketio
-    # Expose port 8000 for Coolify proxy
-    ports:
-      - "8000:8000"
+    # Let Coolify's proxy route to this port through internal network
+    expose:
+      - "8000"
     networks:
       - internal
       - coolify
