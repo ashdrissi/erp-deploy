@@ -21,6 +21,10 @@ services:
     networks:
       - default
       - coolify
+    # Tell Traefik to route to port 8000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
 
   # --- WebSocket (for real-time updates) ---
   websocket:
