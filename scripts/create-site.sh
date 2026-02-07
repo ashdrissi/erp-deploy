@@ -139,32 +139,35 @@ PY
 if [[ -f "sites/${site_name}/site_config.json" ]]; then
   echo "Site already exists: ${site_name} (skipping create)"
   # Ensure DB user can connect from other containers.
-  python3 - <<PY
-import json, os
-import pymysql
-
-site_name = os.environ.get('SITE_NAME', '').strip()
-site_name = site_name.replace('http://','').replace('https://','').split('/',1)[0].split(':',1)[0]
-cfg_path = f"/home/frappe/frappe-bench/sites/{site_name}/site_config.json"
+  cfg_path="/home/frappe/frappe-bench/sites/${site_name}/site_config.json"
+  db_name="$(CFG_PATH="$cfg_path" python3 - <<'PY'
+import json
+import os
+cfg_path = os.environ['CFG_PATH']
 with open(cfg_path, 'r', encoding='utf-8') as f:
-  cfg = json.load(f)
-
-db_name = cfg.get('db_name')
-db_pass = cfg.get('db_password')
-root_pass = os.environ.get('DB_PASSWORD')
-host = os.environ.get('DB_HOST','mariadb')
-port = int(os.environ.get('DB_PORT','3306'))
-
-conn = pymysql.connect(host=host, port=port, user='root', password=root_pass, autocommit=True)
-cur = conn.cursor()
-cur.execute(f"CREATE USER IF NOT EXISTS `{db_name}`@'%' IDENTIFIED BY %s", (db_pass,))
-cur.execute(f"ALTER USER `{db_name}`@'%' IDENTIFIED BY %s", (db_pass,))
-cur.execute(f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO `{db_name}`@'%' ")
-cur.execute("FLUSH PRIVILEGES")
-cur.close()
-conn.close()
-print('Ensured DB user grants for', db_name)
+    cfg = json.load(f)
+print(cfg.get('db_name',''))
 PY
+  )"
+  db_pass="$(CFG_PATH="$cfg_path" python3 - <<'PY'
+import json
+import os
+cfg_path = os.environ['CFG_PATH']
+with open(cfg_path, 'r', encoding='utf-8') as f:
+    cfg = json.load(f)
+print(cfg.get('db_password',''))
+PY
+  )"
+
+  if [[ -n "$db_name" && -n "$db_pass" ]]; then
+    # Escape single quotes in password for SQL.
+    db_pass_sql=${db_pass//"'"/"''"}
+    mysql -h "$db_host" -P "$db_port" -uroot -p"$db_root_password" --protocol=tcp \
+      -e "CREATE USER IF NOT EXISTS \`$db_name\`@'%' IDENTIFIED BY '$db_pass_sql'; \
+          ALTER USER \`$db_name\`@'%' IDENTIFIED BY '$db_pass_sql'; \
+          GRANT ALL PRIVILEGES ON \`$db_name\`.* TO \`$db_name\`@'%'; \
+          FLUSH PRIVILEGES;"
+  fi
 
   exit 0
 fi
@@ -175,33 +178,5 @@ bench new-site "$site_name" \
   --mariadb-root-password "$db_root_password" \
   --db-user-host "%" \
   --install-app erpnext
-
-# Ensure DB user can connect from other containers.
-python3 - <<PY
-import json, os
-import pymysql
-
-site_name = os.environ.get('SITE_NAME', '').strip()
-site_name = site_name.replace('http://','').replace('https://','').split('/',1)[0].split(':',1)[0]
-cfg_path = f"/home/frappe/frappe-bench/sites/{site_name}/site_config.json"
-with open(cfg_path, 'r', encoding='utf-8') as f:
-  cfg = json.load(f)
-
-db_name = cfg.get('db_name')
-db_pass = cfg.get('db_password')
-root_pass = os.environ.get('DB_PASSWORD')
-host = os.environ.get('DB_HOST','mariadb')
-port = int(os.environ.get('DB_PORT','3306'))
-
-conn = pymysql.connect(host=host, port=port, user='root', password=root_pass, autocommit=True)
-cur = conn.cursor()
-cur.execute(f"CREATE USER IF NOT EXISTS `{db_name}`@'%' IDENTIFIED BY %s", (db_pass,))
-cur.execute(f"ALTER USER `{db_name}`@'%' IDENTIFIED BY %s", (db_pass,))
-cur.execute(f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO `{db_name}`@'%' ")
-cur.execute("FLUSH PRIVILEGES")
-cur.close()
-conn.close()
-print('Ensured DB user grants for', db_name)
-PY
 
 echo "Site created: ${site_name}"
