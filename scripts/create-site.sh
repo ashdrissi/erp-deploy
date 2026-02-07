@@ -14,16 +14,34 @@ site_name="$raw_site_name"
 site_name="${site_name#http://}"
 site_name="${site_name#https://}"
 site_name="${site_name%%/*}"
+site_name="${site_name%%:*}"
 
 db_host="${DB_HOST:-mariadb}"
 db_port="${DB_PORT:-3306}"
 db_root_password="${DB_PASSWORD:-}"
 admin_password="${ADMIN_PASSWORD:-admin}"
 
-redis_cache="${REDIS_CACHE:-redis-cache:6379}"
-redis_queue="${REDIS_QUEUE:-redis-queue:6379}"
-redis_socketio="${REDIS_SOCKETIO:-redis-socketio:6379}"
+redis_cache="${REDIS_CACHE:-redis://redis-cache:6379/0}"
+redis_queue="${REDIS_QUEUE:-redis://redis-queue:6379/1}"
+redis_socketio="${REDIS_SOCKETIO:-redis://redis-socketio:6379/2}"
 socketio_port="${SOCKETIO_PORT:-9000}"
+
+ensure_redis_url() {
+  local url="$1"
+  local default_db="$2"
+
+  if [[ "$url" != *"://"* ]]; then
+    url="redis://${url}"
+  fi
+  if [[ "$url" != */* ]]; then
+    url="${url}/${default_db}"
+  fi
+  printf '%s' "$url"
+}
+
+redis_cache="$(ensure_redis_url "$redis_cache" 0)"
+redis_queue="$(ensure_redis_url "$redis_queue" 1)"
+redis_socketio="$(ensure_redis_url "$redis_socketio" 2)"
 
 if [[ -z "$db_root_password" ]]; then
   echo "DB_PASSWORD is required (MariaDB root password)" >&2
