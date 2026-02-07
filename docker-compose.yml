@@ -20,8 +20,10 @@ services:
       - redis-cache
       - redis-queue
       - redis-socketio
+    # MUST be on coolify network for Traefik routing
     networks:
       - default
+      - coolify
 
   # --- The Database (MariaDB) ---
   mariadb:
@@ -59,3 +61,9 @@ volumes:
   sites:
   logs:
   db-data:
+
+# --- Network Definition ---
+networks:
+  default:
+  coolify:
+    external: true
