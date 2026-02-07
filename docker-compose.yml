@@ -20,12 +20,15 @@ services:
       - redis-cache
       - redis-queue
       - redis-socketio
-    # Let Coolify's proxy route to this port through internal network
     expose:
       - "8000"
     networks:
       - internal
       - coolify
+    # Traefik labels to tell Coolify which port to route to
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
 
   # --- The Database (MariaDB) ---
   mariadb:
