@@ -20,15 +20,8 @@ services:
       - redis-cache
       - redis-queue
       - redis-socketio
-    expose:
-      - "8000"
     networks:
-      - internal
-      - coolify
-    # Traefik labels to tell Coolify which port to route to
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      - default
 
   # --- The Database (MariaDB) ---
   mariadb:
@@ -43,32 +36,26 @@ services:
     volumes:
       - db-data:/var/lib/mysql
     networks:
-      - internal
+      - default
 
   # --- The Cache (Redis) ---
   redis-cache:
     image: redis:6.2-alpine
     networks:
-      - internal
+      - default
 
   redis-queue:
     image: redis:6.2-alpine
     networks:
-      - internal
+      - default
 
   redis-socketio:
     image: redis:6.2-alpine
     networks:
-      - internal
+      - default
 
 # --- Storage Definition ---
 volumes:
   sites:
   logs:
   db-data:
-
-# --- Network Definition ---
-networks:
-  internal:
-  coolify:
-    external: true
