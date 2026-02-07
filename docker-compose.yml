@@ -1,10 +1,8 @@
 services:
-  # --- The Backend (ERPNext + Frappe) ---
+  # --- Backend (Gunicorn - serves web requests) ---
   backend:
     build: .
-    deploy:
-      restart_policy:
-        condition: on-failure
+    command: /home/frappe/frappe-bench/env/bin/gunicorn -b 0.0.0.0:8000 --workers 4 --timeout 120 frappe.app:application
     environment:
       - DB_HOST=mariadb
       - DB_PORT=3306
@@ -20,12 +18,86 @@ services:
       - redis-cache
       - redis-queue
       - redis-socketio
-    # MUST be on coolify network for Traefik routing
     networks:
       - default
       - coolify
 
-  # --- The Database (MariaDB) ---
+  # --- WebSocket (for real-time updates) ---
+  websocket:
+    build: .
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      - REDIS_SOCKETIO=redis-socketio:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      - redis-socketio
+    networks:
+      - default
+
+  # --- Queue Workers (background jobs) ---
+  queue-short:
+    build: .
+    command: bench worker --queue short
+    environment:
+      - DB_HOST=mariadb
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - backend
+    networks:
+      - default
+
+  queue-default:
+    build: .
+    command: bench worker --queue default
+    environment:
+      - DB_HOST=mariadb
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - backend
+    networks:
+      - default
+
+  queue-long:
+    build: .
+    command: bench worker --queue long
+    environment:
+      - DB_HOST=mariadb
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - backend
+    networks:
+      - default
+
+  # --- Scheduler (cron jobs) ---
+  scheduler:
+    build: .
+    command: bench schedule
+    environment:
+      - DB_HOST=mariadb
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - backend
+    networks:
+      - default
+
+  # --- Database (MariaDB) ---
   mariadb:
     image: mariadb:10.6
     command:
@@ -40,29 +112,31 @@ services:
     networks:
       - default
 
-  # --- The Cache (Redis) ---
+  # --- Redis Cache ---
   redis-cache:
     image: redis:6.2-alpine
     networks:
       - default
 
+  # --- Redis Queue ---
   redis-queue:
     image: redis:6.2-alpine
     networks:
       - default
 
+  # --- Redis SocketIO ---
   redis-socketio:
     image: redis:6.2-alpine
     networks:
       - default
 
-# --- Storage Definition ---
+# --- Volumes ---
 volumes:
   sites:
   logs:
   db-data:
 
-# --- Network Definition ---
+# --- Networks ---
 networks:
   default:
   coolify:
