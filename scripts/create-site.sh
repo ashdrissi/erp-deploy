@@ -67,17 +67,26 @@ PY
 echo "Waiting for Redis services ..."
 python3 - <<'PY'
 import socket, time, os, sys
+from urllib.parse import urlparse
 
-def host_port(s: str):
-    if '://' in s:
-        s = s.split('://', 1)[1]
-    host, port = s.rsplit(':', 1)
-    return host, int(port)
+def host_port(raw: str):
+    s = (raw or '').strip()
+    if not s:
+        raise ValueError('empty redis target')
+
+    # Accept both "redis://host:port/db" and "host:port" formats.
+    if '://' not in s:
+        s = 'redis://' + s
+
+    u = urlparse(s)
+    if not u.hostname or not u.port:
+        raise ValueError(f'invalid redis target: {raw!r}')
+    return u.hostname, int(u.port)
 
 targets = [
-    os.environ.get('REDIS_CACHE', 'redis-cache:6379'),
-    os.environ.get('REDIS_QUEUE', 'redis-queue:6379'),
-    os.environ.get('REDIS_SOCKETIO', 'redis-socketio:6379'),
+    os.environ.get('REDIS_CACHE', 'redis://redis-cache:6379/0'),
+    os.environ.get('REDIS_QUEUE', 'redis://redis-queue:6379/1'),
+    os.environ.get('REDIS_SOCKETIO', 'redis://redis-socketio:6379/2'),
 ]
 pending = set(host_port(t) for t in targets)
 deadline = time.time() + 120
