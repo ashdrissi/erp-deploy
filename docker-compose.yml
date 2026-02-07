@@ -1,0 +1,77 @@
+services:
+  # --- 1. The Brain (Backend) ---
+  backend:
+    # This tells Coolify: "Build the Dockerfile from the git repo I selected"
+    build: .
+    deploy:
+      restart_policy:
+        condition: on-failure
+    environment:
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+      - REDIS_SOCKETIO=redis-socketio:6379
+      # Coolify will inject this variable from your "Environment Variables" tab
+      - SITE_NAME=${SITE_NAME}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - mariadb
+      - redis-cache
+      - redis-queue
+
+  # --- 2. The Face (Frontend) ---
+  frontend:
+    build: .
+    command: nginx-entrypoint
+    environment:
+      - BACKEND=backend:8000
+      - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
+      - SOCKETIO=backend:9000
+      - UPSTREAM_REAL_IP_ADDRESS=127.0.0.1
+      - UPSTREAM_REAL_IP_HEADER=X-Forwarded-For
+      - UPSTREAM_REAL_IP_RECURSIVE=on
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      - backend
+    # ⚠️ This is the Coolify Magic. We EXPOSE 8080 but do NOT bind it.
+    # Coolify's proxy will see this and route your domain to it automatically.
+    expose:
+      - "8080"
+    networks:
+      - coolify
+
+  # --- 3. The Database (MariaDB) ---
+  mariadb:
+    image: mariadb:10.6
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=frappe
+    volumes:
+      - db-data:/var/lib/mysql
+
+  # --- 4. The Cache (Redis) ---
+  redis-cache:
+    image: redis:6.2-alpine
+  redis-queue:
+    image: redis:6.2-alpine
+  redis-socketio:
+    image: redis:6.2-alpine
+
+# --- Storage Definition ---
+volumes:
+  sites:
+  logs:
+  db-data:
+
+# --- Network Definition ---
+networks:
+  coolify:
+    external: true
