@@ -1,6 +1,5 @@
 services:
   # --- The Backend (ERPNext + Frappe) ---
-  # Coolify will route traffic directly to this service
   backend:
     build: .
     deploy:
@@ -22,8 +21,8 @@ services:
       - redis-queue
       - redis-socketio
     # Expose port 8000 for Coolify proxy
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     networks:
       - internal
       - coolify
