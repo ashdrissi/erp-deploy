@@ -10,3 +10,6 @@ USER frappe
 #   bench get-app hrms
 #   bench --site $SITE_NAME install-app hrms
 #   bench build
+
+# Expose port 8000 for Coolify/Traefik to detect
+EXPOSE 8000
