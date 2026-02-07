@@ -29,8 +29,8 @@ services:
     labels:
       - "traefik.enable=false"
 
-  # --- Backend (Gunicorn - serves web requests) ---
-  backend:
+  # --- App (Gunicorn - serves WSGI) ---
+  app:
     build: .
     command: /home/frappe/frappe-bench/env/bin/gunicorn -b 0.0.0.0:8000 --workers 4 --timeout 120 frappe.app:application
     environment:
@@ -57,12 +57,12 @@ services:
     labels:
       - "traefik.enable=false"
 
-  # --- Frontend (Nginx - routes /socket.io to websocket) ---
-  frontend:
+  # --- Backend (Nginx - routes /socket.io to websocket) ---
+  backend:
     build: .
     command: nginx-entrypoint
     environment:
-      - BACKEND=backend:8000
+      - BACKEND=app:8000
       - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
       - SOCKETIO=websocket:9000
       - UPSTREAM_REAL_IP_ADDRESS=127.0.0.1
@@ -71,14 +71,14 @@ services:
     volumes:
       - sites:/home/frappe/frappe-bench/sites:ro
     depends_on:
-      - backend
+      - app
       - websocket
     networks:
       - default
       - coolify
     labels:
       - "traefik.enable=true"
-      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+      - "traefik.http.services.backend.loadbalancer.server.port=8080"
 
   # --- WebSocket (for real-time updates) ---
   websocket:
