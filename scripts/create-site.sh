@@ -103,13 +103,38 @@ while pending and time.time() < deadline:
 sys.exit(0 if not pending else 1)
 PY
 
-echo "Writing global Frappe config (common_site_config.json) ..."
-bench set-config -g db_host "$db_host"
-bench set-config -g db_port "$db_port"
-bench set-config -g redis_cache "$redis_cache"
-bench set-config -g redis_queue "$redis_queue"
-bench set-config -g redis_socketio "$redis_socketio"
-bench set-config -g socketio_port "$socketio_port"
+echo "Writing global Frappe config (sites/common_site_config.json) ..."
+python3 - <<PY
+import json, os, tempfile
+
+bench_dir = os.environ.get('BENCH_DIR', '/home/frappe/frappe-bench')
+sites_dir = os.path.join(bench_dir, 'sites')
+os.makedirs(sites_dir, exist_ok=True)
+
+cfg = {
+  'db_host': os.environ.get('DB_HOST', 'mariadb'),
+  'db_port': int(os.environ.get('DB_PORT', '3306')),
+  'redis_cache': os.environ.get('REDIS_CACHE', 'redis://redis-cache:6379/0'),
+  'redis_queue': os.environ.get('REDIS_QUEUE', 'redis://redis-queue:6379/1'),
+  'redis_socketio': os.environ.get('REDIS_SOCKETIO', 'redis://redis-socketio:6379/2'),
+  'socketio_port': int(os.environ.get('SOCKETIO_PORT', '9000')),
+}
+
+target = os.path.join(sites_dir, 'common_site_config.json')
+fd, tmp = tempfile.mkstemp(prefix='common_site_config.', suffix='.json', dir=sites_dir)
+try:
+  with os.fdopen(fd, 'w', encoding='utf-8') as f:
+    json.dump(cfg, f, indent=2, sort_keys=True)
+    f.write('\n')
+  os.replace(tmp, target)
+finally:
+  try:
+    os.unlink(tmp)
+  except FileNotFoundError:
+    pass
+
+print('Wrote', target)
+PY
 
 if [[ -f "sites/${site_name}/site_config.json" ]]; then
   echo "Site already exists: ${site_name} (skipping create)"
