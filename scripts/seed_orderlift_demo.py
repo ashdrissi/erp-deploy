@@ -193,7 +193,7 @@ def _ensure_supplier(name: str, supplier_group: str, notes: str):
 def _ensure_pricing_rule_motor_discount(rule_name: str, discount_percentage: float, customer_group: str, item_group: str):
     values = {
         "apply_on": "Item Group",
-        "item_group": item_group,
+        "customer_group": customer_group,
         "selling": 1,
         "buying": 0,
         "priority": 10,
@@ -205,10 +205,12 @@ def _ensure_pricing_rule_motor_discount(rule_name: str, discount_percentage: flo
     }
     doc = _get_or_create("Pricing Rule", {"title": rule_name}, values)
 
-    # Ensure the customer group child table contains exactly one row.
-    if not doc.get("customer_groups"):
-        doc.append("customer_groups", {"customer_group": customer_group})
-        doc.save(ignore_permissions=True)
+    # Newer ERPNext requires item group to be added in child table.
+    if hasattr(doc, "item_groups"):
+        existing = [row.item_group for row in (doc.get("item_groups") or [])]
+        if item_group not in existing:
+            doc.append("item_groups", {"item_group": item_group})
+            doc.save(ignore_permissions=True)
     return doc
 
 
