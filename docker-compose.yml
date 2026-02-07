@@ -78,6 +78,15 @@ services:
       - coolify
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.erp-http.entrypoints=http"
+      - "traefik.http.routers.erp-http.rule=Host(`erp.ecomepivot.com`)"
+      - "traefik.http.routers.erp-http.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.erp-https.entrypoints=https"
+      - "traefik.http.routers.erp-https.rule=Host(`erp.ecomepivot.com`)"
+      - "traefik.http.routers.erp-https.tls=true"
+      - "traefik.http.routers.erp-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.erp-https.middlewares=security-headers@file,rate-limit@file,gzip@file"
       - "traefik.http.services.backend.loadbalancer.server.port=8080"
 
   # --- WebSocket (for real-time updates) ---
