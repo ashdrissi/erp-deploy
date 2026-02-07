@@ -97,6 +97,27 @@ ensure_app_installed() {
   local site="$1"
   local app="$2"
 
+  # Ensure app code exists in bench. If the image was built without it for some reason,
+  # fetch it at runtime.
+  if [[ ! -d "/home/frappe/frappe-bench/apps/${app}" ]]; then
+    echo "Fetching app code: ${app}"
+    if [[ "$app" == "hrms" ]]; then
+      bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
+    else
+      bench get-app "$app" "https://github.com/frappe/${app}.git"
+    fi
+  fi
+
+  # Register app in bench apps list (sites/apps.txt lives on the sites volume).
+  local apps_txt="/home/frappe/frappe-bench/sites/apps.txt"
+  if [[ -f "$apps_txt" ]]; then
+    if ! tr -d '\r' <"$apps_txt" | grep -qx "$app"; then
+      printf '%s\n' "$app" >>"$apps_txt"
+    fi
+  else
+    printf '%s\n' "$app" >"$apps_txt"
+  fi
+
   # Check if already installed for this site.
   if bench --site "$site" list-apps 2>/dev/null | tr -d '\r' | grep -qx "$app"; then
     echo "App already installed: ${app}"
