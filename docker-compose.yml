@@ -1,7 +1,6 @@
 services:
-  # --- 1. The Brain (Backend) ---
+  # --- 1. The Backend (ERPNext + Frappe) ---
   backend:
-    # This tells Coolify: "Build the Dockerfile from the git repo I selected"
     build: .
     deploy:
       restart_policy:
@@ -12,7 +11,6 @@ services:
       - REDIS_CACHE=redis-cache:6379
       - REDIS_QUEUE=redis-queue:6379
       - REDIS_SOCKETIO=redis-socketio:6379
-      # Coolify will inject this variable from your "Environment Variables" tab
       - SITE_NAME=${SITE_NAME}
     volumes:
       - sites:/home/frappe/frappe-bench/sites
@@ -21,27 +19,22 @@ services:
       - mariadb
       - redis-cache
       - redis-queue
+      - redis-socketio
+    networks:
+      - internal
 
-  # --- 2. The Face (Frontend) ---
+  # --- 2. The Frontend (Nginx Reverse Proxy) ---
   frontend:
-    image: frappe/frappe-nginx:v15
-    command: nginx-entrypoint.sh
-    environment:
-      - BACKEND=backend:8000
-      - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
-      - SOCKETIO=backend:9000
-      - UPSTREAM_REAL_IP_ADDRESS=127.0.0.1
-      - UPSTREAM_REAL_IP_HEADER=X-Forwarded-For
-      - UPSTREAM_REAL_IP_RECURSIVE=on
+    image: nginx:alpine
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - sites:/home/frappe/frappe-bench/sites:ro
     depends_on:
       - backend
-    # ⚠️ This is the Coolify Magic. We EXPOSE 8080 but do NOT bind it.
-    # Coolify's proxy will see this and route your domain to it automatically.
     expose:
-      - "8080"
+      - "80"
     networks:
+      - internal
       - coolify
 
   # --- 3. The Database (MariaDB) ---
@@ -56,14 +49,24 @@ services:
       - MYSQL_DATABASE=frappe
     volumes:
       - db-data:/var/lib/mysql
+    networks:
+      - internal
 
   # --- 4. The Cache (Redis) ---
   redis-cache:
     image: redis:6.2-alpine
+    networks:
+      - internal
+
   redis-queue:
     image: redis:6.2-alpine
+    networks:
+      - internal
+
   redis-socketio:
     image: redis:6.2-alpine
+    networks:
+      - internal
 
 # --- Storage Definition ---
 volumes:
@@ -73,5 +76,6 @@ volumes:
 
 # --- Network Definition ---
 networks:
+  internal:
   coolify:
     external: true
