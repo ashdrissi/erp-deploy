@@ -218,24 +218,59 @@ def _ensure_currency_exchange(from_currency: str, to_currency: str, exchange_rat
 
 
 def reset_demo(site: str) -> None:
-    # Conservative reset: delete only records with our marker in key text fields.
+    """Reset demo data.
+
+    ERPNext doctypes vary slightly between versions, and some fields (like Customer.remarks)
+    are not always present. To keep resets robust, we delete by explicit names/codes
+    that this script creates.
+    """
+
     import frappe
 
-    # Items
-    for name in frappe.get_all("Item", filters={"description": ["like", f"%[{MARKER}]%"]}, pluck="name"):
-        frappe.delete_doc("Item", name, ignore_permissions=True, force=True)
+    def delete_if_exists(doctype: str, name: str) -> None:
+        if frappe.db.exists(doctype, name):
+            frappe.delete_doc(doctype, name, ignore_permissions=True, force=True)
 
-    # Customers
-    for name in frappe.get_all("Customer", filters={"remarks": ["like", f"%[{MARKER}]%"]}, pluck="name"):
-        frappe.delete_doc("Customer", name, ignore_permissions=True, force=True)
+    # Pricing rules
+    delete_if_exists("Pricing Rule", "Distributeur - 15% discount on Moteurs")
 
-    # Suppliers
-    for name in frappe.get_all("Supplier", filters={"remarks": ["like", f"%[{MARKER}]%"]}, pluck="name"):
-        frappe.delete_doc("Supplier", name, ignore_permissions=True, force=True)
+    # Master data
+    for item_code in ("MTR-5KW", "CAB-LUX", "PNL-STD", "CBL-STEEL"):
+        delete_if_exists("Item", item_code)
 
-    # Pricing Rules
-    for name in frappe.get_all("Pricing Rule", filters={"description": ["like", f"%[{MARKER}]%"]}, pluck="name"):
-        frappe.delete_doc("Pricing Rule", name, ignore_permissions=True, force=True)
+    for customer_name in ("Ascenseurs du Sud", "Building Solutions SA"):
+        delete_if_exists("Customer", customer_name)
+
+    for supplier_name in ("Global Motors Ltd", "SteelWorks Co"):
+        delete_if_exists("Supplier", supplier_name)
+
+    # Warehouses (Morocco)
+    for wh in (
+        "Entrepot Central (Real Stock)",
+        "Stock Transit (Virtual)",
+        "Stock Reserve (Virtual)",
+        "Stock Retour (Quarantine)",
+    ):
+        wh_name = frappe.db.exists("Warehouse", {"warehouse_name": wh, "company": "Orderlift Maroc"})
+        if wh_name:
+            frappe.delete_doc("Warehouse", wh_name, ignore_permissions=True, force=True)
+
+    # Warehouse group
+    group_wh = frappe.db.exists("Warehouse", {"warehouse_name": "Orderlift Maroc", "company": "Orderlift Maroc"})
+    if group_wh:
+        frappe.delete_doc("Warehouse", group_wh, ignore_permissions=True, force=True)
+
+    # Item Groups
+    for ig in ("Moteurs", "Cabines", "Cablage", "Commandes", "Orderlift Demo"):
+        ig_name = frappe.db.exists("Item Group", {"item_group_name": ig})
+        if ig_name:
+            frappe.delete_doc("Item Group", ig_name, ignore_permissions=True, force=True)
+
+    # Companies (delete antennas first, then parent)
+    for comp in ("Orderlift Maroc", "Orderlift France", "Orderlift Group (Global)"):
+        comp_name = frappe.db.exists("Company", {"company_name": comp})
+        if comp_name:
+            frappe.delete_doc("Company", comp_name, ignore_permissions=True, force=True)
 
     _commit()
 
