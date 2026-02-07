@@ -175,6 +175,38 @@ ensure_app_installed() {
   bench build --app "$app" || return 1
 }
 
+clear_site_locks() {
+  local site="$1"
+  local locks_dir="/home/frappe/frappe-bench/sites/${site}/locks"
+
+  if [[ ! -d "$locks_dir" ]]; then
+    return 0
+  fi
+
+  # During Coolify deployments, create-site runs before other services.
+  # If a previous deploy crashed mid-install/migrate, these stale locks can block future deploys.
+  rm -f \
+    "${locks_dir}/install_app.lock" \
+    "${locks_dir}/bench_migrate.lock" \
+    "${locks_dir}/bench_build.lock" \
+    2>/dev/null || true
+}
+
+seed_orderlift_demo() {
+  local site="$1"
+  local reset="${RESET_ORDERLIFT_DEMO:-0}"
+
+  if [[ "${SEED_ORDERLIFT_DEMO:-0}" != "1" ]]; then
+    return 0
+  fi
+
+  echo "Seeding Orderlift demo data (reset=${reset}) ..."
+  clear_site_locks "$site"
+  /home/frappe/frappe-bench/env/bin/python /opt/erp-deploy/scripts/seed_orderlift_demo.py \
+    --site "$site" \
+    --reset "$reset"
+}
+
 echo "Waiting for MariaDB at ${db_host}:${db_port} ..."
 python3 - <<'PY'
 import socket, time, os, sys
@@ -263,10 +295,13 @@ PY
 
 if [[ -f "sites/${site_name}/site_config.json" ]]; then
   echo "Site already exists: ${site_name} (skipping create)"
+  clear_site_locks "$site_name"
   ensure_site_db_user_access "$site_name"
 
   # Install HRMS permanently on this site (idempotent).
   ensure_app_installed "$site_name" "hrms" || echo "WARN: HRMS install failed; continuing"
+
+  seed_orderlift_demo "$site_name" || echo "WARN: Demo seed failed; continuing"
 
   exit 0
 fi
@@ -282,5 +317,7 @@ ensure_site_db_user_access "$site_name"
 
 # Install HRMS on fresh sites.
 ensure_app_installed "$site_name" "hrms"
+
+seed_orderlift_demo "$site_name"
 
 echo "Site created: ${site_name}"
