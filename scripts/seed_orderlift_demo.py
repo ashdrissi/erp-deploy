@@ -191,6 +191,8 @@ def _ensure_supplier(name: str, supplier_group: str, notes: str):
 
 
 def _ensure_pricing_rule_motor_discount(rule_name: str, discount_percentage: float, customer_group: str, item_group: str):
+    import frappe
+
     values = {
         "apply_on": "Item Group",
         "customer_group": customer_group,
@@ -203,14 +205,33 @@ def _ensure_pricing_rule_motor_discount(rule_name: str, discount_percentage: flo
         "title": rule_name,
         "description": f"[{MARKER}]",
     }
-    doc = _get_or_create("Pricing Rule", {"title": rule_name}, values)
 
-    # Newer ERPNext requires item group to be added in child table.
-    if hasattr(doc, "item_groups"):
-        existing = [row.item_group for row in (doc.get("item_groups") or [])]
-        if item_group not in existing:
+    existing_name = frappe.db.exists("Pricing Rule", {"title": rule_name})
+    if existing_name:
+        doc = frappe.get_doc("Pricing Rule", existing_name)
+        changed = False
+        for k, v in values.items():
+            if doc.get(k) != v and v is not None:
+                doc.set(k, v)
+                changed = True
+
+        existing_groups = [row.item_group for row in (doc.get("item_groups") or [])]
+        if item_group not in existing_groups:
             doc.append("item_groups", {"item_group": item_group})
+            changed = True
+
+        if changed:
             doc.save(ignore_permissions=True)
+        return doc
+
+    doc = frappe.get_doc(
+        {
+            "doctype": "Pricing Rule",
+            **values,
+            "item_groups": [{"item_group": item_group}],
+        }
+    )
+    doc.insert(ignore_permissions=True)
     return doc
 
 
