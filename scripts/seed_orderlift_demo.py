@@ -170,9 +170,12 @@ def _ensure_customer(name: str, customer_group: str, territory: str, default_pri
         "disabled": 0,
     }
     doc = _get_or_create("Customer", {"customer_name": name}, values)
-    if MARKER not in (doc.get("remarks") or ""):
-        doc.remarks = ((doc.remarks or "") + f"\n[{MARKER}]").strip()
+
+    # Tag for safe reset/debugging.
+    if hasattr(doc, "customer_details") and MARKER not in (doc.get("customer_details") or ""):
+        doc.customer_details = ((doc.customer_details or "") + f"\n[{MARKER}]").strip()
         doc.save(ignore_permissions=True)
+
     return doc
 
 
@@ -182,7 +185,7 @@ def _ensure_supplier(name: str, supplier_group: str, notes: str):
         "supplier_group": supplier_group,
         "supplier_type": "Company",
         "disabled": 0,
-        "remarks": (notes + f"\n[{MARKER}]").strip(),
+        "supplier_details": (notes + f"\n[{MARKER}]").strip(),
     }
     return _get_or_create("Supplier", {"supplier_name": name}, values)
 
