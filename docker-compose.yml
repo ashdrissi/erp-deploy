@@ -60,7 +60,7 @@ services:
   # --- Backend (Nginx - routes /socket.io to websocket) ---
   backend:
     build: .
-    command: nginx-entrypoint
+    command: ["bash", "-lc", "export PATH=\"$PATH:/usr/sbin\"; exec /usr/local/bin/nginx-entrypoint.sh"]
     environment:
       - BACKEND=app:8000
       - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
