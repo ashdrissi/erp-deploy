@@ -7,6 +7,9 @@ USER root
 COPY --chown=frappe:frappe scripts/ /opt/erp-deploy/scripts/
 RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 
+# Ship a custom Desk theme app inside the image so it persists across redeploys.
+COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
+
 # Switch to the frappe user (Security Requirement)
 USER frappe
 
