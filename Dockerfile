@@ -15,5 +15,9 @@ USER frappe
 WORKDIR /home/frappe/frappe-bench
 RUN bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
 
+# Build assets for all apps including HRMS.
+# This ensures CSS/JS bundles exist and are fingerprinted correctly.
+RUN bench build
+
 # Expose ports so reverse proxies can auto-detect.
 EXPOSE 8000 8080 9000
