@@ -1,0 +1,747 @@
+/*
+ * ============================================================
+ * Orderlift — Custom Desk Theme
+ * ============================================================
+ * Dark sidebar / navbar, Orderlift orange accent, clean content.
+ * Overrides Frappe v15 CSS variables and adds targeted rules.
+ *
+ * Colors:
+ *   Accent:     #E8772E  (Orderlift orange)
+ *   Sidebar:    #1E2130  (deep navy-charcoal)
+ *   Navbar:     #1A1D26  (near-black)
+ *   Background: #F4F5F8  (warm off-white)
+ *   Card:       #FFFFFF
+ *   Text:       #1F2937  (charcoal)
+ *   Muted text: #6B7280
+ *
+ * Typography: Inter (Google Fonts)
+ * ============================================================
+ */
+
+/* ---- Google Fonts ---- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ==========================
+   1. ROOT VARIABLE OVERRIDES
+   ========================== */
+:root {
+    /* Primary accent */
+    --primary: #E8772E;
+    --primary-color: #E8772E;
+    --btn-primary: #E8772E;
+    --btn-primary-dark: #D0681F;
+    --primary-light: #FFF3EB;
+
+    /* Text */
+    --text-color: #1F2937;
+    --text-muted: #6B7280;
+    --text-light: #9CA3AF;
+    --heading-color: #111827;
+
+    /* Backgrounds */
+    --bg-color: #F4F5F8;
+    --fg-color: #FFFFFF;
+    --card-bg: #FFFFFF;
+    --control-bg: #FFFFFF;
+    --subtle-fg: #F9FAFB;
+    --subtle-accent: #FFF7F0;
+
+    /* Borders & Shadows */
+    --border-color: #E5E7EB;
+    --dark-border-color: #D1D5DB;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-base: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08), 0 4px 6px rgba(0, 0, 0, 0.04);
+
+    /* Navbar */
+    --navbar-bg: #1A1D26;
+
+    /* Misc */
+    --awesomebar-focus-bg: #FFFFFF;
+    --alert-text-info: #1D4ED8;
+    --alert-bg-info: #EFF6FF;
+    --alert-text-warning: #B45309;
+    --alert-bg-warning: #FFFBEB;
+    --alert-text-danger: #B91C1C;
+    --alert-bg-danger: #FEF2F2;
+    --alert-text-success: #047857;
+    --alert-bg-success: #ECFDF5;
+
+    /* Typography */
+    --font-stack: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-size: 13px;
+
+    /* Radius */
+    --border-radius: 8px;
+    --border-radius-sm: 6px;
+    --border-radius-lg: 12px;
+    --border-radius-full: 9999px;
+}
+
+/* ==========================
+   2. GLOBAL TYPOGRAPHY
+   ========================== */
+body {
+    font-family: var(--font-stack) !important;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--bg-color);
+}
+
+/* ==========================
+   3. NAVBAR (Top Bar)
+   ========================== */
+.navbar {
+    background-color: var(--navbar-bg) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15) !important;
+    height: 50px;
+}
+
+.navbar .navbar-brand,
+.navbar .navbar-nav .nav-link,
+.navbar .nav-link,
+.navbar .navbar-toggler {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.navbar .navbar-nav .nav-link:hover,
+.navbar .nav-link:hover {
+    color: #FFFFFF !important;
+}
+
+/* Awesomebar (search) */
+.navbar .search-bar .awesomebar {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #FFFFFF !important;
+    border-radius: var(--border-radius) !important;
+    transition: all 0.2s ease;
+}
+
+.navbar .search-bar .awesomebar:focus {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(232, 119, 46, 0.15) !important;
+}
+
+.navbar .search-bar .awesomebar::placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Notification badge */
+.navbar .notifications-seen .badge,
+.navbar .badge {
+    background-color: var(--primary) !important;
+    color: #FFFFFF !important;
+}
+
+/* User avatar in navbar */
+.navbar .navbar-nav .nav-item .avatar {
+    border: 2px solid rgba(232, 119, 46, 0.5);
+    border-radius: var(--border-radius-full);
+}
+
+/* Frappe logo override — hide default, show Orderlift */
+.navbar-brand .app-logo {
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+}
+
+/* ==========================
+   4. SIDEBAR
+   ========================== */
+.layout-side-section,
+.desk-sidebar {
+    background-color: #1E2130 !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+    min-height: 100vh;
+}
+
+/* Sidebar category headers */
+.desk-sidebar .sidebar-label,
+.layout-side-section .sidebar-label,
+.desk-sidebar .list-unstyled .sidebar-label {
+    color: rgba(255, 255, 255, 0.4) !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    padding: 12px 16px 4px !important;
+}
+
+/* Sidebar links */
+.desk-sidebar .desk-sidebar-item a,
+.desk-sidebar .sidebar-menu a,
+.layout-side-section .sidebar-menu a,
+.desk-sidebar a,
+.sidebar-menu .sidebar-link {
+    color: rgba(255, 255, 255, 0.7) !important;
+    padding: 8px 16px !important;
+    border-radius: 0 !important;
+    border-left: 3px solid transparent !important;
+    transition: all 0.2s ease !important;
+    font-size: 13px !important;
+    display: block !important;
+    text-decoration: none !important;
+}
+
+.desk-sidebar .desk-sidebar-item a:hover,
+.desk-sidebar .sidebar-menu a:hover,
+.layout-side-section .sidebar-menu a:hover,
+.sidebar-menu .sidebar-link:hover {
+    color: #FFFFFF !important;
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    border-left-color: rgba(232, 119, 46, 0.4) !important;
+}
+
+/* Sidebar active item */
+.desk-sidebar .desk-sidebar-item.active a,
+.desk-sidebar .sidebar-menu .selected a,
+.layout-side-section .sidebar-menu .selected a,
+.sidebar-menu .sidebar-link.active,
+.sidebar-menu .sidebar-link.selected {
+    color: #FFFFFF !important;
+    background-color: rgba(232, 119, 46, 0.12) !important;
+    border-left-color: var(--primary) !important;
+    font-weight: 500 !important;
+}
+
+/* Sidebar icons */
+.desk-sidebar .sidebar-icon,
+.layout-side-section .sidebar-icon {
+    color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.desk-sidebar .desk-sidebar-item.active .sidebar-icon,
+.desk-sidebar .desk-sidebar-item:hover .sidebar-icon {
+    color: var(--primary) !important;
+}
+
+/* Sidebar scrollbar */
+.desk-sidebar::-webkit-scrollbar,
+.layout-side-section::-webkit-scrollbar {
+    width: 4px;
+}
+
+.desk-sidebar::-webkit-scrollbar-track,
+.layout-side-section::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.desk-sidebar::-webkit-scrollbar-thumb,
+.layout-side-section::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+
+/* ==========================
+   5. PAGE & CONTENT AREA
+   ========================== */
+.main-section {
+    background-color: var(--bg-color) !important;
+}
+
+.page-container {
+    background-color: var(--bg-color) !important;
+}
+
+/* Page head (breadcrumb + title bar) */
+.page-head {
+    background-color: var(--fg-color) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+.page-head .page-title .title-text {
+    font-weight: 600 !important;
+    color: var(--heading-color) !important;
+}
+
+/* Breadcrumbs */
+.breadcrumb-container .breadcrumb .breadcrumb-item a {
+    color: var(--text-muted) !important;
+    transition: color 0.15s ease;
+}
+
+.breadcrumb-container .breadcrumb .breadcrumb-item a:hover {
+    color: var(--primary) !important;
+}
+
+/* ==========================
+   6. CARDS & CONTAINERS
+   ========================== */
+.frappe-card,
+.widget.widget-shadow,
+.form-group .frappe-control,
+.report-wrapper {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--border-radius) !important;
+    box-shadow: var(--shadow-base) !important;
+    transition: box-shadow 0.2s ease;
+}
+
+.frappe-card:hover {
+    box-shadow: var(--shadow-md) !important;
+}
+
+/* Form layout cards */
+.form-layout .form-section,
+.form-layout .section-body {
+    border-radius: var(--border-radius-sm) !important;
+}
+
+.form-layout .form-section .section-head {
+    font-weight: 600 !important;
+    color: var(--heading-color) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    padding: 12px 16px !important;
+    font-size: 14px !important;
+}
+
+/* Form column dividers */
+.form-layout .form-column {
+    border-color: var(--border-color) !important;
+}
+
+/* ==========================
+   7. BUTTONS
+   ========================== */
+.btn-primary,
+.btn-primary-dark {
+    background-color: var(--primary) !important;
+    border-color: var(--primary) !important;
+    border-radius: var(--border-radius-sm) !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 1px 2px rgba(232, 119, 46, 0.2) !important;
+}
+
+.btn-primary:hover,
+.btn-primary-dark:hover {
+    background-color: var(--btn-primary-dark) !important;
+    border-color: var(--btn-primary-dark) !important;
+    box-shadow: 0 2px 4px rgba(232, 119, 46, 0.3) !important;
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.btn-default,
+.btn-secondary {
+    border-radius: var(--border-radius-sm) !important;
+    border-color: var(--border-color) !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+
+.btn-default:hover,
+.btn-secondary:hover {
+    border-color: var(--primary) !important;
+    color: var(--primary) !important;
+    background-color: var(--subtle-accent) !important;
+}
+
+/* ==========================
+   8. LIST VIEW
+   ========================== */
+.list-row {
+    border-bottom: 1px solid var(--border-color) !important;
+    transition: background-color 0.15s ease;
+}
+
+.list-row:hover {
+    background-color: var(--subtle-accent) !important;
+}
+
+.list-row:nth-child(even) {
+    background-color: var(--subtle-fg) !important;
+}
+
+.list-row:nth-child(even):hover {
+    background-color: var(--subtle-accent) !important;
+}
+
+/* List row checkbox */
+.list-row .list-row-checkbox {
+    accent-color: var(--primary);
+}
+
+/* List row like button */
+.list-row .like-action.liked .like-icon {
+    color: var(--primary) !important;
+}
+
+/* ==========================
+   9. FORM VIEW
+   ========================== */
+/* Form section header accent bar */
+.form-layout .form-section:not(:first-child) {
+    margin-top: 16px !important;
+}
+
+.form-layout .form-section .section-head {
+    position: relative;
+}
+
+.form-layout .form-section .section-head::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 18px;
+    background-color: var(--primary);
+    border-radius: 2px;
+}
+
+.form-layout .form-section .section-head {
+    padding-left: 20px !important;
+}
+
+/* Input fields */
+.frappe-control input[type="text"],
+.frappe-control input[type="password"],
+.frappe-control input[type="number"],
+.frappe-control input[type="email"],
+.frappe-control input[type="date"],
+.frappe-control select,
+.frappe-control textarea,
+.form-control {
+    border-radius: var(--border-radius-sm) !important;
+    border: 1px solid var(--border-color) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.frappe-control input:focus,
+.frappe-control select:focus,
+.frappe-control textarea:focus,
+.form-control:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(232, 119, 46, 0.12) !important;
+    outline: none !important;
+}
+
+/* Link field indicator */
+.frappe-control[data-fieldtype="Link"] .link-btn .btn-open {
+    color: var(--primary) !important;
+}
+
+/* ==========================
+   10. INDICATORS & STATUS
+   ========================== */
+.indicator-pill {
+    border-radius: var(--border-radius-full) !important;
+    font-weight: 500 !important;
+    font-size: 11px !important;
+    padding: 3px 10px !important;
+}
+
+.indicator-pill.green,
+.indicator.green::before {
+    background-color: #059669 !important;
+}
+
+.indicator-pill.blue,
+.indicator.blue::before {
+    background-color: #2563EB !important;
+}
+
+.indicator-pill.orange,
+.indicator.orange::before {
+    background-color: var(--primary) !important;
+}
+
+.indicator-pill.red,
+.indicator.red::before {
+    background-color: #DC2626 !important;
+}
+
+.indicator-pill.yellow,
+.indicator.yellow::before {
+    background-color: #D97706 !important;
+}
+
+.indicator-pill.gray,
+.indicator.gray::before,
+.indicator-pill.grey,
+.indicator.grey::before {
+    background-color: #6B7280 !important;
+}
+
+/* ==========================
+   11. DROPDOWN MENUS
+   ========================== */
+.dropdown-menu {
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--border-radius) !important;
+    box-shadow: var(--shadow-lg) !important;
+    padding: 4px !important;
+    background-color: var(--fg-color) !important;
+}
+
+.dropdown-item {
+    border-radius: var(--border-radius-sm) !important;
+    padding: 8px 12px !important;
+    color: var(--text-color) !important;
+    font-size: 13px !important;
+    transition: all 0.15s ease !important;
+}
+
+.dropdown-item:hover {
+    background-color: var(--subtle-accent) !important;
+    color: var(--primary) !important;
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background-color: var(--primary) !important;
+    color: #FFFFFF !important;
+}
+
+/* ==========================
+   12. MODALS / DIALOGS
+   ========================== */
+.modal-content {
+    border-radius: var(--border-radius-lg) !important;
+    border: none !important;
+    box-shadow: var(--shadow-lg) !important;
+    overflow: hidden;
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--border-color) !important;
+    padding: 16px 20px !important;
+}
+
+.modal-header .modal-title {
+    font-weight: 600 !important;
+    color: var(--heading-color) !important;
+}
+
+.modal-footer {
+    border-top: 1px solid var(--border-color) !important;
+    padding: 12px 20px !important;
+}
+
+/* ==========================
+   13. WORKSPACE / HOME
+   ========================== */
+.workspace-container .widget-group .widget-group-head .widget-group-title {
+    font-weight: 600 !important;
+    color: var(--heading-color) !important;
+}
+
+/* Shortcut cards on workspace */
+.widget.shortcut-widget-box {
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--border-radius) !important;
+    transition: all 0.2s ease !important;
+    background: var(--card-bg) !important;
+}
+
+.widget.shortcut-widget-box:hover {
+    border-color: var(--primary) !important;
+    box-shadow: var(--shadow-md) !important;
+    transform: translateY(-1px);
+}
+
+/* Number card widgets */
+.widget.number-widget-box {
+    border-radius: var(--border-radius) !important;
+    border: 1px solid var(--border-color) !important;
+    overflow: hidden;
+}
+
+.widget.number-widget-box .widget-head .number {
+    color: var(--primary) !important;
+    font-weight: 700 !important;
+}
+
+/* ==========================
+   14. TIMELINE / COMMENTS
+   ========================== */
+.timeline-item {
+    border-left: 2px solid var(--border-color) !important;
+    padding-left: 16px !important;
+}
+
+.timeline-item .timeline-badge {
+    background-color: var(--primary) !important;
+    border: 2px solid var(--fg-color) !important;
+}
+
+.comment-box .ql-editor {
+    border-radius: var(--border-radius-sm) !important;
+    font-family: var(--font-stack) !important;
+}
+
+/* ==========================
+   15. LOGIN PAGE
+   ========================== */
+.page-card {
+    border-radius: var(--border-radius-lg) !important;
+    box-shadow: var(--shadow-lg) !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+.page-card .page-card-head {
+    background: linear-gradient(135deg, #1A1D26 0%, #2D3148 100%) !important;
+    color: #FFFFFF !important;
+    padding: 24px !important;
+    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0 !important;
+}
+
+.page-card .page-card-head .page-card-title {
+    color: #FFFFFF !important;
+}
+
+.for-login .page-card .btn-primary {
+    width: 100%;
+    padding: 10px 20px !important;
+    font-size: 14px !important;
+}
+
+.for-login .page-card .page-card-head .app-logo {
+    filter: brightness(0) invert(1);
+}
+
+/* ==========================
+   16. PRINT VIEW
+   ========================== */
+.print-format {
+    font-family: var(--font-stack) !important;
+}
+
+/* ==========================
+   17. SCROLL TO TOP
+   ========================== */
+.scroll-to-top {
+    background-color: var(--primary) !important;
+    color: #FFFFFF !important;
+    border-radius: var(--border-radius-full) !important;
+    box-shadow: var(--shadow-md) !important;
+    transition: all 0.2s ease !important;
+}
+
+.scroll-to-top:hover {
+    background-color: var(--btn-primary-dark) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+/* ==========================
+   18. SKELETON LOADING
+   ========================== */
+@keyframes ol-shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.section-body.empty::before {
+    content: '';
+    display: block;
+    height: 40px;
+    background: linear-gradient(90deg, var(--bg-color) 25%, var(--border-color) 50%, var(--bg-color) 75%);
+    background-size: 200% 100%;
+    animation: ol-shimmer 1.5s infinite;
+    border-radius: var(--border-radius-sm);
+}
+
+/* ==========================
+   19. RESPONSIVE FIXES
+   ========================== */
+@media (max-width: 768px) {
+    .navbar {
+        height: 44px;
+    }
+
+    .desk-sidebar,
+    .layout-side-section {
+        background-color: #1E2130 !important;
+        border-right: none !important;
+    }
+
+    .form-layout .form-section .section-head::before {
+        display: none;
+    }
+
+    .form-layout .form-section .section-head {
+        padding-left: 16px !important;
+    }
+}
+
+/* ==========================
+   20. SMOOTH TRANSITIONS
+   ========================== */
+.page-container,
+.main-section,
+.layout-main {
+    transition: opacity 0.15s ease;
+}
+
+/* Link hover effects */
+a {
+    transition: color 0.15s ease;
+}
+
+a:hover {
+    color: var(--primary) !important;
+}
+
+/* Focus ring for accessibility */
+*:focus-visible {
+    outline: 2px solid var(--primary) !important;
+    outline-offset: 2px !important;
+    border-radius: 2px;
+}
+
+/* ==========================
+   21. MISCELLANEOUS POLISH
+   ========================== */
+/* Tooltip */
+.tooltip-inner {
+    border-radius: var(--border-radius-sm) !important;
+    font-family: var(--font-stack) !important;
+    font-size: 12px !important;
+}
+
+/* Progress bars */
+.progress-bar {
+    background-color: var(--primary) !important;
+}
+
+/* Tags */
+.tag-pill {
+    border-radius: var(--border-radius-full) !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+}
+
+/* Like button */
+.like-active-item .like-icon {
+    color: var(--primary) !important;
+}
+
+/* Count badges */
+.count {
+    background-color: var(--primary) !important;
+    color: #FFFFFF !important;
+    border-radius: var(--border-radius-full) !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    min-width: 18px !important;
+    height: 18px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}

@@ -50,10 +50,7 @@ fi
 
 cd "$BENCH_DIR"
 
-# FORCE REMOVAL of removed custom apps from apps.txt to fix boot loops
-if [[ -f "sites/apps.txt" ]]; then
-  sed -i '/custom_desk_theme/d' "sites/apps.txt"
-fi
+# (custom_desk_theme is now a valid app — no longer removed from apps.txt)
 
 # Restore assets from the image backup to the volume
 if [[ -d "${BENCH_DIR}/assets-backup" ]]; then
@@ -90,9 +87,7 @@ for t in tokens:
         continue
     if t in seen:
         continue
-    # Explicitly exclude removed apps
-    if t in {"custom_desk_theme"}:
-        continue
+    # (no apps excluded — custom_desk_theme is now valid)
     seen.add(t)
     apps.append(t)
 
@@ -212,6 +207,17 @@ ensure_app_installed() {
         /home/frappe/frappe-bench/env/bin/pip install -e "/home/frappe/frappe-bench/apps/${app}/"
       else
         echo "ERROR: orderlift backup missing at ${app_backup}" >&2
+        return 1
+      fi
+    elif [[ "$app" == "custom_desk_theme" ]]; then
+      local app_backup="/opt/erp-deploy/apps/custom_desk_theme"
+      if [[ -d "$app_backup" ]]; then
+        echo "Restoring custom_desk_theme app from image backup"
+        mkdir -p "/home/frappe/frappe-bench/apps/${app}"
+        cp -a "${app_backup}/." "/home/frappe/frappe-bench/apps/${app}/"
+        /home/frappe/frappe-bench/env/bin/pip install -e "/home/frappe/frappe-bench/apps/${app}/"
+      else
+        echo "ERROR: custom_desk_theme backup missing at ${app_backup}" >&2
         return 1
       fi
     else
@@ -373,6 +379,9 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   repair_orderlift_module_conflicts "$site_name"
   ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
 
+  # Install custom_desk_theme (branded Desk UI).
+  ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
+
   # Always run maintenance on existing sites to apply pending patches and refresh caches.
   post_deploy_site_maintenance "$site_name"
 
@@ -394,6 +403,9 @@ ensure_app_installed "$site_name" "hrms"
 # Install orderlift on fresh sites.
 repair_orderlift_module_conflicts "$site_name"
 ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
+
+# Install custom_desk_theme (branded Desk UI).
+ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
 
 # Run one final migrate/cache refresh once all apps are in place.
 post_deploy_site_maintenance "$site_name"
