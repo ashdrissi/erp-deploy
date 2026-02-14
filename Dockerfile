@@ -16,10 +16,10 @@ USER frappe
 
 WORKDIR /home/frappe/frappe-bench
 
-# Install the custom apps so they're importable by Python
-# Must be done as frappe user to be available in the bench's Python environment
-RUN pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
-RUN pip install -e /home/frappe/frappe-bench/apps/orderlift/
+# Install the custom apps into the bench's virtual environment
+# Must use the venv's pip, not system pip, so bench can import them
+RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
+RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/orderlift/
 
 # Pre-fetch HRMS app code so it persists across redeploys.
 # Site installation and migrations are handled by create-site.sh.
