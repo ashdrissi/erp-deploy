@@ -1,0 +1,87 @@
+{
+    "actions": [],
+    "creation": "2026-02-14 19:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "theme_mode",
+        "primary_color",
+        "column_break_1",
+        "sidebar_bg_dark",
+        "sidebar_bg_light",
+        "section_break_css",
+        "custom_css"
+    ],
+    "fields": [
+        {
+            "default": "Auto",
+            "description": "Choose the default theme mode for all users",
+            "fieldname": "theme_mode",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Theme Mode",
+            "options": "Light\nDark\nAuto",
+            "reqd": 1
+        },
+        {
+            "default": "#00D4B4",
+            "description": "Main accent color used for buttons, links, and highlights",
+            "fieldname": "primary_color",
+            "fieldtype": "Color",
+            "label": "Primary Accent Color"
+        },
+        {
+            "fieldname": "column_break_1",
+            "fieldtype": "Column Break"
+        },
+        {
+            "default": "#0D1528",
+            "description": "Sidebar background in dark mode",
+            "fieldname": "sidebar_bg_dark",
+            "fieldtype": "Color",
+            "label": "Sidebar BG (Dark Mode)"
+        },
+        {
+            "default": "#FFFFFF",
+            "description": "Sidebar background in light mode",
+            "fieldname": "sidebar_bg_light",
+            "fieldtype": "Color",
+            "label": "Sidebar BG (Light Mode)"
+        },
+        {
+            "fieldname": "section_break_css",
+            "fieldtype": "Section Break",
+            "label": "Custom CSS"
+        },
+        {
+            "description": "CSS added here will be injected after the base theme. Use this for custom overrides. Changes take effect after page refresh.",
+            "fieldname": "custom_css",
+            "fieldtype": "Code",
+            "label": "Custom CSS",
+            "options": "CSS"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "issingle": 1,
+    "links": [],
+    "modified": "2026-02-14 19:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Custom Desk Theme",
+    "name": "Theme Settings",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 0,
+            "email": 0,
+            "print": 0,
+            "read": 1,
+            "role": "System Manager",
+            "share": 0,
+            "write": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 0
+}
