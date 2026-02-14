@@ -8,7 +8,6 @@ COPY --chown=frappe:frappe scripts/ /opt/erp-deploy/scripts/
 RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 
 # Ship custom apps inside the image so they persist across redeploys.
-COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 
 # Switch to the frappe user (Security Requirement)
@@ -18,7 +17,6 @@ WORKDIR /home/frappe/frappe-bench
 
 # Install the custom apps into the bench's virtual environment
 # Must use the venv's pip, not system pip, so bench can import them
-RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
 RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/orderlift/
 
 # Pre-fetch HRMS app code so it persists across redeploys.
