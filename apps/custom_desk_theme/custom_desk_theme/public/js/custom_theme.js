@@ -1,230 +1,185 @@
-Y/**
- * Orderlift — Custom Desk Theme JS v2
- * ============================================================
- * - Applies dark/light/auto mode based on Theme Settings
- * - Injects custom CSS from Theme Settings
- * - Applies dynamic color overrides (primary, sidebar)
- * - Adds a dark/light toggle to the navbar
- * - Replaces logo + branded welcome
- * ============================================================
- */
-
-frappe.provide("custom_desk_theme");
-
-$(document).ready(function () {
-    _load_and_apply_theme();
-});
-
 /**
- * Load theme settings from boot data or API, then apply.
+ * Orderlift — Custom Desk Theme JS v2.1
+ * ============================================================
+ * Robust version: always fetches settings via API on page load,
+ * applies dark/light mode, injects color overrides and custom CSS.
+ * ============================================================
  */
-function _load_and_apply_theme() {
-    // boot_session hook populates frappe.boot with theme settings
-    var settings = frappe.boot.custom_desk_theme || null;
 
-    if (settings) {
-        _apply_theme(settings);
-    } else {
-        // Fallback: fetch via API
+(function () {
+    "use strict";
+
+    // Wait for Frappe to be fully ready
+    if (typeof frappe === "undefined") return;
+
+    frappe.provide("custom_desk_theme");
+
+    // Run after DOM + Frappe are both ready
+    $(function () {
+        // Small delay to ensure frappe.call is available
+        setTimeout(function () {
+            load_theme();
+        }, 100);
+    });
+
+    function load_theme() {
+        // Try boot data first (fastest)
+        if (frappe.boot && frappe.boot.custom_desk_theme) {
+            apply_all(frappe.boot.custom_desk_theme);
+            return;
+        }
+
+        // Fallback: direct API call
         frappe.call({
             method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings_api",
             async: true,
             callback: function (r) {
                 if (r && r.message) {
-                    _apply_theme(r.message);
+                    apply_all(r.message);
                 } else {
-                    // Use defaults
-                    _apply_theme({
-                        theme_mode: "Auto",
-                        primary_color: "#00D4B4",
-                        sidebar_bg_dark: "#0D1528",
-                        sidebar_bg_light: "#FFFFFF",
-                        custom_css: ""
-                    });
+                    apply_all(get_defaults());
                 }
+            },
+            error: function () {
+                apply_all(get_defaults());
             }
         });
     }
-}
 
-/**
- * Apply theme based on settings.
- */
-function _apply_theme(settings) {
-    // 1. Determine and apply theme mode
-    _apply_mode(settings.theme_mode);
-
-    // 2. Apply color overrides
-    _apply_colors(settings);
-
-    // 3. Inject custom CSS
-    _inject_custom_css(settings.custom_css);
-
-    // 4. Add toggle button to navbar
-    _add_toggle_button(settings.theme_mode);
-
-    // 5. Replace logo
-    _replace_navbar_logo();
-
-    // 6. Branded workspace welcome
-    _add_branded_home();
-}
-
-/**
- * Set data-theme attribute based on mode.
- */
-function _apply_mode(mode) {
-    if (mode === "Dark") {
-        document.documentElement.setAttribute("data-theme", "dark");
-    } else if (mode === "Light") {
-        document.documentElement.setAttribute("data-theme", "light");
-    } else {
-        // Auto — respect system preference
-        var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
-
-        // Listen for changes
-        window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (e) {
-            document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
-        });
-    }
-}
-
-/**
- * Override CSS variables with colors from Theme Settings.
- */
-function _apply_colors(settings) {
-    var root = document.documentElement;
-    var isDark = root.getAttribute("data-theme") === "dark";
-
-    if (settings.primary_color) {
-        root.style.setProperty("--primary", settings.primary_color);
-        root.style.setProperty("--primary-color", settings.primary_color);
-        root.style.setProperty("--btn-primary", settings.primary_color);
+    function get_defaults() {
+        return {
+            theme_mode: "Light",
+            primary_color: "#00D4B4",
+            sidebar_bg_dark: "#0D1528",
+            sidebar_bg_light: "#FFFFFF",
+            custom_css: ""
+        };
     }
 
-    if (isDark && settings.sidebar_bg_dark) {
-        root.style.setProperty("--sidebar-bg", settings.sidebar_bg_dark);
-    } else if (!isDark && settings.sidebar_bg_light) {
-        root.style.setProperty("--sidebar-bg", settings.sidebar_bg_light);
+    function apply_all(settings) {
+        apply_mode(settings.theme_mode || "Light");
+        apply_colors(settings);
+        inject_custom_css(settings.custom_css || "");
+        add_toggle_button();
     }
-}
 
-/**
- * Inject user-defined custom CSS.
- */
-function _inject_custom_css(css) {
-    if (!css) return;
+    /* ---- Theme Mode ---- */
+    function apply_mode(mode) {
+        var html = document.documentElement;
+        if (mode === "Dark") {
+            html.setAttribute("data-theme", "dark");
+        } else if (mode === "Light") {
+            html.setAttribute("data-theme", "light");
+        } else {
+            // Auto
+            var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            html.setAttribute("data-theme", dark ? "dark" : "light");
+            try {
+                window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (e) {
+                    html.setAttribute("data-theme", e.matches ? "dark" : "light");
+                });
+            } catch (e) { /* ignore */ }
+        }
+    }
 
-    // Remove old injection if exists
-    var existing = document.getElementById("custom-desk-theme-user-css");
-    if (existing) existing.remove();
+    /* ---- Color Overrides ---- */
+    function apply_colors(settings) {
+        var root = document.documentElement;
+        var isDark = root.getAttribute("data-theme") === "dark";
 
-    var style = document.createElement("style");
-    style.id = "custom-desk-theme-user-css";
-    style.textContent = css;
-    document.head.appendChild(style);
-}
+        // Primary / accent color
+        if (settings.primary_color) {
+            var c = settings.primary_color;
+            root.style.setProperty("--primary", c);
+            root.style.setProperty("--primary-color", c);
+            root.style.setProperty("--btn-primary", c);
+            root.style.setProperty("--sidebar-text-active", c);
 
-/**
- * Add a dark/light toggle button in the navbar.
- */
-function _add_toggle_button(currentMode) {
-    // Don't add if already exists
-    if (document.getElementById("theme-toggle-btn")) return;
+            // Compute a slightly darker version for hover
+            root.style.setProperty("--btn-primary-dark", darken(c, 15));
+        }
 
-    var isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    var icon = isDark ? "☀️" : "🌙";
+        // Sidebar background
+        if (isDark && settings.sidebar_bg_dark) {
+            root.style.setProperty("--sidebar-bg", settings.sidebar_bg_dark);
+            root.style.setProperty("--navbar-bg", settings.sidebar_bg_dark);
+        } else if (!isDark && settings.sidebar_bg_light) {
+            root.style.setProperty("--sidebar-bg", settings.sidebar_bg_light);
+        }
+    }
 
-    var $btn = $(
-        '<li class="nav-item">' +
-        '<a class="nav-link" id="theme-toggle-btn" href="#" title="Toggle dark/light mode" ' +
-        'style="font-size:16px;padding:8px 10px;cursor:pointer;text-decoration:none;">' +
-        icon +
-        '</a>' +
-        '</li>'
-    );
+    /* ---- Custom CSS Injection ---- */
+    function inject_custom_css(css) {
+        // Remove previous injection
+        var el = document.getElementById("cdt-user-custom-css");
+        if (el) el.remove();
 
-    $btn.on("click", function (e) {
-        e.preventDefault();
-        var current = document.documentElement.getAttribute("data-theme");
-        var next = current === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", next);
+        if (!css || !css.trim()) return;
 
-        // Update icon
-        $("#theme-toggle-btn").text(next === "dark" ? "☀️" : "🌙");
+        var style = document.createElement("style");
+        style.id = "cdt-user-custom-css";
+        style.setAttribute("type", "text/css");
+        style.textContent = css;
+        document.head.appendChild(style);
+    }
 
-        // Re-apply sidebar colors
-        frappe.call({
-            method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings_api",
-            async: true,
-            callback: function (r) {
-                if (r && r.message) {
-                    _apply_colors(r.message);
+    /* ---- Toggle Button ---- */
+    function add_toggle_button() {
+        if (document.getElementById("cdt-theme-toggle")) return;
+
+        var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+
+        var btn = document.createElement("button");
+        btn.id = "cdt-theme-toggle";
+        btn.title = "Toggle dark/light mode";
+        btn.textContent = isDark ? "☀️" : "🌙";
+        btn.style.cssText = "background:none;border:none;font-size:18px;cursor:pointer;padding:6px 10px;line-height:1;";
+
+        btn.addEventListener("click", function () {
+            var current = document.documentElement.getAttribute("data-theme");
+            var next = current === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", next);
+            btn.textContent = next === "dark" ? "☀️" : "🌙";
+
+            // Re-fetch and re-apply colors for the new mode
+            frappe.call({
+                method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings_api",
+                async: true,
+                callback: function (r) {
+                    if (r && r.message) apply_colors(r.message);
                 }
-            }
+            });
         });
-    });
 
-    // Append to navbar
-    var $navRight = $(".navbar-right, .navbar .navbar-nav:last-child");
-    if ($navRight.length) {
-        $navRight.prepend($btn);
-    }
-}
-
-/**
- * Replace navbar logo with Orderlift logo.
- */
-function _replace_navbar_logo() {
-    var $logo = $(".navbar-brand .app-logo");
-    if ($logo.length) {
-        $logo.attr("src", "/assets/orderlift/images/orderlift_logo.png");
-        $logo.css({ "max-height": "28px" });
+        // Insert into navbar
+        var navbar = document.querySelector(".navbar .navbar-right") ||
+            document.querySelector(".navbar .container > .navbar-collapse .navbar-nav:last-child");
+        if (navbar) {
+            var li = document.createElement("li");
+            li.className = "nav-item";
+            li.appendChild(btn);
+            navbar.insertBefore(li, navbar.firstChild);
+        }
     }
 
-    var $brand = $(".navbar-brand");
-    if ($brand.length && !$logo.length) {
-        $brand.css("background-image", "none");
-        $brand.html(
-            '<img src="/assets/orderlift/images/orderlift_logo.png" ' +
-            'class="app-logo" style="max-height:28px;" alt="Orderlift">'
-        );
+    /* ---- Helpers ---- */
+    function darken(hex, percent) {
+        // Simple hex color darkener
+        try {
+            hex = hex.replace("#", "");
+            var r = parseInt(hex.substring(0, 2), 16);
+            var g = parseInt(hex.substring(2, 4), 16);
+            var b = parseInt(hex.substring(4, 6), 16);
+            r = Math.max(0, Math.round(r * (1 - percent / 100)));
+            g = Math.max(0, Math.round(g * (1 - percent / 100)));
+            b = Math.max(0, Math.round(b * (1 - percent / 100)));
+            return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        } catch (e) {
+            return hex;
+        }
     }
-}
 
-/**
- * Add branded welcome banner on workspace / home.
- */
-function _add_branded_home() {
-    frappe.after_ajax(function () {
-        var $workspace = $(".workspace-container");
-        if (!$workspace.length || $("#orderlift-welcome").length) return;
-
-        var user_name = frappe.session.user_fullname || "User";
-        var first_name = user_name.split(" ")[0];
-
-        var hour = new Date().getHours();
-        var greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-
-        var $welcome = $(
-            '<div id="orderlift-welcome" style="' +
-            "padding: 20px 24px;" +
-            "margin-bottom: 20px;" +
-            "background: linear-gradient(135deg, #0B1120 0%, #162036 60%, var(--primary) 100%);" +
-            "border-radius: 12px;" +
-            "color: #FFFFFF;" +
-            "box-shadow: 0 4px 12px rgba(0, 20, 40, 0.3);" +
-            '">' +
-            '<h3 style="margin:0 0 4px 0;font-size:18px;font-weight:600;color:#FFFFFF;">' +
-            greeting + ", " + first_name + "!" +
-            "</h3>" +
-            '<p style="margin:0;font-size:13px;color:rgba(255,255,255,0.7);">' +
-            "Welcome to Order Lift ERP — your elevator parts management hub." +
-            "</p>" +
-            "</div>"
-        );
-
-        $workspace.prepend($welcome);
-    });
-}
+    // Expose for debugging
+    custom_desk_theme.load = load_theme;
+    custom_desk_theme.apply_all = apply_all;
+})();
