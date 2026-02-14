@@ -204,8 +204,16 @@ ensure_app_installed() {
     if [[ "$app" == "hrms" ]]; then
       bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
     elif [[ "$app" == "orderlift" ]]; then
-      echo "ERROR: ${app} is expected to be baked into the image (apps/${app})." >&2
-      return 1
+      local app_backup="/opt/erp-deploy/apps/orderlift"
+      if [[ -d "$app_backup" ]]; then
+        echo "Restoring orderlift app from image backup"
+        mkdir -p "/home/frappe/frappe-bench/apps/${app}"
+        cp -a "${app_backup}/." "/home/frappe/frappe-bench/apps/${app}/"
+        /home/frappe/frappe-bench/env/bin/pip install -e "/home/frappe/frappe-bench/apps/${app}/"
+      else
+        echo "ERROR: orderlift backup missing at ${app_backup}" >&2
+        return 1
+      fi
     else
       bench get-app "$app" "https://github.com/frappe/${app}.git"
     fi

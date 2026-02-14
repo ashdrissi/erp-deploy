@@ -10,6 +10,9 @@ RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 # Ship custom apps inside the image so they persist across redeploys.
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 
+# Keep a second immutable copy outside bench volumes.
+COPY --chown=frappe:frappe apps/orderlift/ /opt/erp-deploy/apps/orderlift/
+
 # Switch to the frappe user (Security Requirement)
 USER frappe
 
