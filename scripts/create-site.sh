@@ -382,6 +382,9 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   # Install custom_desk_theme (branded Desk UI).
   ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
 
+  # Install Insights (BI / reporting).
+  ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
+
   # Always run maintenance on existing sites to apply pending patches and refresh caches.
   post_deploy_site_maintenance "$site_name"
 
@@ -406,6 +409,9 @@ ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install f
 
 # Install custom_desk_theme (branded Desk UI).
 ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
+
+# Install Insights (BI / reporting).
+ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
 
 # Run one final migrate/cache refresh once all apps are in place.
 post_deploy_site_maintenance "$site_name"
