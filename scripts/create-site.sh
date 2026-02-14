@@ -147,8 +147,8 @@ ensure_app_installed() {
     echo "Fetching app code: ${app}"
     if [[ "$app" == "hrms" ]]; then
       bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
-    elif [[ "$app" == "custom_desk_theme" ]]; then
-      echo "ERROR: custom_desk_theme is expected to be baked into the image (apps/custom_desk_theme)." >&2
+    elif [[ "$app" == "custom_desk_theme" || "$app" == "orderlift" ]]; then
+      echo "ERROR: ${app} is expected to be baked into the image (apps/${app})." >&2
       return 1
     else
       bench get-app "$app" "https://github.com/frappe/${app}.git"
@@ -293,6 +293,8 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   # Install custom desk theme permanently on this site (idempotent).
   ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
 
+  # Install orderlift custom app permanently on this site (idempotent).
+  ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
 
   exit 0
 fi
@@ -311,5 +313,8 @@ ensure_app_installed "$site_name" "hrms"
 
 # Install custom desk theme on fresh sites.
 ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
+
+# Install orderlift custom app on fresh sites.
+ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
 
 echo "Site created: ${site_name}"

@@ -7,8 +7,9 @@ USER root
 COPY --chown=frappe:frappe scripts/ /opt/erp-deploy/scripts/
 RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 
-# Ship a custom Desk theme app inside the image so it persists across redeploys.
+# Ship custom apps inside the image so they persist across redeploys.
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
+COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 
 # Install the custom app so it's importable by Python
 RUN pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/

@@ -1,0 +1,21 @@
+/* Orderlift — Global Desk Customizations */
+/* Scoped additions on top of custom_desk_theme.css  */
+
+/* SAV ticket priority badges */
+.indicator.sav-critical { background-color: #e74c3c; }
+.indicator.sav-high     { background-color: #e67e22; }
+.indicator.sav-medium   { background-color: #f1c40f; }
+.indicator.sav-low      { background-color: #2ecc71; }
+
+/* SIG project status badges */
+.indicator.sig-planned    { background-color: #3498db; }
+.indicator.sig-inprogress { background-color: #f39c12; }
+.indicator.sig-onhold     { background-color: #e74c3c; }
+.indicator.sig-completed  { background-color: #2ecc71; }
+
+/* Shipment Plan transport recommendation highlight */
+.transport-recommendation {
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 1.1em;
+}

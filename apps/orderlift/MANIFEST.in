@@ -1,0 +1,5 @@
+recursive-include orderlift/public *
+recursive-include orderlift/templates *
+recursive-include orderlift/www *
+recursive-include orderlift/print_formats *
+recursive-include orderlift/fixtures *
