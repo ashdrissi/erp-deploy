@@ -54,20 +54,33 @@ def create_commissions(doc, method=None):
                 "sales_order": sales_order_name,
                 "sales_invoice": doc.name,
                 "project": sales_order.project,
+                "customer": sales_order.customer,
+                "company": doc.company,
                 "commission_rate": commission_rate,
+                "base_amount": so_total,
                 "commission_amount": commission_amount,
                 "status": "Pending",
             }
         )
         commission.insert(ignore_permissions=True)
+        commission.submit()
 
 
 def cancel_commissions(doc, method=None):
-    """Cancel linked Sales Commission records when invoice is cancelled."""
+    """Cancel linked Sales Commission records when invoice is cancelled.
+
+    Only cancels commissions that haven't been paid yet.
+    Uses proper doctype cancel flow for submitted documents.
+    """
     commissions = frappe.get_all(
         "Sales Commission",
-        filters={"sales_invoice": doc.name, "status": ["!=", "Paid"]},
+        filters={
+            "sales_invoice": doc.name,
+            "docstatus": 1,
+            "status": ["!=", "Paid"],
+        },
         fields=["name"],
     )
     for row in commissions:
-        frappe.db.set_value("Sales Commission", row.name, "status", "Cancelled")
+        commission = frappe.get_doc("Sales Commission", row.name)
+        commission.cancel()
