@@ -15,11 +15,17 @@ class MarketPriceEntry(Document):
 
     def _fetch_our_price(self):
         """Fetch the item's current cost price for comparison."""
-        if self.item_code:
-            our_price = frappe.db.get_value(
-                "Item", self.item_code, "custom_current_cost_price"
-            )
-            self.our_current_price = our_price or 0
+        if not self.item_code:
+            self.our_current_price = 0
+            return
+
+        if not frappe.db.has_column("Item", "custom_current_cost_price"):
+            # Field does not exist on this site yet; keep comparison safe.
+            self.our_current_price = 0
+            return
+
+        our_price = frappe.db.get_value("Item", self.item_code, "custom_current_cost_price")
+        self.our_current_price = our_price or 0
 
     def _calculate_difference(self):
         """Calculate price difference and percentage."""

@@ -27,18 +27,21 @@ frappe.ui.form.on("Market Price Entry", {
 
     item_code: function (frm) {
         if (frm.doc.item_code) {
-            // Fetch our current cost price for immediate comparison
-            frappe.db.get_value(
-                "Item",
-                frm.doc.item_code,
-                "custom_current_cost_price",
-                function (r) {
-                    if (r && r.custom_current_cost_price) {
-                        frm.set_value("our_current_price", r.custom_current_cost_price);
-                        _recalculate_difference(frm);
-                    }
+            frappe.model.with_doctype("Item", function () {
+                var hasCostField = frappe.meta.has_field("Item", "custom_current_cost_price");
+
+                if (!hasCostField) {
+                    frm.set_value("our_current_price", 0);
+                    _recalculate_difference(frm);
+                    return;
                 }
-            );
+
+                // Fetch our current cost price for immediate comparison
+                frappe.db.get_value("Item", frm.doc.item_code, "custom_current_cost_price", function (r) {
+                    frm.set_value("our_current_price", (r && r.custom_current_cost_price) || 0);
+                    _recalculate_difference(frm);
+                });
+            });
         }
     },
 

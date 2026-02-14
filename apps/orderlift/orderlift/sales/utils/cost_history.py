@@ -15,6 +15,9 @@ def archive_cost_price(doc, method=None):
     if doc.is_new():
         return
 
+    if not frappe.db.has_column("Item", "custom_current_cost_price"):
+        return
+
     previous_cost = frappe.db.get_value(
         "Item", doc.name, "custom_current_cost_price"
     )
