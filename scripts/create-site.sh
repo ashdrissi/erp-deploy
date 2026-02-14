@@ -304,10 +304,11 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   ensure_site_db_user_access "$site_name"
 
   # Install HRMS permanently on this site (idempotent).
-  ensure_app_installed "$site_name" "hrms" || echo "WARN: HRMS install failed; continuing"
+  # Do not continue without HRMS: ERPNext website routing references Job Opening.
+  ensure_app_installed "$site_name" "hrms"
 
   # Install orderlift custom app permanently on this site (idempotent).
-  ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
+  ensure_app_installed "$site_name" "orderlift"
 
   exit 0
 fi
@@ -325,6 +326,6 @@ ensure_site_db_user_access "$site_name"
 ensure_app_installed "$site_name" "hrms"
 
 # Install orderlift custom app on fresh sites.
-ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
+ensure_app_installed "$site_name" "orderlift"
 
 echo "Site created: ${site_name}"
