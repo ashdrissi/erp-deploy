@@ -1,4 +1,4 @@
-/**
+Y/**
  * Orderlift — Custom Desk Theme JS v2
  * ============================================================
  * - Applies dark/light/auto mode based on Theme Settings
@@ -27,7 +27,7 @@ function _load_and_apply_theme() {
     } else {
         // Fallback: fetch via API
         frappe.call({
-            method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings",
+            method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings_api",
             async: true,
             callback: function (r) {
                 if (r && r.message) {
@@ -156,7 +156,7 @@ function _add_toggle_button(currentMode) {
 
         // Re-apply sidebar colors
         frappe.call({
-            method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings",
+            method: "custom_desk_theme.custom_desk_theme.doctype.theme_settings.theme_settings.get_theme_settings_api",
             async: true,
             callback: function (r) {
                 if (r && r.message) {

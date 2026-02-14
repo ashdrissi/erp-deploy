@@ -9,9 +9,8 @@ class ThemeSettings(Document):
     pass
 
 
-@frappe.whitelist()
-def get_theme_settings():
-    """Return theme settings for the client-side JS to apply."""
+def _get_settings_dict():
+    """Internal helper to build the theme settings dict."""
     try:
         doc = frappe.get_single("Theme Settings")
         return {
@@ -22,7 +21,6 @@ def get_theme_settings():
             "custom_css": doc.custom_css or "",
         }
     except Exception:
-        # DocType may not be created yet (first boot)
         return {
             "theme_mode": "Auto",
             "primary_color": "#00D4B4",
@@ -30,3 +28,17 @@ def get_theme_settings():
             "sidebar_bg_light": "#FFFFFF",
             "custom_css": "",
         }
+
+
+def get_theme_settings(bootinfo=None):
+    """Called by boot_session hook (with bootinfo) or as whitelisted API."""
+    settings = _get_settings_dict()
+    if bootinfo is not None:
+        bootinfo["custom_desk_theme"] = settings
+    return settings
+
+
+@frappe.whitelist()
+def get_theme_settings_api():
+    """Whitelisted API endpoint for JS fallback calls."""
+    return _get_settings_dict()
