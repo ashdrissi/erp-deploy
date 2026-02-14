@@ -11,16 +11,18 @@ RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 
-# Install the custom apps so they're importable by Python
-RUN pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
-RUN pip install -e /home/frappe/frappe-bench/apps/orderlift/
-
 # Switch to the frappe user (Security Requirement)
 USER frappe
 
+WORKDIR /home/frappe/frappe-bench
+
+# Install the custom apps so they're importable by Python
+# Must be done as frappe user to be available in the bench's Python environment
+RUN pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
+RUN pip install -e /home/frappe/frappe-bench/apps/orderlift/
+
 # Pre-fetch HRMS app code so it persists across redeploys.
 # Site installation and migrations are handled by create-site.sh.
-WORKDIR /home/frappe/frappe-bench
 RUN bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
 
 # Build assets for all apps including HRMS.
