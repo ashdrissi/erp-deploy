@@ -7,6 +7,11 @@ USER root
 COPY --chown=frappe:frappe scripts/ /opt/erp-deploy/scripts/
 RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 
+# Insights depends on mysqlclient (via ibis-framework[mysql]) which needs C headers.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-libmysqlclient-dev pkg-config gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Ship custom apps inside the image so they persist across redeploys.
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
