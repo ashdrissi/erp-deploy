@@ -50,6 +50,12 @@ fi
 
 cd "$BENCH_DIR"
 
+# FORCE REMOVAL of custom_desk_theme from apps.txt to fix boot loops
+# This app was removed but persists in the volume's apps.txt
+if [[ -f "sites/apps.txt" ]]; then
+  sed -i '/custom_desk_theme/d' "sites/apps.txt"
+fi
+
 # Restore assets from the image backup to the volume
 if [[ -d "${BENCH_DIR}/assets-backup" ]]; then
   echo "Restoring assets from image..."
@@ -84,6 +90,9 @@ for t in tokens:
     if not re.fullmatch(r"[a-z0-9_]+", t):
         continue
     if t in seen:
+        continue
+    # Explicitly exclude removed app
+    if t == "custom_desk_theme":
         continue
     seen.add(t)
     apps.append(t)
