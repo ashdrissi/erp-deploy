@@ -1,0 +1,99 @@
+/*
+  Custom Desk Theme
+
+  This is intentionally conservative: it mostly overrides CSS variables
+  and a few high-level components to improve contrast.
+*/
+
+:root[data-theme-mode="custom"] {
+  --primary: #0f4c5c;
+  --primary-color: #0f4c5c;
+  --primary-light: #e6f2f4;
+  --text-color: #0f172a;
+  --text-muted: #475569;
+  --border-color: #d9dee8;
+  --bg-color: #f6f3ee;
+  --card-bg: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 10px 20px rgba(15, 23, 42, 0.12);
+}
+
+:root[data-theme-mode="custom"] body,
+:root[data-theme-mode="custom"] .layout-main {
+  background: var(--bg-color);
+}
+
+/* Top bar */
+:root[data-theme-mode="custom"] .navbar,
+:root[data-theme-mode="custom"] .navbar.navbar-light {
+  background: #0b2d39;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme-mode="custom"] .navbar .navbar-brand,
+:root[data-theme-mode="custom"] .navbar .nav-link,
+:root[data-theme-mode="custom"] .navbar .dropdown-toggle,
+:root[data-theme-mode="custom"] .navbar .navbar-nav .nav-link {
+  color: #f8fafc;
+}
+
+:root[data-theme-mode="custom"] .navbar .nav-link:hover,
+:root[data-theme-mode="custom"] .navbar .dropdown-toggle:hover {
+  color: #ffffff;
+}
+
+/* Sidebar */
+:root[data-theme-mode="custom"] .desk-sidebar {
+  background: #0e3442;
+}
+
+:root[data-theme-mode="custom"] .desk-sidebar .sidebar-item,
+:root[data-theme-mode="custom"] .desk-sidebar .sidebar-item a,
+:root[data-theme-mode="custom"] .desk-sidebar .standard-sidebar-section .standard-sidebar-item a {
+  color: rgba(248, 250, 252, 0.88);
+}
+
+:root[data-theme-mode="custom"] .desk-sidebar .sidebar-item:hover,
+:root[data-theme-mode="custom"] .desk-sidebar .standard-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Cards / list containers */
+:root[data-theme-mode="custom"] .frappe-card,
+:root[data-theme-mode="custom"] .form-dashboard,
+:root[data-theme-mode="custom"] .list-row-container,
+:root[data-theme-mode="custom"] .layout-side-section,
+:root[data-theme-mode="custom"] .widget {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Primary buttons */
+:root[data-theme-mode="custom"] .btn-primary,
+:root[data-theme-mode="custom"] .btn.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+:root[data-theme-mode="custom"] .btn-primary:hover,
+:root[data-theme-mode="custom"] .btn.btn-primary:hover {
+  background: #0b3a46;
+  border-color: #0b3a46;
+}
+
+/* Inputs */
+:root[data-theme-mode="custom"] .form-control,
+:root[data-theme-mode="custom"] input,
+:root[data-theme-mode="custom"] select,
+:root[data-theme-mode="custom"] textarea {
+  border-color: var(--border-color);
+}
+
+:root[data-theme-mode="custom"] .form-control:focus,
+:root[data-theme-mode="custom"] input:focus,
+:root[data-theme-mode="custom"] select:focus,
+:root[data-theme-mode="custom"] textarea:focus {
+  border-color: rgba(15, 76, 92, 0.6);
+  box-shadow: 0 0 0 0.2rem rgba(15, 76, 92, 0.15);
+}
