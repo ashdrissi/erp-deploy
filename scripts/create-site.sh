@@ -188,7 +188,7 @@ PY
     WHERE
       app_name = 'orderlift'
       AND name IN ('CRM', 'Sales', 'HR', 'Logistics', 'Portal', 'Client Portal', 'SAV', 'SIG');
-  "
+  " || true
 }
 
 ensure_app_installed() {
@@ -353,7 +353,7 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
 
   # Install orderlift app permanently on this site (idempotent).
   repair_orderlift_module_conflicts "$site_name"
-  ensure_app_installed "$site_name" "orderlift"
+  ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
 
   exit 0
 fi
@@ -372,6 +372,6 @@ ensure_app_installed "$site_name" "hrms"
 
 # Install orderlift on fresh sites.
 repair_orderlift_module_conflicts "$site_name"
-ensure_app_installed "$site_name" "orderlift"
+ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
 
 echo "Site created: ${site_name}"
