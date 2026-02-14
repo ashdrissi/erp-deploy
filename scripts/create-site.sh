@@ -176,7 +176,7 @@ PY
   # Cleanup from old orderlift module names that conflicted with ERPNext core modules.
   mysql -h "$db_host" -P "$db_port" -uroot -p"$db_root_password" --protocol=tcp "$db_name" -e "
     UPDATE \
-      \\`tabModule Def\\`
+      \`tabModule Def\`
     SET
       app_name = 'erpnext'
     WHERE
@@ -184,7 +184,7 @@ PY
       AND app_name = 'orderlift';
 
     DELETE FROM \
-      \\`tabModule Def\\`
+      \`tabModule Def\`
     WHERE
       app_name = 'orderlift'
       AND name IN ('CRM', 'Sales', 'HR', 'Logistics', 'Portal', 'Client Portal', 'SAV', 'SIG');
