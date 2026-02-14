@@ -50,20 +50,37 @@ def calculate_shipment(items):
 
 
 def _recommend_transport(weight_kg, volume_m3):
-    """Return transport type string based on weight and volume."""
-    if weight_kg <= THRESHOLDS["small_van"]["max_weight_kg"] and \
-       volume_m3 <= THRESHOLDS["small_van"]["max_volume_m3"]:
+    """Return transport type string based on weight and volume.
+
+    Decision tree:
+      1. Small Van: weight <= 500kg AND volume <= 2m3
+      2. Standard Truck: weight <= 3,500kg AND volume <= 20m3
+      3. Full Truck Load: weight <= 22,000kg AND volume <= 90m3
+      4. 20ft Container: weight <= 22,000kg AND volume <= 33m3
+      5. 40ft Container: weight <= 26,500kg AND volume <= 67m3
+      6. Multiple containers for anything larger
+    """
+    t = THRESHOLDS
+
+    if weight_kg <= t["small_van"]["max_weight_kg"] and \
+       volume_m3 <= t["small_van"]["max_volume_m3"]:
         return "Small Van / Petit Camion"
 
-    if weight_kg <= THRESHOLDS["standard_truck"]["max_weight_kg"]:
+    if weight_kg <= t["standard_truck"]["max_weight_kg"] and \
+       volume_m3 <= t["standard_truck"]["max_volume_m3"]:
         return "Standard Truck / Camion Standard"
 
-    if weight_kg <= THRESHOLDS["ftl_truck"]["max_weight_kg"] and \
-       volume_m3 <= THRESHOLDS["container_20ft"]["max_volume_m3"]:
+    if weight_kg <= t["container_20ft"]["max_weight_kg"] and \
+       volume_m3 <= t["container_20ft"]["max_volume_m3"]:
         return "20ft Container / Conteneur 20 pieds"
 
-    if volume_m3 <= THRESHOLDS["container_40ft"]["max_volume_m3"]:
+    if weight_kg <= t["container_40ft"]["max_weight_kg"] and \
+       volume_m3 <= t["container_40ft"]["max_volume_m3"]:
         return "40ft Container / Conteneur 40 pieds"
+
+    if weight_kg <= t["ftl_truck"]["max_weight_kg"] and \
+       volume_m3 <= t["ftl_truck"]["max_volume_m3"]:
+        return "Full Truck Load / Camion Complet"
 
     return "Multiple Containers Required / Plusieurs Conteneurs Nécessaires"
 

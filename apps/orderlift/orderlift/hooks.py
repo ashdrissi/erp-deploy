@@ -20,18 +20,20 @@ app_include_js = ["/assets/orderlift/js/orderlift.js"]
 # bench migrate / bench --site <site> import-fixtures
 # ---------------------------------------------------------
 fixtures = [
-    # Custom fields on core ERPNext doctypes
-    {"dt": "Custom Field", "filters": [["module", "=", "Orderlift"]]},
-    # Property setters (field property overrides)
-    {"dt": "Property Setter", "filters": [["module", "=", "Orderlift"]]},
+    # Custom fields added to core ERPNext doctypes (Item, Customer, etc.)
+    # All our custom fields use the "custom_" prefix per Frappe convention.
+    # Filter by name prefix so only our fields are exported.
+    {"dt": "Custom Field", "filters": [["name", "like", "%custom_%"]]},
+    # Property setters (field property overrides on existing doctypes)
+    {"dt": "Property Setter", "filters": [["name", "like", "%-custom_%"]]},
     # Workflows on standard doctypes (Sales Order, Stock Entry, etc.)
-    {"dt": "Workflow", "filters": [["module", "=", "Orderlift"]]},
-    {"dt": "Workflow State", "filters": [["module", "=", "Orderlift"]]},
-    {"dt": "Workflow Action Master", "filters": [["module", "=", "Orderlift"]]},
+    {"dt": "Workflow", "filters": [["name", "like", "Orderlift%"]]},
+    {"dt": "Workflow State"},
+    {"dt": "Workflow Action Master"},
     # Notification documents
-    {"dt": "Notification", "filters": [["module", "=", "Orderlift"]]},
+    {"dt": "Notification", "filters": [["name", "like", "Orderlift%"]]},
     # Print formats (PDF templates)
-    {"dt": "Print Format", "filters": [["module", "=", "Orderlift"]]},
+    {"dt": "Print Format", "filters": [["name", "like", "Orderlift%"]]},
     # Role definitions
     {
         "dt": "Role",

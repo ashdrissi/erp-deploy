@@ -28,12 +28,15 @@ def notify_stock_manager(doc, method=None):
             user=user.parent,
         )
 
+    if not stock_managers:
+        return
+
     # Also create a formal Notification Log
     frappe.get_doc(
         {
             "doctype": "Notification Log",
             "subject": _("Stock Reservation Required: {0}").format(doc.name),
-            "for_user": stock_managers[0].parent if stock_managers else frappe.session.user,
+            "for_user": stock_managers[0].parent,
             "type": "Alert",
             "document_type": "Sales Order",
             "document_name": doc.name,
