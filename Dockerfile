@@ -25,6 +25,10 @@ RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/a
 # Site installation and migrations are handled by create-site.sh.
 RUN bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
 
+# Create a dummy common_site_config.json for the build step
+# HRMS frontend build fails if this file (and socketio_port) is missing
+RUN echo '{"socketio_port": 9000}' > /home/frappe/frappe-bench/sites/common_site_config.json
+
 # Build assets for all apps including HRMS.
 # This ensures CSS/JS bundles exist and are fingerprinted correctly.
 RUN bench build
