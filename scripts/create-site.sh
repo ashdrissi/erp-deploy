@@ -150,6 +150,47 @@ PY
         FLUSH PRIVILEGES;"
 }
 
+repair_orderlift_module_conflicts() {
+  local site="$1"
+  local cfg_path="/home/frappe/frappe-bench/sites/${site}/site_config.json"
+
+  if [[ ! -f "$cfg_path" ]]; then
+    return 0
+  fi
+
+  local db_name
+  db_name="$(CFG_PATH="$cfg_path" python3 - <<'PY'
+import json
+import os
+cfg_path = os.environ['CFG_PATH']
+with open(cfg_path, 'r', encoding='utf-8') as f:
+    cfg = json.load(f)
+print(cfg.get('db_name',''))
+PY
+  )"
+
+  if [[ -z "$db_name" ]]; then
+    return 0
+  fi
+
+  # Cleanup from old orderlift module names that conflicted with ERPNext core modules.
+  mysql -h "$db_host" -P "$db_port" -uroot -p"$db_root_password" --protocol=tcp "$db_name" -e "
+    UPDATE \
+      \\`tabModule Def\\`
+    SET
+      app_name = 'erpnext'
+    WHERE
+      name IN ('CRM', 'Sales', 'HR')
+      AND app_name = 'orderlift';
+
+    DELETE FROM \
+      \\`tabModule Def\\`
+    WHERE
+      app_name = 'orderlift'
+      AND name IN ('CRM', 'Sales', 'HR', 'Logistics', 'Portal', 'Client Portal', 'SAV', 'SIG');
+  "
+}
+
 ensure_app_installed() {
   local site="$1"
   local app="$2"
@@ -187,7 +228,11 @@ ensure_app_installed() {
   fi
 
   echo "Installing app: ${app}"
-  bench --site "$site" install-app "$app" || return 1
+  if [[ "$app" == "orderlift" ]]; then
+    bench --site "$site" install-app "$app" --force || return 1
+  else
+    bench --site "$site" install-app "$app" || return 1
+  fi
   bench --site "$site" migrate || return 1
   # Build just the newly installed app's assets.
   bench build --app "$app" || return 1
@@ -307,6 +352,7 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   ensure_app_installed "$site_name" "hrms"
 
   # Install orderlift app permanently on this site (idempotent).
+  repair_orderlift_module_conflicts "$site_name"
   ensure_app_installed "$site_name" "orderlift"
 
   exit 0
@@ -325,6 +371,7 @@ ensure_site_db_user_access "$site_name"
 ensure_app_installed "$site_name" "hrms"
 
 # Install orderlift on fresh sites.
+repair_orderlift_module_conflicts "$site_name"
 ensure_app_installed "$site_name" "orderlift"
 
 echo "Site created: ${site_name}"
