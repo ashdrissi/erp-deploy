@@ -11,8 +11,9 @@ RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 
-# Install the custom app so it's importable by Python
+# Install the custom apps so they're importable by Python
 RUN pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
+RUN pip install -e /home/frappe/frappe-bench/apps/orderlift/
 
 # Switch to the frappe user (Security Requirement)
 USER frappe
