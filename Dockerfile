@@ -10,6 +10,9 @@ RUN chmod 0755 /opt/erp-deploy/scripts/*.sh
 # Ship a custom Desk theme app inside the image so it persists across redeploys.
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
 
+# Install the custom app so it's importable by Python
+RUN pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
+
 # Switch to the frappe user (Security Requirement)
 USER frappe
 
