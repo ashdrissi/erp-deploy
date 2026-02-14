@@ -1,0 +1,336 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-02-14 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "salesperson",
+    "salesperson_name",
+    "column_break_main",
+    "status",
+    "posting_date",
+    "company",
+    "reference_section",
+    "sales_order",
+    "sales_invoice",
+    "column_break_ref",
+    "project",
+    "customer",
+    "customer_name",
+    "commission_section",
+    "commission_rate",
+    "base_amount",
+    "column_break_comm",
+    "commission_amount",
+    "currency",
+    "payment_section",
+    "payment_date",
+    "column_break_pay",
+    "payment_reference",
+    "notes_section",
+    "notes",
+    "amended_from"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "COM-.YYYY.-",
+      "reqd": 1,
+      "set_only_once": 1,
+      "no_copy": 1,
+      "print_hide": 1,
+      "default": "COM-.YYYY.-"
+    },
+    {
+      "fieldname": "salesperson",
+      "fieldtype": "Link",
+      "label": "Salesperson",
+      "options": "Sales Person",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1,
+      "bold": 1
+    },
+    {
+      "fieldname": "salesperson_name",
+      "fieldtype": "Data",
+      "label": "Salesperson Name",
+      "fetch_from": "salesperson.sales_person_name",
+      "fetch_if_empty": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_main",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Pending\nApproved\nPaid\nCancelled",
+      "default": "Pending",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "label": "Date",
+      "default": "Today",
+      "reqd": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "remember_last_selected_value": 1,
+      "in_standard_filter": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "reference_section",
+      "fieldtype": "Section Break",
+      "label": "Reference"
+    },
+    {
+      "fieldname": "sales_order",
+      "fieldtype": "Link",
+      "label": "Sales Order",
+      "options": "Sales Order",
+      "in_standard_filter": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "sales_invoice",
+      "fieldtype": "Link",
+      "label": "Sales Invoice",
+      "options": "Sales Invoice",
+      "in_standard_filter": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "column_break_ref",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "project",
+      "fieldtype": "Link",
+      "label": "Project",
+      "options": "Project",
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "label": "Customer",
+      "options": "Customer",
+      "fetch_from": "sales_order.customer",
+      "fetch_if_empty": 1,
+      "read_only": 1,
+      "in_list_view": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "customer_name",
+      "fieldtype": "Data",
+      "label": "Customer Name",
+      "fetch_from": "customer.customer_name",
+      "fetch_if_empty": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "commission_section",
+      "fieldtype": "Section Break",
+      "label": "Commission Details"
+    },
+    {
+      "fieldname": "commission_rate",
+      "fieldtype": "Percent",
+      "label": "Commission Rate (%)",
+      "reqd": 1,
+      "in_list_view": 1,
+      "non_negative": 1
+    },
+    {
+      "fieldname": "base_amount",
+      "fieldtype": "Currency",
+      "label": "Base Amount",
+      "options": "currency",
+      "read_only": 1,
+      "description": "Invoice net total used to calculate commission",
+      "non_negative": 1
+    },
+    {
+      "fieldname": "column_break_comm",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "commission_amount",
+      "fieldtype": "Currency",
+      "label": "Commission Amount",
+      "options": "currency",
+      "reqd": 1,
+      "in_list_view": 1,
+      "bold": 1,
+      "non_negative": 1
+    },
+    {
+      "fieldname": "currency",
+      "fieldtype": "Link",
+      "label": "Currency",
+      "options": "Currency",
+      "fetch_from": "company.default_currency",
+      "fetch_if_empty": 1,
+      "read_only": 1,
+      "print_hide": 1
+    },
+    {
+      "fieldname": "payment_section",
+      "fieldtype": "Section Break",
+      "label": "Payment",
+      "depends_on": "eval:doc.status === 'Paid'",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "payment_date",
+      "fieldtype": "Date",
+      "label": "Payment Date",
+      "mandatory_depends_on": "eval:doc.status === 'Paid'"
+    },
+    {
+      "fieldname": "column_break_pay",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "payment_reference",
+      "fieldtype": "Data",
+      "label": "Payment Reference",
+      "description": "Bank transfer reference or payment entry number"
+    },
+    {
+      "fieldname": "notes_section",
+      "fieldtype": "Section Break",
+      "label": "Notes",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    },
+    {
+      "fieldname": "amended_from",
+      "fieldtype": "Link",
+      "label": "Amended From",
+      "options": "Sales Commission",
+      "no_copy": 1,
+      "read_only": 1,
+      "print_hide": 1,
+      "hidden": 1
+    }
+  ],
+  "is_submittable": 1,
+  "links": [
+    {
+      "link_doctype": "Sales Invoice",
+      "link_fieldname": "name"
+    },
+    {
+      "link_doctype": "Sales Order",
+      "link_fieldname": "name"
+    }
+  ],
+  "modified": "2026-02-14 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Sales Commission",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "amend": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "share": 1,
+      "export": 1,
+      "import": 1
+    },
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "amend": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "share": 1,
+      "export": 1,
+      "import": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1
+    },
+    {
+      "role": "Orderlift Accountant",
+      "read": 1,
+      "write": 1,
+      "submit": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "export": 1
+    }
+  ],
+  "search_fields": "salesperson,customer,status,sales_order",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [
+    {
+      "color": "orange",
+      "title": "Pending"
+    },
+    {
+      "color": "blue",
+      "title": "Approved"
+    },
+    {
+      "color": "green",
+      "title": "Paid"
+    },
+    {
+      "color": "red",
+      "title": "Cancelled"
+    }
+  ],
+  "title_field": "salesperson_name",
+  "track_changes": 1
+}

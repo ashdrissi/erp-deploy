@@ -1,0 +1,244 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-02-14 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "item_code",
+    "item_name",
+    "item_group",
+    "column_break_main",
+    "posting_date",
+    "company",
+    "collected_by",
+    "pricing_section",
+    "market_price",
+    "currency",
+    "column_break_pricing",
+    "source",
+    "zone",
+    "our_price_section",
+    "our_current_price",
+    "price_difference",
+    "column_break_our",
+    "price_difference_percent",
+    "notes_section",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "MKT-.YYYY.-",
+      "reqd": 1,
+      "set_only_once": 1,
+      "no_copy": 1,
+      "print_hide": 1,
+      "default": "MKT-.YYYY.-"
+    },
+    {
+      "fieldname": "item_code",
+      "fieldtype": "Link",
+      "label": "Item",
+      "options": "Item",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1,
+      "bold": 1
+    },
+    {
+      "fieldname": "item_name",
+      "fieldtype": "Data",
+      "label": "Item Name",
+      "fetch_from": "item_code.item_name",
+      "fetch_if_empty": 1,
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "item_group",
+      "fieldtype": "Link",
+      "label": "Item Group",
+      "options": "Item Group",
+      "fetch_from": "item_code.item_group",
+      "fetch_if_empty": 1,
+      "read_only": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "column_break_main",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "posting_date",
+      "fieldtype": "Date",
+      "label": "Date",
+      "default": "Today",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "remember_last_selected_value": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "collected_by",
+      "fieldtype": "Link",
+      "label": "Collected By",
+      "options": "User",
+      "default": "__user",
+      "read_only": 1
+    },
+    {
+      "fieldname": "pricing_section",
+      "fieldtype": "Section Break",
+      "label": "Market Price"
+    },
+    {
+      "fieldname": "market_price",
+      "fieldtype": "Currency",
+      "label": "Market Price",
+      "options": "currency",
+      "reqd": 1,
+      "in_list_view": 1,
+      "bold": 1,
+      "non_negative": 1
+    },
+    {
+      "fieldname": "currency",
+      "fieldtype": "Link",
+      "label": "Currency",
+      "options": "Currency",
+      "fetch_from": "company.default_currency",
+      "fetch_if_empty": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_pricing",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "source",
+      "fieldtype": "Data",
+      "label": "Source / Competitor",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "description": "Competitor name, marketplace, or price source"
+    },
+    {
+      "fieldname": "zone",
+      "fieldtype": "Data",
+      "label": "Geographic Zone",
+      "in_standard_filter": 1,
+      "description": "City, region, or country where this price was observed"
+    },
+    {
+      "fieldname": "our_price_section",
+      "fieldtype": "Section Break",
+      "label": "Comparison with Our Price"
+    },
+    {
+      "fieldname": "our_current_price",
+      "fieldtype": "Currency",
+      "label": "Our Current Price",
+      "options": "currency",
+      "read_only": 1,
+      "description": "Fetched from Item's current cost price for comparison"
+    },
+    {
+      "fieldname": "price_difference",
+      "fieldtype": "Currency",
+      "label": "Price Difference",
+      "options": "currency",
+      "read_only": 1,
+      "description": "Market Price - Our Price (positive = market is higher)"
+    },
+    {
+      "fieldname": "column_break_our",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "price_difference_percent",
+      "fieldtype": "Percent",
+      "label": "Difference %",
+      "read_only": 1,
+      "description": "Percentage difference relative to our price"
+    },
+    {
+      "fieldname": "notes_section",
+      "fieldtype": "Section Break",
+      "label": "Notes",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "is_submittable": 0,
+  "links": [],
+  "modified": "2026-02-14 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Market Price Entry",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "share": 1,
+      "export": 1,
+      "import": 1
+    },
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "share": 1,
+      "export": 1,
+      "import": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1
+    }
+  ],
+  "quick_entry": 1,
+  "search_fields": "item_name,source,zone,posting_date",
+  "show_name_in_global_search": 1,
+  "sort_field": "posting_date",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "item_name",
+  "track_changes": 1
+}
