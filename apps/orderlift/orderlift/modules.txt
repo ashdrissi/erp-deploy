@@ -1,7 +1,7 @@
-Sales
-Client Portal
-Logistics
-CRM
-SAV
-SIG
-HR
+Orderlift Sales
+Orderlift Client Portal
+Orderlift Logistics
+Orderlift CRM
+Orderlift SAV
+Orderlift SIG
+Orderlift HR

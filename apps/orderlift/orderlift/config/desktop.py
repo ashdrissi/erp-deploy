@@ -4,7 +4,7 @@ from frappe import _
 def get_data():
     return [
         {
-            "module_name": "SAV",
+            "module_name": "Orderlift SAV",
             "label": _("After-Sales Service"),
             "color": "#e74c3c",
             "icon": "octicon octicon-tools",
@@ -12,7 +12,7 @@ def get_data():
             "description": "SAV tickets, technician assignment, closure tracking",
         },
         {
-            "module_name": "SIG",
+            "module_name": "Orderlift SIG",
             "label": _("Project Map"),
             "color": "#2ecc71",
             "icon": "octicon octicon-location",
@@ -20,7 +20,7 @@ def get_data():
             "description": "Geo-location and status tracking for installation projects",
         },
         {
-            "module_name": "Logistics",
+            "module_name": "Orderlift Logistics",
             "label": _("Logistics"),
             "color": "#3498db",
             "icon": "octicon octicon-package",
@@ -28,7 +28,7 @@ def get_data():
             "description": "Shipment planning and container/truck optimization",
         },
         {
-            "module_name": "Portal",
+            "module_name": "Orderlift Client Portal",
             "label": _("B2B Portal"),
             "color": "#9b59b6",
             "icon": "octicon octicon-globe",
@@ -36,7 +36,7 @@ def get_data():
             "description": "B2B client portal orders and pricing",
         },
         {
-            "module_name": "Sales",
+            "module_name": "Orderlift Sales",
             "label": _("Commissions & Pricing"),
             "color": "#f39c12",
             "icon": "octicon octicon-graph",
@@ -44,7 +44,7 @@ def get_data():
             "description": "Sales commissions, market prices, advanced pricing",
         },
         {
-            "module_name": "CRM",
+            "module_name": "Orderlift CRM",
             "label": _("CRM"),
             "color": "#1abc9c",
             "icon": "octicon octicon-organization",
@@ -52,7 +52,7 @@ def get_data():
             "description": "Customer interactions, project stages, contact scheduling",
         },
         {
-            "module_name": "HR",
+            "module_name": "Orderlift HR",
             "label": _("HR Extensions"),
             "color": "#34495e",
             "icon": "octicon octicon-person",

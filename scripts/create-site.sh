@@ -53,7 +53,6 @@ cd "$BENCH_DIR"
 # FORCE REMOVAL of removed custom apps from apps.txt to fix boot loops
 if [[ -f "sites/apps.txt" ]]; then
   sed -i '/custom_desk_theme/d' "sites/apps.txt"
-  sed -i '/orderlift/d' "sites/apps.txt"
 fi
 
 # Restore assets from the image backup to the volume
@@ -92,7 +91,7 @@ for t in tokens:
     if t in seen:
         continue
     # Explicitly exclude removed apps
-    if t in {"custom_desk_theme", "orderlift"}:
+    if t in {"custom_desk_theme"}:
         continue
     seen.add(t)
     apps.append(t)
@@ -163,6 +162,9 @@ ensure_app_installed() {
     echo "Fetching app code: ${app}"
     if [[ "$app" == "hrms" ]]; then
       bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
+    elif [[ "$app" == "orderlift" ]]; then
+      echo "ERROR: ${app} is expected to be baked into the image (apps/${app})." >&2
+      return 1
     else
       bench get-app "$app" "https://github.com/frappe/${app}.git"
     fi
@@ -304,6 +306,9 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   # Do not continue without HRMS: ERPNext website routing references Job Opening.
   ensure_app_installed "$site_name" "hrms"
 
+  # Install orderlift app permanently on this site (idempotent).
+  ensure_app_installed "$site_name" "orderlift"
+
   exit 0
 fi
 
@@ -318,5 +323,8 @@ ensure_site_db_user_access "$site_name"
 
 # Install HRMS on fresh sites.
 ensure_app_installed "$site_name" "hrms"
+
+# Install orderlift on fresh sites.
+ensure_app_installed "$site_name" "orderlift"
 
 echo "Site created: ${site_name}"
