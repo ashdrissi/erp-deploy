@@ -50,6 +50,13 @@ fi
 
 cd "$BENCH_DIR"
 
+# Restore assets from the image backup to the volume
+if [[ -d "${BENCH_DIR}/assets-backup" ]]; then
+  echo "Restoring assets from image..."
+  # Copy assets, overwriting existing ones but keeping extra files
+  cp -r "${BENCH_DIR}/assets-backup/"* "${BENCH_DIR}/sites/assets/"
+fi
+
 normalize_apps_txt() {
   local apps_txt="/home/frappe/frappe-bench/sites/apps.txt"
 

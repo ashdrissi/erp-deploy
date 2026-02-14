@@ -33,5 +33,9 @@ RUN echo '{"socketio_port": 9000}' > /home/frappe/frappe-bench/sites/common_site
 # This ensures CSS/JS bundles exist and are fingerprinted correctly.
 RUN bench build
 
+# Back up the built assets so they can be restored to the volume at runtime
+# Copy to a location OUTSIDE the sites volume
+RUN cp -r /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/assets-backup
+
 # Expose ports so reverse proxies can auto-detect.
 EXPOSE 8000 8080 9000
