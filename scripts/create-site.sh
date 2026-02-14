@@ -255,6 +255,16 @@ clear_site_locks() {
     2>/dev/null || true
 }
 
+post_deploy_site_maintenance() {
+  local site="$1"
+
+  # Keep runtime state in sync with app code updates shipped in new images.
+  clear_site_locks "$site"
+  bench --site "$site" migrate || echo "WARN: migrate failed for ${site}; continuing"
+  bench --site "$site" clear-cache || true
+  bench --site "$site" clear-website-cache || true
+}
+
 
 echo "Waiting for MariaDB at ${db_host}:${db_port} ..."
 python3 - <<'PY'
@@ -355,6 +365,9 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   repair_orderlift_module_conflicts "$site_name"
   ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
 
+  # Always run maintenance on existing sites to apply pending patches and refresh caches.
+  post_deploy_site_maintenance "$site_name"
+
   exit 0
 fi
 
@@ -373,5 +386,8 @@ ensure_app_installed "$site_name" "hrms"
 # Install orderlift on fresh sites.
 repair_orderlift_module_conflicts "$site_name"
 ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install failed; continuing"
+
+# Run one final migrate/cache refresh once all apps are in place.
+post_deploy_site_maintenance "$site_name"
 
 echo "Site created: ${site_name}"
