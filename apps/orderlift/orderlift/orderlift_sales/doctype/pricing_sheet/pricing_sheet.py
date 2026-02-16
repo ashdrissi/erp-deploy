@@ -462,22 +462,38 @@ def get_latest_item_price(item_code, price_list, buying):
         "buying": 1 if buying else 0,
     }
 
-    rows = frappe.db.sql(
-        """
+    conditions = [
+        "ip.item_code = %(item_code)s",
+        "ip.price_list = %(price_list)s",
+    ]
+
+    has_enabled = frappe.db.has_column("Item Price", "enabled")
+    has_buying = frappe.db.has_column("Item Price", "buying")
+    has_valid_from = frappe.db.has_column("Item Price", "valid_from")
+    has_valid_upto = frappe.db.has_column("Item Price", "valid_upto")
+
+    if has_enabled:
+        conditions.append("ip.enabled = 1")
+    if has_buying:
+        conditions.append("ip.buying = %(buying)s")
+    if has_valid_from:
+        conditions.append("(ip.valid_from IS NULL OR ip.valid_from <= %(today)s)")
+    if has_valid_upto:
+        conditions.append("(ip.valid_upto IS NULL OR ip.valid_upto >= %(today)s)")
+
+    order_by = "ip.modified DESC"
+    if has_valid_from:
+        order_by = "ip.valid_from DESC, ip.modified DESC"
+
+    query = f"""
         SELECT ip.price_list_rate
         FROM `tabItem Price` ip
-        WHERE ip.item_code = %(item_code)s
-          AND ip.price_list = %(price_list)s
-          AND ip.enabled = 1
-          AND ip.buying = %(buying)s
-          AND (ip.valid_from IS NULL OR ip.valid_from <= %(today)s)
-          AND (ip.valid_upto IS NULL OR ip.valid_upto >= %(today)s)
-        ORDER BY ip.valid_from DESC, ip.modified DESC
+        WHERE {' AND '.join(conditions)}
+        ORDER BY {order_by}
         LIMIT 1
-        """,
-        params,
-        as_list=True,
-    )
+    """
+
+    rows = frappe.db.sql(query, params, as_list=True)
     return rows[0][0] if rows else None
 
 
