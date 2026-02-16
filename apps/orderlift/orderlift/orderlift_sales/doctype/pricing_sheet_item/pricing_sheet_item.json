@@ -9,6 +9,8 @@
     "item",
     "qty",
     "buy_price",
+    "buy_price_missing",
+    "buy_price_message",
     "material",
     "weight_kg",
     "display_group",
@@ -23,7 +25,15 @@
     "sell_sans_stock_max",
     "sell_stock",
     "selected_sell_unit",
-    "selected_sell_total"
+    "selected_sell_total",
+    "benchmark_price",
+    "benchmark_delta_abs",
+    "benchmark_delta_pct",
+    "benchmark_status",
+    "benchmark_note",
+    "manual_sell_unit_price",
+    "final_sell_unit_price",
+    "final_sell_total"
   ],
   "fields": [
     {
@@ -51,6 +61,18 @@
       "default": "0",
       "in_list_view": 1,
       "non_negative": 1
+    },
+    {
+      "fieldname": "buy_price_missing",
+      "fieldtype": "Check",
+      "label": "Buy Price Missing",
+      "read_only": 1
+    },
+    {
+      "fieldname": "buy_price_message",
+      "fieldtype": "Small Text",
+      "label": "Buy Price Message",
+      "read_only": 1
     },
     {
       "fieldname": "material",
@@ -146,6 +168,57 @@
       "fieldname": "selected_sell_total",
       "fieldtype": "Currency",
       "label": "Selected Sell Total",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "benchmark_price",
+      "fieldtype": "Currency",
+      "label": "Benchmark Price",
+      "read_only": 1
+    },
+    {
+      "fieldname": "benchmark_delta_abs",
+      "fieldtype": "Currency",
+      "label": "Benchmark Delta Abs",
+      "read_only": 1
+    },
+    {
+      "fieldname": "benchmark_delta_pct",
+      "fieldtype": "Percent",
+      "label": "Benchmark Delta Pct",
+      "read_only": 1
+    },
+    {
+      "fieldname": "benchmark_status",
+      "fieldtype": "Select",
+      "label": "Benchmark Status",
+      "options": "OK\nToo Low\nToo High\nNo Benchmark",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "benchmark_note",
+      "fieldtype": "Small Text",
+      "label": "Benchmark Note",
+      "read_only": 1
+    },
+    {
+      "fieldname": "manual_sell_unit_price",
+      "fieldtype": "Currency",
+      "label": "Manual Sell Unit Price"
+    },
+    {
+      "fieldname": "final_sell_unit_price",
+      "fieldtype": "Currency",
+      "label": "Final Sell Unit Price",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "final_sell_total",
+      "fieldtype": "Currency",
+      "label": "Final Sell Total",
       "read_only": 1,
       "in_list_view": 1
     }

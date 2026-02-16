@@ -13,6 +13,7 @@
     "customer_type",
     "tier",
     "pricing_scenario",
+    "product_bundle",
     "price_mode",
     "output_mode",
     "calculated_on",
@@ -86,6 +87,12 @@
       "in_standard_filter": 1
     },
     {
+      "fieldname": "product_bundle",
+      "fieldtype": "Link",
+      "label": "Product Bundle",
+      "options": "Product Bundle"
+    },
+    {
       "fieldname": "price_mode",
       "fieldtype": "Select",
       "label": "Price Mode",
@@ -117,8 +124,7 @@
       "fieldname": "lines",
       "fieldtype": "Table",
       "label": "Lines",
-      "options": "Pricing Sheet Item",
-      "reqd": 1
+      "options": "Pricing Sheet Item"
     },
     {
       "fieldname": "heading_totals",

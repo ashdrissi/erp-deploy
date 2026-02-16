@@ -35,9 +35,19 @@ def after_migrate():
                     "in_standard_filter": 1,
                 }
             ],
+            "Quotation Item": [
+                {
+                    "fieldname": "source_pricing_sheet_line",
+                    "label": "Source Pricing Sheet Line",
+                    "fieldtype": "Data",
+                    "insert_after": "description",
+                    "read_only": 1,
+                }
+            ],
         },
         update=True,
     )
 
     frappe.clear_cache(doctype="Item")
     frappe.clear_cache(doctype="Quotation")
+    frappe.clear_cache(doctype="Quotation Item")

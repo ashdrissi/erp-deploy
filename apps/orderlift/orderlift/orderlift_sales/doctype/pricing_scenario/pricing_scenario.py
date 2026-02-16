@@ -25,6 +25,8 @@ class PricingScenario(Document):
             )
 
     def validate(self):
+        self.buying_price_list = self.buying_price_list or "Buying"
+        self.benchmark_price_list = self.benchmark_price_list or "Benchmark Selling"
         self._validate_customs_rules()
         self._compute_transport_total()
         self._compute_team_charge_total()

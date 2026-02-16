@@ -8,6 +8,9 @@
   "field_order": [
     "naming_series",
     "scenario_name",
+    "buying_price_list",
+    "benchmark_price_list",
+    "is_local_buying",
     "heading_transport",
     "container_value_hypothesis",
     "price_container_usd",
@@ -60,6 +63,28 @@
       "in_list_view": 1,
       "in_standard_filter": 1,
       "search_index": 1
+    },
+    {
+      "fieldname": "buying_price_list",
+      "fieldtype": "Link",
+      "label": "Buying Price List",
+      "options": "Price List",
+      "default": "Buying",
+      "reqd": 1
+    },
+    {
+      "fieldname": "benchmark_price_list",
+      "fieldtype": "Link",
+      "label": "Benchmark Price List",
+      "options": "Price List",
+      "default": "Benchmark Selling",
+      "reqd": 1
+    },
+    {
+      "fieldname": "is_local_buying",
+      "fieldtype": "Check",
+      "label": "Is Local Buying",
+      "default": "0"
     },
     {
       "fieldname": "heading_transport",
