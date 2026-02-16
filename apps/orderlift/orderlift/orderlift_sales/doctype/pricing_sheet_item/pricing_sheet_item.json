@@ -6,25 +6,30 @@
   "editable_grid": 1,
   "engine": "InnoDB",
   "field_order": [
-    "item_code",
+    "item",
     "qty",
     "buy_price",
-    "kg_per_u",
     "material",
+    "weight_kg",
+    "display_group",
+    "show_in_detail",
     "base_amount",
-    "transport_cost",
-    "customs_cost",
-    "overheads_cost",
-    "landed_cost",
-    "margin_percent",
-    "sell_unit_price",
-    "sell_total"
+    "customs",
+    "transport_transitaire",
+    "team_office_charge",
+    "taxes_impots",
+    "margin_amount",
+    "sell_sans_stock_min",
+    "sell_sans_stock_max",
+    "sell_stock",
+    "selected_sell_unit",
+    "selected_sell_total"
   ],
   "fields": [
     {
-      "fieldname": "item_code",
+      "fieldname": "item",
       "fieldtype": "Link",
-      "label": "Item Code",
+      "label": "Item",
       "options": "Item",
       "reqd": 1,
       "in_list_view": 1,
@@ -43,17 +48,6 @@
       "fieldname": "buy_price",
       "fieldtype": "Currency",
       "label": "Buy Price",
-      "reqd": 1,
-      "default": "0",
-      "in_list_view": 1,
-      "non_negative": 1
-    },
-    {
-      "fieldname": "kg_per_u",
-      "fieldtype": "Float",
-      "label": "KG Per U",
-      "fetch_from": "item_code.weight_per_unit",
-      "fetch_if_empty": 1,
       "default": "0",
       "in_list_view": 1,
       "non_negative": 1
@@ -62,8 +56,28 @@
       "fieldname": "material",
       "fieldtype": "Select",
       "label": "Material",
-      "options": "Steel\nCopper\nAluminum\nPlastic\nOther",
-      "reqd": 1,
+      "options": "STEEL\nGALVA\nINOX\nCOPPER\nOTHER",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "weight_kg",
+      "fieldtype": "Float",
+      "label": "Weight KG",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "display_group",
+      "fieldtype": "Data",
+      "label": "Display Group",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "show_in_detail",
+      "fieldtype": "Check",
+      "label": "Show in Detail",
+      "default": "1",
       "in_list_view": 1
     },
     {
@@ -74,47 +88,64 @@
       "in_list_view": 1
     },
     {
-      "fieldname": "transport_cost",
+      "fieldname": "customs",
       "fieldtype": "Currency",
-      "label": "Transport Cost",
+      "label": "Customs",
       "read_only": 1
     },
     {
-      "fieldname": "customs_cost",
+      "fieldname": "transport_transitaire",
       "fieldtype": "Currency",
-      "label": "Customs Cost",
+      "label": "Transport & Transitaire",
       "read_only": 1
     },
     {
-      "fieldname": "overheads_cost",
+      "fieldname": "team_office_charge",
       "fieldtype": "Currency",
-      "label": "Overheads Cost",
+      "label": "Team Office Charge",
       "read_only": 1
     },
     {
-      "fieldname": "landed_cost",
+      "fieldname": "taxes_impots",
       "fieldtype": "Currency",
-      "label": "Landed Cost",
+      "label": "Taxes Impots",
+      "read_only": 1
+    },
+    {
+      "fieldname": "margin_amount",
+      "fieldtype": "Currency",
+      "label": "Margin Amount",
+      "read_only": 1
+    },
+    {
+      "fieldname": "sell_sans_stock_min",
+      "fieldtype": "Currency",
+      "label": "Sell Sans Stock Min",
+      "read_only": 1
+    },
+    {
+      "fieldname": "sell_sans_stock_max",
+      "fieldtype": "Currency",
+      "label": "Sell Sans Stock Max",
+      "read_only": 1
+    },
+    {
+      "fieldname": "sell_stock",
+      "fieldtype": "Currency",
+      "label": "Sell Stock",
+      "read_only": 1
+    },
+    {
+      "fieldname": "selected_sell_unit",
+      "fieldtype": "Currency",
+      "label": "Selected Sell Unit",
       "read_only": 1,
       "in_list_view": 1
     },
     {
-      "fieldname": "margin_percent",
-      "fieldtype": "Float",
-      "label": "Margin Percent",
-      "default": "0"
-    },
-    {
-      "fieldname": "sell_unit_price",
+      "fieldname": "selected_sell_total",
       "fieldtype": "Currency",
-      "label": "Sell Unit Price",
-      "read_only": 1,
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "sell_total",
-      "fieldtype": "Currency",
-      "label": "Sell Total",
+      "label": "Selected Sell Total",
       "read_only": 1,
       "in_list_view": 1
     }

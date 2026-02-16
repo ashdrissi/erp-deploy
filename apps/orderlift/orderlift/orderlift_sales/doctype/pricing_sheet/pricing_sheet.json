@@ -1,27 +1,51 @@
 {
   "actions": [],
-  "autoname": "format:PS-.#####",
+  "autoname": "naming_series:",
   "creation": "2026-02-16 00:00:00",
   "doctype": "DocType",
   "document_type": "Document",
   "engine": "InnoDB",
   "field_order": [
+    "naming_series",
+    "sheet_name",
     "customer",
+    "customer_segment",
     "customer_type",
     "tier",
     "pricing_scenario",
-    "section_break_items",
-    "items",
-    "section_break_totals",
-    "total_base_amount",
-    "total_transport",
+    "price_mode",
+    "output_mode",
+    "calculated_on",
+    "heading_lines",
+    "lines",
+    "heading_totals",
+    "total_buy",
     "total_customs",
-    "column_break_totals",
-    "total_overheads",
-    "total_landed_cost",
-    "total_selling_amount"
+    "total_transport",
+    "total_team_charge",
+    "total_taxes",
+    "total_margin",
+    "total_selling"
   ],
   "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "PSH-.#####",
+      "default": "PSH-.#####",
+      "reqd": 1,
+      "set_only_once": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "sheet_name",
+      "fieldtype": "Data",
+      "label": "Sheet Name",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
     {
       "fieldname": "customer",
       "fieldtype": "Link",
@@ -29,14 +53,21 @@
       "options": "Customer",
       "reqd": 1,
       "in_list_view": 1,
-      "in_standard_filter": 1,
-      "search_index": 1
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "customer_segment",
+      "fieldtype": "Select",
+      "label": "Customer Segment",
+      "options": "B2B\nB2C",
+      "reqd": 1,
+      "in_list_view": 1
     },
     {
       "fieldname": "customer_type",
       "fieldtype": "Select",
       "label": "Customer Type",
-      "options": "Distributor\nInstaller\nFinal Client",
+      "options": "Installateur\nDistributeur\nPromoteur\nParticulier",
       "reqd": 1,
       "in_list_view": 1
     },
@@ -44,9 +75,7 @@
       "fieldname": "tier",
       "fieldtype": "Select",
       "label": "Tier",
-      "options": "Eco\nLuxe",
-      "reqd": 1,
-      "in_list_view": 1
+      "options": "Eco\nIntermédiaire\nLuxe"
     },
     {
       "fieldname": "pricing_scenario",
@@ -57,32 +86,49 @@
       "in_standard_filter": 1
     },
     {
-      "fieldname": "section_break_items",
-      "fieldtype": "Section Break",
-      "label": "Items"
+      "fieldname": "price_mode",
+      "fieldtype": "Select",
+      "label": "Price Mode",
+      "options": "min\nmax\nstock",
+      "default": "max",
+      "reqd": 1,
+      "in_list_view": 1
     },
     {
-      "fieldname": "items",
+      "fieldname": "output_mode",
+      "fieldtype": "Select",
+      "label": "Output Mode",
+      "options": "Avec détails\nSans détails",
+      "default": "Avec détails",
+      "reqd": 1
+    },
+    {
+      "fieldname": "calculated_on",
+      "fieldtype": "Datetime",
+      "label": "Calculated On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "heading_lines",
+      "fieldtype": "Heading",
+      "label": "Lines"
+    },
+    {
+      "fieldname": "lines",
       "fieldtype": "Table",
-      "label": "Items",
+      "label": "Lines",
       "options": "Pricing Sheet Item",
       "reqd": 1
     },
     {
-      "fieldname": "section_break_totals",
-      "fieldtype": "Section Break",
+      "fieldname": "heading_totals",
+      "fieldtype": "Heading",
       "label": "Totals"
     },
     {
-      "fieldname": "total_base_amount",
+      "fieldname": "total_buy",
       "fieldtype": "Currency",
-      "label": "Total Base Amount",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_transport",
-      "fieldtype": "Currency",
-      "label": "Total Transport",
+      "label": "Total Buy",
       "read_only": 1
     },
     {
@@ -92,39 +138,43 @@
       "read_only": 1
     },
     {
-      "fieldname": "column_break_totals",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "total_overheads",
+      "fieldname": "total_transport",
       "fieldtype": "Currency",
-      "label": "Total Overheads",
+      "label": "Total Transport",
       "read_only": 1
     },
     {
-      "fieldname": "total_landed_cost",
+      "fieldname": "total_team_charge",
       "fieldtype": "Currency",
-      "label": "Total Landed Cost",
+      "label": "Total Team Charge",
       "read_only": 1
     },
     {
-      "fieldname": "total_selling_amount",
+      "fieldname": "total_taxes",
       "fieldtype": "Currency",
-      "label": "Total Selling Amount",
+      "label": "Total Taxes",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_margin",
+      "fieldtype": "Currency",
+      "label": "Total Margin",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_selling",
+      "fieldtype": "Currency",
+      "label": "Total Selling",
       "read_only": 1
     }
   ],
-  "is_submittable": 1,
-  "links": [
-    {
-      "link_doctype": "Quotation",
-      "link_fieldname": "party_name"
-    }
-  ],
+  "is_submittable": 0,
+  "links": [],
   "modified": "2026-02-16 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Sheet",
+  "naming_rule": "By \"Naming Series\" field",
   "owner": "Administrator",
   "permissions": [
     {
@@ -133,9 +183,6 @@
       "write": 1,
       "create": 1,
       "delete": 1,
-      "submit": 1,
-      "cancel": 1,
-      "amend": 1,
       "report": 1,
       "export": 1,
       "import": 1,
@@ -149,9 +196,6 @@
       "write": 1,
       "create": 1,
       "delete": 1,
-      "submit": 1,
-      "cancel": 1,
-      "amend": 1,
       "report": 1,
       "export": 1,
       "share": 1,
@@ -168,11 +212,11 @@
       "email": 1
     }
   ],
-  "search_fields": "customer,pricing_scenario,customer_type,tier",
+  "search_fields": "sheet_name,customer,pricing_scenario",
   "show_name_in_global_search": 1,
   "sort_field": "modified",
   "sort_order": "DESC",
   "states": [],
-  "title_field": "customer",
+  "title_field": "sheet_name",
   "track_changes": 1
 }

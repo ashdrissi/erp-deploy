@@ -1,30 +1,57 @@
 {
   "actions": [],
-  "autoname": "field:scenario_name",
+  "autoname": "naming_series:",
   "creation": "2026-02-16 00:00:00",
   "doctype": "DocType",
   "document_type": "Document",
   "engine": "InnoDB",
   "field_order": [
+    "naming_series",
     "scenario_name",
-    "container_shipping_cost",
+    "heading_transport",
+    "container_value_hypothesis",
+    "price_container_usd",
+    "usd_to_mad_rate",
+    "price_truck_ttc",
+    "loading_cost",
+    "unloading_cost",
+    "transport_risk_alea",
+    "total_transport_cost",
     "transport_allocation_method",
-    "section_break_overheads",
-    "hr_percent",
-    "profit_taxes_percent",
-    "column_break_overheads",
-    "admin_percent",
-    "warranty_reserve_percent",
-    "section_break_margins",
-    "distributor_margin_percent",
-    "installer_margin_percent",
-    "column_break_margins",
-    "eco_margin_percent",
-    "luxe_margin_percent",
-    "section_break_customs",
+    "heading_team",
+    "charges_pool_value_hypothesis",
+    "cars_amortization",
+    "hr_cost",
+    "rent_office_stock",
+    "accountant_other",
+    "total_team_office_charges",
+    "team_charge_allocation_method",
+    "team_charge_percent_of_buy",
+    "heading_taxes",
+    "taxes_percent_of_buy",
+    "heading_margin",
+    "margin_percent_of_buy",
+    "heading_multipliers",
+    "j_multiplier_sans_stock",
+    "j_multiplier_stock",
+    "l_multiplier_min",
+    "l_multiplier_max",
+    "l_multiplier_stock",
+    "heading_customs",
+    "customs_percent_default",
     "customs_rules"
   ],
   "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "PS-.#####",
+      "default": "PS-.#####",
+      "reqd": 1,
+      "set_only_once": 1,
+      "in_list_view": 1
+    },
     {
       "fieldname": "scenario_name",
       "fieldtype": "Data",
@@ -32,15 +59,61 @@
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1,
-      "search_index": 1,
-      "unique": 1
+      "search_index": 1
     },
     {
-      "fieldname": "container_shipping_cost",
+      "fieldname": "heading_transport",
+      "fieldtype": "Heading",
+      "label": "Transport & Transitaire"
+    },
+    {
+      "fieldname": "container_value_hypothesis",
       "fieldtype": "Currency",
-      "label": "Container Shipping Cost",
+      "label": "Container Value Hypothesis",
       "reqd": 1,
-      "non_negative": 1
+      "default": "0"
+    },
+    {
+      "fieldname": "price_container_usd",
+      "fieldtype": "Currency",
+      "label": "Prix Conteneur en USD",
+      "default": "0"
+    },
+    {
+      "fieldname": "usd_to_mad_rate",
+      "fieldtype": "Float",
+      "label": "USD to MAD Rate",
+      "default": "1"
+    },
+    {
+      "fieldname": "price_truck_ttc",
+      "fieldtype": "Currency",
+      "label": "Prix Camion TTC",
+      "default": "0"
+    },
+    {
+      "fieldname": "loading_cost",
+      "fieldtype": "Currency",
+      "label": "Chargement",
+      "default": "0"
+    },
+    {
+      "fieldname": "unloading_cost",
+      "fieldtype": "Currency",
+      "label": "Dechargement",
+      "default": "0"
+    },
+    {
+      "fieldname": "transport_risk_alea",
+      "fieldtype": "Currency",
+      "label": "Aleas Transport",
+      "default": "0"
+    },
+    {
+      "fieldname": "total_transport_cost",
+      "fieldtype": "Currency",
+      "label": "Total Transport Cost",
+      "read_only": 1
     },
     {
       "fieldname": "transport_allocation_method",
@@ -51,75 +124,128 @@
       "reqd": 1
     },
     {
-      "fieldname": "section_break_overheads",
-      "fieldtype": "Section Break",
-      "label": "Overheads %"
+      "fieldname": "heading_team",
+      "fieldtype": "Heading",
+      "label": "Charges equipe/bureau"
     },
     {
-      "fieldname": "hr_percent",
-      "fieldtype": "Float",
-      "label": "HR %",
+      "fieldname": "charges_pool_value_hypothesis",
+      "fieldtype": "Currency",
+      "label": "Charges Pool Value Hypothesis",
+      "reqd": 1,
       "default": "0"
     },
     {
-      "fieldname": "profit_taxes_percent",
-      "fieldtype": "Float",
-      "label": "Profit Taxes %",
+      "fieldname": "cars_amortization",
+      "fieldtype": "Currency",
+      "label": "Voitures Amortissement",
       "default": "0"
     },
     {
-      "fieldname": "column_break_overheads",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "admin_percent",
-      "fieldtype": "Float",
-      "label": "Admin %",
+      "fieldname": "hr_cost",
+      "fieldtype": "Currency",
+      "label": "RH",
       "default": "0"
     },
     {
-      "fieldname": "warranty_reserve_percent",
-      "fieldtype": "Float",
-      "label": "Warranty Reserve %",
+      "fieldname": "rent_office_stock",
+      "fieldtype": "Currency",
+      "label": "Location Bureau + Stock",
       "default": "0"
     },
     {
-      "fieldname": "section_break_margins",
-      "fieldtype": "Section Break",
-      "label": "Default Margin %"
-    },
-    {
-      "fieldname": "distributor_margin_percent",
-      "fieldtype": "Float",
-      "label": "Distributor Margin %",
+      "fieldname": "accountant_other",
+      "fieldtype": "Currency",
+      "label": "Comptable et Autre",
       "default": "0"
     },
     {
-      "fieldname": "installer_margin_percent",
-      "fieldtype": "Float",
-      "label": "Installer Margin %",
+      "fieldname": "total_team_office_charges",
+      "fieldtype": "Currency",
+      "label": "Total Team/Office Charges",
+      "read_only": 1
+    },
+    {
+      "fieldname": "team_charge_allocation_method",
+      "fieldtype": "Select",
+      "label": "Team Charge Allocation Method",
+      "options": "By Amount\nFixed % of buy price",
+      "default": "By Amount",
+      "reqd": 1
+    },
+    {
+      "fieldname": "team_charge_percent_of_buy",
+      "fieldtype": "Percent",
+      "label": "Team Charge % of Buy",
       "default": "0"
     },
     {
-      "fieldname": "column_break_margins",
-      "fieldtype": "Column Break"
+      "fieldname": "heading_taxes",
+      "fieldtype": "Heading",
+      "label": "Impots / Taxes"
     },
     {
-      "fieldname": "eco_margin_percent",
-      "fieldtype": "Float",
-      "label": "Eco Margin %",
+      "fieldname": "taxes_percent_of_buy",
+      "fieldtype": "Percent",
+      "label": "Taxes % of Buy",
       "default": "0"
     },
     {
-      "fieldname": "luxe_margin_percent",
-      "fieldtype": "Float",
-      "label": "Luxe Margin %",
+      "fieldname": "heading_margin",
+      "fieldtype": "Heading",
+      "label": "Marge"
+    },
+    {
+      "fieldname": "margin_percent_of_buy",
+      "fieldtype": "Percent",
+      "label": "Margin % of Buy",
       "default": "0"
     },
     {
-      "fieldname": "section_break_customs",
-      "fieldtype": "Section Break",
+      "fieldname": "heading_multipliers",
+      "fieldtype": "Heading",
+      "label": "Sell Mode Multipliers"
+    },
+    {
+      "fieldname": "j_multiplier_sans_stock",
+      "fieldtype": "Float",
+      "label": "J Multiplier Sans Stock",
+      "default": "0.5"
+    },
+    {
+      "fieldname": "j_multiplier_stock",
+      "fieldtype": "Float",
+      "label": "J Multiplier Stock",
+      "default": "1"
+    },
+    {
+      "fieldname": "l_multiplier_min",
+      "fieldtype": "Float",
+      "label": "L Multiplier Min",
+      "default": "0.3"
+    },
+    {
+      "fieldname": "l_multiplier_max",
+      "fieldtype": "Float",
+      "label": "L Multiplier Max",
+      "default": "0.5"
+    },
+    {
+      "fieldname": "l_multiplier_stock",
+      "fieldtype": "Float",
+      "label": "L Multiplier Stock",
+      "default": "1"
+    },
+    {
+      "fieldname": "heading_customs",
+      "fieldtype": "Heading",
       "label": "Customs Rules"
+    },
+    {
+      "fieldname": "customs_percent_default",
+      "fieldtype": "Percent",
+      "label": "Customs Percent Default",
+      "default": "20.25"
     },
     {
       "fieldname": "customs_rules",
@@ -135,6 +261,7 @@
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Scenario",
+  "naming_rule": "By \"Naming Series\" field",
   "owner": "Administrator",
   "permissions": [
     {
@@ -165,11 +292,13 @@
     {
       "role": "Orderlift Commercial",
       "read": 1,
+      "write": 1,
+      "create": 1,
       "report": 1,
       "print": 1
     }
   ],
-  "search_fields": "scenario_name,transport_allocation_method",
+  "search_fields": "scenario_name",
   "show_name_in_global_search": 1,
   "sort_field": "modified",
   "sort_order": "DESC",

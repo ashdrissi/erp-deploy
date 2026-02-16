@@ -94,6 +94,10 @@ scheduler_events = {
     ],
 }
 
+after_migrate = [
+    "orderlift.sales.utils.pricing_setup.after_migrate",
+]
+
 # ---------------------------------------------------------
 # Portal (B2B web portal pages)
 # ---------------------------------------------------------
