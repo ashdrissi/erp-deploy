@@ -1,8 +1,11 @@
 frappe.ui.form.on("Pricing Sheet", {
     setup(frm) {
-        frm.set_query("item", "lines", () => ({
+        const queryConfig = () => ({
             query: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.stock_item_query",
-        }));
+        });
+
+        frm.set_query("item", "lines", queryConfig);
+        frm.set_query("item_code", "lines", queryConfig);
     },
 
     refresh(frm) {

@@ -324,8 +324,7 @@ def stock_item_query(doctype, txt, searchfield, start, page_len, filters):
           AND i.is_stock_item = 1
           AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
         GROUP BY i.name, i.item_name, i.stock_uom
-        HAVING COALESCE(SUM(b.actual_qty), 0) > 0
-        ORDER BY i.name
+        ORDER BY stock_qty DESC, i.name
         LIMIT %(start)s, %(page_len)s
         """,
         {"txt": txt_like, "start": start, "page_len": page_len},
