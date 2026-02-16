@@ -1,0 +1,179 @@
+{
+  "actions": [],
+  "autoname": "field:scenario_name",
+  "creation": "2026-02-16 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "scenario_name",
+    "container_shipping_cost",
+    "transport_allocation_method",
+    "section_break_overheads",
+    "hr_percent",
+    "profit_taxes_percent",
+    "column_break_overheads",
+    "admin_percent",
+    "warranty_reserve_percent",
+    "section_break_margins",
+    "distributor_margin_percent",
+    "installer_margin_percent",
+    "column_break_margins",
+    "eco_margin_percent",
+    "luxe_margin_percent",
+    "section_break_customs",
+    "customs_rules"
+  ],
+  "fields": [
+    {
+      "fieldname": "scenario_name",
+      "fieldtype": "Data",
+      "label": "Scenario Name",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "container_shipping_cost",
+      "fieldtype": "Currency",
+      "label": "Container Shipping Cost",
+      "reqd": 1,
+      "non_negative": 1
+    },
+    {
+      "fieldname": "transport_allocation_method",
+      "fieldtype": "Select",
+      "label": "Transport Allocation Method",
+      "options": "By Amount\nBy Weight",
+      "default": "By Amount",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_break_overheads",
+      "fieldtype": "Section Break",
+      "label": "Overheads %"
+    },
+    {
+      "fieldname": "hr_percent",
+      "fieldtype": "Float",
+      "label": "HR %",
+      "default": "0"
+    },
+    {
+      "fieldname": "profit_taxes_percent",
+      "fieldtype": "Float",
+      "label": "Profit Taxes %",
+      "default": "0"
+    },
+    {
+      "fieldname": "column_break_overheads",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "admin_percent",
+      "fieldtype": "Float",
+      "label": "Admin %",
+      "default": "0"
+    },
+    {
+      "fieldname": "warranty_reserve_percent",
+      "fieldtype": "Float",
+      "label": "Warranty Reserve %",
+      "default": "0"
+    },
+    {
+      "fieldname": "section_break_margins",
+      "fieldtype": "Section Break",
+      "label": "Default Margin %"
+    },
+    {
+      "fieldname": "distributor_margin_percent",
+      "fieldtype": "Float",
+      "label": "Distributor Margin %",
+      "default": "0"
+    },
+    {
+      "fieldname": "installer_margin_percent",
+      "fieldtype": "Float",
+      "label": "Installer Margin %",
+      "default": "0"
+    },
+    {
+      "fieldname": "column_break_margins",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "eco_margin_percent",
+      "fieldtype": "Float",
+      "label": "Eco Margin %",
+      "default": "0"
+    },
+    {
+      "fieldname": "luxe_margin_percent",
+      "fieldtype": "Float",
+      "label": "Luxe Margin %",
+      "default": "0"
+    },
+    {
+      "fieldname": "section_break_customs",
+      "fieldtype": "Section Break",
+      "label": "Customs Rules"
+    },
+    {
+      "fieldname": "customs_rules",
+      "fieldtype": "Table",
+      "label": "Customs Rules",
+      "options": "Pricing Scenario Customs Rule",
+      "reqd": 1
+    }
+  ],
+  "is_submittable": 0,
+  "links": [],
+  "modified": "2026-02-16 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Scenario",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "report": 1,
+      "print": 1
+    }
+  ],
+  "search_fields": "scenario_name,transport_allocation_method",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "scenario_name",
+  "track_changes": 1
+}

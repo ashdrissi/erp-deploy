@@ -1,0 +1,178 @@
+{
+  "actions": [],
+  "autoname": "format:PS-.#####",
+  "creation": "2026-02-16 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "customer",
+    "customer_type",
+    "tier",
+    "pricing_scenario",
+    "section_break_items",
+    "items",
+    "section_break_totals",
+    "total_base_amount",
+    "total_transport",
+    "total_customs",
+    "column_break_totals",
+    "total_overheads",
+    "total_landed_cost",
+    "total_selling_amount"
+  ],
+  "fields": [
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "label": "Customer",
+      "options": "Customer",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "customer_type",
+      "fieldtype": "Select",
+      "label": "Customer Type",
+      "options": "Distributor\nInstaller\nFinal Client",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "tier",
+      "fieldtype": "Select",
+      "label": "Tier",
+      "options": "Eco\nLuxe",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "pricing_scenario",
+      "fieldtype": "Link",
+      "label": "Pricing Scenario",
+      "options": "Pricing Scenario",
+      "reqd": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "section_break_items",
+      "fieldtype": "Section Break",
+      "label": "Items"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items",
+      "options": "Pricing Sheet Item",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_break_totals",
+      "fieldtype": "Section Break",
+      "label": "Totals"
+    },
+    {
+      "fieldname": "total_base_amount",
+      "fieldtype": "Currency",
+      "label": "Total Base Amount",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_transport",
+      "fieldtype": "Currency",
+      "label": "Total Transport",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_customs",
+      "fieldtype": "Currency",
+      "label": "Total Customs",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_totals",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "total_overheads",
+      "fieldtype": "Currency",
+      "label": "Total Overheads",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_landed_cost",
+      "fieldtype": "Currency",
+      "label": "Total Landed Cost",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_selling_amount",
+      "fieldtype": "Currency",
+      "label": "Total Selling Amount",
+      "read_only": 1
+    }
+  ],
+  "is_submittable": 1,
+  "links": [
+    {
+      "link_doctype": "Quotation",
+      "link_fieldname": "party_name"
+    }
+  ],
+  "modified": "2026-02-16 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Sheet",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "amend": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "amend": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "report": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "customer,pricing_scenario,customer_type,tier",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "customer",
+  "track_changes": 1
+}
