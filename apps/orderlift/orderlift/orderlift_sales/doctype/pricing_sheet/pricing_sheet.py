@@ -145,6 +145,20 @@ class PricingSheet(Document):
         self.total_landed_cost = 0
         self.total_selling_amount = 0
 
+    def _resolve_company_for_quotation(self):
+        company = frappe.defaults.get_user_default("Company")
+        if not company:
+            company = frappe.db.get_single_value("Global Defaults", "default_company")
+
+        if not company:
+            frappe.throw(
+                _(
+                    "Please set a default Company (User Defaults or Global Defaults) before generating a Quotation."
+                )
+            )
+
+        return company
+
     @frappe.whitelist()
     def generate_quotation(self):
         self.check_permission("read")
@@ -156,6 +170,7 @@ class PricingSheet(Document):
             frappe.throw(_("Please add at least one item."))
 
         quotation = frappe.new_doc("Quotation")
+        quotation.company = self._resolve_company_for_quotation()
         quotation.quotation_to = "Customer"
         quotation.party_name = self.customer
 
