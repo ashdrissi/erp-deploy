@@ -49,8 +49,8 @@
     function get_defaults() {
         return {
             theme_mode: "Light",
-            primary_color: "#00D4B4",
-            sidebar_bg_dark: "#0D1528",
+            primary_color: "#2B44FF",
+            sidebar_bg_dark: "#0F172A",
             sidebar_bg_light: "#FFFFFF",
             custom_css: ""
         };
