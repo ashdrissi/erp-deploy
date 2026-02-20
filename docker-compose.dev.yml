@@ -28,7 +28,7 @@ services:
 
   # ---- Gunicorn (Web) ----
   app:
-    image: ${DEV_IMAGE:-erp-deploy-app}  # use the already-built prod image
+    build: .
     working_dir: /home/frappe/frappe-bench/sites
     command: /home/frappe/frappe-bench/env/bin/gunicorn -b 0.0.0.0:8000 --workers 2 --timeout 120 --reload frappe.app:application
     environment:
@@ -52,7 +52,7 @@ services:
 
   # ---- Nginx / Backend ----
   backend:
-    image: ${DEV_IMAGE:-erp-deploy-app}
+    build: .
     command: ["bash", "-lc", "export PATH=\"$PATH:/usr/sbin\"; exec /usr/local/bin/nginx-entrypoint.sh"]
     environment:
       BACKEND: app:8000
@@ -83,7 +83,7 @@ services:
 
   # ---- WebSocket ----
   websocket:
-    image: ${DEV_IMAGE:-erp-deploy-app}
+    build: .
     command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
     environment:
       REDIS_SOCKETIO: redis://redis-socketio:6379/2
@@ -96,7 +96,7 @@ services:
 
   # ---- Queue Workers ----
   queue-short:
-    image: ${DEV_IMAGE:-erp-deploy-app}
+    build: .
     command: bench worker --queue short
     environment:
       <<: *app-env
@@ -109,7 +109,7 @@ services:
       - default
 
   queue-default:
-    image: ${DEV_IMAGE:-erp-deploy-app}
+    build: .
     command: bench worker --queue default
     environment:
       <<: *app-env
@@ -123,7 +123,7 @@ services:
 
   # ---- Scheduler ----
   scheduler:
-    image: ${DEV_IMAGE:-erp-deploy-app}
+    build: .
     command: bench schedule
     environment:
       <<: *app-env
