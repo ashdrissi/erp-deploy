@@ -392,10 +392,17 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
 fi
 
 echo "Creating new site: ${site_name}"
+new_site_host_flag=()
+if bench new-site --help 2>&1 | grep -q -- "--mariadb-user-host-login-scope"; then
+  new_site_host_flag=(--mariadb-user-host-login-scope "%")
+elif bench new-site --help 2>&1 | grep -q -- "--db-user-host"; then
+  new_site_host_flag=(--db-user-host "%")
+fi
+
 bench new-site "$site_name" \
   --admin-password "$admin_password" \
   --mariadb-root-password "$db_root_password" \
-  --db-user-host "%" \
+  "${new_site_host_flag[@]}" \
   --install-app erpnext
 
 ensure_site_db_user_access "$site_name"
