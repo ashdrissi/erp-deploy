@@ -26,6 +26,34 @@ x-app-env: &app-env
 
 services:
 
+  # ---- One-off init: creates site + DB on first run ----
+  create-site:
+    build: .
+    command: /opt/erp-deploy/scripts/create-site.sh
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_CACHE: redis://redis-cache:6379/0
+      REDIS_QUEUE: redis://redis-queue:6379/1
+      REDIS_SOCKETIO: redis://redis-socketio:6379/2
+      SOCKETIO_PORT: "9000"
+      SITE_NAME: ${SITE_NAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      - mariadb
+      - redis-cache
+      - redis-queue
+      - redis-socketio
+    restart: "no"
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+
   # ---- Gunicorn (Web) ----
   app:
     build: .
@@ -42,9 +70,14 @@ services:
       - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
       - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
-      - mariadb
-      - redis-cache
-      - redis-queue
+      create-site:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
     networks:
       - default
     labels:
