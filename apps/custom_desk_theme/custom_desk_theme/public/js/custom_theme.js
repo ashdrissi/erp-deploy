@@ -61,6 +61,30 @@
         apply_colors(settings);
         inject_custom_css(settings.custom_css || "");
         add_toggle_button();
+        move_branding_to_sidebar();
+    }
+
+    /* ---- Branding Move ---- */
+    function move_branding_to_sidebar() {
+        if (document.querySelector(".sidebar-branding")) return;
+
+        var sidebar = document.querySelector(".desk-sidebar");
+        if (!sidebar) return;
+
+        var logo = document.querySelector(".navbar-brand.navbar-home") ||
+            document.querySelector(".navbar .navbar-brand");
+
+        if (logo) {
+            var container = document.createElement("div");
+            container.className = "sidebar-branding";
+
+            // Clone the logo so we don't break the original just yet
+            var newLogo = logo.cloneNode(true);
+            newLogo.style.display = "block";
+
+            container.appendChild(newLogo);
+            sidebar.insertBefore(container, sidebar.firstChild);
+        }
     }
 
     /* ---- Theme Mode ---- */
