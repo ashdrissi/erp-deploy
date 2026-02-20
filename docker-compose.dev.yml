@@ -1,0 +1,174 @@
+# ============================================================
+# docker-compose.dev.yml — ERPNext DEV Environment
+# ============================================================
+# How to use in Coolify:
+#   1. Create a new Resource → Docker Compose
+#   2. Paste this file (or point to this file)
+#   3. Set the base dir to /root/erp-deploy on the server
+#
+# Key difference from production:
+#   - Apps are BIND MOUNTED from /root/erp-deploy/apps
+#     so any file saved on disk is instantly seen by the container.
+#   - Run `bench build --app custom_desk_theme` inside the container
+#     to recompile JS/CSS (30 seconds, not 6-7 minutes).
+#   - Python changes only need `docker compose restart app`.
+# ============================================================
+
+version: "3.9"
+
+x-app-env: &app-env
+  DB_HOST: mariadb
+  DB_PORT: "3306"
+  REDIS_CACHE: redis://redis-cache:6379/0
+  REDIS_QUEUE: redis://redis-queue:6379/1
+  REDIS_SOCKETIO: redis://redis-socketio:6379/2
+  SITE_NAME: ${SITE_NAME}
+
+services:
+
+  # ---- Gunicorn (Web) ----
+  app:
+    image: ${DEV_IMAGE:-erp-deploy-app}  # use the already-built prod image
+    working_dir: /home/frappe/frappe-bench/sites
+    command: /home/frappe/frappe-bench/env/bin/gunicorn -b 0.0.0.0:8000 --workers 2 --timeout 120 --reload frappe.app:application
+    environment:
+      <<: *app-env
+      SITES_PATH: "."
+      PORT: "8000"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      # ---- HOT RELOAD: bind mount your app source ----
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
+    depends_on:
+      - mariadb
+      - redis-cache
+      - redis-queue
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+
+  # ---- Nginx / Backend ----
+  backend:
+    image: ${DEV_IMAGE:-erp-deploy-app}
+    command: ["bash", "-lc", "export PATH=\"$PATH:/usr/sbin\"; exec /usr/local/bin/nginx-entrypoint.sh"]
+    environment:
+      BACKEND: app:8000
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME}
+      SOCKETIO: websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: "127.0.0.1"
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites:ro
+    depends_on:
+      - app
+      - websocket
+    networks:
+      - default
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.erp-dev-http.entrypoints=http"
+      - "traefik.http.routers.erp-dev-http.rule=Host(`erp-dev.ecomepivot.com`)"
+      - "traefik.http.routers.erp-dev-http.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.erp-dev-https.entrypoints=https"
+      - "traefik.http.routers.erp-dev-https.rule=Host(`erp-dev.ecomepivot.com`)"
+      - "traefik.http.routers.erp-dev-https.tls=true"
+      - "traefik.http.routers.erp-dev-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.erp-dev-backend.loadbalancer.server.port=8080"
+
+  # ---- WebSocket ----
+  websocket:
+    image: ${DEV_IMAGE:-erp-deploy-app}
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      REDIS_SOCKETIO: redis://redis-socketio:6379/2
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+
+  # ---- Queue Workers ----
+  queue-short:
+    image: ${DEV_IMAGE:-erp-deploy-app}
+    command: bench worker --queue short
+    environment:
+      <<: *app-env
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+    networks:
+      - default
+
+  queue-default:
+    image: ${DEV_IMAGE:-erp-deploy-app}
+    command: bench worker --queue default
+    environment:
+      <<: *app-env
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+    networks:
+      - default
+
+  # ---- Scheduler ----
+  scheduler:
+    image: ${DEV_IMAGE:-erp-deploy-app}
+    command: bench schedule
+    environment:
+      <<: *app-env
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    networks:
+      - default
+
+  # ---- Databases ----
+  mariadb:
+    image: mariadb:10.6
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: frappe
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - default
+
+  redis-cache:
+    image: redis:6.2-alpine
+    networks:
+      - default
+
+  redis-queue:
+    image: redis:6.2-alpine
+    networks:
+      - default
+
+  redis-socketio:
+    image: redis:6.2-alpine
+    networks:
+      - default
+
+volumes:
+  sites:
+  logs:
+  db-data:
+
+networks:
+  default:
+  coolify:
+    external: true
