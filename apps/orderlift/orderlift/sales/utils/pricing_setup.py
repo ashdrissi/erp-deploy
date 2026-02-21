@@ -56,7 +56,19 @@ def after_migrate():
 
 
 def ensure_pricing_workspace():
-    workspace_name = "Pricing & Quotations"
+    workspace_name = "Pricing"
+    legacy_workspace_name = "Pricing & Quotations"
+
+    if frappe.db.exists("Workspace", legacy_workspace_name) and not frappe.db.exists(
+        "Workspace", workspace_name
+    ):
+        frappe.rename_doc(
+            "Workspace",
+            legacy_workspace_name,
+            workspace_name,
+            force=True,
+            ignore_permissions=True,
+        )
 
     shortcuts = [
         {"label": "Quotation", "type": "DocType", "link_to": "Quotation"},
@@ -68,7 +80,7 @@ def ensure_pricing_workspace():
         {
             "id": "pricing_header",
             "type": "header",
-            "data": {"text": "<span class=\"h4\"><b>Pricing & Quotations</b></span>", "col": 12},
+            "data": {"text": "<span class=\"h4\"><b>Pricing</b></span>", "col": 12},
         },
         {"id": "pricing_spacer", "type": "spacer", "data": {"col": 12}},
     ]

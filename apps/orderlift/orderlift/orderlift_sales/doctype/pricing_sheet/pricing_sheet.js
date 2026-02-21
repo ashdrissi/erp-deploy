@@ -10,6 +10,78 @@ function statusBadge(value) {
     return `<span class="indicator-pill ${color}">${__(status || "-")}</span>`;
 }
 
+function renderProjectionDashboard(frm) {
+    if (!frm.fields_dict.projection_dashboard) {
+        return;
+    }
+
+    const lines = frm.doc.lines || [];
+    const topRows = lines.slice(0, 8);
+    const totalBase = frm.doc.total_buy || 0;
+    const totalExpenses = frm.doc.total_expenses || 0;
+    const totalFinal = frm.doc.total_selling || 0;
+    const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
+
+    const rowsHtml =
+        topRows
+            .map((row) => {
+                const item = frappe.utils.escape_html(row.item || "-");
+                const preview = frappe.utils.escape_html(row.breakdown_preview || "No expenses");
+                return `
+                    <tr>
+                        <td>${item}</td>
+                        <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.projected_unit_price || 0, { fieldtype: "Currency" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</td>
+                        <td>${preview}</td>
+                    </tr>
+                `;
+            })
+            .join("") ||
+        `<tr><td colspan="6" style="color:#64748b;">No pricing lines yet.</td></tr>`;
+
+    const html = `
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px;background:#ffffff;margin-bottom:10px;">
+            <div style="display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;">
+                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc;">
+                    <div style="font-size:11px;color:#64748b;">Total Base</div>
+                    <div style="font-size:18px;font-weight:700;">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
+                </div>
+                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff7ed;">
+                    <div style="font-size:11px;color:#9a3412;">Total Expenses</div>
+                    <div style="font-size:18px;font-weight:700;">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
+                </div>
+                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#ecfdf5;">
+                    <div style="font-size:11px;color:#166534;">Total Final</div>
+                    <div style="font-size:18px;font-weight:700;">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
+                </div>
+                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#eff6ff;">
+                    <div style="font-size:11px;color:#1d4ed8;">Average Markup</div>
+                    <div style="font-size:18px;font-weight:700;">${frappe.format(avgMarkup, { fieldtype: "Percent" })}</div>
+                </div>
+            </div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#fff;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead style="background:#f8fafc;">
+                    <tr>
+                        <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">Item</th>
+                        <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">Qty</th>
+                        <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">Base</th>
+                        <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">Projected</th>
+                        <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">Final</th>
+                        <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">Expense Flow</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>
+    `;
+
+    frm.fields_dict.projection_dashboard.$wrapper.html(html);
+}
+
 frappe.ui.form.on("Pricing Sheet", {
     setup(frm) {
         const queryConfig = () => ({
@@ -17,7 +89,6 @@ frappe.ui.form.on("Pricing Sheet", {
         });
 
         frm.set_query("item", "lines", queryConfig);
-        frm.set_query("item_code", "lines", queryConfig);
 
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
     },
@@ -27,6 +98,7 @@ frappe.ui.form.on("Pricing Sheet", {
             try {
                 await frm.save();
                 frm.refresh_field("lines");
+                renderProjectionDashboard(frm);
                 frappe.show_alert({ message: __("Pricing recalculated"), indicator: "green" });
             } catch (e) {
                 frappe.msgprint({
@@ -37,13 +109,14 @@ frappe.ui.form.on("Pricing Sheet", {
             }
         });
 
-        frm.add_custom_button(__("Refresh Buy Prices"), async () => {
+        frm.add_custom_button(__("Refresh Base Prices"), async () => {
             if (frm.is_dirty()) {
                 await frm.save();
             }
             await frm.call("refresh_buy_prices");
             await frm.reload_doc();
-            frappe.show_alert({ message: __("Buy prices refreshed"), indicator: "green" });
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
         });
 
         frm.add_custom_button(__("Add from Bundle"), () => {
@@ -92,6 +165,7 @@ frappe.ui.form.on("Pricing Sheet", {
                     await frm.call("add_from_bundle", values);
                     dialog.hide();
                     await frm.reload_doc();
+                    renderProjectionDashboard(frm);
                     frappe.show_alert({ message: __("Bundle items imported"), indicator: "green" });
                 },
             });
@@ -123,6 +197,12 @@ frappe.ui.form.on("Pricing Sheet", {
                 }
             });
         }
+
+        renderProjectionDashboard(frm);
+    },
+
+    lines_remove(frm) {
+        renderProjectionDashboard(frm);
     },
 });
 
@@ -141,12 +221,26 @@ frappe.ui.form.on("Pricing Sheet Item", {
             },
             callback: (r) => {
                 const data = r.message || {};
-                frappe.model.set_value(cdt, cdn, "material", data.material || "OTHER");
-                frappe.model.set_value(cdt, cdn, "weight_kg", data.weight_kg || 0);
                 if (!row.buy_price || row.buy_price <= 0) {
                     frappe.model.set_value(cdt, cdn, "buy_price", data.buy_price || 0);
                 }
+                if (!row.display_group) {
+                    frappe.model.set_value(cdt, cdn, "display_group", data.item_group || "Ungrouped");
+                }
+                renderProjectionDashboard(frm);
             },
         });
+    },
+
+    qty(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    buy_price(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    manual_sell_unit_price(frm) {
+        renderProjectionDashboard(frm);
     },
 });

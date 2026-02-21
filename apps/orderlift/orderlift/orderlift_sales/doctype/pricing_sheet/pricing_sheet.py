@@ -1,3 +1,5 @@
+import json
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -20,115 +22,49 @@ class PricingSheet(Document):
             self.calculated_on = now_datetime()
             return
 
+        expenses = self._active_expenses(scenario)
+
         total_base = 0.0
-        total_weight = 0.0
-        for row in lines:
-            self._hydrate_line_from_item(row)
-            self._set_buy_price_from_list(row, scenario, force_refresh=False)
-            row.base_amount = flt(row.qty) * flt(row.buy_price)
-            total_base += flt(row.base_amount)
-            total_weight += flt(row.qty) * flt(row.weight_kg)
-
-        scenario_container_value = flt(scenario.container_value_hypothesis) or total_base
-        scenario_charges_value = flt(scenario.charges_pool_value_hypothesis) or total_base
-        customs_rules = self._customs_rules_by_material(scenario)
-
-        total_customs = 0.0
-        total_transport = 0.0
-        total_team = 0.0
-        total_taxes = 0.0
-        total_margin = 0.0
-        total_selling = 0.0
+        total_expenses = 0.0
+        total_final = 0.0
 
         for row in lines:
             qty = flt(row.qty)
             if qty <= 0:
                 frappe.throw(_("Row {0}: Qty must be greater than zero.").format(row.idx))
 
-            base_amount = flt(row.base_amount)
-            total_kg = qty * flt(row.weight_kg)
+            self._hydrate_line_from_item(row)
+            self._set_buy_price_from_list(row, scenario, force_refresh=False)
 
-            if flt(scenario.is_local_buying):
-                row.customs = 0
-                row.transport_transitaire = 0
-            else:
-                row.customs = self._compute_customs(
-                    base_amount=base_amount,
-                    total_kg=total_kg,
-                    material=(row.material or "").upper(),
-                    scenario=scenario,
-                    rules=customs_rules,
-                )
-                row.transport_transitaire = self._compute_transport(
-                    row=row,
-                    scenario=scenario,
-                    total_weight=total_weight,
-                    total_base=total_base,
-                    scenario_container_value=scenario_container_value,
-                )
+            base_unit = flt(row.buy_price)
+            row.base_amount = qty * base_unit
 
-            row.team_office_charge = self._compute_team_charge(
-                row=row,
-                scenario=scenario,
-                total_base=total_base,
-                scenario_charges_value=scenario_charges_value,
-            )
+            pricing = self._apply_expenses(base_unit=base_unit, expenses=expenses)
+            projected_unit = flt(pricing["projected_unit"])
+            expense_unit = flt(pricing["expense_total_unit"])
 
-            row.taxes_impots = base_amount * (flt(scenario.taxes_percent_of_buy) / 100.0)
-            row.margin_amount = base_amount * (flt(scenario.margin_percent_of_buy) / 100.0)
-
-            row.sell_sans_stock_min = (
-                base_amount
-                + flt(row.customs)
-                + flt(row.transport_transitaire)
-                + flt(row.team_office_charge) * flt(scenario.j_multiplier_sans_stock)
-                + flt(row.taxes_impots)
-                + flt(row.margin_amount) * flt(scenario.l_multiplier_min)
-            )
-            row.sell_sans_stock_max = (
-                base_amount
-                + flt(row.customs)
-                + flt(row.transport_transitaire)
-                + flt(row.team_office_charge) * flt(scenario.j_multiplier_sans_stock)
-                + flt(row.taxes_impots)
-                + flt(row.margin_amount) * flt(scenario.l_multiplier_max)
-            )
-            row.sell_stock = (
-                base_amount
-                + flt(row.customs)
-                + flt(row.transport_transitaire)
-                + flt(row.team_office_charge) * flt(scenario.j_multiplier_stock)
-                + flt(row.taxes_impots)
-                + flt(row.margin_amount) * flt(scenario.l_multiplier_stock)
-            )
-
-            selected_total = self._selected_total_for_mode(row)
-            row.selected_sell_total = selected_total
-            row.selected_sell_unit = selected_total / qty if qty else 0
-
-            self._set_benchmark_status(row, scenario)
+            row.expense_total = expense_unit * qty
+            row.projected_unit_price = projected_unit
+            row.projected_total_price = projected_unit * qty
+            row.pricing_breakdown_json = json.dumps(pricing["steps"])
+            row.breakdown_preview = self._build_breakdown_preview(pricing["steps"])
 
             row.final_sell_unit_price = (
                 flt(row.manual_sell_unit_price)
                 if flt(row.manual_sell_unit_price) > 0
-                else flt(row.selected_sell_unit)
+                else flt(row.projected_unit_price)
             )
             row.final_sell_total = flt(row.final_sell_unit_price) * qty
 
-            total_customs += flt(row.customs)
-            total_transport += flt(row.transport_transitaire)
-            total_team += flt(row.team_office_charge)
-            total_taxes += flt(row.taxes_impots)
-            total_margin += flt(row.margin_amount)
-            total_selling += flt(row.final_sell_total)
+            self._set_benchmark_status(row, scenario, flt(row.final_sell_unit_price))
+
+            total_base += flt(row.base_amount)
+            total_expenses += flt(row.expense_total)
+            total_final += flt(row.final_sell_total)
 
         self.total_buy = flt(total_base)
-        self.total_customs = flt(total_customs)
-        self.total_transport = flt(total_transport)
-        self.total_team_charge = flt(total_team)
-        self.total_taxes = flt(total_taxes)
-        self.total_margin = flt(total_margin)
-        self.total_selling = flt(total_selling)
+        self.total_expenses = flt(total_expenses)
+        self.total_selling = flt(total_final)
         self.calculated_on = now_datetime()
 
     @frappe.whitelist()
@@ -149,7 +85,7 @@ class PricingSheet(Document):
         default_show_in_detail=1,
         default_display_group_source="Item Group",
     ):
-        scenario = self._get_scenario_or_throw()
+        self._get_scenario_or_throw()
         bundle_name = product_bundle or self.product_bundle
         if not bundle_name:
             frappe.throw(_("Please select a Product Bundle."))
@@ -192,26 +128,56 @@ class PricingSheet(Document):
         self.refresh_buy_prices()
         return self.name
 
+    def _active_expenses(self, scenario):
+        return [row for row in (scenario.expenses or []) if flt(row.is_active)]
+
+    def _apply_expenses(self, base_unit, expenses):
+        running_total = flt(base_unit)
+        steps = []
+
+        for exp in expenses:
+            exp_type = (exp.type or "Percentage").strip().title()
+            applies_to = (exp.applies_to or "Running Total").strip().title()
+            value = flt(exp.value)
+
+            basis = flt(base_unit) if applies_to == "Base Price" else flt(running_total)
+            if exp_type == "Percentage":
+                delta = basis * (value / 100.0)
+            else:
+                delta = value
+
+            running_total += delta
+            steps.append(
+                {
+                    "label": exp.label,
+                    "type": exp_type,
+                    "value": value,
+                    "applies_to": applies_to,
+                    "basis": basis,
+                    "delta": delta,
+                    "running_total": running_total,
+                }
+            )
+
+        return {
+            "projected_unit": running_total,
+            "expense_total_unit": running_total - flt(base_unit),
+            "steps": steps,
+        }
+
+    def _build_breakdown_preview(self, steps):
+        if not steps:
+            return "No expenses"
+        return " | ".join(f"{s.get('label')}: {flt(s.get('delta')):.2f}" for s in steps)
+
     def _get_template_rows(self, template_name):
         if frappe.db.exists("DocType", "Product Bundle") and frappe.db.exists("Product Bundle", template_name):
             bundle = frappe.get_doc("Product Bundle", template_name)
-            return [
-                {
-                    "item_code": row.item_code,
-                    "qty": flt(row.qty),
-                }
-                for row in (bundle.items or [])
-            ]
+            return [{"item_code": row.item_code, "qty": flt(row.qty)} for row in (bundle.items or [])]
 
         if frappe.db.exists("DocType", "BOM") and frappe.db.exists("BOM", template_name):
             bom = frappe.get_doc("BOM", template_name)
-            return [
-                {
-                    "item_code": row.item_code,
-                    "qty": flt(row.qty),
-                }
-                for row in (bom.items or [])
-            ]
+            return [{"item_code": row.item_code, "qty": flt(row.qty)} for row in (bom.items or [])]
 
         return []
 
@@ -220,82 +186,11 @@ class PricingSheet(Document):
             frappe.throw(_("Please select a Pricing Scenario."))
         return frappe.get_doc("Pricing Scenario", self.pricing_scenario)
 
-    def _customs_rules_by_material(self, scenario):
-        rules = {}
-        for row in scenario.customs_rules or []:
-            material = (row.material or "").strip().upper()
-            if material:
-                rules[material] = row
-        return rules
-
-    def _compute_customs(self, base_amount, total_kg, material, scenario, rules):
-        fallback_percent = flt(scenario.customs_percent_default)
-        rule = rules.get(material)
-        if not rule:
-            return base_amount * (fallback_percent / 100.0)
-
-        percent = flt(rule.customs_percent) or fallback_percent
-        factor = flt(rule.factor_per_kg)
-        if material == "OTHER" or factor <= 0:
-            return base_amount * (percent / 100.0)
-
-        customs_base = max(base_amount, total_kg * factor)
-        return customs_base * (percent / 100.0)
-
-    def _compute_transport(self, row, scenario, total_weight, total_base, scenario_container_value):
-        total_transport_cost = flt(scenario.total_transport_cost)
-        if total_transport_cost <= 0:
-            return 0.0
-
-        method = (scenario.transport_allocation_method or "By Amount").strip()
-        if method == "By Weight":
-            row_weight = flt(row.qty) * flt(row.weight_kg)
-            if total_weight <= 0:
-                return 0.0
-            return (row_weight / total_weight) * total_transport_cost
-
-        denominator = scenario_container_value or total_base
-        if denominator <= 0:
-            return 0.0
-        return (flt(row.base_amount) / denominator) * total_transport_cost
-
-    def _compute_team_charge(self, row, scenario, total_base, scenario_charges_value):
-        method = (scenario.team_charge_allocation_method or "By Amount").strip()
-        if method == "Fixed % of buy price":
-            return flt(row.base_amount) * (flt(scenario.team_charge_percent_of_buy) / 100.0)
-
-        total_team = flt(scenario.total_team_office_charges)
-        if total_team <= 0:
-            return 0.0
-
-        denominator = scenario_charges_value or total_base
-        if denominator <= 0:
-            return 0.0
-
-        return (flt(row.base_amount) / denominator) * total_team
-
-    def _selected_total_for_mode(self, row):
-        mode = (self.price_mode or "max").strip().lower()
-        if mode == "min":
-            return flt(row.sell_sans_stock_min)
-        if mode == "stock":
-            return flt(row.sell_stock)
-        return flt(row.sell_sans_stock_max)
-
     def _hydrate_line_from_item(self, row):
         if not row.item:
             return
-
-        item_vals = frappe.db.get_value(
-            "Item", row.item, ["custom_material", "custom_weight_kg", "item_group"], as_dict=True
-        )
-        if not item_vals:
-            return
-
-        row.material = (item_vals.custom_material or row.material or "OTHER").upper()
-        row.weight_kg = flt(item_vals.custom_weight_kg)
         if not row.display_group:
-            row.display_group = item_vals.item_group or "Ungrouped"
+            row.display_group = frappe.db.get_value("Item", row.item, "item_group") or "Ungrouped"
 
     def _set_buy_price_from_list(self, row, scenario, force_refresh=False):
         if not row.item:
@@ -320,7 +215,7 @@ class PricingSheet(Document):
         row.buy_price_missing = 0
         row.buy_price_message = ""
 
-    def _set_benchmark_status(self, row, scenario):
+    def _set_benchmark_status(self, row, scenario, computed_unit):
         benchmark_list = scenario.benchmark_price_list or "Benchmark Selling"
         benchmark_price = get_latest_item_price(row.item, benchmark_list, buying=False)
         if benchmark_price is None or flt(benchmark_price) <= 0:
@@ -332,30 +227,22 @@ class PricingSheet(Document):
             return
 
         row.benchmark_price = flt(benchmark_price)
-        row.benchmark_delta_abs = flt(row.selected_sell_unit) - flt(row.benchmark_price)
+        row.benchmark_delta_abs = flt(computed_unit) - flt(row.benchmark_price)
         row.benchmark_delta_pct = (row.benchmark_delta_abs / flt(row.benchmark_price)) * 100
 
-        if flt(row.selected_sell_unit) < flt(row.benchmark_price) * 0.8:
+        if flt(computed_unit) < flt(row.benchmark_price) * 0.8:
             row.benchmark_status = "Too Low"
-            row.benchmark_note = _(
-                "Computed {0} vs market {1} -> consider raising"
-            ).format(flt(row.selected_sell_unit), flt(row.benchmark_price))
-        elif flt(row.selected_sell_unit) > flt(row.benchmark_price) * 1.1:
+            row.benchmark_note = _("Below benchmark")
+        elif flt(computed_unit) > flt(row.benchmark_price) * 1.1:
             row.benchmark_status = "Too High"
-            row.benchmark_note = _(
-                "Computed {0} vs market {1} -> consider lowering"
-            ).format(flt(row.selected_sell_unit), flt(row.benchmark_price))
+            row.benchmark_note = _("Above benchmark")
         else:
             row.benchmark_status = "OK"
             row.benchmark_note = _("Within benchmark range")
 
     def _reset_totals(self):
         self.total_buy = 0
-        self.total_customs = 0
-        self.total_transport = 0
-        self.total_team_charge = 0
-        self.total_taxes = 0
-        self.total_margin = 0
+        self.total_expenses = 0
         self.total_selling = 0
 
     def _resolve_company_for_quotation(self):
@@ -387,7 +274,8 @@ class PricingSheet(Document):
         if frappe.db.has_column("Quotation", "source_pricing_sheet"):
             quotation.source_pricing_sheet = self.name
 
-        if (self.output_mode or "Avec détails").strip() == "Sans détails":
+        output_mode = (self.output_mode or "Avec details").strip().lower()
+        if output_mode in ("sans details", "sans détails"):
             self._append_grouped_quotation_items(quotation)
         else:
             self._append_detailed_quotation_items(quotation)
@@ -524,11 +412,7 @@ def stock_item_query(doctype, txt, searchfield, start, page_len, filters):
 @frappe.whitelist()
 def get_item_pricing_defaults(item_code, pricing_scenario=None):
     if not item_code:
-        return {"buy_price": 0, "material": "OTHER", "weight_kg": 0}
-
-    item_vals = frappe.db.get_value(
-        "Item", item_code, ["custom_material", "custom_weight_kg"], as_dict=True
-    ) or {}
+        return {"buy_price": 0, "item_group": "Ungrouped"}
 
     buying_price_list = "Buying"
     if pricing_scenario and frappe.db.exists("Pricing Scenario", pricing_scenario):
@@ -537,8 +421,8 @@ def get_item_pricing_defaults(item_code, pricing_scenario=None):
         )
 
     buy_price = get_latest_item_price(item_code, buying_price_list, buying=True)
+    item_group = frappe.db.get_value("Item", item_code, "item_group") or "Ungrouped"
     return {
         "buy_price": flt(buy_price),
-        "material": (item_vals.get("custom_material") or "OTHER").upper(),
-        "weight_kg": flt(item_vals.get("custom_weight_kg")),
+        "item_group": item_group,
     }

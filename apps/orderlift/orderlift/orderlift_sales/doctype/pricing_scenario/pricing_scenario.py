@@ -6,55 +6,72 @@ from frappe.utils import flt
 
 class PricingScenario(Document):
     def before_insert(self):
-        if self.customs_rules:
+        if self.expenses:
             return
 
-        for material, factor in {
-            "STEEL": 13,
-            "GALVA": 24,
-            "INOX": 40,
-            "COPPER": 60,
-            "OTHER": 0,
-        }.items():
-            self.append(
-                "customs_rules",
-                {
-                    "material": material,
-                    "factor_per_kg": factor,
-                },
-            )
+        default_expenses = [
+            {
+                "label": "Freight",
+                "type": "Percentage",
+                "value": 8,
+                "applies_to": "Base Price",
+                "is_active": 1,
+            },
+            {
+                "label": "Handling",
+                "type": "Fixed",
+                "value": 12,
+                "applies_to": "Running Total",
+                "is_active": 1,
+            },
+            {
+                "label": "Commercial Margin",
+                "type": "Percentage",
+                "value": 15,
+                "applies_to": "Running Total",
+                "is_active": 1,
+            },
+        ]
+
+        for row in default_expenses:
+            self.append("expenses", row)
 
     def validate(self):
         self.buying_price_list = self.buying_price_list or "Buying"
-        self.benchmark_price_list = self.benchmark_price_list or "Benchmark Selling"
-        self._validate_customs_rules()
-        self._compute_transport_total()
-        self._compute_team_charge_total()
+        self._validate_expenses()
 
-    def _validate_customs_rules(self):
-        seen = set()
-        for row in self.customs_rules or []:
-            material = (row.material or "").strip().upper()
-            if not material:
-                frappe.throw(_("Row {0}: Material is required.").format(row.idx))
-            if material in seen:
-                frappe.throw(_("Duplicate customs rule for material {0}.").format(material))
-            seen.add(material)
+    def _validate_expenses(self):
+        if not self.expenses:
+            frappe.throw(_("Please add at least one expense row."))
 
-    def _compute_transport_total(self):
-        usd_to_mad = flt(self.usd_to_mad_rate) or 1.0
-        self.total_transport_cost = (
-            flt(self.price_container_usd) * usd_to_mad
-            + flt(self.price_truck_ttc)
-            + flt(self.loading_cost)
-            + flt(self.unloading_cost)
-            + flt(self.transport_risk_alea)
-        )
+        seen_labels = set()
+        active_rows = 0
 
-    def _compute_team_charge_total(self):
-        self.total_team_office_charges = (
-            flt(self.cars_amortization)
-            + flt(self.hr_cost)
-            + flt(self.rent_office_stock)
-            + flt(self.accountant_other)
-        )
+        for row in self.expenses:
+            label = (row.label or "").strip()
+            if not label:
+                frappe.throw(_("Row {0}: Label is required.").format(row.idx))
+
+            label_key = label.lower()
+            if label_key in seen_labels:
+                frappe.throw(_("Duplicate expense label: {0}").format(label))
+            seen_labels.add(label_key)
+
+            row.label = label
+            row.type = (row.type or "Percentage").strip().title()
+            if row.type not in ("Percentage", "Fixed"):
+                frappe.throw(_("Row {0}: Type must be Percentage or Fixed.").format(row.idx))
+
+            row.applies_to = (row.applies_to or "Running Total").strip().title()
+            if row.applies_to not in ("Base Price", "Running Total"):
+                frappe.throw(_("Row {0}: Applies To must be Base Price or Running Total.").format(row.idx))
+
+            row.value = flt(row.value)
+            if row.type == "Percentage" and row.value < -100:
+                frappe.throw(_("Row {0}: Percentage cannot be below -100.").format(row.idx))
+
+            if flt(row.is_active):
+                active_rows += 1
+
+        if active_rows == 0:
+            frappe.throw(_("At least one active expense is required."))

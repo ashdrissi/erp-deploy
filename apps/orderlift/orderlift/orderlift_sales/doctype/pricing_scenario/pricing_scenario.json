@@ -8,41 +8,11 @@
   "field_order": [
     "naming_series",
     "scenario_name",
+    "description",
     "buying_price_list",
     "benchmark_price_list",
-    "is_local_buying",
-    "heading_transport",
-    "container_value_hypothesis",
-    "price_container_usd",
-    "usd_to_mad_rate",
-    "price_truck_ttc",
-    "loading_cost",
-    "unloading_cost",
-    "transport_risk_alea",
-    "total_transport_cost",
-    "transport_allocation_method",
-    "heading_team",
-    "charges_pool_value_hypothesis",
-    "cars_amortization",
-    "hr_cost",
-    "rent_office_stock",
-    "accountant_other",
-    "total_team_office_charges",
-    "team_charge_allocation_method",
-    "team_charge_percent_of_buy",
-    "heading_taxes",
-    "taxes_percent_of_buy",
-    "heading_margin",
-    "margin_percent_of_buy",
-    "heading_multipliers",
-    "j_multiplier_sans_stock",
-    "j_multiplier_stock",
-    "l_multiplier_min",
-    "l_multiplier_max",
-    "l_multiplier_stock",
-    "heading_customs",
-    "customs_percent_default",
-    "customs_rules"
+    "expense_help_html",
+    "expenses"
   ],
   "fields": [
     {
@@ -65,6 +35,11 @@
       "search_index": 1
     },
     {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    },
+    {
       "fieldname": "buying_price_list",
       "fieldtype": "Link",
       "label": "Buying Price List",
@@ -77,212 +52,24 @@
       "fieldtype": "Link",
       "label": "Benchmark Price List",
       "options": "Price List",
-      "default": "Benchmark Selling",
-      "reqd": 1
+      "default": "Benchmark Selling"
     },
     {
-      "fieldname": "is_local_buying",
-      "fieldtype": "Check",
-      "label": "Is Local Buying",
-      "default": "0"
+      "fieldname": "expense_help_html",
+      "fieldtype": "HTML",
+      "label": "Expense Guide"
     },
     {
-      "fieldname": "heading_transport",
-      "fieldtype": "Heading",
-      "label": "Transport & Transitaire"
-    },
-    {
-      "fieldname": "container_value_hypothesis",
-      "fieldtype": "Currency",
-      "label": "Container Value Hypothesis",
-      "reqd": 1,
-      "default": "0"
-    },
-    {
-      "fieldname": "price_container_usd",
-      "fieldtype": "Currency",
-      "label": "Prix Conteneur en USD",
-      "default": "0"
-    },
-    {
-      "fieldname": "usd_to_mad_rate",
-      "fieldtype": "Float",
-      "label": "USD to MAD Rate",
-      "default": "1"
-    },
-    {
-      "fieldname": "price_truck_ttc",
-      "fieldtype": "Currency",
-      "label": "Prix Camion TTC",
-      "default": "0"
-    },
-    {
-      "fieldname": "loading_cost",
-      "fieldtype": "Currency",
-      "label": "Chargement",
-      "default": "0"
-    },
-    {
-      "fieldname": "unloading_cost",
-      "fieldtype": "Currency",
-      "label": "Dechargement",
-      "default": "0"
-    },
-    {
-      "fieldname": "transport_risk_alea",
-      "fieldtype": "Currency",
-      "label": "Aleas Transport",
-      "default": "0"
-    },
-    {
-      "fieldname": "total_transport_cost",
-      "fieldtype": "Currency",
-      "label": "Total Transport Cost",
-      "read_only": 1
-    },
-    {
-      "fieldname": "transport_allocation_method",
-      "fieldtype": "Select",
-      "label": "Transport Allocation Method",
-      "options": "By Amount\nBy Weight",
-      "default": "By Amount",
-      "reqd": 1
-    },
-    {
-      "fieldname": "heading_team",
-      "fieldtype": "Heading",
-      "label": "Charges equipe/bureau"
-    },
-    {
-      "fieldname": "charges_pool_value_hypothesis",
-      "fieldtype": "Currency",
-      "label": "Charges Pool Value Hypothesis",
-      "reqd": 1,
-      "default": "0"
-    },
-    {
-      "fieldname": "cars_amortization",
-      "fieldtype": "Currency",
-      "label": "Voitures Amortissement",
-      "default": "0"
-    },
-    {
-      "fieldname": "hr_cost",
-      "fieldtype": "Currency",
-      "label": "RH",
-      "default": "0"
-    },
-    {
-      "fieldname": "rent_office_stock",
-      "fieldtype": "Currency",
-      "label": "Location Bureau + Stock",
-      "default": "0"
-    },
-    {
-      "fieldname": "accountant_other",
-      "fieldtype": "Currency",
-      "label": "Comptable et Autre",
-      "default": "0"
-    },
-    {
-      "fieldname": "total_team_office_charges",
-      "fieldtype": "Currency",
-      "label": "Total Team/Office Charges",
-      "read_only": 1
-    },
-    {
-      "fieldname": "team_charge_allocation_method",
-      "fieldtype": "Select",
-      "label": "Team Charge Allocation Method",
-      "options": "By Amount\nFixed % of buy price",
-      "default": "By Amount",
-      "reqd": 1
-    },
-    {
-      "fieldname": "team_charge_percent_of_buy",
-      "fieldtype": "Percent",
-      "label": "Team Charge % of Buy",
-      "default": "0"
-    },
-    {
-      "fieldname": "heading_taxes",
-      "fieldtype": "Heading",
-      "label": "Impots / Taxes"
-    },
-    {
-      "fieldname": "taxes_percent_of_buy",
-      "fieldtype": "Percent",
-      "label": "Taxes % of Buy",
-      "default": "0"
-    },
-    {
-      "fieldname": "heading_margin",
-      "fieldtype": "Heading",
-      "label": "Marge"
-    },
-    {
-      "fieldname": "margin_percent_of_buy",
-      "fieldtype": "Percent",
-      "label": "Margin % of Buy",
-      "default": "0"
-    },
-    {
-      "fieldname": "heading_multipliers",
-      "fieldtype": "Heading",
-      "label": "Sell Mode Multipliers"
-    },
-    {
-      "fieldname": "j_multiplier_sans_stock",
-      "fieldtype": "Float",
-      "label": "J Multiplier Sans Stock",
-      "default": "0.5"
-    },
-    {
-      "fieldname": "j_multiplier_stock",
-      "fieldtype": "Float",
-      "label": "J Multiplier Stock",
-      "default": "1"
-    },
-    {
-      "fieldname": "l_multiplier_min",
-      "fieldtype": "Float",
-      "label": "L Multiplier Min",
-      "default": "0.3"
-    },
-    {
-      "fieldname": "l_multiplier_max",
-      "fieldtype": "Float",
-      "label": "L Multiplier Max",
-      "default": "0.5"
-    },
-    {
-      "fieldname": "l_multiplier_stock",
-      "fieldtype": "Float",
-      "label": "L Multiplier Stock",
-      "default": "1"
-    },
-    {
-      "fieldname": "heading_customs",
-      "fieldtype": "Heading",
-      "label": "Customs Rules"
-    },
-    {
-      "fieldname": "customs_percent_default",
-      "fieldtype": "Percent",
-      "label": "Customs Percent Default",
-      "default": "20.25"
-    },
-    {
-      "fieldname": "customs_rules",
+      "fieldname": "expenses",
       "fieldtype": "Table",
-      "label": "Customs Rules",
-      "options": "Pricing Scenario Customs Rule",
+      "label": "Expenses",
+      "options": "Pricing Scenario Expense",
       "reqd": 1
     }
   ],
   "is_submittable": 0,
   "links": [],
-  "modified": "2026-02-16 00:00:00.000000",
+  "modified": "2026-02-22 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Scenario",

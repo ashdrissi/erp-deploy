@@ -11,29 +11,22 @@
     "buy_price",
     "buy_price_missing",
     "buy_price_message",
-    "material",
-    "weight_kg",
     "display_group",
     "show_in_detail",
     "base_amount",
-    "customs",
-    "transport_transitaire",
-    "team_office_charge",
-    "taxes_impots",
-    "margin_amount",
-    "sell_sans_stock_min",
-    "sell_sans_stock_max",
-    "sell_stock",
-    "selected_sell_unit",
-    "selected_sell_total",
+    "expense_total",
+    "projected_unit_price",
+    "projected_total_price",
+    "manual_sell_unit_price",
+    "final_sell_unit_price",
+    "final_sell_total",
     "benchmark_price",
     "benchmark_delta_abs",
     "benchmark_delta_pct",
     "benchmark_status",
     "benchmark_note",
-    "manual_sell_unit_price",
-    "final_sell_unit_price",
-    "final_sell_total"
+    "pricing_breakdown_json",
+    "breakdown_preview"
   ],
   "fields": [
     {
@@ -57,7 +50,7 @@
     {
       "fieldname": "buy_price",
       "fieldtype": "Currency",
-      "label": "Buy Price",
+      "label": "Base Unit Price",
       "default": "0",
       "in_list_view": 1,
       "non_negative": 1
@@ -65,29 +58,14 @@
     {
       "fieldname": "buy_price_missing",
       "fieldtype": "Check",
-      "label": "Buy Price Missing",
+      "label": "Base Price Missing",
       "read_only": 1
     },
     {
       "fieldname": "buy_price_message",
       "fieldtype": "Small Text",
-      "label": "Buy Price Message",
+      "label": "Base Price Message",
       "read_only": 1
-    },
-    {
-      "fieldname": "material",
-      "fieldtype": "Select",
-      "label": "Material",
-      "options": "STEEL\nGALVA\nINOX\nCOPPER\nOTHER",
-      "read_only": 1,
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "weight_kg",
-      "fieldtype": "Float",
-      "label": "Weight KG",
-      "read_only": 1,
-      "in_list_view": 1
     },
     {
       "fieldname": "display_group",
@@ -110,64 +88,42 @@
       "in_list_view": 1
     },
     {
-      "fieldname": "customs",
+      "fieldname": "expense_total",
       "fieldtype": "Currency",
-      "label": "Customs",
-      "read_only": 1
-    },
-    {
-      "fieldname": "transport_transitaire",
-      "fieldtype": "Currency",
-      "label": "Transport & Transitaire",
-      "read_only": 1
-    },
-    {
-      "fieldname": "team_office_charge",
-      "fieldtype": "Currency",
-      "label": "Team Office Charge",
-      "read_only": 1
-    },
-    {
-      "fieldname": "taxes_impots",
-      "fieldtype": "Currency",
-      "label": "Taxes Impots",
-      "read_only": 1
-    },
-    {
-      "fieldname": "margin_amount",
-      "fieldtype": "Currency",
-      "label": "Margin Amount",
-      "read_only": 1
-    },
-    {
-      "fieldname": "sell_sans_stock_min",
-      "fieldtype": "Currency",
-      "label": "Sell Sans Stock Min",
-      "read_only": 1
-    },
-    {
-      "fieldname": "sell_sans_stock_max",
-      "fieldtype": "Currency",
-      "label": "Sell Sans Stock Max",
-      "read_only": 1
-    },
-    {
-      "fieldname": "sell_stock",
-      "fieldtype": "Currency",
-      "label": "Sell Stock",
-      "read_only": 1
-    },
-    {
-      "fieldname": "selected_sell_unit",
-      "fieldtype": "Currency",
-      "label": "Selected Sell Unit",
+      "label": "Expense Total",
       "read_only": 1,
       "in_list_view": 1
     },
     {
-      "fieldname": "selected_sell_total",
+      "fieldname": "projected_unit_price",
       "fieldtype": "Currency",
-      "label": "Selected Sell Total",
+      "label": "Projected Unit Price",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "projected_total_price",
+      "fieldtype": "Currency",
+      "label": "Projected Total",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "manual_sell_unit_price",
+      "fieldtype": "Currency",
+      "label": "Manual Unit Override"
+    },
+    {
+      "fieldname": "final_sell_unit_price",
+      "fieldtype": "Currency",
+      "label": "Final Unit Price",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "final_sell_total",
+      "fieldtype": "Currency",
+      "label": "Final Total",
       "read_only": 1,
       "in_list_view": 1
     },
@@ -204,28 +160,22 @@
       "read_only": 1
     },
     {
-      "fieldname": "manual_sell_unit_price",
-      "fieldtype": "Currency",
-      "label": "Manual Sell Unit Price"
+      "fieldname": "pricing_breakdown_json",
+      "fieldtype": "Long Text",
+      "label": "Pricing Breakdown JSON",
+      "read_only": 1,
+      "hidden": 1
     },
     {
-      "fieldname": "final_sell_unit_price",
-      "fieldtype": "Currency",
-      "label": "Final Sell Unit Price",
-      "read_only": 1,
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "final_sell_total",
-      "fieldtype": "Currency",
-      "label": "Final Sell Total",
-      "read_only": 1,
-      "in_list_view": 1
+      "fieldname": "breakdown_preview",
+      "fieldtype": "Small Text",
+      "label": "Breakdown Preview",
+      "read_only": 1
     }
   ],
   "istable": 1,
   "links": [],
-  "modified": "2026-02-16 00:00:00.000000",
+  "modified": "2026-02-22 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Sheet Item",

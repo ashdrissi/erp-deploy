@@ -14,18 +14,14 @@
     "tier",
     "pricing_scenario",
     "product_bundle",
-    "price_mode",
     "output_mode",
     "calculated_on",
+    "projection_dashboard",
     "heading_lines",
     "lines",
     "heading_totals",
     "total_buy",
-    "total_customs",
-    "total_transport",
-    "total_team_charge",
-    "total_taxes",
-    "total_margin",
+    "total_expenses",
     "total_selling"
   ],
   "fields": [
@@ -76,7 +72,7 @@
       "fieldname": "tier",
       "fieldtype": "Select",
       "label": "Tier",
-      "options": "Eco\nIntermédiaire\nLuxe"
+      "options": "Eco\nIntermediaire\nLuxe"
     },
     {
       "fieldname": "pricing_scenario",
@@ -93,20 +89,11 @@
       "options": "Product Bundle"
     },
     {
-      "fieldname": "price_mode",
-      "fieldtype": "Select",
-      "label": "Price Mode",
-      "options": "min\nmax\nstock",
-      "default": "max",
-      "reqd": 1,
-      "in_list_view": 1
-    },
-    {
       "fieldname": "output_mode",
       "fieldtype": "Select",
       "label": "Output Mode",
-      "options": "Avec détails\nSans détails",
-      "default": "Avec détails",
+      "options": "Avec details\nSans details",
+      "default": "Avec details",
       "reqd": 1
     },
     {
@@ -116,9 +103,14 @@
       "read_only": 1
     },
     {
+      "fieldname": "projection_dashboard",
+      "fieldtype": "HTML",
+      "label": "Projection Dashboard"
+    },
+    {
       "fieldname": "heading_lines",
       "fieldtype": "Heading",
-      "label": "Lines"
+      "label": "Pricing Sheet"
     },
     {
       "fieldname": "lines",
@@ -134,49 +126,25 @@
     {
       "fieldname": "total_buy",
       "fieldtype": "Currency",
-      "label": "Total Buy",
+      "label": "Total Base",
       "read_only": 1
     },
     {
-      "fieldname": "total_customs",
+      "fieldname": "total_expenses",
       "fieldtype": "Currency",
-      "label": "Total Customs",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_transport",
-      "fieldtype": "Currency",
-      "label": "Total Transport",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_team_charge",
-      "fieldtype": "Currency",
-      "label": "Total Team Charge",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_taxes",
-      "fieldtype": "Currency",
-      "label": "Total Taxes",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_margin",
-      "fieldtype": "Currency",
-      "label": "Total Margin",
+      "label": "Total Expenses",
       "read_only": 1
     },
     {
       "fieldname": "total_selling",
       "fieldtype": "Currency",
-      "label": "Total Selling",
+      "label": "Total Final",
       "read_only": 1
     }
   ],
   "is_submittable": 0,
   "links": [],
-  "modified": "2026-02-16 00:00:00.000000",
+  "modified": "2026-02-22 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Sheet",
