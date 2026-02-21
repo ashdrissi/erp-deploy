@@ -60,9 +60,75 @@
         apply_mode(settings.theme_mode || "Light");
         apply_colors(settings);
         inject_custom_css(settings.custom_css || "");
+        install_branding_overrides();
         add_toggle_button();
         // Logo is now handled purely via CSS fixed positioning
         // move_branding_to_sidebar();
+    }
+
+    /* ---- Branding Overrides ---- */
+    function install_branding_overrides() {
+        if (window.__orderlift_branding_override_installed) return;
+        window.__orderlift_branding_override_installed = true;
+
+        var hiddenStyle = document.createElement("style");
+        hiddenStyle.id = "orderlift-branding-hide-style";
+        hiddenStyle.textContent = [
+            'a[href*="frappeframework.com"] { display: none !important; }',
+            'a[title*="Frappe Framework"] { display: none !important; }'
+        ].join("\n");
+        document.head.appendChild(hiddenStyle);
+
+        function rewriteBranding(root) {
+            var host = root || document.body;
+            if (!host) return;
+
+            var walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null);
+            var node;
+            var replacements = [
+                [/\bERPNext\b/g, "Orderlift"],
+                [/\bFrappe Framework\b/g, "Orderlift Platform"]
+            ];
+
+            while ((node = walker.nextNode())) {
+                var parentTag = node.parentElement && node.parentElement.tagName;
+                if (!parentTag) continue;
+                if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "NOSCRIPT") continue;
+
+                var nextText = node.nodeValue;
+                for (var i = 0; i < replacements.length; i++) {
+                    nextText = nextText.replace(replacements[i][0], replacements[i][1]);
+                }
+                if (nextText !== node.nodeValue) {
+                    node.nodeValue = nextText;
+                }
+            }
+
+            var title = document.title || "";
+            title = title.replace(/\bERPNext\b/g, "Orderlift");
+            title = title.replace(/\bFrappe Framework\b/g, "Orderlift Platform");
+            if (document.title !== title) document.title = title;
+        }
+
+        rewriteBranding(document.body);
+
+        var observer = new MutationObserver(function (mutations) {
+            for (var i = 0; i < mutations.length; i++) {
+                var m = mutations[i];
+                if (!m.addedNodes || !m.addedNodes.length) continue;
+                for (var j = 0; j < m.addedNodes.length; j++) {
+                    var added = m.addedNodes[j];
+                    if (added && added.nodeType === 1) rewriteBranding(added);
+                }
+            }
+            rewriteBranding(document.body);
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
     }
 
     /* ---- Branding Move ---- */
