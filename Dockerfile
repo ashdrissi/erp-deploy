@@ -1,6 +1,6 @@
 # Use the Official ERPNext v15 Image
 # ERPNext and Frappe are pre-installed in this image
-FROM frappe/erpnext:v16.9.0
+FROM frappe/erpnext:version-16
 
 USER root
 
