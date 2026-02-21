@@ -5,33 +5,82 @@
 
 frappe.provide("orderlift");
 
-// ── Rename "ERPNext" → "Orderlift" everywhere in the UI ──
-(function renameERPNext() {
-    function doReplace() {
-        document.querySelectorAll(
-            ".header-subtitle, .sidebar-item-label, span, div, p, a, h1, h2, h3, h4, h5, h6, label"
-        ).forEach(function (el) {
-            if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
-                var txt = el.textContent.trim();
-                if (txt === "ERPNext") {
-                    el.textContent = "Orderlift";
-                } else if (txt === "ERPNext Settings") {
-                    el.textContent = "Orderlift Settings";
-                }
-            }
-        });
+// ── Rename ERPNext/Frappe Framework labels in Desk UI ──
+(function renameBranding() {
+    if (window.__orderlift_global_branding_override_installed) return;
+    window.__orderlift_global_branding_override_installed = true;
+
+    var replacements = [
+        [/ERPNext/gi, "Orderlift"],
+        [/Frappe Framework/gi, "Orderlift Platform"],
+    ];
+
+    function replaceText(value) {
+        if (!value) return value;
+        var out = String(value);
+        for (var i = 0; i < replacements.length; i++) {
+            out = out.replace(replacements[i][0], replacements[i][1]);
+        }
+        return out;
     }
+
+    function doReplace(root) {
+        var host = root || document.body;
+        if (!host) return;
+
+        var walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null);
+        var node;
+        while ((node = walker.nextNode())) {
+            var parentTag = node.parentElement && node.parentElement.tagName;
+            if (!parentTag) continue;
+            if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "NOSCRIPT") continue;
+            var next = replaceText(node.nodeValue);
+            if (next !== node.nodeValue) node.nodeValue = next;
+        }
+
+        var elements = host.querySelectorAll
+            ? host.querySelectorAll("[title], [aria-label], [placeholder], a[href*='frappeframework.com']")
+            : [];
+        for (var j = 0; j < elements.length; j++) {
+            var el = elements[j];
+            if (el.hasAttribute("title")) el.setAttribute("title", replaceText(el.getAttribute("title")));
+            if (el.hasAttribute("aria-label")) el.setAttribute("aria-label", replaceText(el.getAttribute("aria-label")));
+            if (el.hasAttribute("placeholder")) el.setAttribute("placeholder", replaceText(el.getAttribute("placeholder")));
+            if (el.tagName === "A" && /frappeframework\.com/i.test(el.getAttribute("href") || "")) {
+                el.style.display = "none";
+            }
+        }
+
+        var title = replaceText(document.title || "");
+        if (title !== document.title) document.title = title;
+    }
+
+    doReplace(document.body);
+
+    var queued = false;
+    function queueReplace() {
+        if (queued) return;
+        queued = true;
+        setTimeout(function () {
+            queued = false;
+            doReplace(document.body);
+        }, 0);
+    }
+
     if (document.body) {
-        new MutationObserver(doReplace).observe(document.body, {
+        new MutationObserver(queueReplace).observe(document.body, {
             childList: true,
             subtree: true,
+            characterData: true,
         });
     } else {
         document.addEventListener("DOMContentLoaded", function () {
-            new MutationObserver(doReplace).observe(document.body, {
+            new MutationObserver(queueReplace).observe(document.body, {
                 childList: true,
                 subtree: true,
+                characterData: true,
             });
+            queueReplace();
         });
     }
 })();

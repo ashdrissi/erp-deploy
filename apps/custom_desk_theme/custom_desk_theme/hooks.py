@@ -7,7 +7,7 @@ app_license = "MIT"
 app_version = "1.0.0"
 
 # Bump when you need to force browser cache refresh for theme assets.
-ASSET_VERSION = "20260220-4"
+ASSET_VERSION = "20260222-1"
 
 # Required apps
 required_apps = ["frappe"]
@@ -16,9 +16,9 @@ required_apps = ["frappe"]
 # Assets — injected into Desk for all logged-in users
 # ---------------------------------------------------------
 app_include_css = [
-    "/assets/custom_desk_theme/css/theme_20260220_2015.css",
+    "/assets/custom_desk_theme/css/theme_20260220_2015.css?v=20260222-1",
 ]   
-app_include_js = ["/assets/custom_desk_theme/js/custom_theme.js"]
+app_include_js = ["/assets/custom_desk_theme/js/custom_theme.js?v=20260222-1"]
 
 # ---------------------------------------------------------
 # Boot session — send theme settings to client on login

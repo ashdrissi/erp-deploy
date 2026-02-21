@@ -75,9 +75,24 @@
         hiddenStyle.id = "orderlift-branding-hide-style";
         hiddenStyle.textContent = [
             'a[href*="frappeframework.com"] { display: none !important; }',
-            'a[title*="Frappe Framework"] { display: none !important; }'
+            'a[title*="Frappe Framework"] { display: none !important; }',
+            '.powered-by-frappe, .powered-by { display: none !important; }'
         ].join("\n");
         document.head.appendChild(hiddenStyle);
+
+        var replacements = [
+            [/ERPNext/gi, "Orderlift"],
+            [/Frappe Framework/gi, "Orderlift Platform"]
+        ];
+
+        function replaceText(value) {
+            if (!value) return value;
+            var out = String(value);
+            for (var i = 0; i < replacements.length; i++) {
+                out = out.replace(replacements[i][0], replacements[i][1]);
+            }
+            return out;
+        }
 
         function rewriteBranding(root) {
             var host = root || document.body;
@@ -85,34 +100,45 @@
 
             var walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null);
             var node;
-            var replacements = [
-                [/\bERPNext\b/g, "Orderlift"],
-                [/\bFrappe Framework\b/g, "Orderlift Platform"]
-            ];
 
             while ((node = walker.nextNode())) {
                 var parentTag = node.parentElement && node.parentElement.tagName;
                 if (!parentTag) continue;
                 if (parentTag === "SCRIPT" || parentTag === "STYLE" || parentTag === "NOSCRIPT") continue;
 
-                var nextText = node.nodeValue;
-                for (var i = 0; i < replacements.length; i++) {
-                    nextText = nextText.replace(replacements[i][0], replacements[i][1]);
-                }
+                var nextText = replaceText(node.nodeValue);
                 if (nextText !== node.nodeValue) {
                     node.nodeValue = nextText;
                 }
             }
 
-            var title = document.title || "";
-            title = title.replace(/\bERPNext\b/g, "Orderlift");
-            title = title.replace(/\bFrappe Framework\b/g, "Orderlift Platform");
+            var elements = host.querySelectorAll ? host.querySelectorAll("[title], [aria-label], [placeholder], a[href*='frappeframework.com']") : [];
+            for (var k = 0; k < elements.length; k++) {
+                var el = elements[k];
+                if (el.hasAttribute("title")) el.setAttribute("title", replaceText(el.getAttribute("title")));
+                if (el.hasAttribute("aria-label")) el.setAttribute("aria-label", replaceText(el.getAttribute("aria-label")));
+                if (el.hasAttribute("placeholder")) el.setAttribute("placeholder", replaceText(el.getAttribute("placeholder")));
+                if (el.tagName === "A" && /frappeframework\.com/i.test(el.getAttribute("href") || "")) {
+                    var row = el.closest(".list-group-item, .dropdown-item, li, .help-box, .widget, .card, .footer") || el;
+                    row.style.display = "none";
+                }
+            }
+
+            var title = replaceText(document.title || "");
             if (document.title !== title) document.title = title;
         }
 
         rewriteBranding(document.body);
 
+        var queued = false;
         var observer = new MutationObserver(function (mutations) {
+            if (queued) return;
+            queued = true;
+            setTimeout(function () {
+                queued = false;
+                rewriteBranding(document.body);
+            }, 0);
+
             for (var i = 0; i < mutations.length; i++) {
                 var m = mutations[i];
                 if (!m.addedNodes || !m.addedNodes.length) continue;
@@ -121,7 +147,6 @@
                     if (added && added.nodeType === 1) rewriteBranding(added);
                 }
             }
-            rewriteBranding(document.body);
         });
 
         observer.observe(document.documentElement, {
