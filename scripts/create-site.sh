@@ -220,6 +220,17 @@ ensure_app_installed() {
         echo "ERROR: custom_desk_theme backup missing at ${app_backup}" >&2
         return 1
       fi
+    elif [[ "$app" == "infintrix_theme" ]]; then
+      local app_backup="/opt/erp-deploy/apps/infintrix_theme"
+      if [[ -d "$app_backup" ]]; then
+        echo "Restoring infintrix_theme app from image backup"
+        mkdir -p "/home/frappe/frappe-bench/apps/${app}"
+        cp -a "${app_backup}/." "/home/frappe/frappe-bench/apps/${app}/"
+        /home/frappe/frappe-bench/env/bin/pip install -e "/home/frappe/frappe-bench/apps/${app}/"
+      else
+        echo "ERROR: infintrix_theme backup missing at ${app_backup}" >&2
+        return 1
+      fi
     else
       bench get-app "$app" "https://github.com/frappe/${app}.git"
     fi
@@ -382,6 +393,9 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   # Install custom_desk_theme (branded Desk UI).
   ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
 
+  # Install infintrix_theme (branded Desk UI theme).
+  ensure_app_installed "$site_name" "infintrix_theme" || echo "WARN: infintrix_theme install failed; continuing"
+
   # Install Insights (BI / reporting).
   ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
 
@@ -411,6 +425,9 @@ ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install f
 
 # Install custom_desk_theme (branded Desk UI).
 ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
+
+# Install infintrix_theme (branded Desk UI theme).
+ensure_app_installed "$site_name" "infintrix_theme" || echo "WARN: infintrix_theme install failed; continuing"
 
 # Install Insights (BI / reporting).
 ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"

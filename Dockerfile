@@ -15,10 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Ship custom apps inside the image so they persist across redeploys.
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/
+COPY --chown=frappe:frappe apps/infintrix_theme/ /home/frappe/frappe-bench/apps/infintrix_theme/
 
 # Keep a second immutable copy outside bench volumes.
 COPY --chown=frappe:frappe apps/orderlift/ /opt/erp-deploy/apps/orderlift/
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /opt/erp-deploy/apps/custom_desk_theme/
+COPY --chown=frappe:frappe apps/infintrix_theme/ /opt/erp-deploy/apps/infintrix_theme/
 
 # Switch to the frappe user (Security Requirement)
 USER frappe
@@ -28,6 +30,7 @@ WORKDIR /home/frappe/frappe-bench
 # Install custom apps into bench virtualenv so they are importable by bench.
 RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/orderlift/
 RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/custom_desk_theme/
+RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/infintrix_theme/
 
 # Pre-fetch HRMS app code so it persists across redeploys.
 # Site installation and migrations are handled by create-site.sh.
