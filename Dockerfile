@@ -27,9 +27,9 @@ USER frappe
 
 WORKDIR /home/frappe/frappe-bench
 
-# Pin Frappe to an exact release tag since Docker Hub publishes rolling `version-16`.
+# Pin Frappe to an exact release tag without triggering bench app builds.
 RUN rm -rf /home/frappe/frappe-bench/apps/frappe \
-    && bench get-app --branch v16.9.0 frappe https://github.com/frappe/frappe.git \
+    && git clone --depth 1 --branch v16.9.0 https://github.com/frappe/frappe.git /home/frappe/frappe-bench/apps/frappe \
     && /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/frappe
 
 # Install custom apps into bench virtualenv so they are importable by bench.
