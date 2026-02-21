@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html data-theme-mode="{{ desk_theme.lower() }}" data-theme="{{ desk_theme.lower() }}" data-sidebar-active-style="{{ theme_settings.sidebar_active_style or 'Bar' }}" data-table-striped="{{ theme_settings.table_striped or '0' }}" data-badge-style="{{ theme_settings.badge_style or 'Soft' }}" data-sticky-table-header="{{ theme_settings.sticky_table_header or '1' }}" data-table-density="{{ (theme_settings.table_density_mode or 'Standard')|lower }}" data-table-hover-style="{{ (theme_settings.table_hover_style or 'Lift')|lower }}" data-table-zebra="{{ (theme_settings.table_zebra_mode or 'Soft')|lower }}" data-table-border-mode="{{ (theme_settings.table_border_mode or 'Subtle')|lower }}" data-table-toolbar-style="{{ (theme_settings.table_toolbar_style or 'Glass')|lower }}" data-table-sort-icon-style="{{ (theme_settings.table_sort_icon_style or 'Bold')|lower }}" data-list-hover-style="{{ (theme_settings.list_hover_style or 'Lift')|lower }}" data-ui-density="{{ (theme_settings.ui_density_mode or 'Standard')|lower }}" data-button-text-transform="{{ (theme_settings.button_text_transform or 'None')|lower }}" data-card-border-style="{{ (theme_settings.card_border_style or 'Subtle')|lower }}" dir={{ layout_direction }} lang="{{ lang }}">
+	<head>
+		<meta charset="UTF-8">
+		<!-- Chrome, Firefox OS and Opera -->
+		<meta name="theme-color" content="#0089FF">
+		<!-- Windows Phone -->
+		<meta name="msapplication-navbutton-color" content="#0089FF">
+		<!-- iOS Safari -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="#0089FF">
+		<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+		<meta content="utf-8" http-equiv="encoding">
+		<meta name="author" content="">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0,
+			maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, minimal-ui">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="white">
+		<meta name="mobile-web-app-capable" content="yes">
+		<title>{{ app_name }}</title>
+		<link rel="shortcut icon"
+			href="{{ favicon or "/assets/frappe/images/frappe-favicon.svg" }}" type="image/x-icon">
+		<link rel="icon"
+			href="{{ favicon or "/assets/frappe/images/frappe-favicon.svg" }}" type="image/x-icon">
+			<link
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+  rel="stylesheet"
+/>
+
+
+				<link type="text/css" rel="stylesheet" href="https://fonts.googleapis.com/css?family={{theme_settings.font_family or 'Cairo'}}:300,400,500,600,700,800,900">
+
+		{% for include in include_css -%}
+		{{ include_style(include) }}
+		{%- endfor -%}
+
+		<style>
+    html,
+    body {
+        font-family: "{{ theme_settings.font_family or 'Roboto' }}";
+        --text-base: {{ theme_settings.font_size or '14' }}px;
+        --inf-navbar-height: {{ (theme_settings.navbar_height or 54) }}px;
+        --inf-content-max-width: {{ (theme_settings.content_max_width or 1680) }}px;
+        --inf-navbar-blur: {{ (theme_settings.navbar_blur_strength or 20) }}px;
+
+        /* --- Main Theme Color --- */
+        /* Set the base color directly from the hex code */
+        --brand-color: {{ theme_color or '#2563EB' }};
+        --inf-link-color: {{ theme_settings.link_color or '#1D4ED8' }};
+        --inf-surface-bg: {{ theme_settings.surface_bg_color or '#F7F9FC' }};
+        --inf-surface-card: {{ theme_settings.surface_card_color or '#FFFFFF' }};
+        --inf-border-color: {{ theme_settings.border_color or '#D7DEEB' }};
+        --inf-text-primary: {{ theme_settings.text_primary_color or '#0F172A' }};
+        --inf-text-muted: {{ theme_settings.text_muted_color or '#64748B' }};
+        --inf-input-focus-ring: {{ theme_settings.input_focus_ring_color or 'rgba(37, 99, 235, 0.25)' }};
+        --inf-report-toolbar-bg: {{ theme_settings.report_toolbar_bg or 'rgba(255, 255, 255, 0.75)' }};
+        --inf-badge-radius: {{ (theme_settings.badge_radius or 999) }}px;
+
+		--primary-color: var(--brand-color);
+
+        /* --- Generate Dynamic Shades and Tints --- */
+        /* Use color-mix() to create lighter (tints) and darker (shades) versions */
+        --brand-color-hover: color-mix(in srgb, var(--brand-color) 85%, black);
+
+        /* Lighter Tints (mixed with white) */
+        --brand-color-50: color-mix(in srgb, var(--brand-color) 5%, white);
+        --brand-color-100: color-mix(in srgb, var(--brand-color) 10%, white);
+        --brand-color-200: color-mix(in srgb, var(--brand-color) 25%, white);
+        --brand-color-300: color-mix(in srgb, var(--brand-color) 40%, white);
+        --brand-color-400: color-mix(in srgb, var(--brand-color) 55%, white);
+
+        /* Darker Shades (mixed with black) */
+        --brand-color-600: color-mix(in srgb, var(--brand-color) 85%, black);
+        --brand-color-700: color-mix(in srgb, var(--brand-color) 70%, black);
+        --brand-color-800: color-mix(in srgb, var(--brand-color) 55%, black);
+        --brand-color-900: color-mix(in srgb, var(--brand-color) 40%, black);
+
+        /* --- Design System Tokens --- */
+        --inf-btn-radius: {{ (theme_settings.btn_radius or 6) }}px;
+        --inf-btn-shadow: {{ '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' if theme_settings.btn_shadow|int else 'none' }};
+        --inf-btn-hover-lift: {{ '-2px' if theme_settings.btn_hover_lift|int else '0' }};
+        
+        --inf-card-radius: {{ (theme_settings.card_radius or 12) }}px;
+        --inf-glass-blur: {{ (theme_settings.glass_blur or 12) }}px;
+        --inf-card-shadow: {{ '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)' if theme_settings.card_shadow|int else 'none' }};
+
+        --inf-table-row-height: {{ '32px' if theme_settings.table_row_height == 'Compact' else '52px' if theme_settings.table_row_height == 'Spacious' else '42px' }};
+        --inf-table-row-height-compact: 34px;
+        --inf-table-row-height-standard: 42px;
+        --inf-table-row-height-spacious: 52px;
+        --inf-table-header-height: {{ (theme_settings.table_header_height or 44) }}px;
+        --inf-table-header-radius: {{ (theme_settings.table_header_radius or 10) }}px;
+        --inf-table-row-radius: {{ (theme_settings.table_row_radius or 10) }}px;
+        --inf-table-row-gap: {{ (theme_settings.table_row_gap or 6) }}px;
+        --inf-table-header-bg: {{ 'var(--brand-color)' if theme_settings.table_header_bg|int else 'transparent' }};
+        --inf-table-header-color: {{ theme_settings.table_header_text_color or ('#FFFFFF' if theme_settings.table_header_bg|int else 'inherit') }};
+        --inf-table-hover-bg: {{ theme_settings.table_hover_bg or 'rgba(37, 99, 235, 0.08)' }};
+        --inf-table-border-color: {{ theme_settings.table_border_color or '#D7DEEB' }};
+        --inf-table-cell-padding: {{ (theme_settings.table_cell_padding or 12) }}px;
+
+        --inf-list-row-radius: {{ (theme_settings.list_row_radius or 12) }}px;
+        --inf-list-row-padding: {{ (theme_settings.list_row_padding or 10) }}px;
+        --inf-list-row-gap: {{ (theme_settings.list_row_gap or 10) }}px;
+        --inf-list-header-height: {{ (theme_settings.list_header_height or 52) }}px;
+        --inf-list-header-radius: {{ (theme_settings.list_header_radius or 12) }}px;
+        --inf-list-header-bg: {{ theme_settings.list_header_bg or 'var(--brand-color)' }};
+        --inf-list-header-text: {{ theme_settings.list_header_text_color or '#FFFFFF' }};
+        --inf-list-hover-bg: {{ theme_settings.list_hover_bg or 'rgba(37, 99, 235, 0.08)' }};
+
+        --inf-shortcut-card-radius: {{ (theme_settings.shortcut_card_radius or 16) }}px;
+        --inf-shortcut-card-padding: {{ (theme_settings.shortcut_card_padding or 16) }}px;
+        --inf-shortcut-icon-bg: {{ theme_settings.shortcut_icon_bg or 'rgba(37, 99, 235, 0.12)' }};
+        --inf-shortcut-icon-color: {{ theme_settings.shortcut_icon_color or '#1D4ED8' }};
+        --inf-shortcut-hover-lift: {{ (theme_settings.shortcut_hover_lift or 4) }}px;
+
+        --inf-sidebar-width: {{ (theme_settings.sidebar_width or 260) }}px;
+        --inf-sidebar-item-radius: {{ (theme_settings.sidebar_item_radius or 8) }}px;
+        --inf-sidebar-active-style: "{{ theme_settings.sidebar_active_style or 'Bar' }}";
+
+        --inf-transition-speed: {{ (theme_settings.transition_speed or 250) }}ms;
+        --inf-easing: {{ theme_settings.easing_type or 'cubic-bezier(0.4, 0, 0.2, 1)' }};
+
+        /* --- apply to core --- */
+        --border-radius-sm: calc(var(--inf-btn-radius) * 0.5);
+        --border-radius-md: var(--inf-btn-radius);
+        --border-radius-lg: var(--inf-card-radius);
+
+        /* --- 1. Fluent Design Color & Style Palette (Dynamic) --- */
+        --fluent-primary: var(--brand-color);
+        --fluent-primary-dark: var(--brand-color-900);
+
+        /* --- 2. Override Core Frappe Variables (Dynamic) --- */
+        --font-stack: '{{ theme_settings.font_family or "Roboto" }}', "InterVariable", "Inter", sans-serif;
+        --bg-color: var(--inf-surface-bg);
+        --fg-color: var(--inf-surface-card);
+        --navbar-bg: var(--fluent-surface-transparent);
+        --modal-bg: var(--fluent-surface);
+        --popover-bg: var(--fluent-surface);
+        --card-bg: var(--inf-surface-card);
+        --primary: var(--fluent-primary);
+        --btn-primary: var(--fluent-primary);
+        --text-color: var(--inf-text-primary);
+        --text-muted: var(--inf-text-muted);
+        --heading-color: var(--inf-text-primary);
+        --border-color: var(--inf-border-color);
+        --table-border-color: var(--inf-table-border-color);
+        --control-bg: var(--fluent-surface);
+        --highlight-color: color-mix(in srgb, var(--brand-color) 10%, #0078D4 10%, white 80%);
+        --card-shadow: var(--inf-card-shadow);
+        --modal-shadow: var(--fluent-shadow-lg);
+        --btn-shadow: var(--inf-btn-shadow);
+    }
+
+    body {
+        background: var(--inf-surface-bg);
+        color: var(--inf-text-primary);
+        font-size: var(--text-base);
+    }
+
+    a {
+        color: var(--inf-link-color);
+    }
+</style>
+
+		{% if lang == "eo" %}
+		<script type="text/javascript">
+			var _jipt = [];
+			_jipt.push(['project', 'frappe']);
+		</script>
+		<script type="text/javascript" src="https://cdn.crowdin.com/jipt/jipt.js"></script>
+		{% endif %}
+
+	</head>
+	<body>
+
+		{% if not disable_splash %}
+		{% include "templates/includes/splash_screen.html" %}
+		{% endif %}
+		
+
+		
+		<div class="main-section">
+			<header></header>
+			<div id="body"></div>
+			<footer></footer>
+		</div>
+		<div id="all-symbols" style="display:none"></div>
+		<div id="build-events-overlay"></div>
+
+		<script type="text/javascript">
+			window._version_number = "{{ build_version }}";
+			// browser support
+			window.app = true;
+			window.dev_server = {{ dev_server }};
+
+			if (!window.frappe) window.frappe = {};
+
+			frappe.boot = {{ boot | json }};
+			frappe._messages = frappe.boot["__messages"];
+			frappe.csrf_token = "{{ csrf_token }}";
+
+			{%- for path in include_icons -%}
+			fetch(`/assets/{{ path }}?v=${window._version_number}`, { credentials: "same-origin" })
+				.then((r) => r.text())
+				.then((svg) => {
+					let svg_container = document.getElementById("all-symbols");
+					svg_container.insertAdjacentHTML("beforeend", svg);
+				});
+			{%- endfor -%}
+		</script>
+
+	{% for include in include_js %}
+	{{ include_script(include) }}
+	{% endfor %}
+
+	{% if custom_css_code %}
+	<style id="infx-custom-css-inline">
+	{{ custom_css_code }}
+	</style>
+	{% endif %}
+
+	{% if custom_js_code %}
+	<script id="infx-custom-js-inline">
+	{{ custom_js_code }}
+	</script>
+	{% endif %}
+
+	{% include "templates/includes/app_analytics/google_analytics.html" %}
+
+		{% for sound in (sounds or []) %}
+		<audio preload="auto" id="sound-{{ sound.name }}" volume={{ sound.volume or 1 }}>
+			<source src="{{ sound.src }}"></source>
+		</audio>
+		{% endfor %}
+	</body>
+</html>
