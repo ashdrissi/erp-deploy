@@ -393,8 +393,7 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   # Install custom_desk_theme (branded Desk UI).
   ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
 
-  # Install infintrix_theme (branded Desk UI theme).
-  ensure_app_installed "$site_name" "infintrix_theme" || echo "WARN: infintrix_theme install failed; continuing"
+  # Infintrix theme disabled.
 
   # Install Insights (BI / reporting).
   ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
@@ -426,8 +425,7 @@ ensure_app_installed "$site_name" "orderlift" || echo "WARN: orderlift install f
 # Install custom_desk_theme (branded Desk UI).
 ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk_theme install failed; continuing"
 
-# Install infintrix_theme (branded Desk UI theme).
-ensure_app_installed "$site_name" "infintrix_theme" || echo "WARN: infintrix_theme install failed; continuing"
+# Infintrix theme disabled.
 
 # Install Insights (BI / reporting).
 ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
