@@ -19,6 +19,8 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - logs:/home/frappe/logs
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
       - mariadb
       - redis-cache
@@ -53,6 +55,8 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - logs:/home/frappe/logs
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
       create-site:
         condition: service_completed_successfully
@@ -74,6 +78,8 @@ services:
       - UPSTREAM_REAL_IP_RECURSIVE=off
     volumes:
       - sites:/home/frappe/frappe-bench/sites:ro
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme:ro
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift:ro
     depends_on:
       - app
       - websocket
@@ -122,6 +128,8 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - logs:/home/frappe/logs
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
       create-site:
         condition: service_completed_successfully
@@ -141,6 +149,8 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - logs:/home/frappe/logs
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
       create-site:
         condition: service_completed_successfully
@@ -160,6 +170,8 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - logs:/home/frappe/logs
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
       create-site:
         condition: service_completed_successfully
@@ -180,6 +192,8 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - logs:/home/frappe/logs
+      - /root/erp-deploy/apps/custom_desk_theme:/home/frappe/frappe-bench/apps/custom_desk_theme
+      - /root/erp-deploy/apps/orderlift:/home/frappe/frappe-bench/apps/orderlift
     depends_on:
       create-site:
         condition: service_completed_successfully

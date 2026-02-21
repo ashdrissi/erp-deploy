@@ -197,7 +197,7 @@ ensure_app_installed() {
   if [[ ! -d "/home/frappe/frappe-bench/apps/${app}" ]]; then
     echo "Fetching app code: ${app}"
     if [[ "$app" == "hrms" ]]; then
-      bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
+      bench get-app --branch version-16 --skip-assets hrms https://github.com/frappe/hrms.git
     elif [[ "$app" == "orderlift" ]]; then
       local app_backup="/opt/erp-deploy/apps/orderlift"
       if [[ -d "$app_backup" ]]; then
@@ -392,12 +392,7 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
 fi
 
 echo "Creating new site: ${site_name}"
-new_site_host_flag=()
-if bench new-site --help 2>&1 | grep -q -- "--mariadb-user-host-login-scope"; then
-  new_site_host_flag=(--mariadb-user-host-login-scope "%")
-elif bench new-site --help 2>&1 | grep -q -- "--db-user-host"; then
-  new_site_host_flag=(--db-user-host "%")
-fi
+new_site_host_flag=(--mariadb-user-host-login-scope "%")
 
 bench new-site "$site_name" \
   --admin-password "$admin_password" \

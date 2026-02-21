@@ -1,6 +1,6 @@
 # Use the Official ERPNext v15 Image
 # ERPNext and Frappe are pre-installed in this image
-FROM frappe/erpnext:v15
+FROM frappe/erpnext:v16
 
 USER root
 
@@ -31,10 +31,10 @@ RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/a
 
 # Pre-fetch HRMS app code so it persists across redeploys.
 # Site installation and migrations are handled by create-site.sh.
-RUN bench get-app --branch version-15 --skip-assets hrms https://github.com/frappe/hrms.git
+RUN bench get-app --branch version-16 --skip-assets hrms https://github.com/frappe/hrms.git
 
 # Pre-fetch Insights (BI/reporting) app.
-RUN bench get-app --branch version-3 --skip-assets insights https://github.com/frappe/insights.git
+RUN bench get-app --branch main --skip-assets insights https://github.com/frappe/insights.git
 
 # Create a dummy common_site_config.json for the build step
 # HRMS frontend build fails if this file (and socketio_port) is missing

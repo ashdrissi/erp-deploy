@@ -61,7 +61,8 @@
         apply_colors(settings);
         inject_custom_css(settings.custom_css || "");
         add_toggle_button();
-        move_branding_to_sidebar();
+        // Logo is now handled purely via CSS fixed positioning
+        // move_branding_to_sidebar();
     }
 
     /* ---- Branding Move ---- */

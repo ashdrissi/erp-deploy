@@ -1,39 +1,46 @@
 #!/bin/bash
+set -euo pipefail
 # ============================================================
 # dev.sh — Fast developer commands for the ERP dev environment
 # Usage: ./scripts/dev.sh <command>
 # ============================================================
 
-APP_CONTAINER="erp-deploy-app-1"   # adjust if your container name differs
+APP_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E '(^app-|-app-[0-9]+$)' | head -n 1 || true)
 BENCH="/home/frappe/frappe-bench"
+
+if [[ -z "${APP_CONTAINER}" ]]; then
+  echo "❌ Could not find a running app container." >&2
+  echo "   Start the dev stack first, then retry." >&2
+  exit 1
+fi
 
 case "$1" in
 
   # Rebuild CSS/JS assets for the theme (~30 seconds)
   build-theme)
     echo "🎨 Building custom_desk_theme assets..."
-    docker exec -it $APP_CONTAINER bash -c "cd $BENCH && bench build --app custom_desk_theme"
+    docker exec "$APP_CONTAINER" bash -lc "cd $BENCH && bench build --app custom_desk_theme && bench --site \$SITE_NAME clear-cache"
     echo "✅ Done! Refresh your browser."
     ;;
 
   # Rebuild all app assets
   build-all)
     echo "🔨 Building all app assets..."
-    docker exec -it $APP_CONTAINER bash -c "cd $BENCH && bench build"
+    docker exec "$APP_CONTAINER" bash -lc "cd $BENCH && bench build && bench --site \$SITE_NAME clear-cache"
     echo "✅ Done!"
     ;;
 
   # Restart the web app (Python changes)
   restart)
     echo "♻️  Restarting app container (~10s)..."
-    docker compose -f docker-compose.dev.yml restart app
+    docker restart "$APP_CONTAINER" >/dev/null
     echo "✅ Done!"
     ;;
 
   # Run database migrations (schema changes)
   migrate)
     echo "🗄️  Running migrations..."
-    docker exec -it $APP_CONTAINER bash -c "cd $BENCH && bench --site \$SITE_NAME migrate"
+    docker exec "$APP_CONTAINER" bash -lc "cd $BENCH && bench --site \$SITE_NAME migrate"
     echo "✅ Done!"
     ;;
 
@@ -42,18 +49,18 @@ case "$1" in
     echo "⬇️  Pulling latest code from git..."
     git pull origin main
     echo "♻️  Restarting..."
-    docker compose -f docker-compose.dev.yml restart app
+    docker restart "$APP_CONTAINER" >/dev/null
     echo "✅ Done!"
     ;;
 
   # Open a shell inside the app container
   shell)
-    docker exec -it $APP_CONTAINER bash
+    docker exec -it "$APP_CONTAINER" bash
     ;;
 
   # Show logs
   logs)
-    docker compose -f docker-compose.dev.yml logs -f app
+    docker logs -f "$APP_CONTAINER"
     ;;
 
   *)
