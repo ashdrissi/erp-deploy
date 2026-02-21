@@ -25,7 +25,7 @@ def get_module_name_from_doctype(doc_name, current_module=""):
                                              inner join
                                                         `tabWorkspace Link` l
                                                         on w.`name` = l.parent
-                                                         where link_to = '{doc_name}'
+                                                         where l.link_to = '{doc_name}'
                                                           %s
                                 )	T
         """.format(doc_name=doc_name), (condition), as_dict=True, debug=False)
@@ -41,7 +41,7 @@ def get_module_name_from_doctype(doc_name, current_module=""):
                                                  inner join
                                                             `tabWorkspace Link` l
                                                             on w.`name` = l.parent
-                                                             where link_to = '{doc_name}'
+                                                             where l.link_to = '{doc_name}'
                                     )	T
             """.format(doc_name=doc_name), as_dict=True, debug=False)
         if list_od_dicts:
