@@ -6,6 +6,9 @@ app_email = "contact@syntaxline.dev"
 app_license = "MIT"
 app_version = "1.0.0"
 
+# Boot — rename ERPNext → Orderlift in sidebar subtitle
+extend_bootinfo = "orderlift.boot.extend_bootinfo"
+
 # Required apps — orderlift depends on these being installed first
 required_apps = ["frappe", "erpnext"]
 

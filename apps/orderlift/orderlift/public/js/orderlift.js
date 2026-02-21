@@ -5,6 +5,37 @@
 
 frappe.provide("orderlift");
 
+// ── Rename "ERPNext" → "Orderlift" everywhere in the UI ──
+(function renameERPNext() {
+    function doReplace() {
+        document.querySelectorAll(
+            ".header-subtitle, .sidebar-item-label, span, div, p, a, h1, h2, h3, h4, h5, h6, label"
+        ).forEach(function (el) {
+            if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+                var txt = el.textContent.trim();
+                if (txt === "ERPNext") {
+                    el.textContent = "Orderlift";
+                } else if (txt === "ERPNext Settings") {
+                    el.textContent = "Orderlift Settings";
+                }
+            }
+        });
+    }
+    if (document.body) {
+        new MutationObserver(doReplace).observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    } else {
+        document.addEventListener("DOMContentLoaded", function () {
+            new MutationObserver(doReplace).observe(document.body, {
+                childList: true,
+                subtree: true,
+            });
+        });
+    }
+})();
+
 orderlift = {
     /**
      * Open the SIG project map page from anywhere in Desk.
