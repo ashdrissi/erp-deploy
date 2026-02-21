@@ -26,18 +26,18 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 app_include_css = [
-    "/assets/infintrix_theme/css/infintrix_erp_20260221k.css",
-    "/assets/infintrix_theme/css/infintrix_light_20260221k.css",
-    "/assets/infintrix_theme/css/infintrix_dark_20260221k.css",
-    "/assets/infintrix_theme/css/top_menu_20260221i.css",
+    # "/assets/infintrix_theme/css/infintrix_erp_20260221k.css",
+    # "/assets/infintrix_theme/css/infintrix_light_20260221k.css",
+    # "/assets/infintrix_theme/css/infintrix_dark_20260221k.css",
+    # "/assets/infintrix_theme/css/top_menu_20260221i.css",
     # "/assets/infintrix_theme/js/sidebar_menu/build/sidebar.css"
     # "/assets/infintrix_theme/css/submenu.css",
     #    "/assets/infintrix_theme/js/custom-menu/build/menu.css"
 ]
 
 app_include_js = [
-    "/assets/infintrix_theme/js/infintrix_erp_20260221k.js",
-    "/assets/infintrix_theme/js/top_menu_20260221i.js",
+    # "/assets/infintrix_theme/js/infintrix_erp_20260221k.js",
+    # "/assets/infintrix_theme/js/top_menu_20260221i.js",
     # "/assets/infintrix_theme/js/sidebar_menu/build/sidebar.js"
     
 
