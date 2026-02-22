@@ -25,7 +25,7 @@ def get_data():
             "color": "#3498db",
             "icon": "octicon octicon-package",
             "type": "module",
-            "description": "Shipment planning and container/truck optimization",
+            "description": "Container load planning, groupage optimization, and dispatch control",
         },
         {
             "module_name": "Orderlift Client Portal",

@@ -1,0 +1,76 @@
+{
+  "actions": [],
+  "creation": "2026-02-22 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "delivery_note",
+    "customer",
+    "shipment_weight_kg",
+    "shipment_volume_m3",
+    "selected",
+    "sequence"
+  ],
+  "fields": [
+    {
+      "fieldname": "delivery_note",
+      "fieldtype": "Link",
+      "label": "Delivery Note",
+      "options": "Delivery Note",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "label": "Customer",
+      "options": "Customer",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "shipment_weight_kg",
+      "fieldtype": "Float",
+      "label": "Shipment Weight (kg)",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "shipment_volume_m3",
+      "fieldtype": "Float",
+      "label": "Shipment Volume (m3)",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "selected",
+      "fieldtype": "Check",
+      "label": "Selected",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "default": "0",
+      "in_list_view": 1
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-02-22 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Load Plan Shipment",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

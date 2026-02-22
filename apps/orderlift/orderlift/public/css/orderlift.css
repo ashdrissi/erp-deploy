@@ -19,3 +19,60 @@
     color: var(--primary);
     font-size: 1.1em;
 }
+
+.container-capacity-card {
+    border: 1px solid #d9e0ea;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+    padding: 14px;
+}
+
+.container-capacity-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: #22324a;
+}
+
+.container-capacity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.container-capacity-label {
+    color: #5b6b84;
+}
+
+.container-capacity-value {
+    font-weight: 700;
+    color: #1f2a3d;
+}
+
+.container-capacity-bar {
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    background: #edf2f8;
+    overflow: hidden;
+}
+
+.container-capacity-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 220ms ease;
+}
+
+.container-capacity-subtext {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #5b6b84;
+}
+
+.container-capacity-footer {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #3a4a61;
+}

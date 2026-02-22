@@ -79,6 +79,16 @@ doc_events = {
         # Move stock to correct warehouse after quality inspection
         "on_submit": "orderlift.logistics.utils.stock_router.route_received_stock",
     },
+    "Delivery Note": {
+        # Analyze physical shipment (weight/volume) on the real movement document
+        "on_submit": "orderlift.logistics.utils.delivery_note_logistics.analyze_delivery_note",
+        "on_cancel": "orderlift.logistics.utils.delivery_note_logistics.cancel_delivery_note_analysis",
+    },
+}
+
+doctype_js = {
+    "Delivery Note": "public/js/delivery_note_logistics.js",
+    "Sales Order": "public/js/sales_order_logistics.js",
 }
 
 # ---------------------------------------------------------
@@ -99,6 +109,7 @@ scheduler_events = {
 
 after_migrate = [
     "orderlift.sales.utils.pricing_setup.after_migrate",
+    "orderlift.logistics.setup.after_migrate",
 ]
 
 # ---------------------------------------------------------
@@ -140,6 +151,6 @@ jinja = {
 # for documentation:
 #
 #   SAV Ticket       → SAV-.YYYY.-.#####
-#   Shipment Plan    → SP-.YYYY.-.#####
+#   Container Load Plan → CLP-.#####
 #   Portal Order     → PO-B2B-.YYYY.-.#####
 #   Sales Commission → COM-.YYYY.-.#####

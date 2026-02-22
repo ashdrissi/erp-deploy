@@ -1,13 +1,11 @@
-"""
-Container Optimizer
--------------------
-Calculates total shipment weight and volume from a list of items
-and recommends the optimal transport type (van, truck, 20ft/40ft container).
+"""Backward-compatible logistics optimizer wrapper.
 
-Used by the Shipment Plan doctype.
+Prefer using orderlift.orderlift_logistics.services.load_planning for new logic.
 """
 
 import frappe
+
+from orderlift.orderlift_logistics.services.load_planning import recommend_container
 
 
 # Transport thresholds — adjust with client after testing
@@ -50,7 +48,7 @@ def calculate_shipment(items):
 
 
 def _recommend_transport(weight_kg, volume_m3):
-    """Return transport type string based on weight and volume.
+    """Return recommendation string based on weight and volume.
 
     Decision tree:
       1. Small Van: weight <= 500kg AND volume <= 2m3
@@ -60,6 +58,11 @@ def _recommend_transport(weight_kg, volume_m3):
       5. 40ft Container: weight <= 26,500kg AND volume <= 67m3
       6. Multiple containers for anything larger
     """
+    container = recommend_container(weight_kg, volume_m3)
+    if container:
+        profile = container["container"]
+        return profile.container_name or profile.name
+
     t = THRESHOLDS
 
     if weight_kg <= t["small_van"]["max_weight_kg"] and \
@@ -87,8 +90,10 @@ def _recommend_transport(weight_kg, volume_m3):
 
 @frappe.whitelist()
 def calculate_from_shipment_plan(shipment_plan_name):
-    """Whitelisted method: recalculate totals for a Shipment Plan doc."""
-    doc = frappe.get_doc("Shipment Plan", shipment_plan_name)
+    """Whitelisted method: recalculate totals for Shipment Plan-like docs."""
+    doctype = "Shipment Plan" if frappe.db.exists("DocType", "Shipment Plan") else "Container Load Plan"
+    doc = frappe.get_doc(doctype, shipment_plan_name)
+    source_rows = doc.items_summary if hasattr(doc, "items_summary") else []
     items = [
         {
             "item_code": row.item_code,
@@ -96,12 +101,19 @@ def calculate_from_shipment_plan(shipment_plan_name):
             "unit_weight_kg": row.unit_weight_kg,
             "unit_volume_m3": row.unit_volume_m3,
         }
-        for row in doc.items_summary
+        for row in source_rows
     ]
     result = calculate_shipment(items)
-    frappe.db.set_value("Shipment Plan", shipment_plan_name, {
-        "total_weight_kg": result["total_weight_kg"],
-        "total_volume_m3": result["total_volume_m3"],
-        "recommended_transport": result["recommendation"],
-    })
+    if doctype == "Shipment Plan":
+        frappe.db.set_value(doctype, shipment_plan_name, {
+            "total_weight_kg": result["total_weight_kg"],
+            "total_volume_m3": result["total_volume_m3"],
+            "recommended_transport": result["recommendation"],
+        })
+    else:
+        frappe.db.set_value(doctype, shipment_plan_name, {
+            "total_weight_kg": result["total_weight_kg"],
+            "total_volume_m3": result["total_volume_m3"],
+            "analysis_status": "ok",
+        })
     return result

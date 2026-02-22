@@ -1,0 +1,211 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-02-22 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "container_label",
+    "container_profile",
+    "company",
+    "destination_zone",
+    "departure_date",
+    "dispatcher",
+    "status",
+    "analysis_status",
+    "capacity_dashboard_html",
+    "total_weight_kg",
+    "total_volume_m3",
+    "weight_utilization_pct",
+    "volume_utilization_pct",
+    "limiting_factor",
+    "shipments",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "CLP-.#####",
+      "default": "CLP-.#####",
+      "reqd": 1,
+      "set_only_once": 1
+    },
+    {
+      "fieldname": "container_label",
+      "fieldtype": "Data",
+      "label": "Container Label",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "container_profile",
+      "fieldtype": "Link",
+      "label": "Container Profile",
+      "options": "Container Profile",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "destination_zone",
+      "fieldtype": "Data",
+      "label": "Destination Zone",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "departure_date",
+      "fieldtype": "Date",
+      "label": "Departure Date",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "dispatcher",
+      "fieldtype": "Link",
+      "label": "Dispatcher",
+      "options": "User"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Planning\nReady\nLoading\nIn Transit\nDelivered\nCancelled",
+      "default": "Planning",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "analysis_status",
+      "fieldtype": "Select",
+      "label": "Analysis Status",
+      "options": "ok\nincomplete_data\nover_capacity",
+      "default": "ok",
+      "read_only": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "capacity_dashboard_html",
+      "fieldtype": "HTML",
+      "label": "Capacity Dashboard"
+    },
+    {
+      "fieldname": "total_weight_kg",
+      "fieldtype": "Float",
+      "label": "Total Weight (kg)",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "total_volume_m3",
+      "fieldtype": "Float",
+      "label": "Total Volume (m3)",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "weight_utilization_pct",
+      "fieldtype": "Percent",
+      "label": "Weight Utilization (%)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "volume_utilization_pct",
+      "fieldtype": "Percent",
+      "label": "Volume Utilization (%)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "limiting_factor",
+      "fieldtype": "Select",
+      "label": "Limiting Factor",
+      "options": "weight\nvolume\nboth",
+      "read_only": 1
+    },
+    {
+      "fieldname": "shipments",
+      "fieldtype": "Table",
+      "label": "Shipments",
+      "options": "Load Plan Shipment"
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "is_submittable": 1,
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-02-22 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Container Load Plan",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Stock Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "cancel": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "report": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "container_label,destination_zone,company",
+  "show_name_in_global_search": 1,
+  "sort_field": "creation",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "container_label",
+  "track_changes": 1
+}

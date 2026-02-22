@@ -1,0 +1,132 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-02-22 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "container_name",
+    "container_code",
+    "container_type",
+    "cost_rank",
+    "max_weight_kg",
+    "max_volume_m3",
+    "is_active",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "CP-.#####",
+      "default": "CP-.#####",
+      "reqd": 1,
+      "set_only_once": 1
+    },
+    {
+      "fieldname": "container_name",
+      "fieldtype": "Data",
+      "label": "Container Name",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "container_code",
+      "fieldtype": "Data",
+      "label": "Container Code",
+      "unique": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "container_type",
+      "fieldtype": "Select",
+      "label": "Container Type",
+      "options": "20ft\n40ft\n12m3 Van\nStandard Truck\nCustom",
+      "default": "20ft",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "cost_rank",
+      "fieldtype": "Int",
+      "label": "Cost Rank",
+      "default": "100",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "max_weight_kg",
+      "fieldtype": "Float",
+      "label": "Max Weight (kg)",
+      "default": "0",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "max_volume_m3",
+      "fieldtype": "Float",
+      "label": "Max Volume (m3)",
+      "default": "0",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-02-22 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Container Profile",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Stock Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "container_name,container_code",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "container_name",
+  "track_changes": 1
+}
