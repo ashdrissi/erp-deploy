@@ -48,10 +48,6 @@ RUN bench get-app --branch main --skip-assets insights https://github.com/frappe
 # Pre-fetch sidebar_app (persistent custom sidebar experience).
 RUN bench get-app --branch develop --skip-assets sidebar_app https://github.com/jcastillopro/sidebar_app.git
 
-# Apply our role-scoped persistent sidebar override into sidebar_app.
-RUN cp /opt/erp-deploy/scripts/sidebar_app_desktop_override.py \
-    /home/frappe/frappe-bench/apps/sidebar_app/sidebar_app/overrides/desktop.py
-
 # Make sidebar_app importable in all runtime containers.
 RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/sidebar_app/
 

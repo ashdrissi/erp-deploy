@@ -5,6 +5,100 @@
 
 frappe.provide("orderlift");
 
+// ── Keep sidebar context in Desk URLs (except excluded routes) ──
+(function injectSidebarQueryParam() {
+    if (window.__orderlift_sidebar_url_injector_installed) return;
+    window.__orderlift_sidebar_url_injector_installed = true;
+
+    var TARGET_SIDEBAR = "Main Dashboard";
+    var EXCLUDED_PREFIXES = ["/desk/workspace", "/desk/workspace-sidebar"];
+    var EXCLUDED_SLUGS = ["build"];
+
+    function isExcluded(pathname) {
+        if (!pathname || !pathname.startsWith("/desk")) return true;
+
+        for (var i = 0; i < EXCLUDED_PREFIXES.length; i++) {
+            if (pathname.startsWith(EXCLUDED_PREFIXES[i])) return true;
+        }
+
+        var slug = pathname.replace(/^\/desk\/?/, "").split("/")[0] || "";
+        slug = slug.toLowerCase();
+        return EXCLUDED_SLUGS.indexOf(slug) !== -1;
+    }
+
+    function ensureSidebarOnCurrentUrl() {
+        try {
+            var url = new URL(window.location.href);
+            if (isExcluded(url.pathname)) return;
+
+            if (url.searchParams.get("sidebar") !== TARGET_SIDEBAR) {
+                url.searchParams.set("sidebar", TARGET_SIDEBAR);
+                window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+            }
+        } catch (e) {
+            // no-op
+        }
+    }
+
+    function decorateDeskLinks(root) {
+        var scope = root || document;
+        var links = scope.querySelectorAll ? scope.querySelectorAll('a[href^="/desk/"]') : [];
+        for (var i = 0; i < links.length; i++) {
+            var link = links[i];
+            var href = link.getAttribute("href");
+            if (!href) continue;
+
+            try {
+                var url = new URL(href, window.location.origin);
+                if (isExcluded(url.pathname)) continue;
+                url.searchParams.set("sidebar", TARGET_SIDEBAR);
+                link.setAttribute("href", url.pathname + url.search + url.hash);
+            } catch (e) {
+                // ignore invalid href
+            }
+        }
+    }
+
+    var originalPushState = window.history.pushState;
+    window.history.pushState = function () {
+        var result = originalPushState.apply(this, arguments);
+        setTimeout(ensureSidebarOnCurrentUrl, 0);
+        return result;
+    };
+
+    var originalReplaceState = window.history.replaceState;
+    window.history.replaceState = function () {
+        var result = originalReplaceState.apply(this, arguments);
+        setTimeout(ensureSidebarOnCurrentUrl, 0);
+        return result;
+    };
+
+    window.addEventListener("popstate", function () {
+        setTimeout(ensureSidebarOnCurrentUrl, 0);
+    });
+
+    var queued = false;
+    function queueDecorate() {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(function () {
+            queued = false;
+            ensureSidebarOnCurrentUrl();
+            decorateDeskLinks(document.body);
+        });
+    }
+
+    if (document.body) {
+        new MutationObserver(queueDecorate).observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    }
+
+    ensureSidebarOnCurrentUrl();
+    decorateDeskLinks(document.body);
+})();
+
 // ── Rename ERPNext/Frappe Framework labels in Desk UI ──
 (function renameBranding() {
     if (window.__orderlift_global_branding_override_installed) return;

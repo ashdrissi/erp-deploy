@@ -250,15 +250,6 @@ ensure_app_installed() {
     printf '%s\n' "$app" >"$apps_txt"
   fi
 
-  if [[ "$app" == "sidebar_app" ]]; then
-    local override_src="/opt/erp-deploy/scripts/sidebar_app_desktop_override.py"
-    local override_dst="/home/frappe/frappe-bench/apps/sidebar_app/sidebar_app/overrides/desktop.py"
-    if [[ -f "$override_src" && -d "/home/frappe/frappe-bench/apps/sidebar_app/sidebar_app/overrides" ]]; then
-      cp "$override_src" "$override_dst"
-      /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/sidebar_app/ || true
-    fi
-  fi
-
   # Check if already installed for this site.
   if bench --site "$site" list-apps 2>/dev/null | tr -d '\r' | grep -qx "$app"; then
     echo "App already installed: ${app}"
@@ -302,14 +293,6 @@ post_deploy_site_maintenance() {
   bench --site "$site" clear-cache || true
   bench --site "$site" clear-website-cache || true
 }
-
-configure_persistent_sidebar_defaults() {
-  local site="$1"
-  bench --site "$site" set-config persistent_sidebar_enabled 1 || true
-  bench --site "$site" set-config persistent_sidebar_workspace "Main Dashboard" || true
-  bench --site "$site" set-config persistent_sidebar_roles "Orderlift Commercial,Sales Manager,Orderlift Admin" || true
-}
-
 
 echo "Waiting for MariaDB at ${db_host}:${db_port} ..."
 python3 - <<'PY'
@@ -419,7 +402,6 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
 
   # Install sidebar_app (persistent workspace sidebar helper).
   ensure_app_installed "$site_name" "sidebar_app" || echo "WARN: sidebar_app install failed; continuing"
-  configure_persistent_sidebar_defaults "$site_name"
 
   # Always run maintenance on existing sites to apply pending patches and refresh caches.
   post_deploy_site_maintenance "$site_name"
@@ -461,7 +443,6 @@ ensure_app_installed "$site_name" "insights" || echo "WARN: insights install fai
 
 # Install sidebar_app (persistent workspace sidebar helper).
 ensure_app_installed "$site_name" "sidebar_app" || echo "WARN: sidebar_app install failed; continuing"
-configure_persistent_sidebar_defaults "$site_name"
 
 # Run one final migrate/cache refresh once all apps are in place.
 post_deploy_site_maintenance "$site_name"
