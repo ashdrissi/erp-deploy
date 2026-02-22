@@ -90,52 +90,61 @@ frappe.provide("orderlift");
     if (window.__orderlift_sidebar_logo_installed) return;
     window.__orderlift_sidebar_logo_installed = true;
 
-    function injectLogo() {
+    function ensureLogo() {
         var sidebar = document.querySelector(".body-sidebar");
-        if (!sidebar) return false;
-        if (document.getElementById("orderlift-sidebar-brand-logo")) return true;
+        if (!sidebar) return;
 
-        // Get logo URL from Frappe boot data or the navbar brand image
-        var logoUrl = "";
-        if (window.frappe && frappe.boot) {
-            logoUrl = frappe.boot.app_logo_url || "";
+        // Get or create the logo wrapper
+        var wrapper = document.getElementById("orderlift-sidebar-brand-logo");
+        if (!wrapper) {
+            // Get logo URL from Frappe boot data or the navbar brand image
+            var logoUrl = "";
+            if (window.frappe && frappe.boot) {
+                logoUrl = frappe.boot.app_logo_url || "";
+            }
+            if (!logoUrl) {
+                var navLogo = document.querySelector(".navbar-brand .app-logo, .brand-logo");
+                if (navLogo) logoUrl = navLogo.src || "";
+            }
+            if (!logoUrl) return;
+
+            wrapper = document.createElement("div");
+            wrapper.id = "orderlift-sidebar-brand-logo";
+            wrapper.style.cssText =
+                "padding: 16px 16px 8px 16px; text-align: center; border-bottom: 1px solid var(--border-color, #e2e6e9);";
+
+            var img = document.createElement("img");
+            img.src = logoUrl;
+            img.alt = "Orderlift";
+            img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain;";
+            wrapper.appendChild(img);
         }
-        if (!logoUrl) {
-            var navLogo = document.querySelector(".navbar-brand .app-logo, .brand-logo");
-            if (navLogo) logoUrl = navLogo.src || "";
-        }
-        if (!logoUrl) return false;
 
-        // Create the logo container
-        var wrapper = document.createElement("div");
-        wrapper.id = "orderlift-sidebar-brand-logo";
-        wrapper.style.cssText =
-            "padding: 16px 16px 8px 16px; text-align: center; border-bottom: 1px solid var(--border-color, #e2e6e9);";
-
-        var img = document.createElement("img");
-        img.src = logoUrl;
-        img.alt = "Orderlift";
-        img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain;";
-        wrapper.appendChild(img);
-
-        // Insert before the sidebar-header (first child of .body-sidebar)
-        var sidebarHeader = sidebar.querySelector(".sidebar-header");
-        if (sidebarHeader) {
-            sidebarHeader.parentElement.insertBefore(wrapper, sidebarHeader);
-        } else {
+        // Always ensure logo is the FIRST child of .body-sidebar
+        // (Frappe's sidebar_header.js uses prependTo which pushes us down)
+        if (sidebar.firstChild !== wrapper) {
             sidebar.insertBefore(wrapper, sidebar.firstChild);
         }
-        return true;
     }
 
-    // Try immediately, then watch for sidebar render
-    if (!injectLogo()) {
-        var observer = new MutationObserver(function () {
-            if (injectLogo()) observer.disconnect();
+    // Persistent observer — keeps repositioning after Frappe re-renders sidebar header
+    var queued = false;
+    function queueEnsure() {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(function () {
+            queued = false;
+            ensureLogo();
         });
-        var target = document.body || document.documentElement;
-        observer.observe(target, { childList: true, subtree: true });
     }
+
+    if (document.body) {
+        new MutationObserver(queueEnsure).observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    }
+    queueEnsure();
 })();
 
 orderlift = {
