@@ -45,6 +45,12 @@ RUN bench get-app --branch version-16 --skip-assets hrms https://github.com/frap
 # Pre-fetch Insights (BI/reporting) app.
 RUN bench get-app --branch main --skip-assets insights https://github.com/frappe/insights.git
 
+# Pre-fetch sidebar_app (persistent custom sidebar experience).
+RUN bench get-app --branch develop --skip-assets sidebar_app https://github.com/jcastillopro/sidebar_app.git
+
+# Make sidebar_app importable in all runtime containers.
+RUN /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/sidebar_app/
+
 # Create a dummy common_site_config.json for the build step
 # HRMS frontend build fails if this file (and socketio_port) is missing
 RUN echo '{"socketio_port": 9000}' > /home/frappe/frappe-bench/sites/common_site_config.json

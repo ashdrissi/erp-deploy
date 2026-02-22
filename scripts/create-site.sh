@@ -200,6 +200,8 @@ ensure_app_installed() {
     echo "Fetching app code: ${app}"
     if [[ "$app" == "hrms" ]]; then
       bench get-app --branch version-16 --skip-assets hrms https://github.com/frappe/hrms.git
+    elif [[ "$app" == "sidebar_app" ]]; then
+      bench get-app --branch develop --skip-assets sidebar_app https://github.com/jcastillopro/sidebar_app.git
     elif [[ "$app" == "orderlift" ]]; then
       local app_backup="/opt/erp-deploy/apps/orderlift"
       if [[ -d "$app_backup" ]]; then
@@ -399,6 +401,9 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   # Install Insights (BI / reporting).
   ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
 
+  # Install sidebar_app (persistent workspace sidebar helper).
+  ensure_app_installed "$site_name" "sidebar_app" || echo "WARN: sidebar_app install failed; continuing"
+
   # Always run maintenance on existing sites to apply pending patches and refresh caches.
   post_deploy_site_maintenance "$site_name"
 
@@ -436,6 +441,9 @@ ensure_app_installed "$site_name" "custom_desk_theme" || echo "WARN: custom_desk
 
 # Install Insights (BI / reporting).
 ensure_app_installed "$site_name" "insights" || echo "WARN: insights install failed; continuing"
+
+# Install sidebar_app (persistent workspace sidebar helper).
+ensure_app_installed "$site_name" "sidebar_app" || echo "WARN: sidebar_app install failed; continuing"
 
 # Run one final migrate/cache refresh once all apps are in place.
 post_deploy_site_maintenance "$site_name"
