@@ -447,10 +447,13 @@ class PricingSheet(Document):
     def _get_group_line_config(self):
         settings_doctype = "Selling Settings"
         configured = None
-        if frappe.db.has_column(settings_doctype, "custom_pricing_group_line_item"):
+        settings_exists = frappe.db.exists("DocType", settings_doctype)
+
+        if settings_exists and frappe.db.has_column(settings_doctype, "custom_pricing_group_line_item"):
             configured = frappe.db.get_single_value(settings_doctype, "custom_pricing_group_line_item")
+
         description_prefix = "Grouped from Pricing Sheet"
-        if frappe.db.has_column(settings_doctype, "custom_pricing_group_desc_prefix"):
+        if settings_exists and frappe.db.has_column(settings_doctype, "custom_pricing_group_desc_prefix"):
             description_prefix = (
                 frappe.db.get_single_value(settings_doctype, "custom_pricing_group_desc_prefix")
                 or description_prefix
