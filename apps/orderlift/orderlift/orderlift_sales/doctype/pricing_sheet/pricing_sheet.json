@@ -15,7 +15,12 @@
     "pricing_scenario",
     "product_bundle",
     "output_mode",
+    "minimum_margin_percent",
+    "strict_margin_guard",
     "calculated_on",
+    "calculated_by",
+    "calc_runtime_ms",
+    "projection_warnings",
     "projection_dashboard",
     "heading_lines",
     "lines",
@@ -97,9 +102,40 @@
       "reqd": 1
     },
     {
+      "fieldname": "minimum_margin_percent",
+      "fieldtype": "Percent",
+      "label": "Minimum Margin Percent",
+      "default": "0"
+    },
+    {
+      "fieldname": "strict_margin_guard",
+      "fieldtype": "Check",
+      "label": "Strict Margin Guard",
+      "default": "0"
+    },
+    {
       "fieldname": "calculated_on",
       "fieldtype": "Datetime",
       "label": "Calculated On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "calculated_by",
+      "fieldtype": "Link",
+      "label": "Calculated By",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "calc_runtime_ms",
+      "fieldtype": "Float",
+      "label": "Calc Runtime (ms)",
+      "read_only": 1
+    },
+    {
+      "fieldname": "projection_warnings",
+      "fieldtype": "Small Text",
+      "label": "Projection Warnings",
       "read_only": 1
     },
     {

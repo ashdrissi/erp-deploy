@@ -6,14 +6,24 @@
   "editable_grid": 1,
   "engine": "InnoDB",
   "field_order": [
+    "sequence",
     "label",
     "type",
     "value",
     "applies_to",
+    "scope",
     "is_active",
     "notes"
   ],
   "fields": [
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "default": "10",
+      "reqd": 1,
+      "in_list_view": 1
+    },
     {
       "fieldname": "label",
       "fieldtype": "Data",
@@ -44,6 +54,15 @@
       "label": "Applies To",
       "options": "Base Price\nRunning Total",
       "default": "Running Total",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "scope",
+      "fieldtype": "Select",
+      "label": "Scope",
+      "options": "Per Unit\nPer Line\nPer Sheet",
+      "default": "Per Unit",
       "reqd": 1,
       "in_list_view": 1
     },

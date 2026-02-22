@@ -1,12 +1,15 @@
 function renderExpenseGuide(frm) {
-    const rows = (frm.doc.expenses || []).filter((row) => row.is_active);
+    const rows = (frm.doc.expenses || [])
+        .filter((row) => row.is_active)
+        .sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
     const pills = rows
         .map(
             (row) =>
                 `<span style="display:inline-block;padding:6px 10px;border:1px solid #d9dee8;border-radius:999px;margin:4px 6px 0 0;background:#f8fafc;">${frappe.utils.escape_html(
                     row.label || "Expense"
-                )}: ${frappe.format(row.value || 0, { fieldtype: row.type === "Percentage" ? "Percent" : "Currency" })} on ${
+                )} (#${row.sequence || "-"}): ${frappe.format(row.value || 0, { fieldtype: row.type === "Percentage" ? "Percent" : "Currency" })} on ${
                     row.applies_to || "Running Total"
+                } (${row.scope || "Per Unit"})
                 }</span>`
         )
         .join("");
@@ -38,12 +41,14 @@ frappe.ui.form.on("Pricing Scenario", {
                 ["Insurance", "Percentage", 1.5, "Running Total"],
                 ["Handling", "Fixed", 12, "Running Total"],
                 ["Commercial Margin", "Percentage", 15, "Running Total"],
-            ].forEach(([label, type, value, applies_to]) => {
+            ].forEach(([label, type, value, applies_to], index) => {
                 const row = frm.add_child("expenses");
+                row.sequence = (index + 1) * 10;
                 row.label = label;
                 row.type = type;
                 row.value = value;
                 row.applies_to = applies_to;
+                row.scope = "Per Unit";
                 row.is_active = 1;
             });
 
@@ -57,10 +62,12 @@ frappe.ui.form.on("Pricing Scenario", {
 });
 
 frappe.ui.form.on("Pricing Scenario Expense", {
+    sequence: renderExpenseGuide,
     label: renderExpenseGuide,
     type: renderExpenseGuide,
     value: renderExpenseGuide,
     applies_to: renderExpenseGuide,
+    scope: renderExpenseGuide,
     is_active: renderExpenseGuide,
     expenses_remove: renderExpenseGuide,
 });

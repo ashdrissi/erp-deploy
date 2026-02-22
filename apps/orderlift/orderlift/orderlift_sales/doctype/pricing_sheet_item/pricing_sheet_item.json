@@ -18,8 +18,11 @@
     "projected_unit_price",
     "projected_total_price",
     "manual_sell_unit_price",
+    "is_manual_override",
     "final_sell_unit_price",
     "final_sell_total",
+    "margin_pct",
+    "price_floor_violation",
     "benchmark_price",
     "benchmark_delta_abs",
     "benchmark_delta_pct",
@@ -114,9 +117,28 @@
       "label": "Manual Unit Override"
     },
     {
+      "fieldname": "is_manual_override",
+      "fieldtype": "Check",
+      "label": "Is Manual Override",
+      "read_only": 1
+    },
+    {
       "fieldname": "final_sell_unit_price",
       "fieldtype": "Currency",
       "label": "Final Unit Price",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "margin_pct",
+      "fieldtype": "Percent",
+      "label": "Margin Pct",
+      "read_only": 1
+    },
+    {
+      "fieldname": "price_floor_violation",
+      "fieldtype": "Check",
+      "label": "Price Floor Violation",
       "read_only": 1,
       "in_list_view": 1
     },

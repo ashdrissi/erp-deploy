@@ -43,7 +43,38 @@ def after_migrate():
                     "fieldtype": "Data",
                     "insert_after": "description",
                     "read_only": 1,
-                }
+                },
+                {
+                    "fieldname": "source_pricing_scenario",
+                    "label": "Source Pricing Scenario",
+                    "fieldtype": "Link",
+                    "options": "Pricing Scenario",
+                    "insert_after": "source_pricing_sheet_line",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_pricing_override",
+                    "label": "Source Pricing Override",
+                    "fieldtype": "Check",
+                    "insert_after": "source_pricing_scenario",
+                    "read_only": 1,
+                },
+            ],
+            "Selling Settings": [
+                {
+                    "fieldname": "custom_pricing_group_line_item",
+                    "label": "Pricing Group Line Item",
+                    "fieldtype": "Link",
+                    "options": "Item",
+                    "insert_after": "cust_master_name",
+                },
+                {
+                    "fieldname": "custom_pricing_group_desc_prefix",
+                    "label": "Pricing Group Description Prefix",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_pricing_group_line_item",
+                    "default": "Grouped from Pricing Sheet",
+                },
             ],
         },
         update=True,
@@ -52,6 +83,7 @@ def after_migrate():
     frappe.clear_cache(doctype="Item")
     frappe.clear_cache(doctype="Quotation")
     frappe.clear_cache(doctype="Quotation Item")
+    frappe.clear_cache(doctype="Selling Settings")
     ensure_pricing_workspace()
 
 
