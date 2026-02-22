@@ -116,6 +116,7 @@ def after_migrate():
 def ensure_logistics_workspace():
     workspace_name = "Hub Logistique"
     shortcuts = [
+        {"label": "Logistics Hub Cockpit", "type": "Page", "link_to": "logistics-hub-cockpit"},
         {"label": "Container Load Plan", "type": "DocType", "link_to": "Container Load Plan"},
         {"label": "Container Profile", "type": "DocType", "link_to": "Container Profile"},
         {"label": "Shipment Analysis", "type": "DocType", "link_to": "Shipment Analysis"},
@@ -136,7 +137,7 @@ def ensure_logistics_workspace():
             {
                 "id": f"logistics_shortcut_{idx}",
                 "type": "shortcut",
-                "data": {"shortcut_name": shortcut["label"], "col": 3},
+                "data": {"shortcut_name": shortcut["label"], "col": 4},
             }
         )
 
