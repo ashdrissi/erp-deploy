@@ -15,8 +15,8 @@ required_apps = ["frappe", "erpnext"]
 # ---------------------------------------------------------
 # Assets — included in Desk for all logged-in users
 # ---------------------------------------------------------
-app_include_css = ["/assets/orderlift/css/orderlift.css"]
-app_include_js = ["/assets/orderlift/js/orderlift.js"]
+app_include_css = ["/assets/orderlift/css/orderlift_bundle.css"]
+app_include_js = ["/assets/orderlift/js/orderlift_bundle.js"]
 
 # ---------------------------------------------------------
 # Fixtures — exported configuration records loaded on
