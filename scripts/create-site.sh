@@ -405,13 +405,17 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
 fi
 
 echo "Creating new site: ${site_name}"
-new_site_host_flag=(--mariadb-user-host-login-scope "%")
-
-bench new-site "$site_name" \
+if ! bench new-site "$site_name" \
   --admin-password "$admin_password" \
   --mariadb-root-password "$db_root_password" \
-  "${new_site_host_flag[@]}" \
-  --install-app erpnext
+  --mariadb-user-host-login-scope "%" \
+  --install-app erpnext; then
+  echo "WARN: new-site with --mariadb-user-host-login-scope failed, retrying without host scope flag"
+  bench new-site "$site_name" \
+    --admin-password "$admin_password" \
+    --mariadb-root-password "$db_root_password" \
+    --install-app erpnext
+fi
 
 ensure_site_db_user_access "$site_name"
 
