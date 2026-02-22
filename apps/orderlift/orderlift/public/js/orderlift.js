@@ -5,20 +5,6 @@
 
 frappe.provide("orderlift");
 
-// ── Normalize legacy /desk routes to /app routes ──
-(function normalizeLegacyDeskRoute() {
-    var path = window.location.pathname || "";
-    if (!path.startsWith("/desk/")) return;
-
-    // Keep API and websocket paths untouched.
-    if (path.startsWith("/desk/api") || path.startsWith("/desk/socket.io")) return;
-
-    var target = "/app/" + path.slice("/desk/".length);
-    var query = window.location.search || "";
-    var hash = window.location.hash || "";
-    window.location.replace(target + query + hash);
-})();
-
 // ── Rename ERPNext/Frappe Framework labels in Desk UI ──
 (function renameBranding() {
     if (window.__orderlift_global_branding_override_installed) return;
