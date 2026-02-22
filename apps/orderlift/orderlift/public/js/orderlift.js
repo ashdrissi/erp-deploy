@@ -85,6 +85,59 @@ frappe.provide("orderlift");
     }
 })();
 
+// ── Brand logo above the sidebar header ──
+(function addSidebarBrandLogo() {
+    if (window.__orderlift_sidebar_logo_installed) return;
+    window.__orderlift_sidebar_logo_installed = true;
+
+    function injectLogo() {
+        var sidebar = document.querySelector(".body-sidebar");
+        if (!sidebar) return false;
+        if (document.getElementById("orderlift-sidebar-brand-logo")) return true;
+
+        // Get logo URL from Frappe boot data or the navbar brand image
+        var logoUrl = "";
+        if (window.frappe && frappe.boot) {
+            logoUrl = frappe.boot.app_logo_url || "";
+        }
+        if (!logoUrl) {
+            var navLogo = document.querySelector(".navbar-brand .app-logo, .brand-logo");
+            if (navLogo) logoUrl = navLogo.src || "";
+        }
+        if (!logoUrl) return false;
+
+        // Create the logo container
+        var wrapper = document.createElement("div");
+        wrapper.id = "orderlift-sidebar-brand-logo";
+        wrapper.style.cssText =
+            "padding: 16px 16px 8px 16px; text-align: center; border-bottom: 1px solid var(--border-color, #e2e6e9);";
+
+        var img = document.createElement("img");
+        img.src = logoUrl;
+        img.alt = "Orderlift";
+        img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain;";
+        wrapper.appendChild(img);
+
+        // Insert before the sidebar-header (first child of .body-sidebar)
+        var sidebarHeader = sidebar.querySelector(".sidebar-header");
+        if (sidebarHeader) {
+            sidebarHeader.parentElement.insertBefore(wrapper, sidebarHeader);
+        } else {
+            sidebar.insertBefore(wrapper, sidebar.firstChild);
+        }
+        return true;
+    }
+
+    // Try immediately, then watch for sidebar render
+    if (!injectLogo()) {
+        var observer = new MutationObserver(function () {
+            if (injectLogo()) observer.disconnect();
+        });
+        var target = document.body || document.documentElement;
+        observer.observe(target, { childList: true, subtree: true });
+    }
+})();
+
 orderlift = {
     /**
      * Open the SIG project map page from anywhere in Desk.
