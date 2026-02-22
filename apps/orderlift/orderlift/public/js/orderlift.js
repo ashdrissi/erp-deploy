@@ -113,11 +113,16 @@ frappe.provide("orderlift");
             wrapper.style.cssText =
                 "padding: 16px 16px 8px 16px; text-align: center; border-bottom: 1px solid var(--border-color, #e2e6e9);";
 
+            var link = document.createElement("a");
+            link.href = "/app";
+            link.style.cssText = "text-decoration: none; display: inline-block;";
+
             var img = document.createElement("img");
             img.src = logoUrl;
             img.alt = "Orderlift";
-            img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain;";
-            wrapper.appendChild(img);
+            img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain; cursor: pointer;";
+            link.appendChild(img);
+            wrapper.appendChild(link);
         }
 
         // Always ensure logo is the FIRST child of .body-sidebar
