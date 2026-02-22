@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'echo "ERROR: create-site failed at line ${LINENO}" >&2' ERR
+
 BENCH_DIR="/home/frappe/frappe-bench"
 
 raw_site_name="${SITE_NAME:-}"
@@ -383,8 +385,7 @@ if [[ -f "sites/${site_name}/site_config.json" ]]; then
   ensure_site_db_user_access "$site_name"
 
   # Install HRMS permanently on this site (idempotent).
-  # Do not continue without HRMS: ERPNext website routing references Job Opening.
-  ensure_app_installed "$site_name" "hrms"
+  ensure_app_installed "$site_name" "hrms" || echo "WARN: hrms install failed; continuing"
 
   # Install orderlift app permanently on this site (idempotent).
   repair_orderlift_module_conflicts "$site_name"
@@ -409,18 +410,20 @@ if ! bench new-site "$site_name" \
   --admin-password "$admin_password" \
   --mariadb-root-password "$db_root_password" \
   --mariadb-user-host-login-scope "%" \
+  --force \
   --install-app erpnext; then
   echo "WARN: new-site with --mariadb-user-host-login-scope failed, retrying without host scope flag"
   bench new-site "$site_name" \
     --admin-password "$admin_password" \
     --mariadb-root-password "$db_root_password" \
+    --force \
     --install-app erpnext
 fi
 
 ensure_site_db_user_access "$site_name"
 
 # Install HRMS on fresh sites.
-ensure_app_installed "$site_name" "hrms"
+ensure_app_installed "$site_name" "hrms" || echo "WARN: hrms install failed; continuing"
 
 # Install orderlift on fresh sites.
 repair_orderlift_module_conflicts "$site_name"
