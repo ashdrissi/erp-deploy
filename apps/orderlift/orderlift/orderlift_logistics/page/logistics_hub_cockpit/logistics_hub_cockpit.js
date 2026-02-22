@@ -16,6 +16,7 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         this.loadPlan = null;
         this.setupControls();
         this.renderShell();
+        this.bootstrapFromRoute();
     }
 
     setupControls() {
@@ -38,11 +39,43 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
             if (!this.loadPlan) return;
             frappe.set_route("Form", "Container Load Plan", this.loadPlan);
         });
+
+        this.page.add_menu_item(__("Run Analysis"), async () => {
+            if (!this.loadPlan) return;
+            await frappe.call({
+                method:
+                    "orderlift.orderlift_logistics.doctype.container_load_plan.container_load_plan.run_load_plan_analysis",
+                args: { load_plan_name: this.loadPlan },
+                freeze: true,
+                freeze_message: __("Running analysis..."),
+            });
+            await this.refresh();
+        });
+    }
+
+    bootstrapFromRoute() {
+        const routeOptions = frappe.route_options || {};
+        const fromRoute = routeOptions.container_load_plan || routeOptions.name;
+        if (fromRoute) {
+            this.loadPlan = fromRoute;
+            this.loadPlanControl.set_value(fromRoute);
+            this.refresh();
+        }
     }
 
     renderShell() {
         const html = `
             <div class="ol-cockpit-wrap">
+                <div class="ol-cockpit-toolbar">
+                    <div class="ol-cockpit-search-wrap">
+                        <input id="ol-cockpit-search" class="ol-cockpit-search" placeholder="${__("Search Delivery Note or customer")}" />
+                    </div>
+                    <div class="ol-cockpit-toolbar-right">
+                        <span class="ol-cockpit-legend"><i class="dot ok"></i>${__("Healthy")}</span>
+                        <span class="ol-cockpit-legend"><i class="dot warn"></i>${__("Watch")}</span>
+                        <span class="ol-cockpit-legend"><i class="dot danger"></i>${__("Critical")}</span>
+                    </div>
+                </div>
                 <div class="ol-cockpit-center" id="ol-cockpit-center"></div>
                 <div class="ol-cockpit-grid">
                     <section class="ol-cockpit-col">
@@ -64,6 +97,7 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         `;
 
         $(html).appendTo(this.page.main);
+        this.page.main.find("#ol-cockpit-search").on("input", () => this.renderLists());
     }
 
     async refresh() {
@@ -82,24 +116,52 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
 
         this.data = r.message || {};
         this.renderCenter(this.data.plan || {});
-        this.renderQueue(this.data.queue || []);
-        this.renderActive(this.data.shipments || []);
+        this.renderLists();
     }
 
     renderCenter(plan) {
         const weightPct = Number(plan.weight_utilization_pct || 0);
         const volumePct = Number(plan.volume_utilization_pct || 0);
+        const maxWeight = Number(plan.max_weight_kg || 0);
+        const maxVolume = Number(plan.max_volume_m3 || 0);
+        const usedWeight = Number(plan.total_weight_kg || 0);
+        const usedVolume = Number(plan.total_volume_m3 || 0);
+        const remainingWeight = Math.max(maxWeight - usedWeight, 0);
+        const remainingVolume = Math.max(maxVolume - usedVolume, 0);
         const weightColor = this.utilizationColor(weightPct);
         const volumeColor = this.utilizationColor(volumePct);
+        const statusClass = this.analysisStatusClass(plan.analysis_status);
+        const factorClass = this.factorClass(plan.limiting_factor);
+        const queueCount = (this.data.queue || []).length;
+        const activeCount = (this.data.shipments || []).length;
 
         const html = `
             <div class="ol-cockpit-card">
                 <div class="ol-cockpit-title-row">
                     <div>
                         <div class="ol-cockpit-title">${frappe.utils.escape_html(plan.container_label || this.loadPlan || "")}</div>
-                        <div class="ol-cockpit-sub">${frappe.utils.escape_html(plan.container_profile_label || "")} - ${frappe.utils.escape_html(plan.destination_zone || "")}</div>
+                        <div class="ol-cockpit-sub">${frappe.utils.escape_html(plan.container_profile_label || "")} | ${frappe.utils.escape_html(plan.destination_zone || "-")} | ${frappe.utils.escape_html(plan.departure_date || "")}</div>
                     </div>
-                    <div class="ol-cockpit-status">${frappe.utils.escape_html(plan.analysis_status || "ok")}</div>
+                    <div class="ol-cockpit-status ${statusClass}">${frappe.utils.escape_html(plan.analysis_status || "ok")}</div>
+                </div>
+
+                <div class="ol-cockpit-kpi-grid">
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Pending Queue")}</div>
+                        <div class="ol-kpi-value">${queueCount}</div>
+                    </div>
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Loaded Shipments")}</div>
+                        <div class="ol-kpi-value">${activeCount}</div>
+                    </div>
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Remaining Weight")}</div>
+                        <div class="ol-kpi-value small">${remainingWeight.toFixed(3)} kg</div>
+                    </div>
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Remaining Volume")}</div>
+                        <div class="ol-kpi-value small">${remainingVolume.toFixed(3)} m3</div>
+                    </div>
                 </div>
 
                 <div class="ol-cockpit-meter-grid">
@@ -119,11 +181,24 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
                     </div>
                 </div>
 
-                <div class="ol-cockpit-meta">${__("Limiting Factor")}: <b>${frappe.utils.escape_html(plan.limiting_factor || "n/a")}</b></div>
+                <div class="ol-cockpit-meta">${__("Limiting Factor")}: <span class="ol-factor-pill ${factorClass}">${frappe.utils.escape_html(plan.limiting_factor || "n/a")}</span></div>
             </div>
         `;
 
         this.page.main.find("#ol-cockpit-center").html(html);
+    }
+
+    renderLists() {
+        const query = String(this.page.main.find("#ol-cockpit-search").val() || "").trim().toLowerCase();
+        const queue = this.filterRows(this.data.queue || [], query, ["delivery_note", "customer", "destination_zone"]);
+        const shipments = this.filterRows(this.data.shipments || [], query, ["delivery_note", "customer"]);
+        this.renderQueue(queue);
+        this.renderActive(shipments);
+    }
+
+    filterRows(rows, query, keys) {
+        if (!query) return rows;
+        return rows.filter((row) => keys.some((key) => String(row[key] || "").toLowerCase().includes(query)));
     }
 
     renderQueue(queue) {
@@ -133,9 +208,13 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
                     <article class="ol-cockpit-item">
                         <div class="ol-cockpit-item-title">${frappe.utils.escape_html(row.delivery_note)}</div>
                         <div class="ol-cockpit-item-sub">${frappe.utils.escape_html(row.customer || "-")} - ${frappe.utils.escape_html(row.destination_zone || "")}</div>
+                        <div class="ol-cockpit-item-badges">
+                            ${this.metricBadge("W", row.total_weight_kg, "kg")}
+                            ${this.metricBadge("V", row.total_volume_m3, "m3")}
+                        </div>
                         <div class="ol-cockpit-item-metrics">${Number(row.total_weight_kg || 0).toFixed(3)} kg | ${Number(row.total_volume_m3 || 0).toFixed(3)} m3</div>
                         <div class="ol-cockpit-item-actions">
-                            <button class="btn btn-xs btn-primary" data-action="add" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Add")}</button>
+                            <button class="btn btn-xs btn-primary ol-btn-add" data-action="add" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Add to Container")}</button>
                         </div>
                     </article>
                 `;
@@ -160,10 +239,14 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
                     <article class="ol-cockpit-item active">
                         <div class="ol-cockpit-item-title">${frappe.utils.escape_html(row.delivery_note)}</div>
                         <div class="ol-cockpit-item-sub">${frappe.utils.escape_html(row.customer || "-")}</div>
+                        <div class="ol-cockpit-item-badges">
+                            ${this.metricBadge("W", row.shipment_weight_kg, "kg")}
+                            ${this.metricBadge("V", row.shipment_volume_m3, "m3")}
+                        </div>
                         <div class="ol-cockpit-item-metrics">${Number(row.shipment_weight_kg || 0).toFixed(3)} kg | ${Number(row.shipment_volume_m3 || 0).toFixed(3)} m3</div>
                         <div class="ol-cockpit-item-actions">
                             <label class="ol-inline-check"><input type="checkbox" data-action="toggle" data-dn="${frappe.utils.escape_html(row.delivery_note)}" ${checked}> ${__("Include")}</label>
-                            <button class="btn btn-xs btn-default" data-action="remove" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Remove")}</button>
+                            <button class="btn btn-xs btn-default ol-btn-remove" data-action="remove" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Remove")}</button>
                         </div>
                     </article>
                 `;
@@ -249,5 +332,25 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         if (value >= 95) return "#d64545";
         if (value >= 75) return "#f39c12";
         return "#2e9f57";
+    }
+
+    analysisStatusClass(status) {
+        const value = String(status || "").toLowerCase();
+        if (value === "over_capacity") return "danger";
+        if (value === "incomplete_data") return "warn";
+        return "ok";
+    }
+
+    factorClass(factor) {
+        const value = String(factor || "").toLowerCase();
+        if (value === "weight") return "weight";
+        if (value === "volume") return "volume";
+        if (value === "both") return "both";
+        return "neutral";
+    }
+
+    metricBadge(prefix, value, unit) {
+        const amount = Number(value || 0).toFixed(3);
+        return `<span class="ol-badge-metric"><b>${prefix}</b> ${amount} ${unit}</span>`;
     }
 };
