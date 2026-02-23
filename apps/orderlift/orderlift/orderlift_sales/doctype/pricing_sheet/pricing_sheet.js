@@ -10,6 +10,165 @@ function statusBadge(value) {
     return `<span class="indicator-pill ${color}">${__(status || "-")}</span>`;
 }
 
+function ensurePricingSheetStyles(frm) {
+    const styleId = "pricing-sheet-ux-style";
+    if (frm.fields_dict.projection_dashboard.$wrapper.find(`#${styleId}`).length) {
+        return;
+    }
+
+    frm.fields_dict.projection_dashboard.$wrapper.prepend(`
+        <style id="${styleId}">
+            .ps-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; }
+            .ps-card-pad { padding: 14px; }
+            .ps-kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:10px; }
+            .ps-kpi { border:1px solid #e5e7eb; border-radius:10px; padding:10px; }
+            .ps-grid-two { display:grid; grid-template-columns:2fr 1fr; gap:10px; }
+            .ps-table th, .ps-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+            .ps-table { width:100%; border-collapse: collapse; }
+            .ps-actions { margin: 8px 0 12px 0; padding: 10px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+            .ps-actions .btn { margin-right: 8px; margin-bottom: 6px; }
+            .ps-actions-title { font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 8px; }
+        </style>
+    `);
+}
+
+function renderContextActions(frm) {
+    const mount = (fieldname, title, actions) => {
+        const field = frm.fields_dict[fieldname];
+        if (!field || !field.$wrapper) return;
+
+        const id = `ps-actions-${fieldname}`;
+        field.$wrapper.prev(`#${id}`).remove();
+
+        const $bar = $(`<div id="${id}" class="ps-actions"><div class="ps-actions-title">${title}</div></div>`);
+        actions.forEach((action) => {
+            const $btn = $(`<button class="btn btn-default btn-sm">${action.label}</button>`);
+            $btn.on("click", async () => {
+                try {
+                    await action.handler();
+                } catch (e) {
+                    frappe.msgprint({
+                        title: __("Action Failed"),
+                        message: e.message || __("Unable to execute action."),
+                        indicator: "red",
+                    });
+                }
+            });
+            $bar.append($btn);
+        });
+
+        field.$wrapper.before($bar);
+    };
+
+    mount("lines", __("Pricing Sheet Actions"), [
+        {
+            label: __("Refresh Base Prices"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("refresh_buy_prices");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
+            },
+        },
+        {
+            label: __("Apply Scenario to Rows"),
+            handler: async () => {
+                const dialog = new frappe.ui.Dialog({
+                    title: __("Apply Scenario"),
+                    fields: [
+                        {
+                            fieldtype: "Link",
+                            fieldname: "pricing_scenario",
+                            label: __("Pricing Scenario"),
+                            options: "Pricing Scenario",
+                            reqd: 1,
+                        },
+                    ],
+                    primary_action_label: __("Apply"),
+                    primary_action: async (values) => {
+                        const selected = frm.fields_dict.lines.grid.get_selected_children() || [];
+                        const targets = selected.length ? selected : frm.doc.lines || [];
+                        targets.forEach((row) => {
+                            frappe.model.set_value(row.doctype, row.name, "pricing_scenario", values.pricing_scenario);
+                        });
+                        dialog.hide();
+                        await frm.save();
+                        renderProjectionDashboard(frm);
+                    },
+                });
+                dialog.show();
+            },
+        },
+    ]);
+
+    mount("scenario_overrides", __("Scenario Override Actions"), [
+        {
+            label: __("Load Scenario Values"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("load_scenario_overrides");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Scenario values loaded"), indicator: "green" });
+            },
+        },
+        {
+            label: __("Reset Scenario Overrides"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("reset_scenario_overrides");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Scenario overrides reset"), indicator: "green" });
+            },
+        },
+        {
+            label: __("Prune Stale Overrides"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("prune_stale_scenario_overrides");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Stale overrides pruned"), indicator: "green" });
+            },
+        },
+    ]);
+
+    mount("line_overrides", __("Line Override Actions"), [
+        {
+            label: __("Load Line Overrides"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("load_line_overrides");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Line overrides loaded"), indicator: "green" });
+            },
+        },
+        {
+            label: __("Reset Line Overrides"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("reset_line_overrides");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Line overrides reset"), indicator: "green" });
+            },
+        },
+        {
+            label: __("Prune Stale Line Overrides"),
+            handler: async () => {
+                if (frm.is_dirty()) await frm.save();
+                await frm.call("prune_stale_line_overrides");
+                await frm.reload_doc();
+                renderProjectionDashboard(frm);
+                frappe.show_alert({ message: __("Stale line overrides pruned"), indicator: "green" });
+            },
+        },
+    ]);
+}
+
 function aggregateExpenseImpact(lines) {
     const totals = {};
     (lines || []).forEach((row) => {
@@ -147,22 +306,24 @@ function renderProjectionDashboard(frm) {
           )}</div>`
         : "";
 
+    ensurePricingSheetStyles(frm);
+
     const html = `
-        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px;background:#ffffff;margin-bottom:10px;">
-            <div style="display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;">
-                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc;">
+        <div class="ps-card ps-card-pad" style="margin-bottom:10px;">
+            <div class="ps-kpi-grid">
+                <div class="ps-kpi" style="background:#f8fafc;">
                     <div style="font-size:11px;color:#64748b;">${__("Total Base")}</div>
                     <div style="font-size:18px;font-weight:700;">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
                 </div>
-                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff7ed;">
+                <div class="ps-kpi" style="background:#fff7ed;">
                     <div style="font-size:11px;color:#9a3412;">${__("Total Expenses")}</div>
                     <div style="font-size:18px;font-weight:700;">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
                 </div>
-                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#ecfdf5;">
+                <div class="ps-kpi" style="background:#ecfdf5;">
                     <div style="font-size:11px;color:#166534;">${__("Total Final")}</div>
                     <div style="font-size:18px;font-weight:700;">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
                 </div>
-                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#eff6ff;">
+                <div class="ps-kpi" style="background:#eff6ff;">
                     <div style="font-size:11px;color:#1d4ed8;">${__("Average Markup")}</div>
                     <div style="font-size:18px;font-weight:700;">${frappe.format(avgMarkup, { fieldtype: "Percent" })}</div>
                 </div>
@@ -170,32 +331,32 @@ function renderProjectionDashboard(frm) {
             <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
             ${warningBlock}
         </div>
-        <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
-            <div style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#fff;">
-                <table style="width:100%;border-collapse:collapse;">
+        <div class="ps-grid-two">
+            <div class="ps-card" style="overflow:hidden;">
+                <table class="ps-table">
                     <thead style="background:#f8fafc;">
                         <tr>
-                            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Item")}</th>
-                            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Scenario")}</th>
-                            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Qty")}</th>
-                            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Base")}</th>
-                            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Projected")}</th>
-                            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Final")}</th>
-                            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Flags")}</th>
-                            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Expense Flow")}</th>
-                            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Detail")}</th>
+                            <th style="text-align:left;">${__("Item")}</th>
+                            <th style="text-align:left;">${__("Scenario")}</th>
+                            <th style="text-align:right;">${__("Qty")}</th>
+                            <th style="text-align:right;">${__("Base")}</th>
+                            <th style="text-align:right;">${__("Projected")}</th>
+                            <th style="text-align:right;">${__("Final")}</th>
+                            <th style="text-align:left;">${__("Flags")}</th>
+                            <th style="text-align:left;">${__("Expense Flow")}</th>
+                            <th style="text-align:right;">${__("Detail")}</th>
                         </tr>
                     </thead>
                     <tbody>${rowsHtml}</tbody>
                 </table>
             </div>
-            <div style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#fff;">
+            <div class="ps-card" style="overflow:hidden;">
                 <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Expense Impact")}</div>
-                <table style="width:100%;border-collapse:collapse;">
+                <table class="ps-table">
                     <thead>
                         <tr>
-                            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Expense")}</th>
-                            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Contribution")}</th>
+                            <th style="text-align:left;">${__("Expense")}</th>
+                            <th style="text-align:right;">${__("Contribution")}</th>
                         </tr>
                     </thead>
                     <tbody>${impacts || `<tr><td colspan="2" style="padding:8px;color:#64748b;">${__("No data")}</td></tr>`}</tbody>
@@ -278,103 +439,6 @@ frappe.ui.form.on("Pricing Sheet", {
             }
             const r = await frm.call("queue_recalculate");
             frappe.show_alert({ message: __("Recalculation queued ({0})", [r.message.job_id || "-"]), indicator: "blue" });
-        });
-
-        frm.add_custom_button(__("Refresh Base Prices"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("refresh_buy_prices");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Load Scenario Values"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("load_scenario_overrides");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Scenario values loaded"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Load Line Overrides"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("load_line_overrides");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Line overrides loaded"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Reset Scenario Overrides"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("reset_scenario_overrides");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Scenario overrides reset"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Prune Stale Overrides"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("prune_stale_scenario_overrides");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Stale overrides pruned"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Reset Line Overrides"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("reset_line_overrides");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Line overrides reset"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Prune Stale Line Overrides"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            await frm.call("prune_stale_line_overrides");
-            await frm.reload_doc();
-            renderProjectionDashboard(frm);
-            frappe.show_alert({ message: __("Stale line overrides pruned"), indicator: "green" });
-        });
-
-        frm.add_custom_button(__("Apply Scenario to Rows"), () => {
-            const dialog = new frappe.ui.Dialog({
-                title: __("Apply Scenario"),
-                fields: [
-                    {
-                        fieldtype: "Link",
-                        fieldname: "pricing_scenario",
-                        label: __("Pricing Scenario"),
-                        options: "Pricing Scenario",
-                        reqd: 1,
-                    },
-                ],
-                primary_action_label: __("Apply"),
-                primary_action: async (values) => {
-                    const selected = frm.fields_dict.lines.grid.get_selected_children() || [];
-                    const targets = selected.length ? selected : frm.doc.lines || [];
-                    targets.forEach((row) => {
-                        frappe.model.set_value(row.doctype, row.name, "pricing_scenario", values.pricing_scenario);
-                    });
-                    dialog.hide();
-                    await frm.save();
-                    renderProjectionDashboard(frm);
-                },
-            });
-            dialog.show();
         });
 
         frm.add_custom_button(__("Add from Bundle"), () => {
@@ -491,6 +555,7 @@ frappe.ui.form.on("Pricing Sheet", {
         }
 
         renderProjectionDashboard(frm);
+        renderContextActions(frm);
     },
 
     lines_remove(frm) {
