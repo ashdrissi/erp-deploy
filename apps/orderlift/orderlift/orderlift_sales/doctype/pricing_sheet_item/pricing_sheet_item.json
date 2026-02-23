@@ -11,6 +11,7 @@
     "resolved_pricing_scenario",
     "scenario_source",
     "has_scenario_override",
+    "has_line_override",
     "source_bundle",
     "line_type",
     "bundle_group_id",
@@ -75,6 +76,13 @@
       "fieldname": "has_scenario_override",
       "fieldtype": "Check",
       "label": "Has Scenario Override",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "has_line_override",
+      "fieldtype": "Check",
+      "label": "Has Line Override",
       "read_only": 1,
       "in_list_view": 1
     },

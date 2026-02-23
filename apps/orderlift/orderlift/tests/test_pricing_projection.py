@@ -53,6 +53,7 @@ class TestPricingProjection(unittest.TestCase):
                     "sequence": 10,
                     "expense_key": "10|margin|percentage|running total|per unit",
                     "is_overridden": 1,
+                    "override_source": "line",
                 }
             ],
         )
@@ -61,6 +62,7 @@ class TestPricingProjection(unittest.TestCase):
             result["steps"][0].get("expense_key"),
             "10|margin|percentage|running total|per unit",
         )
+        self.assertEqual(result["steps"][0].get("override_source"), "line")
 
 
 if __name__ == "__main__":

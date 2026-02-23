@@ -300,6 +300,16 @@ frappe.ui.form.on("Pricing Sheet", {
             frappe.show_alert({ message: __("Scenario values loaded"), indicator: "green" });
         });
 
+        frm.add_custom_button(__("Load Line Overrides"), async () => {
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("load_line_overrides");
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Line overrides loaded"), indicator: "green" });
+        });
+
         frm.add_custom_button(__("Reset Scenario Overrides"), async () => {
             if (frm.is_dirty()) {
                 await frm.save();
@@ -308,6 +318,36 @@ frappe.ui.form.on("Pricing Sheet", {
             await frm.reload_doc();
             renderProjectionDashboard(frm);
             frappe.show_alert({ message: __("Scenario overrides reset"), indicator: "green" });
+        });
+
+        frm.add_custom_button(__("Prune Stale Overrides"), async () => {
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("prune_stale_scenario_overrides");
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Stale overrides pruned"), indicator: "green" });
+        });
+
+        frm.add_custom_button(__("Reset Line Overrides"), async () => {
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("reset_line_overrides");
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Line overrides reset"), indicator: "green" });
+        });
+
+        frm.add_custom_button(__("Prune Stale Line Overrides"), async () => {
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("prune_stale_line_overrides");
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Stale line overrides pruned"), indicator: "green" });
         });
 
         frm.add_custom_button(__("Apply Scenario to Rows"), () => {
@@ -391,6 +431,25 @@ frappe.ui.form.on("Pricing Sheet", {
                 ],
                 primary_action_label: __("Add"),
                 primary_action: async (values) => {
+                    const bothMode = values.line_mode === "Both";
+                    const summaryInDetail = Number(values.include_summary_in_detail || 0) === 1;
+                    const componentsInDetail = Number(values.include_components_in_detail || 0) === 1;
+
+                    if (bothMode && summaryInDetail && componentsInDetail) {
+                        const confirmed = await new Promise((resolve) => {
+                            frappe.confirm(
+                                __(
+                                    "Both mode with both detail flags enabled will include summary and components in detailed quotation. Continue?"
+                                ),
+                                () => resolve(true),
+                                () => resolve(false)
+                            );
+                        });
+                        if (!confirmed) {
+                            return;
+                        }
+                    }
+
                     if (frm.is_dirty()) {
                         await frm.save();
                     }
@@ -487,6 +546,15 @@ frappe.ui.form.on("Pricing Sheet Scenario Override", {
         renderProjectionDashboard(frm);
     },
     scenario_overrides_remove(frm) {
+        renderProjectionDashboard(frm);
+    },
+});
+
+frappe.ui.form.on("Pricing Sheet Line Override", {
+    line_override_value(frm) {
+        renderProjectionDashboard(frm);
+    },
+    line_overrides_remove(frm) {
         renderProjectionDashboard(frm);
     },
 });

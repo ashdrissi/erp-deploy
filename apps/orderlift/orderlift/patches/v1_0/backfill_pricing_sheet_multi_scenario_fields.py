@@ -23,6 +23,10 @@ def execute():
                 row.has_scenario_override = 0
                 changed = True
 
+            if row.get("has_line_override") is None:
+                row.has_line_override = 0
+                changed = True
+
             if not row.get("line_type"):
                 row.line_type = "Standard"
                 changed = True

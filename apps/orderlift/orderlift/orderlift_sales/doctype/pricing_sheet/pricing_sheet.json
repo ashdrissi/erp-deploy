@@ -26,6 +26,8 @@
     "projection_dashboard",
     "heading_scenario_overrides",
     "scenario_overrides",
+    "heading_line_overrides",
+    "line_overrides",
     "heading_lines",
     "lines",
     "heading_totals",
@@ -86,7 +88,7 @@
     {
       "fieldname": "pricing_scenario",
       "fieldtype": "Link",
-      "label": "Pricing Scenario",
+      "label": "Default Pricing Scenario",
       "options": "Pricing Scenario",
       "reqd": 1,
       "in_standard_filter": 1
@@ -94,7 +96,7 @@
     {
       "fieldname": "product_bundle",
       "fieldtype": "Link",
-      "label": "Product Bundle",
+      "label": "Default Product Bundle",
       "options": "Product Bundle"
     },
     {
@@ -168,6 +170,17 @@
       "fieldtype": "Table",
       "label": "Scenario Overrides",
       "options": "Pricing Sheet Scenario Override"
+    },
+    {
+      "fieldname": "heading_line_overrides",
+      "fieldtype": "Heading",
+      "label": "Line Overrides"
+    },
+    {
+      "fieldname": "line_overrides",
+      "fieldtype": "Table",
+      "label": "Line Overrides",
+      "options": "Pricing Sheet Line Override"
     },
     {
       "fieldname": "heading_lines",
