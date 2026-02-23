@@ -95,6 +95,16 @@ function renderProjectionDashboard(frm) {
     const totalFinal = frm.doc.total_selling || 0;
     const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
     const warnings = frm.doc.projection_warnings || "";
+    const scenarioCounts = {};
+    lines.forEach((row) => {
+        const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
+        scenarioCounts[key] = (scenarioCounts[key] || 0) + 1;
+    });
+    const scenarioPills = Object.entries(scenarioCounts)
+        .map(([name, count]) => {
+            return `<span style="display:inline-block;padding:4px 8px;border:1px solid #cbd5e1;border-radius:999px;margin-right:6px;background:#f8fafc;">${frappe.utils.escape_html(name)} (${count})</span>`;
+        })
+        .join("");
 
     const rowsHtml =
         topRows
@@ -102,9 +112,12 @@ function renderProjectionDashboard(frm) {
                 const item = frappe.utils.escape_html(row.item || "-");
                 const preview = frappe.utils.escape_html(row.breakdown_preview || __("No expenses"));
                 const floor = row.price_floor_violation ? `<span class="indicator-pill red">${__("Floor")}</span>` : "";
+                const scn = frappe.utils.escape_html(row.resolved_pricing_scenario || row.pricing_scenario || "-");
+                const scnOverride = row.has_scenario_override ? `<span class="indicator-pill orange">${__("Edited")}</span>` : "";
                 return `
                     <tr>
                         <td>${item}</td>
+                        <td>${scn} ${scnOverride}</td>
                         <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
                         <td style="text-align:right;">${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
                         <td style="text-align:right;">${frappe.format(row.projected_unit_price || 0, { fieldtype: "Currency" })}</td>
@@ -116,7 +129,7 @@ function renderProjectionDashboard(frm) {
                 `;
             })
             .join("") ||
-        `<tr><td colspan="8" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
+        `<tr><td colspan="9" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
 
     const impacts = aggregateExpenseImpact(lines)
         .slice(0, 6)
@@ -154,6 +167,7 @@ function renderProjectionDashboard(frm) {
                     <div style="font-size:18px;font-weight:700;">${frappe.format(avgMarkup, { fieldtype: "Percent" })}</div>
                 </div>
             </div>
+            <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
             ${warningBlock}
         </div>
         <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
@@ -162,6 +176,7 @@ function renderProjectionDashboard(frm) {
                     <thead style="background:#f8fafc;">
                         <tr>
                             <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Item")}</th>
+                            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Scenario")}</th>
                             <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Qty")}</th>
                             <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Base")}</th>
                             <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">${__("Projected")}</th>
@@ -237,6 +252,7 @@ frappe.ui.form.on("Pricing Sheet", {
         });
 
         frm.set_query("item", "lines", queryConfig);
+        frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
     },
 
@@ -272,6 +288,53 @@ frappe.ui.form.on("Pricing Sheet", {
             await frm.reload_doc();
             renderProjectionDashboard(frm);
             frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
+        });
+
+        frm.add_custom_button(__("Load Scenario Values"), async () => {
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("load_scenario_overrides");
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Scenario values loaded"), indicator: "green" });
+        });
+
+        frm.add_custom_button(__("Reset Scenario Overrides"), async () => {
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("reset_scenario_overrides");
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Scenario overrides reset"), indicator: "green" });
+        });
+
+        frm.add_custom_button(__("Apply Scenario to Rows"), () => {
+            const dialog = new frappe.ui.Dialog({
+                title: __("Apply Scenario"),
+                fields: [
+                    {
+                        fieldtype: "Link",
+                        fieldname: "pricing_scenario",
+                        label: __("Pricing Scenario"),
+                        options: "Pricing Scenario",
+                        reqd: 1,
+                    },
+                ],
+                primary_action_label: __("Apply"),
+                primary_action: async (values) => {
+                    const selected = frm.fields_dict.lines.grid.get_selected_children() || [];
+                    const targets = selected.length ? selected : frm.doc.lines || [];
+                    targets.forEach((row) => {
+                        frappe.model.set_value(row.doctype, row.name, "pricing_scenario", values.pricing_scenario);
+                    });
+                    dialog.hide();
+                    await frm.save();
+                    renderProjectionDashboard(frm);
+                },
+            });
+            dialog.show();
         });
 
         frm.add_custom_button(__("Add from Bundle"), () => {
@@ -368,7 +431,7 @@ frappe.ui.form.on("Pricing Sheet Item", {
             method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_item_pricing_defaults",
             args: {
                 item_code: row.item,
-                pricing_scenario: frm.doc.pricing_scenario,
+                pricing_scenario: row.pricing_scenario || frm.doc.pricing_scenario,
             },
             callback: (r) => {
                 const data = r.message || {};
@@ -392,6 +455,31 @@ frappe.ui.form.on("Pricing Sheet Item", {
     },
 
     manual_sell_unit_price(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    pricing_scenario(frm) {
+        renderProjectionDashboard(frm);
+    },
+});
+
+frappe.ui.form.on("Pricing Sheet Scenario Override", {
+    override_value(frm) {
+        renderProjectionDashboard(frm);
+    },
+    scenario_overrides_remove(frm) {
+        renderProjectionDashboard(frm);
+    },
+});
+
+frappe.ui.form.on("Pricing Sheet Bundle Scenario", {
+    bundle(frm) {
+        renderProjectionDashboard(frm);
+    },
+    pricing_scenario(frm) {
+        renderProjectionDashboard(frm);
+    },
+    bundle_scenario_rules_remove(frm) {
         renderProjectionDashboard(frm);
     },
 });

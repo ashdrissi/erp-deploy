@@ -32,6 +32,8 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
         value = float(expense.get("value") or 0.0)
         sequence = int(expense.get("sequence") or 0)
         label = expense.get("label") or "Expense"
+        expense_key = expense.get("expense_key")
+        is_overridden = 1 if float(expense.get("is_overridden") or 0) else 0
 
         basis = float(base_unit) if applies_to == "Base Price" else float(running_total)
         delta_unit = 0.0
@@ -61,6 +63,8 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
                 "applies_to": applies_to,
                 "scope": scope,
                 "sequence": sequence,
+                "expense_key": expense_key,
+                "is_overridden": is_overridden,
                 "basis": basis,
                 "delta_unit": delta_unit,
                 "delta_line": delta_line,

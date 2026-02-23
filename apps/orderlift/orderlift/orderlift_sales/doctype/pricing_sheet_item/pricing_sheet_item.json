@@ -7,6 +7,11 @@
   "engine": "InnoDB",
   "field_order": [
     "item",
+    "pricing_scenario",
+    "resolved_pricing_scenario",
+    "scenario_source",
+    "has_scenario_override",
+    "source_bundle",
     "qty",
     "buy_price",
     "buy_price_missing",
@@ -40,6 +45,43 @@
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1
+    },
+    {
+      "fieldname": "pricing_scenario",
+      "fieldtype": "Link",
+      "label": "Line Scenario",
+      "options": "Pricing Scenario",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "resolved_pricing_scenario",
+      "fieldtype": "Link",
+      "label": "Resolved Scenario",
+      "options": "Pricing Scenario",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "scenario_source",
+      "fieldtype": "Select",
+      "label": "Scenario Source",
+      "options": "Line\nBundle Rule\nSheet Default",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "has_scenario_override",
+      "fieldtype": "Check",
+      "label": "Has Scenario Override",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "source_bundle",
+      "fieldtype": "Link",
+      "label": "Source Bundle",
+      "options": "Product Bundle",
+      "read_only": 1
     },
     {
       "fieldname": "qty",

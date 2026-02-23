@@ -18,7 +18,6 @@ class PricingSheet(Document):
 
     def recalculate(self):
         started = perf_counter()
-        scenario = self._get_scenario_or_throw()
         lines = self.lines or []
         self.projection_warnings = ""
 
@@ -29,22 +28,14 @@ class PricingSheet(Document):
             self.calc_runtime_ms = (perf_counter() - started) * 1000
             return
 
+        scenario_docs = self._collect_scenarios_or_throw(lines)
+        self._sync_override_rows_for_scenarios(scenario_docs)
+
         warnings = []
         item_codes = sorted({row.item for row in lines if row.item})
         item_groups = get_item_groups_map(item_codes)
 
-        buying_price_list = scenario.buying_price_list or "Buying"
-        benchmark_price_list = scenario.benchmark_price_list or "Benchmark Selling"
-        buy_prices = get_latest_item_prices(item_codes, buying_price_list, buying=True)
-        benchmark_prices = get_latest_item_prices(item_codes, benchmark_price_list, buying=False)
-
-        expenses = self._active_expenses(scenario)
-        sheet_fixed_total = self._sheet_fixed_total(expenses)
-        line_expenses = [
-            exp
-            for exp in expenses
-            if not ((exp.get("type") or "").title() == "Fixed" and (exp.get("scope") or "").title() == "Per Sheet")
-        ]
+        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
 
         total_base = 0.0
         total_expenses = 0.0
@@ -57,13 +48,21 @@ class PricingSheet(Document):
                 frappe.throw(_("Row {0}: Qty must be greater than zero.").format(row.idx))
 
             self._hydrate_line_from_item(row, item_groups)
-            self._set_buy_price_from_map(row, buying_price_list, buy_prices)
+            scenario_name, source = self._resolve_line_scenario(row)
+            row.resolved_pricing_scenario = scenario_name
+            row.scenario_source = source
+
+            cache = scenario_caches.get(scenario_name)
+            if not cache:
+                frappe.throw(_("Unable to resolve pricing cache for scenario {0}").format(scenario_name))
+
+            self._set_buy_price_from_map(row, cache["buying_price_list"], cache["buy_prices"])
 
             base_unit = flt(row.buy_price)
             base_amount = qty * base_unit
             row.base_amount = base_amount
 
-            pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=line_expenses)
+            pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=cache["line_expenses"])
             line_snapshots.append(
                 {
                     "row": row,
@@ -71,6 +70,9 @@ class PricingSheet(Document):
                     "base_unit": base_unit,
                     "base_amount": base_amount,
                     "pricing": pricing,
+                    "sheet_fixed_total": cache["sheet_fixed_total"],
+                    "benchmark_price_list": cache["benchmark_price_list"],
+                    "benchmark_prices": cache["benchmark_prices"],
                 }
             )
             total_base += base_amount
@@ -88,6 +90,7 @@ class PricingSheet(Document):
             base_unit = snap["base_unit"]
             base_amount = snap["base_amount"]
             pricing = snap["pricing"]
+            sheet_fixed_total = snap["sheet_fixed_total"]
 
             share_basis = base_amount if total_base > 0 else qty
             allocated_sheet = (share_basis / allocation_denom) * sheet_fixed_total
@@ -118,6 +121,7 @@ class PricingSheet(Document):
             row.projected_total_price = projected_total
             row.pricing_breakdown_json = json.dumps(steps)
             row.breakdown_preview = self._build_breakdown_preview(steps)
+            row.has_scenario_override = 1 if cache_has_override_steps(steps) else 0
 
             row.is_manual_override = 1 if flt(row.manual_sell_unit_price) > 0 else 0
             row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
@@ -139,7 +143,12 @@ class PricingSheet(Document):
                     )
                 )
 
-            self._set_benchmark_status(row, benchmark_price_list, benchmark_prices, flt(row.final_sell_unit_price))
+            self._set_benchmark_status(
+                row,
+                snap["benchmark_price_list"],
+                snap["benchmark_prices"],
+                flt(row.final_sell_unit_price),
+            )
 
             total_expenses += flt(row.expense_total)
             total_final += flt(row.final_sell_total)
@@ -166,6 +175,30 @@ class PricingSheet(Document):
             frappe.throw(_("Strict guard blocked save:\n{0}").format("\n".join(warnings[:10])))
 
     @frappe.whitelist()
+    def load_scenario_overrides(self):
+        lines = self.lines or []
+        scenario_docs = self._collect_scenarios_or_throw(lines)
+        self._sync_override_rows_for_scenarios(scenario_docs)
+        self.recalculate()
+        self.save(ignore_permissions=True)
+        return self.name
+
+    @frappe.whitelist()
+    def reset_scenario_overrides(self, scenario=None):
+        if scenario:
+            rows = [row for row in (self.scenario_overrides or []) if row.scenario == scenario]
+        else:
+            rows = list(self.scenario_overrides or [])
+
+        for row in rows:
+            row.override_value = flt(row.base_value)
+            row.is_overridden = 0
+
+        self.recalculate()
+        self.save(ignore_permissions=True)
+        return self.name
+
+    @frappe.whitelist()
     def queue_recalculate(self):
         self.check_permission("write")
         job = frappe.enqueue(
@@ -183,7 +216,10 @@ class PricingSheet(Document):
         detailed_count = len([row for row in lines if cint(row.show_in_detail)])
         grouped_count = len(
             {
-                ((row.display_group or "").strip() or "Ungrouped")
+                (
+                    (row.display_group or "").strip() or "Ungrouped",
+                    row.resolved_pricing_scenario or row.pricing_scenario or self.pricing_scenario,
+                )
                 for row in lines
                 if flt(row.final_sell_total) != 0
             }
@@ -199,12 +235,20 @@ class PricingSheet(Document):
 
     @frappe.whitelist()
     def refresh_buy_prices(self):
-        scenario = self._get_scenario_or_throw()
         lines = self.lines or []
+        scenario_docs = self._collect_scenarios_or_throw(lines)
         item_codes = sorted({row.item for row in lines if row.item})
-        buy_prices = get_latest_item_prices(item_codes, scenario.buying_price_list or "Buying", buying=True)
+        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
+
         for row in lines:
-            self._set_buy_price_from_map(row, scenario.buying_price_list or "Buying", buy_prices, force_refresh=True)
+            scenario_name, source = self._resolve_line_scenario(row)
+            row.resolved_pricing_scenario = scenario_name
+            row.scenario_source = source
+            cache = scenario_caches.get(scenario_name)
+            if not cache:
+                continue
+            self._set_buy_price_from_map(row, cache["buying_price_list"], cache["buy_prices"], force_refresh=True)
+
         self.recalculate()
         self.save(ignore_permissions=True)
         return self.name
@@ -218,7 +262,7 @@ class PricingSheet(Document):
         default_show_in_detail=1,
         default_display_group_source="Item Group",
     ):
-        self._get_scenario_or_throw()
+        self._get_default_scenario_or_throw()
         bundle_name = product_bundle or self.product_bundle
         if not bundle_name:
             frappe.throw(_("Please select a Product Bundle."))
@@ -262,12 +306,158 @@ class PricingSheet(Document):
                     "qty": line_qty,
                     "display_group": display_group,
                     "show_in_detail": show_detail,
+                    "source_bundle": bundle_name,
+                    "pricing_scenario": self._scenario_from_bundle_rule(bundle_name) or self.pricing_scenario,
                 },
             )
 
         self.product_bundle = bundle_name
         self.refresh_buy_prices()
         return self.name
+
+    def _collect_scenarios_or_throw(self, lines):
+        scenario_names = set()
+        default_scenario = (self.pricing_scenario or "").strip()
+        if default_scenario:
+            scenario_names.add(default_scenario)
+
+        for row in lines:
+            if row.pricing_scenario:
+                scenario_names.add(row.pricing_scenario)
+
+        for rule in (self.bundle_scenario_rules or []):
+            if cint(rule.is_active) and rule.pricing_scenario:
+                scenario_names.add(rule.pricing_scenario)
+
+        if not scenario_names:
+            frappe.throw(_("Please select at least one Pricing Scenario."))
+
+        docs = {}
+        missing = []
+        for name in scenario_names:
+            if not frappe.db.exists("Pricing Scenario", name):
+                missing.append(name)
+                continue
+            docs[name] = frappe.get_doc("Pricing Scenario", name)
+
+        if missing:
+            frappe.throw(_("Missing Pricing Scenario(s): {0}").format(", ".join(sorted(missing))))
+
+        return docs
+
+    def _build_scenario_caches(self, scenario_docs, item_codes):
+        caches = {}
+        for name, scenario in scenario_docs.items():
+            buying_price_list = scenario.buying_price_list or "Buying"
+            benchmark_price_list = scenario.benchmark_price_list or "Benchmark Selling"
+
+            base_expenses = self._active_expenses(scenario)
+            effective_expenses = self._apply_override_rows(name, base_expenses)
+            sheet_fixed_total = self._sheet_fixed_total(effective_expenses)
+            line_expenses = [
+                exp
+                for exp in effective_expenses
+                if not (
+                    (exp.get("type") or "").title() == "Fixed"
+                    and (exp.get("scope") or "").title() == "Per Sheet"
+                )
+            ]
+
+            caches[name] = {
+                "buying_price_list": buying_price_list,
+                "benchmark_price_list": benchmark_price_list,
+                "buy_prices": get_latest_item_prices(item_codes, buying_price_list, buying=True),
+                "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=False),
+                "line_expenses": line_expenses,
+                "sheet_fixed_total": sheet_fixed_total,
+            }
+
+        return caches
+
+    def _sync_override_rows_for_scenarios(self, scenario_docs):
+        existing = {}
+        for row in (self.scenario_overrides or []):
+            key = (row.scenario, row.expense_key)
+            existing[key] = row
+
+        for scenario_name, scenario in scenario_docs.items():
+            for expense in self._active_expenses(scenario):
+                expense_key = make_expense_key(expense)
+                key = (scenario_name, expense_key)
+                row = existing.get(key)
+
+                if not row:
+                    row = self.append(
+                        "scenario_overrides",
+                        {
+                            "scenario": scenario_name,
+                            "expense_key": expense_key,
+                        },
+                    )
+
+                row.expense_label = expense.get("label")
+                row.sequence = cint(expense.get("sequence"))
+                row.type = expense.get("type")
+                row.applies_to = expense.get("applies_to")
+                row.scope = expense.get("scope")
+                row.is_active = cint(expense.get("is_active"))
+                row.base_value = flt(expense.get("value"))
+                if row.override_value is None:
+                    row.override_value = flt(row.base_value)
+                row.is_overridden = 1 if flt(row.override_value) != flt(row.base_value) else 0
+
+    def _apply_override_rows(self, scenario_name, base_expenses):
+        override_rows = {}
+        for row in (self.scenario_overrides or []):
+            if row.scenario != scenario_name:
+                continue
+            override_rows[row.expense_key] = row
+
+        out = []
+        for expense in base_expenses:
+            key = make_expense_key(expense)
+            row = override_rows.get(key)
+            copied = dict(expense)
+            copied["expense_key"] = key
+
+            if row:
+                copied["value"] = flt(row.override_value if row.override_value is not None else row.base_value)
+                copied["is_overridden"] = 1 if flt(copied["value"]) != flt(row.base_value) else 0
+                row.is_overridden = copied["is_overridden"]
+            else:
+                copied["is_overridden"] = 0
+
+            out.append(copied)
+
+        return out
+
+    def _resolve_line_scenario(self, row):
+        if row.pricing_scenario:
+            return row.pricing_scenario, "Line"
+
+        bundle_scenario = self._scenario_from_bundle_rule(row.source_bundle or self.product_bundle)
+        if bundle_scenario:
+            return bundle_scenario, "Bundle Rule"
+
+        if self.pricing_scenario:
+            return self.pricing_scenario, "Sheet Default"
+
+        frappe.throw(_("Please set a default Pricing Scenario or line-level scenario."))
+
+    def _scenario_from_bundle_rule(self, bundle_name):
+        if not bundle_name:
+            return None
+
+        active_rules = [
+            row
+            for row in (self.bundle_scenario_rules or [])
+            if cint(row.is_active) and row.bundle == bundle_name and row.pricing_scenario
+        ]
+        if not active_rules:
+            return None
+
+        active_rules = sorted(active_rules, key=lambda r: (cint(r.priority), cint(r.idx)))
+        return active_rules[0].pricing_scenario
 
     def _active_expenses(self, scenario):
         as_dicts = [row.as_dict() for row in (scenario.expenses or []) if flt(row.is_active)]
@@ -300,7 +490,7 @@ class PricingSheet(Document):
 
         return []
 
-    def _get_scenario_or_throw(self):
+    def _get_default_scenario_or_throw(self):
         if not self.pricing_scenario:
             frappe.throw(_("Please select a Pricing Scenario."))
         return frappe.get_doc("Pricing Scenario", self.pricing_scenario)
@@ -417,9 +607,9 @@ class PricingSheet(Document):
             if frappe.db.has_column("Quotation Item", "source_pricing_sheet_line"):
                 item_data["source_pricing_sheet_line"] = row.name
             if frappe.db.has_column("Quotation Item", "source_pricing_scenario"):
-                item_data["source_pricing_scenario"] = self.pricing_scenario
+                item_data["source_pricing_scenario"] = row.resolved_pricing_scenario or row.pricing_scenario or self.pricing_scenario
             if frappe.db.has_column("Quotation Item", "source_pricing_override"):
-                item_data["source_pricing_override"] = cint(row.is_manual_override)
+                item_data["source_pricing_override"] = cint(row.is_manual_override or row.has_scenario_override)
 
             quotation.append("items", item_data)
 
@@ -430,18 +620,21 @@ class PricingSheet(Document):
 
         for row in self.lines or []:
             fallback_group = row.display_group or "Ungrouped"
-            key = (fallback_group or "Ungrouped").strip() or "Ungrouped"
+            scenario_name = row.resolved_pricing_scenario or row.pricing_scenario or self.pricing_scenario
+            key = ((fallback_group or "Ungrouped").strip() or "Ungrouped", scenario_name)
             grouped[key] = grouped.get(key, 0.0) + flt(row.final_sell_total)
 
-        for group_name, group_total in grouped.items():
+        for (group_name, scenario_name), group_total in grouped.items():
             item = {
                 "item_code": group_item_code,
                 "qty": 1,
                 "rate": flt(group_total),
-                "description": _("{0}: {1}").format(config["description_prefix"], group_name),
+                "description": _("{0}: {1} [Scenario: {2}]").format(
+                    config["description_prefix"], group_name, scenario_name or "-"
+                ),
             }
             if frappe.db.has_column("Quotation Item", "source_pricing_scenario"):
-                item["source_pricing_scenario"] = self.pricing_scenario
+                item["source_pricing_scenario"] = scenario_name
             quotation.append("items", item)
 
     def _get_group_line_config(self):
@@ -473,6 +666,25 @@ class PricingSheet(Document):
             "item_code": item_code,
             "description_prefix": description_prefix,
         }
+
+
+def make_expense_key(expense):
+    return "|".join(
+        [
+            str(cint(expense.get("sequence"))),
+            str((expense.get("label") or "").strip().lower()),
+            str((expense.get("type") or "").strip().lower()),
+            str((expense.get("applies_to") or "").strip().lower()),
+            str((expense.get("scope") or "").strip().lower()),
+        ]
+    )
+
+
+def cache_has_override_steps(steps):
+    for step in steps or []:
+        if cint(step.get("is_overridden")):
+            return True
+    return False
 
 
 def get_item_groups_map(item_codes):

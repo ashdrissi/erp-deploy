@@ -1,3 +1,4 @@
 # Patches are applied in order on bench migrate.
 # Format: orderlift.patches.<patch_module>
 orderlift.patches.v1_0.migrate_pricing_scenarios_to_expenses
+orderlift.patches.v1_0.backfill_pricing_sheet_multi_scenario_fields

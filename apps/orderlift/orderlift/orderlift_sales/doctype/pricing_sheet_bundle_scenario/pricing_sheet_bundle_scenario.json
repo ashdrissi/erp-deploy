@@ -1,0 +1,63 @@
+{
+  "actions": [],
+  "creation": "2026-02-23 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "bundle",
+    "pricing_scenario",
+    "priority",
+    "is_active",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "bundle",
+      "fieldtype": "Link",
+      "label": "Bundle",
+      "options": "Product Bundle",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "pricing_scenario",
+      "fieldtype": "Link",
+      "label": "Pricing Scenario",
+      "options": "Pricing Scenario",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "priority",
+      "fieldtype": "Int",
+      "label": "Priority",
+      "default": "10",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-02-23 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Sheet Bundle Scenario",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

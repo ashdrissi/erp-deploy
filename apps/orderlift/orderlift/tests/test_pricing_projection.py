@@ -40,6 +40,28 @@ class TestPricingProjection(unittest.TestCase):
         )
         self.assertAlmostEqual(result["projected_unit"], 170.0, places=4)
 
+    def test_override_metadata_propagates_in_steps(self):
+        result = apply_expenses(
+            base_unit=100,
+            qty=1,
+            expenses=[
+                {
+                    "label": "Margin",
+                    "type": "Percentage",
+                    "value": 20,
+                    "applies_to": "Running Total",
+                    "sequence": 10,
+                    "expense_key": "10|margin|percentage|running total|per unit",
+                    "is_overridden": 1,
+                }
+            ],
+        )
+        self.assertEqual(result["steps"][0].get("is_overridden"), 1)
+        self.assertEqual(
+            result["steps"][0].get("expense_key"),
+            "10|margin|percentage|running total|per unit",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

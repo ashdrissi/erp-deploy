@@ -14,6 +14,8 @@
     "tier",
     "pricing_scenario",
     "product_bundle",
+    "heading_bundle_rules",
+    "bundle_scenario_rules",
     "output_mode",
     "minimum_margin_percent",
     "strict_margin_guard",
@@ -22,6 +24,8 @@
     "calc_runtime_ms",
     "projection_warnings",
     "projection_dashboard",
+    "heading_scenario_overrides",
+    "scenario_overrides",
     "heading_lines",
     "lines",
     "heading_totals",
@@ -94,6 +98,17 @@
       "options": "Product Bundle"
     },
     {
+      "fieldname": "heading_bundle_rules",
+      "fieldtype": "Heading",
+      "label": "Bundle Scenario Rules"
+    },
+    {
+      "fieldname": "bundle_scenario_rules",
+      "fieldtype": "Table",
+      "label": "Bundle Scenario Rules",
+      "options": "Pricing Sheet Bundle Scenario"
+    },
+    {
       "fieldname": "output_mode",
       "fieldtype": "Select",
       "label": "Output Mode",
@@ -142,6 +157,17 @@
       "fieldname": "projection_dashboard",
       "fieldtype": "HTML",
       "label": "Projection Dashboard"
+    },
+    {
+      "fieldname": "heading_scenario_overrides",
+      "fieldtype": "Heading",
+      "label": "Scenario Overrides"
+    },
+    {
+      "fieldname": "scenario_overrides",
+      "fieldtype": "Table",
+      "label": "Scenario Overrides",
+      "options": "Pricing Sheet Scenario Override"
     },
     {
       "fieldname": "heading_lines",
