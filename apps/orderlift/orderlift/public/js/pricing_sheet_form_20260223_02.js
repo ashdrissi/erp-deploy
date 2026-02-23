@@ -95,6 +95,18 @@ function renderContextActions(frm) {
 
     mount("scenario_overrides", __("Scenario Override Actions"), [
         {
+            label: __("Preview Margin Rule"),
+            handler: async () => {
+                const policy = frm.doc.applied_margin_policy || frm.doc.margin_policy || "-";
+                const rule = frm.doc.applied_margin_rule || __("No active rule matched");
+                frappe.msgprint({
+                    title: __("Margin Rule Preview"),
+                    message: `<b>${__("Policy")}</b>: ${frappe.utils.escape_html(policy)}<br><b>${__("Rule")}</b>: ${frappe.utils.escape_html(rule)}`,
+                    indicator: "blue",
+                });
+            },
+        },
+        {
             label: __("Load Scenario Values"),
             handler: async () => {
                 if (frm.is_dirty()) await frm.save();
@@ -261,6 +273,8 @@ function renderProjectionDashboard(frm) {
     const totalFinal = frm.doc.total_selling || 0;
     const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
     const warnings = frm.doc.projection_warnings || "";
+    const marginPolicy = frm.doc.applied_margin_policy || frm.doc.margin_policy || "";
+    const marginRule = frm.doc.applied_margin_rule || "";
     const scenarioCounts = {};
     lines.forEach((row) => {
         const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
@@ -337,6 +351,10 @@ function renderProjectionDashboard(frm) {
                 </div>
             </div>
             <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
+            <div style="margin-top:6px;font-size:12px;color:#334155;">
+                <span class="ps-scenario-chip"><strong>${__("Margin Policy")}</strong> ${frappe.utils.escape_html(marginPolicy || "-")}</span>
+                <span class="ps-scenario-chip"><strong>${__("Margin Rule")}</strong> ${frappe.utils.escape_html(marginRule || __("No rule"))}</span>
+            </div>
             ${warningBlock}
         </div>
         <div class="ps-grid-two">
@@ -424,6 +442,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
         frm.set_query("item", "lines", queryConfig);
         frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
+        frm.set_query("margin_policy", () => ({ filters: { is_active: 1 } }));
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
     },
 
@@ -568,6 +587,10 @@ frappe.ui.form.on("Pricing Sheet", {
 
         renderProjectionDashboard(frm);
         renderContextActions(frm);
+    },
+
+    margin_policy(frm) {
+        renderProjectionDashboard(frm);
     },
 
     lines_remove(frm) {

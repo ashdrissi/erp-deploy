@@ -16,6 +16,7 @@
     "tier",
     "section_strategy",
     "pricing_scenario",
+    "margin_policy",
     "product_bundle",
     "column_break_strategy",
     "output_mode",
@@ -26,6 +27,8 @@
     "calculated_by",
     "column_break_runtime",
     "calc_runtime_ms",
+    "applied_margin_policy",
+    "applied_margin_rule",
     "projection_warnings",
     "heading_bundle_rules",
     "bundle_scenario_rules",
@@ -114,6 +117,13 @@
       "in_standard_filter": 1
     },
     {
+      "fieldname": "margin_policy",
+      "fieldtype": "Link",
+      "label": "Margin Policy",
+      "options": "Pricing Margin Policy",
+      "in_standard_filter": 1
+    },
+    {
       "fieldname": "product_bundle",
       "fieldtype": "Link",
       "label": "Default Product Bundle",
@@ -169,6 +179,18 @@
       "fieldname": "calc_runtime_ms",
       "fieldtype": "Float",
       "label": "Calc Runtime (ms)",
+      "read_only": 1
+    },
+    {
+      "fieldname": "applied_margin_policy",
+      "fieldtype": "Data",
+      "label": "Applied Margin Policy",
+      "read_only": 1
+    },
+    {
+      "fieldname": "applied_margin_rule",
+      "fieldtype": "Small Text",
+      "label": "Applied Margin Rule",
       "read_only": 1
     },
     {

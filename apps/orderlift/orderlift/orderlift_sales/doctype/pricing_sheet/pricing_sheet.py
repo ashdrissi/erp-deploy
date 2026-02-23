@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime, nowdate
 
+from orderlift.sales.utils.margin_policy import resolve_margin_rule
 from orderlift.sales.utils.pricing_projection import apply_expenses
 
 
@@ -31,11 +32,22 @@ class PricingSheet(Document):
         scenario_docs = self._collect_scenarios_or_throw(lines)
         self._sync_override_rows_for_scenarios(scenario_docs)
 
+        margin_policy, margin_rule = self._resolve_margin_policy_and_rule()
+        self.applied_margin_policy = margin_policy.name if margin_policy else ""
+        self.applied_margin_rule = self._format_margin_rule(margin_rule) if margin_rule else ""
+
         warnings = []
+        if not margin_rule:
+            warnings.append(
+                _("No active margin rule matched customer type {0}, tier {1}.").format(
+                    self.customer_type or "-",
+                    self.tier or "-",
+                )
+            )
         item_codes = sorted({row.item for row in lines if row.item})
         item_groups = get_item_groups_map(item_codes)
 
-        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
+        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, margin_rule=margin_rule)
         self._sync_line_override_rows_for_lines(lines, scenario_caches)
 
         total_base = 0.0
@@ -216,8 +228,9 @@ class PricingSheet(Document):
         lines = self.lines or []
         scenario_docs = self._collect_scenarios_or_throw(lines)
         self._sync_override_rows_for_scenarios(scenario_docs)
+        _, margin_rule = self._resolve_margin_policy_and_rule()
         item_codes = sorted({row.item for row in lines if row.item})
-        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
+        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, margin_rule=margin_rule)
         self._sync_line_override_rows_for_lines(lines, scenario_caches, line_name=line_name)
         self.recalculate()
         self.save(ignore_permissions=True)
@@ -319,8 +332,9 @@ class PricingSheet(Document):
     def refresh_buy_prices(self):
         lines = self.lines or []
         scenario_docs = self._collect_scenarios_or_throw(lines)
+        _, margin_rule = self._resolve_margin_policy_and_rule()
         item_codes = sorted({row.item for row in lines if row.item})
-        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
+        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, margin_rule=margin_rule)
 
         for row in lines:
             scenario_name, source = self._resolve_line_scenario(row)
@@ -457,7 +471,73 @@ class PricingSheet(Document):
 
         return docs
 
-    def _build_scenario_caches(self, scenario_docs, item_codes):
+    def _resolve_margin_policy_and_rule(self):
+        policy_doc = None
+        if self.margin_policy and frappe.db.exists("Pricing Margin Policy", self.margin_policy):
+            policy_doc = frappe.get_doc("Pricing Margin Policy", self.margin_policy)
+        else:
+            default_name = frappe.db.get_value(
+                "Pricing Margin Policy",
+                {"is_default": 1, "is_active": 1},
+                "name",
+            )
+            if default_name:
+                policy_doc = frappe.get_doc("Pricing Margin Policy", default_name)
+                self.margin_policy = default_name
+
+        if not policy_doc:
+            return None, None
+
+        rule_dicts = [
+            {
+                "customer_type": row.customer_type,
+                "tier": row.tier,
+                "margin_percent": flt(row.margin_percent),
+                "applies_to": row.applies_to,
+                "sequence": cint(row.sequence),
+                "priority": cint(row.priority),
+                "is_active": cint(row.is_active),
+                "idx": cint(row.idx),
+            }
+            for row in (policy_doc.margin_rules or [])
+        ]
+        rule = resolve_margin_rule(rule_dicts, customer_type=self.customer_type, tier=self.tier)
+        return policy_doc, rule
+
+    def _inject_margin_expense(self, expenses, margin_rule):
+        if not margin_rule:
+            return expenses
+
+        dynamic_margin = {
+            "label": "Dynamic Margin",
+            "type": "Percentage",
+            "value": flt(margin_rule.get("margin_percent")),
+            "applies_to": (margin_rule.get("applies_to") or "Running Total"),
+            "scope": "Per Unit",
+            "sequence": cint(margin_rule.get("sequence") or 90),
+            "is_active": 1,
+            "is_overridden": 0,
+            "override_source": "margin_policy",
+        }
+
+        out = list(expenses or [])
+        out.append(dynamic_margin)
+        out = sorted(out, key=lambda x: (cint(x.get("sequence")), cint(x.get("idx") or 0)))
+        for exp in out:
+            exp["expense_key"] = exp.get("expense_key") or make_expense_key(exp)
+        return out
+
+    def _format_margin_rule(self, rule):
+        if not rule:
+            return ""
+        return _("{0}/{1}: {2}% on {3}").format(
+            rule.get("customer_type") or "Any",
+            rule.get("tier") or "Any",
+            flt(rule.get("margin_percent")),
+            rule.get("applies_to") or "Running Total",
+        )
+
+    def _build_scenario_caches(self, scenario_docs, item_codes, margin_rule=None):
         caches = {}
         for name, scenario in scenario_docs.items():
             buying_price_list = scenario.buying_price_list or "Buying"
@@ -465,6 +545,7 @@ class PricingSheet(Document):
 
             base_expenses = self._active_expenses(scenario)
             effective_expenses = self._apply_override_rows(name, base_expenses)
+            effective_expenses = self._inject_margin_expense(effective_expenses, margin_rule)
             sheet_fixed_total = self._sheet_fixed_total(effective_expenses)
             line_expenses = [
                 exp
@@ -838,7 +919,13 @@ class PricingSheet(Document):
             if frappe.db.has_column("Quotation Item", "source_pricing_scenario"):
                 item_data["source_pricing_scenario"] = row.resolved_pricing_scenario or row.pricing_scenario or self.pricing_scenario
             if frappe.db.has_column("Quotation Item", "source_pricing_override"):
-                item_data["source_pricing_override"] = cint(row.is_manual_override or row.has_scenario_override)
+                item_data["source_pricing_override"] = cint(
+                    row.is_manual_override or row.has_scenario_override or row.has_line_override
+                )
+            if frappe.db.has_column("Quotation Item", "source_margin_policy"):
+                item_data["source_margin_policy"] = self.margin_policy or ""
+            if frappe.db.has_column("Quotation Item", "source_margin_percent"):
+                item_data["source_margin_percent"] = flt(row.margin_pct)
 
             quotation.append("items", item_data)
 
@@ -961,7 +1048,7 @@ def cache_has_override_steps(steps, source=None):
             continue
         if source and (step.get("override_source") or "") != source:
             continue
-            return True
+        return True
     return False
 
 

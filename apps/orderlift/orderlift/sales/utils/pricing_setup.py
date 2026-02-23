@@ -59,6 +59,21 @@ def after_migrate():
                     "insert_after": "source_pricing_scenario",
                     "read_only": 1,
                 },
+                {
+                    "fieldname": "source_margin_policy",
+                    "label": "Source Margin Policy",
+                    "fieldtype": "Link",
+                    "options": "Pricing Margin Policy",
+                    "insert_after": "source_pricing_override",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_margin_percent",
+                    "label": "Source Margin Percent",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_margin_policy",
+                    "read_only": 1,
+                },
             ],
             "Selling Settings": [
                 {
@@ -106,6 +121,7 @@ def ensure_pricing_workspace():
         {"label": "Quotation", "type": "DocType", "link_to": "Quotation"},
         {"label": "Pricing Sheet", "type": "DocType", "link_to": "Pricing Sheet"},
         {"label": "Pricing Scenario", "type": "DocType", "link_to": "Pricing Scenario"},
+        {"label": "Margin Policies", "type": "DocType", "link_to": "Pricing Margin Policy"},
     ]
 
     content = [

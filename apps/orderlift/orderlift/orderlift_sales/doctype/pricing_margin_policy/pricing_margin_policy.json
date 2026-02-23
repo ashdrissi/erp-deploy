@@ -1,0 +1,111 @@
+{
+  "actions": [],
+  "autoname": "format:PMPOL-{#####}",
+  "creation": "2026-02-23 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "policy_name",
+    "company",
+    "is_active",
+    "is_default",
+    "notes",
+    "heading_rules",
+    "margin_rules"
+  ],
+  "fields": [
+    {
+      "fieldname": "policy_name",
+      "fieldtype": "Data",
+      "label": "Policy Name",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company"
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_default",
+      "fieldtype": "Check",
+      "label": "Is Default",
+      "default": "0",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    },
+    {
+      "fieldname": "heading_rules",
+      "fieldtype": "Heading",
+      "label": "Margin Rules"
+    },
+    {
+      "fieldname": "margin_rules",
+      "fieldtype": "Table",
+      "label": "Margin Rules",
+      "options": "Pricing Margin Rule",
+      "reqd": 1
+    }
+  ],
+  "is_submittable": 0,
+  "links": [],
+  "modified": "2026-02-23 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Margin Policy",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "report": 1,
+      "print": 1
+    }
+  ],
+  "search_fields": "policy_name,company",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "policy_name",
+  "track_changes": 1
+}
