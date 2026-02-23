@@ -2,25 +2,34 @@
     margin: 8px 0 12px 0;
 }
 
-.pricing-sheet-page .layout-main-section {
-    max-width: 1680px;
+.pricing-sheet-main-wrapper {
+    max-width: 100% !important;
+    width: 100% !important;
 }
 
-.pricing-sheet-page .form-page {
-    max-width: 100%;
+.pricing-sheet-main-section {
+    max-width: 1760px !important;
+    width: 100% !important;
+    margin-right: auto !important;
+    margin-left: 0 !important;
 }
 
-.pricing-sheet-page .form-section {
+.pricing-sheet-form-root .form-layout,
+.pricing-sheet-form-root .form-page {
+    max-width: 100% !important;
+}
+
+.pricing-sheet-form-root .form-section {
     border: 1px solid #e2e8f0;
     border-radius: 12px;
     background: #ffffff;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
     overflow: hidden;
 }
 
-.pricing-sheet-page .form-section .section-head {
+.pricing-sheet-form-root .form-section .section-head {
     margin: 0;
-    padding: 10px 12px;
+    padding: 10px 14px;
     border-bottom: 1px solid #e8edf4;
     background: #f8fafc;
     font-weight: 700;
@@ -30,14 +39,15 @@
     color: #334155;
 }
 
-.pricing-sheet-page .form-section .section-body {
-    padding: 10px 12px;
+.pricing-sheet-form-root .form-section .section-body {
+    padding: 12px 14px;
 }
 
-.pricing-sheet-page .control-input,
-.pricing-sheet-page .form-control,
-.pricing-sheet-page .awesomplete input {
-    min-height: 34px;
+.pricing-sheet-form-root .control-input,
+.pricing-sheet-form-root .form-control,
+.pricing-sheet-form-root .awesomplete input {
+    min-height: 36px;
+    font-size: 13px;
 }
 
 .ps-card {
@@ -53,7 +63,7 @@
 
 .ps-kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    grid-template-columns: repeat(4, minmax(210px, 1fr));
     gap: 10px;
 }
 
@@ -61,7 +71,7 @@
     border: 1px solid #e6ebf2;
     border-radius: 10px;
     padding: 12px;
-    min-height: 76px;
+    min-height: 88px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -73,7 +83,7 @@
 }
 
 .ps-kpi .ps-kpi-value {
-    font-size: 20px;
+    font-size: 24px;
     line-height: 1.1;
     margin-top: 2px;
     font-weight: 700;
@@ -96,9 +106,10 @@
 
 .ps-table th,
 .ps-table td {
-    padding: 10px 8px;
+    padding: 11px 10px;
     border-bottom: 1px solid #e8edf4;
     white-space: nowrap;
+    font-size: 12.5px;
 }
 
 .ps-table thead th {
@@ -109,8 +120,8 @@
 }
 
 .ps-actions {
-    margin: 8px 0 12px 0;
-    padding: 10px;
+    margin: 8px 0 14px 0;
+    padding: 11px;
     border: 1px solid #dbe5f0;
     border-radius: 10px;
     background: linear-gradient(180deg, #fafcff, #f4f8fd);
@@ -150,7 +161,7 @@
 }
 
 @media (max-width: 1360px) {
-    .pricing-sheet-page .layout-main-section {
+    .pricing-sheet-main-section {
         max-width: 100%;
     }
 

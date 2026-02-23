@@ -161,8 +161,18 @@ function renderContextActions(frm) {
 }
 
 function applyFormLayoutClass(frm) {
-    if (frm && frm.page && frm.page.wrapper) {
-        frm.page.wrapper.addClass("pricing-sheet-page");
+    if (!frm || !frm.page || !frm.page.wrapper) return;
+
+    frm.page.wrapper.addClass("pricing-sheet-page");
+    frm.$wrapper && frm.$wrapper.addClass("pricing-sheet-form-root");
+
+    const $mainSection = frm.$wrapper ? frm.$wrapper.closest(".layout-main-section") : null;
+    if ($mainSection && $mainSection.length) {
+        $mainSection.addClass("pricing-sheet-main-section");
+        const $mainWrapper = $mainSection.closest(".layout-main-section-wrapper");
+        if ($mainWrapper && $mainWrapper.length) {
+            $mainWrapper.addClass("pricing-sheet-main-wrapper");
+        }
     }
 }
 
