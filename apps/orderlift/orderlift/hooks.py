@@ -89,6 +89,7 @@ doc_events = {
 doctype_js = {
     "Delivery Note": "public/js/delivery_note_logistics.js",
     "Sales Order": "public/js/sales_order_logistics.js",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260223_02.js",
 }
 
 # ---------------------------------------------------------
