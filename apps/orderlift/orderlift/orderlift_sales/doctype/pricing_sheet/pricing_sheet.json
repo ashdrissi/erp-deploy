@@ -179,7 +179,7 @@
     },
     {
       "fieldname": "heading_bundle_rules",
-      "fieldtype": "Heading",
+      "fieldtype": "Section Break",
       "label": "Bundle Scenario Rules"
     },
     {
