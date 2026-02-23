@@ -2,6 +2,44 @@
     margin: 8px 0 12px 0;
 }
 
+.pricing-sheet-page .layout-main-section {
+    max-width: 1680px;
+}
+
+.pricing-sheet-page .form-page {
+    max-width: 100%;
+}
+
+.pricing-sheet-page .form-section {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.pricing-sheet-page .form-section .section-head {
+    margin: 0;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e8edf4;
+    background: #f8fafc;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.2px;
+    text-transform: uppercase;
+    color: #334155;
+}
+
+.pricing-sheet-page .form-section .section-body {
+    padding: 10px 12px;
+}
+
+.pricing-sheet-page .control-input,
+.pricing-sheet-page .form-control,
+.pricing-sheet-page .awesomplete input {
+    min-height: 34px;
+}
+
 .ps-card {
     border: 1px solid #dde5ef;
     border-radius: 14px;
@@ -112,6 +150,10 @@
 }
 
 @media (max-width: 1360px) {
+    .pricing-sheet-page .layout-main-section {
+        max-width: 100%;
+    }
+
     .ps-kpi-grid {
         grid-template-columns: repeat(2, minmax(180px, 1fr));
     }

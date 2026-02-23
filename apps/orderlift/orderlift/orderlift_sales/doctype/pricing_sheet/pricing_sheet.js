@@ -160,6 +160,12 @@ function renderContextActions(frm) {
     ]);
 }
 
+function applyFormLayoutClass(frm) {
+    if (frm && frm.page && frm.page.wrapper) {
+        frm.page.wrapper.addClass("pricing-sheet-page");
+    }
+}
+
 function aggregateExpenseImpact(lines) {
     const totals = {};
     (lines || []).forEach((row) => {
@@ -412,6 +418,8 @@ frappe.ui.form.on("Pricing Sheet", {
     },
 
     refresh(frm) {
+        applyFormLayoutClass(frm);
+
         frm.add_custom_button(__("Recalculate"), async () => {
             try {
                 await frm.save();
