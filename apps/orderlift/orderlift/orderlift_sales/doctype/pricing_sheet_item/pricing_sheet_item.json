@@ -12,6 +12,8 @@
     "scenario_source",
     "has_scenario_override",
     "source_bundle",
+    "line_type",
+    "bundle_group_id",
     "qty",
     "buy_price",
     "buy_price_missing",
@@ -81,6 +83,20 @@
       "fieldtype": "Link",
       "label": "Source Bundle",
       "options": "Product Bundle",
+      "read_only": 1
+    },
+    {
+      "fieldname": "line_type",
+      "fieldtype": "Select",
+      "label": "Line Type",
+      "options": "Standard\nBundle Summary\nBundle Component",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "bundle_group_id",
+      "fieldtype": "Data",
+      "label": "Bundle Group ID",
       "read_only": 1
     },
     {

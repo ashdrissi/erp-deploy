@@ -261,6 +261,9 @@ class PricingSheet(Document):
         replace_existing_lines=0,
         default_show_in_detail=1,
         default_display_group_source="Item Group",
+        line_mode="Exploded",
+        include_summary_in_detail=1,
+        include_components_in_detail=1,
     ):
         self._get_default_scenario_or_throw()
         bundle_name = product_bundle or self.product_bundle
@@ -277,6 +280,11 @@ class PricingSheet(Document):
         qty_multiplier = flt(multiplier) or 1
         group_by_item_group = (default_display_group_source or "Item Group").strip() == "Item Group"
         show_detail = 1 if cint(default_show_in_detail) else 0
+        mode = (line_mode or "Exploded").strip().title()
+        if mode not in ("Exploded", "Bundle Single", "Both"):
+            mode = "Exploded"
+        summary_show_detail = 1 if cint(include_summary_in_detail) else 0
+        component_show_detail = 1 if cint(include_components_in_detail) else 0
 
         item_codes = []
         for row in rows:
@@ -286,30 +294,52 @@ class PricingSheet(Document):
         item_codes.sort()
         item_groups = get_item_groups_map(item_codes)
 
-        for tpl in rows:
-            item_code = tpl.get("item_code")
-            if not item_code:
-                continue
+        bundle_group_id = frappe.generate_hash(length=10)
+        default_line_scenario = self._scenario_from_bundle_rule(bundle_name) or self.pricing_scenario
 
-            line_qty = flt(tpl.get("qty")) * qty_multiplier
-            if line_qty <= 0:
-                continue
-
-            display_group = bundle_name
-            if group_by_item_group:
-                display_group = item_groups.get(item_code) or bundle_name
-
+        if mode in ("Bundle Single", "Both"):
+            bundle_item_code = self._get_bundle_parent_item(bundle_name)
             self.append(
                 "lines",
                 {
-                    "item": item_code,
-                    "qty": line_qty,
-                    "display_group": display_group,
-                    "show_in_detail": show_detail,
+                    "item": bundle_item_code,
+                    "qty": qty_multiplier,
+                    "display_group": bundle_name,
+                    "show_in_detail": summary_show_detail if mode == "Both" else show_detail,
                     "source_bundle": bundle_name,
-                    "pricing_scenario": self._scenario_from_bundle_rule(bundle_name) or self.pricing_scenario,
+                    "pricing_scenario": default_line_scenario,
+                    "line_type": "Bundle Summary",
+                    "bundle_group_id": bundle_group_id,
                 },
             )
+
+        if mode in ("Exploded", "Both"):
+            for tpl in rows:
+                item_code = tpl.get("item_code")
+                if not item_code:
+                    continue
+
+                line_qty = flt(tpl.get("qty")) * qty_multiplier
+                if line_qty <= 0:
+                    continue
+
+                display_group = bundle_name
+                if group_by_item_group:
+                    display_group = item_groups.get(item_code) or bundle_name
+
+                self.append(
+                    "lines",
+                    {
+                        "item": item_code,
+                        "qty": line_qty,
+                        "display_group": display_group,
+                        "show_in_detail": component_show_detail if mode == "Both" else show_detail,
+                        "source_bundle": bundle_name,
+                        "pricing_scenario": default_line_scenario,
+                        "line_type": "Bundle Component" if mode == "Both" else "Standard",
+                        "bundle_group_id": bundle_group_id if mode == "Both" else "",
+                    },
+                )
 
         self.product_bundle = bundle_name
         self.refresh_buy_prices()
@@ -618,7 +648,16 @@ class PricingSheet(Document):
         group_item_code = config["item_code"]
         grouped = {}
 
+        summary_bundle_ids = {
+            row.bundle_group_id
+            for row in (self.lines or [])
+            if (row.line_type or "") == "Bundle Summary" and row.bundle_group_id
+        }
+
         for row in self.lines or []:
+            if (row.line_type or "") == "Bundle Component" and row.bundle_group_id in summary_bundle_ids:
+                continue
+
             fallback_group = row.display_group or "Ungrouped"
             scenario_name = row.resolved_pricing_scenario or row.pricing_scenario or self.pricing_scenario
             key = ((fallback_group or "Ungrouped").strip() or "Ungrouped", scenario_name)
@@ -666,6 +705,24 @@ class PricingSheet(Document):
             "item_code": item_code,
             "description_prefix": description_prefix,
         }
+
+    def _get_bundle_parent_item(self, bundle_name):
+        if not frappe.db.exists("Product Bundle", bundle_name):
+            frappe.throw(_("Product Bundle {0} not found.").format(bundle_name))
+
+        if frappe.db.has_column("Product Bundle", "new_item_code"):
+            item_code = frappe.db.get_value("Product Bundle", bundle_name, "new_item_code")
+            if item_code:
+                return item_code
+
+        if frappe.db.has_column("Product Bundle", "item"):
+            item_code = frappe.db.get_value("Product Bundle", bundle_name, "item")
+            if item_code:
+                return item_code
+
+        frappe.throw(
+            _("Product Bundle {0} has no parent item. Use Exploded mode or set bundle parent item.").format(bundle_name)
+        )
 
 
 def make_expense_key(expense):

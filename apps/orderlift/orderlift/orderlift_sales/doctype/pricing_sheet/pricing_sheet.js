@@ -369,6 +369,25 @@ frappe.ui.form.on("Pricing Sheet", {
                         options: "Bundle Name\nItem Group",
                         default: "Item Group",
                     },
+                    {
+                        label: __("Line Mode"),
+                        fieldname: "line_mode",
+                        fieldtype: "Select",
+                        options: "Exploded\nBundle Single\nBoth",
+                        default: "Exploded",
+                    },
+                    {
+                        label: __("Include Summary In Detail"),
+                        fieldname: "include_summary_in_detail",
+                        fieldtype: "Check",
+                        default: 1,
+                    },
+                    {
+                        label: __("Include Components In Detail"),
+                        fieldname: "include_components_in_detail",
+                        fieldtype: "Check",
+                        default: 1,
+                    },
                 ],
                 primary_action_label: __("Add"),
                 primary_action: async (values) => {

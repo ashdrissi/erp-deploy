@@ -23,5 +23,9 @@ def execute():
                 row.has_scenario_override = 0
                 changed = True
 
+            if not row.get("line_type"):
+                row.line_type = "Standard"
+                changed = True
+
         if changed:
             doc.save(ignore_permissions=True)
