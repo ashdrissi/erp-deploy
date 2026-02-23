@@ -12,24 +12,42 @@ function statusBadge(value) {
 
 function ensurePricingSheetStyles(frm) {
     const styleId = "pricing-sheet-ux-style";
-    if (frm.fields_dict.projection_dashboard.$wrapper.find(`#${styleId}`).length) {
+    if (document.getElementById(styleId)) {
         return;
     }
 
-    frm.fields_dict.projection_dashboard.$wrapper.prepend(`
+    document.head.insertAdjacentHTML(
+        "beforeend",
+        `
         <style id="${styleId}">
-            .ps-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; }
+            .ps-shell { margin: 8px 0 12px 0; }
+            .ps-card { border: 1px solid #dde5ef; border-radius: 14px; background: #fff; box-shadow: 0 1px 2px rgba(16,24,40,0.04); }
             .ps-card-pad { padding: 14px; }
-            .ps-kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:10px; }
-            .ps-kpi { border:1px solid #e5e7eb; border-radius:10px; padding:10px; }
-            .ps-grid-two { display:grid; grid-template-columns:2fr 1fr; gap:10px; }
-            .ps-table th, .ps-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+            .ps-kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(180px,1fr)); gap:10px; }
+            .ps-kpi { border:1px solid #e6ebf2; border-radius:10px; padding:12px; min-height:76px; display:flex; flex-direction:column; justify-content:center; }
+            .ps-kpi .ps-kpi-label { font-size:11px; letter-spacing:.2px; }
+            .ps-kpi .ps-kpi-value { font-size:20px; line-height:1.1; margin-top:2px; font-weight:700; }
+            .ps-grid-two { display:grid; grid-template-columns:minmax(0,2fr) minmax(280px,1fr); gap:10px; }
+            .ps-table-wrap { overflow:auto; }
+            .ps-table th, .ps-table td { padding: 10px 8px; border-bottom: 1px solid #e8edf4; white-space: nowrap; }
             .ps-table { width:100%; border-collapse: collapse; }
-            .ps-actions { margin: 8px 0 12px 0; padding: 10px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+            .ps-table thead th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+            .ps-actions { margin: 8px 0 12px 0; padding: 10px; border: 1px solid #dbe5f0; border-radius: 10px; background: linear-gradient(180deg,#fafcff,#f4f8fd); }
             .ps-actions .btn { margin-right: 8px; margin-bottom: 6px; }
-            .ps-actions-title { font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 8px; }
+            .ps-actions-title { font-size: 12px; font-weight: 700; color: #243b53; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .25px; }
+            .ps-scenario-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border:1px solid #cbd9ea; border-radius:999px; margin-right:6px; margin-top:6px; background:#f8fbff; font-size:12px; }
+            .ps-overflow-hint { font-size: 11px; color: #64748b; margin-top: 4px; }
+            @media (max-width: 1360px) {
+                .ps-kpi-grid { grid-template-columns:repeat(2,minmax(180px,1fr)); }
+                .ps-grid-two { grid-template-columns: 1fr; }
+            }
+            @media (max-width: 900px) {
+                .ps-kpi-grid { grid-template-columns:1fr; }
+                .ps-actions .btn { width: 100%; margin-right: 0; }
+            }
         </style>
-    `);
+    `
+    );
 }
 
 function renderContextActions(frm) {
@@ -261,7 +279,7 @@ function renderProjectionDashboard(frm) {
     });
     const scenarioPills = Object.entries(scenarioCounts)
         .map(([name, count]) => {
-            return `<span style="display:inline-block;padding:4px 8px;border:1px solid #cbd5e1;border-radius:999px;margin-right:6px;background:#f8fafc;">${frappe.utils.escape_html(name)} (${count})</span>`;
+            return `<span class="ps-scenario-chip">${frappe.utils.escape_html(name)}<strong>${count}</strong></span>`;
         })
         .join("");
 
@@ -309,30 +327,31 @@ function renderProjectionDashboard(frm) {
     ensurePricingSheetStyles(frm);
 
     const html = `
+        <div class="ps-shell">
         <div class="ps-card ps-card-pad" style="margin-bottom:10px;">
             <div class="ps-kpi-grid">
                 <div class="ps-kpi" style="background:#f8fafc;">
-                    <div style="font-size:11px;color:#64748b;">${__("Total Base")}</div>
-                    <div style="font-size:18px;font-weight:700;">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
+                    <div class="ps-kpi-label" style="color:#64748b;">${__("Total Base")}</div>
+                    <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
                 </div>
                 <div class="ps-kpi" style="background:#fff7ed;">
-                    <div style="font-size:11px;color:#9a3412;">${__("Total Expenses")}</div>
-                    <div style="font-size:18px;font-weight:700;">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
+                    <div class="ps-kpi-label" style="color:#9a3412;">${__("Total Expenses")}</div>
+                    <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
                 </div>
                 <div class="ps-kpi" style="background:#ecfdf5;">
-                    <div style="font-size:11px;color:#166534;">${__("Total Final")}</div>
-                    <div style="font-size:18px;font-weight:700;">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
+                    <div class="ps-kpi-label" style="color:#166534;">${__("Total Final")}</div>
+                    <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
                 </div>
                 <div class="ps-kpi" style="background:#eff6ff;">
-                    <div style="font-size:11px;color:#1d4ed8;">${__("Average Markup")}</div>
-                    <div style="font-size:18px;font-weight:700;">${frappe.format(avgMarkup, { fieldtype: "Percent" })}</div>
+                    <div class="ps-kpi-label" style="color:#1d4ed8;">${__("Average Markup")}</div>
+                    <div class="ps-kpi-value">${frappe.format(avgMarkup, { fieldtype: "Percent" })}</div>
                 </div>
             </div>
             <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
             ${warningBlock}
         </div>
         <div class="ps-grid-two">
-            <div class="ps-card" style="overflow:hidden;">
+            <div class="ps-card ps-table-wrap">
                 <table class="ps-table">
                     <thead style="background:#f8fafc;">
                         <tr>
@@ -349,8 +368,9 @@ function renderProjectionDashboard(frm) {
                     </thead>
                     <tbody>${rowsHtml}</tbody>
                 </table>
+                <div class="ps-overflow-hint">${__("Tip: Scroll horizontally for all pricing columns on smaller screens.")}</div>
             </div>
-            <div class="ps-card" style="overflow:hidden;">
+            <div class="ps-card ps-table-wrap">
                 <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Expense Impact")}</div>
                 <table class="ps-table">
                     <thead>
@@ -362,6 +382,7 @@ function renderProjectionDashboard(frm) {
                     <tbody>${impacts || `<tr><td colspan="2" style="padding:8px;color:#64748b;">${__("No data")}</td></tr>`}</tbody>
                 </table>
             </div>
+        </div>
         </div>
     `;
 

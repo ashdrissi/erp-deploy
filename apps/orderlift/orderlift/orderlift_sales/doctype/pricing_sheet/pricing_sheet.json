@@ -6,23 +6,29 @@
   "document_type": "Document",
   "engine": "InnoDB",
   "field_order": [
+    "section_identity",
     "naming_series",
     "sheet_name",
+    "column_break_identity",
     "customer",
     "customer_segment",
     "customer_type",
     "tier",
+    "section_strategy",
     "pricing_scenario",
     "product_bundle",
-    "heading_bundle_rules",
-    "bundle_scenario_rules",
+    "column_break_strategy",
     "output_mode",
     "minimum_margin_percent",
     "strict_margin_guard",
+    "section_runtime",
     "calculated_on",
     "calculated_by",
+    "column_break_runtime",
     "calc_runtime_ms",
     "projection_warnings",
+    "heading_bundle_rules",
+    "bundle_scenario_rules",
     "projection_dashboard",
     "heading_scenario_overrides",
     "scenario_overrides",
@@ -36,6 +42,11 @@
     "total_selling"
   ],
   "fields": [
+    {
+      "fieldname": "section_identity",
+      "fieldtype": "Section Break",
+      "label": "Sheet Identity"
+    },
     {
       "fieldname": "naming_series",
       "fieldtype": "Select",
@@ -53,6 +64,10 @@
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1
+    },
+    {
+      "fieldname": "column_break_identity",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "customer",
@@ -86,6 +101,11 @@
       "options": "Eco\nIntermediaire\nLuxe"
     },
     {
+      "fieldname": "section_strategy",
+      "fieldtype": "Section Break",
+      "label": "Pricing Strategy"
+    },
+    {
       "fieldname": "pricing_scenario",
       "fieldtype": "Link",
       "label": "Default Pricing Scenario",
@@ -100,15 +120,8 @@
       "options": "Product Bundle"
     },
     {
-      "fieldname": "heading_bundle_rules",
-      "fieldtype": "Heading",
-      "label": "Bundle Scenario Rules"
-    },
-    {
-      "fieldname": "bundle_scenario_rules",
-      "fieldtype": "Table",
-      "label": "Bundle Scenario Rules",
-      "options": "Pricing Sheet Bundle Scenario"
+      "fieldname": "column_break_strategy",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "output_mode",
@@ -131,6 +144,11 @@
       "default": "0"
     },
     {
+      "fieldname": "section_runtime",
+      "fieldtype": "Section Break",
+      "label": "Runtime & Guardrails"
+    },
+    {
       "fieldname": "calculated_on",
       "fieldtype": "Datetime",
       "label": "Calculated On",
@@ -144,6 +162,10 @@
       "read_only": 1
     },
     {
+      "fieldname": "column_break_runtime",
+      "fieldtype": "Column Break"
+    },
+    {
       "fieldname": "calc_runtime_ms",
       "fieldtype": "Float",
       "label": "Calc Runtime (ms)",
@@ -154,6 +176,17 @@
       "fieldtype": "Small Text",
       "label": "Projection Warnings",
       "read_only": 1
+    },
+    {
+      "fieldname": "heading_bundle_rules",
+      "fieldtype": "Heading",
+      "label": "Bundle Scenario Rules"
+    },
+    {
+      "fieldname": "bundle_scenario_rules",
+      "fieldtype": "Table",
+      "label": "Bundle Scenario Rules",
+      "options": "Pricing Sheet Bundle Scenario"
     },
     {
       "fieldname": "projection_dashboard",
