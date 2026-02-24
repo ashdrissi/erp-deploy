@@ -22,6 +22,19 @@
     "output_mode",
     "minimum_margin_percent",
     "strict_margin_guard",
+    "projection_dashboard",
+    "heading_lines",
+    "lines",
+    "heading_totals",
+    "total_buy",
+    "total_expenses",
+    "total_selling",
+    "heading_bundle_rules",
+    "bundle_scenario_rules",
+    "heading_scenario_overrides",
+    "scenario_overrides",
+    "heading_line_overrides",
+    "line_overrides",
     "section_runtime",
     "calculated_on",
     "calculated_by",
@@ -29,20 +42,7 @@
     "calc_runtime_ms",
     "applied_margin_policy",
     "applied_margin_rule",
-    "projection_warnings",
-    "heading_bundle_rules",
-    "bundle_scenario_rules",
-    "projection_dashboard",
-    "heading_scenario_overrides",
-    "scenario_overrides",
-    "heading_line_overrides",
-    "line_overrides",
-    "heading_lines",
-    "lines",
-    "heading_totals",
-    "total_buy",
-    "total_expenses",
-    "total_selling"
+    "projection_warnings"
   ],
   "fields": [
     {
@@ -156,7 +156,8 @@
     {
       "fieldname": "section_runtime",
       "fieldtype": "Section Break",
-      "label": "Runtime & Guardrails"
+      "label": "Runtime & Guardrails",
+      "collapsible": 1
     },
     {
       "fieldname": "calculated_on",
@@ -202,7 +203,8 @@
     {
       "fieldname": "heading_bundle_rules",
       "fieldtype": "Section Break",
-      "label": "Bundle Scenario Rules"
+      "label": "Bundle Scenario Rules",
+      "collapsible": 1
     },
     {
       "fieldname": "bundle_scenario_rules",
@@ -217,8 +219,9 @@
     },
     {
       "fieldname": "heading_scenario_overrides",
-      "fieldtype": "Heading",
-      "label": "Scenario Overrides"
+      "fieldtype": "Section Break",
+      "label": "Scenario Overrides",
+      "collapsible": 1
     },
     {
       "fieldname": "scenario_overrides",
@@ -228,8 +231,9 @@
     },
     {
       "fieldname": "heading_line_overrides",
-      "fieldtype": "Heading",
-      "label": "Line Overrides"
+      "fieldtype": "Section Break",
+      "label": "Line Overrides",
+      "collapsible": 1
     },
     {
       "fieldname": "line_overrides",

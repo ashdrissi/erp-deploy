@@ -188,6 +188,27 @@ function applyFormLayoutClass(frm) {
     }
 }
 
+function collapseAdvancedSections(frm) {
+    const sectionFieldnames = [
+        "heading_bundle_rules",
+        "heading_scenario_overrides",
+        "heading_line_overrides",
+        "section_runtime",
+    ];
+
+    const sections = (frm.layout && frm.layout.sections) || [];
+    sectionFieldnames.forEach((fieldname) => {
+        const section = sections.find((entry) => entry.df && entry.df.fieldname === fieldname);
+        if (!section) {
+            return;
+        }
+
+        if (typeof section.collapse === "function") {
+            section.collapse();
+        }
+    });
+}
+
 function aggregateExpenseImpact(lines) {
     const totals = {};
     (lines || []).forEach((row) => {
@@ -587,6 +608,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
         renderProjectionDashboard(frm);
         renderContextActions(frm);
+        setTimeout(() => collapseAdvancedSections(frm), 0);
     },
 
     margin_policy(frm) {
