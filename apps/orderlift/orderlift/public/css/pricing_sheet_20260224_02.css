@@ -75,13 +75,13 @@
     padding: 14px 16px;
 }
 
-.pricing-sheet-form-root .form-section .section-body > .form-column {
+.pricing-sheet-form-root .ps-dashboard-section .section-body > .form-column {
     width: 100%;
     max-width: 100%;
     flex: 0 0 100%;
 }
 
-.pricing-sheet-form-root .form-section .section-body > .form-column:empty {
+.pricing-sheet-form-root .ps-dashboard-section .section-body > .form-column:empty {
     display: none;
 }
 

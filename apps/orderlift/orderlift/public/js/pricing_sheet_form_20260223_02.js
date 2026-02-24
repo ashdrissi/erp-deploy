@@ -19,7 +19,7 @@ function ensurePricingSheetStyles(frm) {
     const link = document.createElement("link");
     link.id = linkId;
     link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260224_01.css?v=20260224-01";
+    link.href = "/assets/orderlift/css/pricing_sheet_20260224_02.css?v=20260224-02";
     document.head.appendChild(link);
 }
 
@@ -185,6 +185,16 @@ function applyFormLayoutClass(frm) {
         if ($mainWrapper && $mainWrapper.length) {
             $mainWrapper.addClass("pricing-sheet-main-wrapper");
         }
+    }
+}
+
+function applyDashboardSectionClass(frm) {
+    const field = frm.fields_dict.projection_dashboard;
+    if (!field || !field.$wrapper) return;
+
+    const $section = field.$wrapper.closest(".form-section");
+    if ($section && $section.length) {
+        $section.addClass("ps-dashboard-section");
     }
 }
 
@@ -469,6 +479,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
     refresh(frm) {
         applyFormLayoutClass(frm);
+        applyDashboardSectionClass(frm);
 
         frm.add_custom_button(__("Recalculate"), async () => {
             try {
