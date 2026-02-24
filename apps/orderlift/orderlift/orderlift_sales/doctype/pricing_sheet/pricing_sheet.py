@@ -633,7 +633,7 @@ class PricingSheet(Document):
                 "scope": "Per Line",
                 "sequence": 9998,
                 "basis": 0,
-                "delta_unit": applied / qty if qty else 0,
+                "delta_unit": 0,
                 "delta_line": applied,
                 "delta_sheet": 0,
                 "running_total": projected_unit,

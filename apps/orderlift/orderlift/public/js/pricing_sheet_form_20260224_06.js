@@ -19,7 +19,7 @@ function ensurePricingSheetStyles(frm) {
     const link = document.createElement("link");
     link.id = linkId;
     link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260224_05.css?v=20260224-05";
+    link.href = "/assets/orderlift/css/pricing_sheet_20260224_06.css?v=20260224-06";
     document.head.appendChild(link);
 }
 
@@ -228,9 +228,8 @@ function aggregateExpenseImpact(lines) {
         try {
             const steps = JSON.parse(row.pricing_breakdown_json || "[]");
             steps.forEach((step) => {
-                const label = step.label || __("Expense");
-                const unitDelta = (step.delta_unit || 0) + (step.delta_line || 0);
-                const lineDelta = unitDelta * (row.qty || 0) + (step.delta_sheet || 0);
+                const label = step.label || __("Component");
+                const lineDelta = (step.delta_unit || 0) * (row.qty || 0) + (step.delta_line || 0) + (step.delta_sheet || 0);
                 totals[label] = (totals[label] || 0) + lineDelta;
             });
         } catch (e) {
@@ -355,7 +354,7 @@ function renderProjectionDashboard(frm) {
         .join("");
 
     const customsRows =
-        topRows
+        lines
             .map((row) => {
                 const material = frappe.utils.escape_html(row.customs_material || "-");
                 const basis = frappe.utils.escape_html(row.customs_basis || "-");
@@ -436,12 +435,12 @@ function renderProjectionDashboard(frm) {
                 <div class="ps-overflow-hint">${__("Tip: Scroll horizontally for all pricing columns on smaller screens.")}</div>
             </div>
             <div class="ps-card ps-table-wrap">
-                <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Expense Impact")}</div>
+                <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Price Adjustments Impact")}</div>
                 <table class="ps-table">
                     <thead>
                         <tr>
-                            <th style="text-align:left;">${__("Expense")}</th>
-                            <th style="text-align:right;">${__("Contribution")}</th>
+                            <th style="text-align:left;">${__("Component")}</th>
+                            <th style="text-align:right;">${__("Amount")}</th>
                         </tr>
                     </thead>
                     <tbody>${impacts || `<tr><td colspan="2" style="padding:8px;color:#64748b;">${__("No data")}</td></tr>`}</tbody>
