@@ -19,7 +19,7 @@ function ensurePricingSheetStyles(frm) {
     const link = document.createElement("link");
     link.id = linkId;
     link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260224_02.css?v=20260224-02";
+    link.href = "/assets/orderlift/css/pricing_sheet_20260224_03.css?v=20260224-03";
     document.head.appendChild(link);
 }
 
