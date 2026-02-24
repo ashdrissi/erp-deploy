@@ -30,6 +30,14 @@
     "final_sell_unit_price",
     "final_sell_total",
     "margin_pct",
+    "customs_material",
+    "customs_weight_kg",
+    "customs_rate_per_kg",
+    "customs_rate_percent",
+    "customs_by_kg",
+    "customs_by_percent",
+    "customs_applied",
+    "customs_basis",
     "price_floor_violation",
     "benchmark_price",
     "benchmark_delta_abs",
@@ -199,6 +207,54 @@
       "fieldname": "margin_pct",
       "fieldtype": "Percent",
       "label": "Margin Pct",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_material",
+      "fieldtype": "Data",
+      "label": "Customs Material",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_weight_kg",
+      "fieldtype": "Float",
+      "label": "Customs Weight Kg",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_rate_per_kg",
+      "fieldtype": "Currency",
+      "label": "Customs Rate Per Kg",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_rate_percent",
+      "fieldtype": "Percent",
+      "label": "Customs Rate Percent",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_by_kg",
+      "fieldtype": "Currency",
+      "label": "Customs By Kg",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_by_percent",
+      "fieldtype": "Currency",
+      "label": "Customs By Percent",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_applied",
+      "fieldtype": "Currency",
+      "label": "Customs Applied",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_basis",
+      "fieldtype": "Data",
+      "label": "Customs Basis",
       "read_only": 1
     },
     {

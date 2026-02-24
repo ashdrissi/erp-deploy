@@ -1,0 +1,77 @@
+{
+  "actions": [],
+  "creation": "2026-02-24 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "material",
+    "rate_per_kg",
+    "rate_percent",
+    "sequence",
+    "priority",
+    "is_active",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "material",
+      "fieldtype": "Select",
+      "label": "Material",
+      "options": "\nSTEEL\nALUM\nGALVA\nINOX\nCOPPER\nOTHER",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "rate_per_kg",
+      "fieldtype": "Float",
+      "label": "Rate Per Kg",
+      "default": "0",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "rate_percent",
+      "fieldtype": "Percent",
+      "label": "Rate Percent",
+      "default": "0",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "default": "90",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "priority",
+      "fieldtype": "Int",
+      "label": "Priority",
+      "default": "10",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-02-24 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Customs Rule",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

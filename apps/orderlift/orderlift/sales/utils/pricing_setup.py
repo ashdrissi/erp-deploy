@@ -11,7 +11,7 @@ def after_migrate():
                     "fieldname": "custom_material",
                     "label": "Material",
                     "fieldtype": "Select",
-                    "options": "STEEL\nGALVA\nINOX\nCOPPER\nOTHER",
+                    "options": "STEEL\nALUM\nGALVA\nINOX\nCOPPER\nOTHER",
                     "insert_after": "item_group",
                     "in_list_view": 0,
                     "in_standard_filter": 1,
@@ -74,6 +74,20 @@ def after_migrate():
                     "insert_after": "source_margin_policy",
                     "read_only": 1,
                 },
+                {
+                    "fieldname": "source_customs_applied",
+                    "label": "Source Customs Applied",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_margin_percent",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_customs_basis",
+                    "label": "Source Customs Basis",
+                    "fieldtype": "Data",
+                    "insert_after": "source_customs_applied",
+                    "read_only": 1,
+                },
             ],
             "Selling Settings": [
                 {
@@ -122,6 +136,7 @@ def ensure_pricing_workspace():
         {"label": "Pricing Sheet", "type": "DocType", "link_to": "Pricing Sheet"},
         {"label": "Pricing Scenario", "type": "DocType", "link_to": "Pricing Scenario"},
         {"label": "Margin Policies", "type": "DocType", "link_to": "Pricing Margin Policy"},
+        {"label": "Customs Policies", "type": "DocType", "link_to": "Pricing Customs Policy"},
     ]
 
     content = [

@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime, nowdate
 
+from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
 from orderlift.sales.utils.margin_policy import resolve_margin_rule
 from orderlift.sales.utils.pricing_projection import apply_expenses
 
@@ -24,6 +25,9 @@ class PricingSheet(Document):
 
         if not lines:
             self._reset_totals()
+            self.applied_margin_policy = ""
+            self.applied_margin_rule = ""
+            self.applied_customs_policy = ""
             self.calculated_on = now_datetime()
             self.calculated_by = frappe.session.user
             self.calc_runtime_ms = (perf_counter() - started) * 1000
@@ -35,6 +39,8 @@ class PricingSheet(Document):
         margin_policy, margin_rule = self._resolve_margin_policy_and_rule()
         self.applied_margin_policy = margin_policy.name if margin_policy else ""
         self.applied_margin_rule = self._format_margin_rule(margin_rule) if margin_rule else ""
+        customs_policy = self._resolve_customs_policy()
+        self.applied_customs_policy = customs_policy.name if customs_policy else ""
 
         warnings = []
         if not margin_rule:
@@ -44,8 +50,11 @@ class PricingSheet(Document):
                     self.tier or "-",
                 )
             )
+        if not customs_policy:
+            warnings.append(_("No active customs policy found; customs costs default to zero."))
         item_codes = sorted({row.item for row in lines if row.item})
-        item_groups = get_item_groups_map(item_codes)
+        item_details = get_item_details_map(item_codes)
+        item_groups = {code: (item_details.get(code) or {}).get("item_group") for code in item_codes}
 
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, margin_rule=margin_rule)
         self._sync_line_override_rows_for_lines(lines, scenario_caches)
@@ -81,6 +90,10 @@ class PricingSheet(Document):
             base_amount = qty * base_unit
             row.base_amount = base_amount
 
+            customs_calc = self._compute_customs_for_row(row, base_amount, item_details, customs_policy)
+            if customs_calc.get("warning"):
+                warnings.append(_("Row {0}: {1}").format(row.idx, customs_calc.get("warning")))
+
             pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=effective_line_expenses)
             line_snapshots.append(
                 {
@@ -94,6 +107,7 @@ class PricingSheet(Document):
                     "benchmark_price_list": cache["benchmark_price_list"],
                     "benchmark_prices": cache["benchmark_prices"],
                     "has_line_override": has_line_override,
+                    "customs_calc": customs_calc,
                 }
             )
             total_base += base_amount
@@ -115,6 +129,7 @@ class PricingSheet(Document):
         min_margin = flt(self.minimum_margin_percent)
         floor_violations = 0
         margin_violations = 0
+        customs_total_applied = 0.0
 
         for snap in line_snapshots:
             row = snap["row"]
@@ -122,6 +137,7 @@ class PricingSheet(Document):
             base_unit = snap["base_unit"]
             base_amount = snap["base_amount"]
             pricing = snap["pricing"]
+            customs_calc = snap.get("customs_calc") or {}
             sheet_fixed_total = snap["sheet_fixed_total"]
             scenario_name = snap["scenario_name"]
             alloc = scenario_allocation.get(scenario_name) or {
@@ -134,6 +150,7 @@ class PricingSheet(Document):
             share_basis = base_amount if flt(alloc["base"]) > 0 else qty
             allocated_sheet = (share_basis / denom) * flt(alloc["sheet_fixed_total"])
             projected_total = flt(pricing["projected_line"]) + flt(allocated_sheet)
+            projected_total += flt(customs_calc.get("applied") or 0)
             projected_unit = projected_total / qty if qty else 0
             expense_total = projected_total - base_amount
 
@@ -155,6 +172,8 @@ class PricingSheet(Document):
                     }
                 )
 
+            self._append_customs_step(steps, qty, projected_unit, customs_calc)
+
             row.expense_total = expense_total
             row.projected_unit_price = projected_unit
             row.projected_total_price = projected_total
@@ -167,6 +186,14 @@ class PricingSheet(Document):
             row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
             row.final_sell_total = flt(row.final_sell_unit_price) * qty
             row.margin_pct = ((flt(row.final_sell_unit_price) - base_unit) / base_unit * 100) if base_unit > 0 else 0
+            row.customs_material = customs_calc.get("material") or ""
+            row.customs_weight_kg = flt(customs_calc.get("weight_kg") or 0)
+            row.customs_rate_per_kg = flt(customs_calc.get("rate_per_kg") or 0)
+            row.customs_rate_percent = flt(customs_calc.get("rate_percent") or 0)
+            row.customs_by_kg = flt(customs_calc.get("by_kg") or 0)
+            row.customs_by_percent = flt(customs_calc.get("by_percent") or 0)
+            row.customs_applied = flt(customs_calc.get("applied") or 0)
+            row.customs_basis = customs_calc.get("basis") or ""
 
             row.price_floor_violation = 1 if flt(row.final_sell_unit_price) < 0 else 0
             if row.price_floor_violation:
@@ -192,10 +219,12 @@ class PricingSheet(Document):
 
             total_expenses += flt(row.expense_total)
             total_final += flt(row.final_sell_total)
+            customs_total_applied += flt(row.customs_applied)
 
         self.total_buy = flt(total_base)
         self.total_expenses = flt(total_expenses)
         self.total_selling = flt(total_final)
+        self.customs_total_applied = flt(customs_total_applied)
         self.projection_warnings = "\n".join(warnings[:25])
         self.calculated_on = now_datetime()
         self.calculated_by = frappe.session.user
@@ -325,6 +354,7 @@ class PricingSheet(Document):
             "grouped_count": grouped_count,
             "total_buy": flt(self.total_buy),
             "total_final": flt(self.total_selling),
+            "customs_total": flt(self.customs_total_applied),
             "warnings": self.projection_warnings or "",
         }
 
@@ -503,6 +533,115 @@ class PricingSheet(Document):
         ]
         rule = resolve_margin_rule(rule_dicts, customer_type=self.customer_type, tier=self.tier)
         return policy_doc, rule
+
+    def _resolve_customs_policy(self):
+        if not frappe.db.exists("DocType", "Pricing Customs Policy"):
+            return None
+
+        policy_doc = None
+        if self.customs_policy and frappe.db.exists("Pricing Customs Policy", self.customs_policy):
+            policy_doc = frappe.get_doc("Pricing Customs Policy", self.customs_policy)
+        else:
+            default_name = frappe.db.get_value(
+                "Pricing Customs Policy",
+                {"is_default": 1, "is_active": 1},
+                "name",
+            )
+            if default_name:
+                policy_doc = frappe.get_doc("Pricing Customs Policy", default_name)
+                self.customs_policy = default_name
+
+        if not policy_doc or cint(policy_doc.is_active) != 1:
+            return None
+        return policy_doc
+
+    def _compute_customs_for_row(self, row, base_amount, item_details, customs_policy):
+        details = item_details.get(row.item) or {}
+        material = (details.get("custom_material") or "").strip().upper()
+        unit_weight_kg = flt(details.get("custom_weight_kg"))
+        qty = flt(row.qty)
+
+        out = {
+            "material": material,
+            "weight_kg": unit_weight_kg,
+            "rate_per_kg": 0.0,
+            "rate_percent": 0.0,
+            "by_kg": 0.0,
+            "by_percent": 0.0,
+            "applied": 0.0,
+            "basis": "",
+            "warning": "",
+        }
+
+        if not customs_policy:
+            return out
+
+        if not material:
+            out["warning"] = _("item material is missing; customs set to 0")
+            return out
+
+        rule_dicts = [
+            {
+                "material": rule.material,
+                "rate_per_kg": flt(rule.rate_per_kg),
+                "rate_percent": flt(rule.rate_percent),
+                "sequence": cint(rule.sequence),
+                "priority": cint(rule.priority),
+                "is_active": cint(rule.is_active),
+                "idx": cint(rule.idx),
+            }
+            for rule in (customs_policy.customs_rules or [])
+        ]
+        rule = resolve_customs_rule(rule_dicts, material=material)
+        if not rule:
+            out["warning"] = _("no customs rule matched material {0}; customs set to 0").format(material)
+            return out
+
+        rate_per_kg = flt(rule.get("rate_per_kg"))
+        rate_percent = flt(rule.get("rate_percent"))
+        amounts = compute_customs_amount(
+            base_amount=base_amount,
+            qty=qty,
+            unit_weight_kg=unit_weight_kg,
+            rate_per_kg=rate_per_kg,
+            rate_percent=rate_percent,
+        )
+
+        out.update(
+            {
+                "rate_per_kg": rate_per_kg,
+                "rate_percent": rate_percent,
+                "by_kg": flt(amounts.get("by_kg") or 0),
+                "by_percent": flt(amounts.get("by_percent") or 0),
+                "applied": flt(amounts.get("applied") or 0),
+                "basis": amounts.get("basis") or "",
+            }
+        )
+        return out
+
+    def _append_customs_step(self, steps, qty, projected_unit, customs_calc):
+        applied = flt((customs_calc or {}).get("applied") or 0)
+        if applied <= 0:
+            return
+
+        steps.append(
+            {
+                "label": "Customs (MAX kg vs %)",
+                "type": "Fixed",
+                "value": applied,
+                "applies_to": "Base Price",
+                "scope": "Per Line",
+                "sequence": 9998,
+                "basis": 0,
+                "delta_unit": applied / qty if qty else 0,
+                "delta_line": applied,
+                "delta_sheet": 0,
+                "running_total": projected_unit,
+                "customs_by_kg": flt(customs_calc.get("by_kg") or 0),
+                "customs_by_percent": flt(customs_calc.get("by_percent") or 0),
+                "customs_basis": customs_calc.get("basis") or "",
+            }
+        )
 
     def _inject_margin_expense(self, expenses, margin_rule):
         if not margin_rule:
@@ -860,6 +999,7 @@ class PricingSheet(Document):
         self.total_buy = 0
         self.total_expenses = 0
         self.total_selling = 0
+        self.customs_total_applied = 0
 
     def _resolve_company_for_quotation(self):
         company = frappe.defaults.get_user_default("Company")
@@ -926,6 +1066,10 @@ class PricingSheet(Document):
                 item_data["source_margin_policy"] = self.margin_policy or ""
             if frappe.db.has_column("Quotation Item", "source_margin_percent"):
                 item_data["source_margin_percent"] = flt(row.margin_pct)
+            if frappe.db.has_column("Quotation Item", "source_customs_applied"):
+                item_data["source_customs_applied"] = flt(row.customs_applied)
+            if frappe.db.has_column("Quotation Item", "source_customs_basis"):
+                item_data["source_customs_basis"] = row.customs_basis or ""
 
             quotation.append("items", item_data)
 
@@ -1053,15 +1197,27 @@ def cache_has_override_steps(steps, source=None):
 
 
 def get_item_groups_map(item_codes):
+    details = get_item_details_map(item_codes)
+    return {name: (row or {}).get("item_group") for name, row in details.items()}
+
+
+def get_item_details_map(item_codes):
     if not item_codes:
         return {}
     rows = frappe.get_all(
         "Item",
         filters={"name": ["in", item_codes]},
-        fields=["name", "item_group"],
+        fields=["name", "item_group", "custom_material", "custom_weight_kg"],
         limit_page_length=0,
     )
-    return {row.name: row.item_group for row in rows}
+    return {
+        row.name: {
+            "item_group": row.item_group,
+            "custom_material": row.custom_material,
+            "custom_weight_kg": flt(row.custom_weight_kg),
+        }
+        for row in rows
+    }
 
 
 def get_latest_item_price(item_code, price_list, buying):

@@ -19,7 +19,7 @@ function ensurePricingSheetStyles(frm) {
     const link = document.createElement("link");
     link.id = linkId;
     link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260224_04.css?v=20260224-04";
+    link.href = "/assets/orderlift/css/pricing_sheet_20260224_05.css?v=20260224-05";
     document.head.appendChild(link);
 }
 
@@ -306,6 +306,8 @@ function renderProjectionDashboard(frm) {
     const warnings = frm.doc.projection_warnings || "";
     const marginPolicy = frm.doc.applied_margin_policy || frm.doc.margin_policy || "";
     const marginRule = frm.doc.applied_margin_rule || "";
+    const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
+    const customsTotalApplied = frm.doc.customs_total_applied || 0;
     const scenarioCounts = {};
     lines.forEach((row) => {
         const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
@@ -352,6 +354,29 @@ function renderProjectionDashboard(frm) {
         )
         .join("");
 
+    const customsRows =
+        topRows
+            .map((row) => {
+                const material = frappe.utils.escape_html(row.customs_material || "-");
+                const basis = frappe.utils.escape_html(row.customs_basis || "-");
+                return `
+                    <tr>
+                        <td>${frappe.utils.escape_html(row.item || "-")}</td>
+                        <td>${material}</td>
+                        <td style="text-align:right;">${frappe.format(row.customs_weight_kg || 0, { fieldtype: "Float" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.base_amount || 0, { fieldtype: "Currency" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.customs_by_kg || 0, { fieldtype: "Currency" })}</td>
+                        <td style="text-align:right;">${frappe.format(row.customs_by_percent || 0, { fieldtype: "Currency" })}</td>
+                        <td style="text-align:right;font-weight:700;">${frappe.format(row.customs_applied || 0, {
+                            fieldtype: "Currency",
+                        })}</td>
+                        <td>${basis}</td>
+                    </tr>
+                `;
+            })
+            .join("") || `<tr><td colspan="9" style="padding:8px;color:#64748b;">${__("No customs data")}</td></tr>`;
+
     const warningBlock = warnings
         ? `<div style="border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;padding:10px;border-radius:10px;margin:10px 0;white-space:pre-line;">${frappe.utils.escape_html(
               warnings
@@ -385,6 +410,8 @@ function renderProjectionDashboard(frm) {
             <div style="margin-top:6px;font-size:12px;color:#334155;">
                 <span class="ps-scenario-chip"><strong>${__("Margin Policy")}</strong> ${frappe.utils.escape_html(marginPolicy || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Margin Rule")}</strong> ${frappe.utils.escape_html(marginRule || __("No rule"))}</span>
+                <span class="ps-scenario-chip"><strong>${__("Customs Policy")}</strong> ${frappe.utils.escape_html(customsPolicy || "-")}</span>
+                <span class="ps-scenario-chip"><strong>${__("Customs Total")}</strong> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
             </div>
             ${warningBlock}
         </div>
@@ -420,6 +447,25 @@ function renderProjectionDashboard(frm) {
                     <tbody>${impacts || `<tr><td colspan="2" style="padding:8px;color:#64748b;">${__("No data")}</td></tr>`}</tbody>
                 </table>
             </div>
+            <div class="ps-card ps-table-wrap">
+                <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Customs Calculation (MAX kg vs %)")}</div>
+                <table class="ps-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;">${__("Item")}</th>
+                            <th style="text-align:left;">${__("Material")}</th>
+                            <th style="text-align:right;">${__("W (kg)")}</th>
+                            <th style="text-align:right;">${__("Qty")}</th>
+                            <th style="text-align:right;">${__("Base")}</th>
+                            <th style="text-align:right;">${__("By Kg")}</th>
+                            <th style="text-align:right;">${__("By %")}</th>
+                            <th style="text-align:right;">${__("Max")}</th>
+                            <th style="text-align:left;">${__("Basis")}</th>
+                        </tr>
+                    </thead>
+                    <tbody>${customsRows}</tbody>
+                </table>
+            </div>
         </div>
         </div>
     `;
@@ -440,6 +486,7 @@ async function openQuotationPreview(frm) {
     const details = `
         ${__("Total Base")}: ${frappe.format(data.total_buy || 0, { fieldtype: "Currency" })}<br>
         ${__("Total Final")}: ${frappe.format(data.total_final || 0, { fieldtype: "Currency" })}<br>
+        ${__("Customs Total")}: ${frappe.format(data.customs_total || 0, { fieldtype: "Currency" })}<br>
         ${__("Lines")}: ${data.line_count || 0}<br>
         ${__("Detailed Rows")}: ${data.detailed_count || 0}<br>
         ${__("Grouped Rows")}: ${data.grouped_count || 0}
@@ -474,6 +521,7 @@ frappe.ui.form.on("Pricing Sheet", {
         frm.set_query("item", "lines", queryConfig);
         frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
         frm.set_query("margin_policy", () => ({ filters: { is_active: 1 } }));
+        frm.set_query("customs_policy", () => ({ filters: { is_active: 1 } }));
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
     },
 
@@ -623,6 +671,10 @@ frappe.ui.form.on("Pricing Sheet", {
     },
 
     margin_policy(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    customs_policy(frm) {
         renderProjectionDashboard(frm);
     },
 

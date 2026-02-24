@@ -17,6 +17,7 @@
     "section_strategy",
     "pricing_scenario",
     "margin_policy",
+    "customs_policy",
     "product_bundle",
     "column_break_strategy",
     "output_mode",
@@ -43,6 +44,8 @@
     "calc_runtime_ms",
     "applied_margin_policy",
     "applied_margin_rule",
+    "applied_customs_policy",
+    "customs_total_applied",
     "projection_warnings"
   ],
   "fields": [
@@ -125,6 +128,13 @@
       "in_standard_filter": 1
     },
     {
+      "fieldname": "customs_policy",
+      "fieldtype": "Link",
+      "label": "Customs Policy",
+      "options": "Pricing Customs Policy",
+      "in_standard_filter": 1
+    },
+    {
       "fieldname": "product_bundle",
       "fieldtype": "Link",
       "label": "Default Product Bundle",
@@ -198,6 +208,18 @@
       "fieldname": "applied_margin_rule",
       "fieldtype": "Small Text",
       "label": "Applied Margin Rule",
+      "read_only": 1
+    },
+    {
+      "fieldname": "applied_customs_policy",
+      "fieldtype": "Data",
+      "label": "Applied Customs Policy",
+      "read_only": 1
+    },
+    {
+      "fieldname": "customs_total_applied",
+      "fieldtype": "Currency",
+      "label": "Customs Total Applied",
       "read_only": 1
     },
     {
