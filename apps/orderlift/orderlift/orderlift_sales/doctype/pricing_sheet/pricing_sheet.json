@@ -9,8 +9,8 @@
     "section_identity",
     "naming_series",
     "sheet_name",
-    "column_break_identity",
     "customer",
+    "column_break_identity",
     "customer_segment",
     "customer_type",
     "tier",
@@ -22,6 +22,7 @@
     "output_mode",
     "minimum_margin_percent",
     "strict_margin_guard",
+    "section_projection",
     "projection_dashboard",
     "heading_lines",
     "lines",
@@ -69,10 +70,6 @@
       "in_standard_filter": 1
     },
     {
-      "fieldname": "column_break_identity",
-      "fieldtype": "Column Break"
-    },
-    {
       "fieldname": "customer",
       "fieldtype": "Link",
       "label": "Customer",
@@ -80,6 +77,10 @@
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1
+    },
+    {
+      "fieldname": "column_break_identity",
+      "fieldtype": "Column Break"
     },
     {
       "fieldname": "customer_segment",
@@ -152,6 +153,11 @@
       "fieldtype": "Check",
       "label": "Strict Margin Guard",
       "default": "0"
+    },
+    {
+      "fieldname": "section_projection",
+      "fieldtype": "Section Break",
+      "label": "Pricing Projection"
     },
     {
       "fieldname": "section_runtime",
