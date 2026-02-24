@@ -1,10 +1,41 @@
+.pricing-sheet-form-root {
+    --ps-primary: #2563eb;
+    --ps-secondary: #0ea5e9;
+    --ps-accent: #14b8a6;
+    --ps-success: #16a34a;
+    --ps-warning: #d97706;
+    --ps-danger: #dc2626;
+    --ps-surface: #ffffff;
+    --ps-surface-soft: #f8fafc;
+    --ps-surface-alt: #eef2ff;
+    --ps-text: #0f172a;
+    --ps-text-soft: #475569;
+    --ps-border: #dbe4f0;
+    --ps-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    --ps-radius: 14px;
+}
+
 .ps-shell {
-    margin: 8px 0 12px 0;
+    margin: 12px 0 18px 0;
+    animation: ps-fade-up 280ms ease-out;
+}
+
+@keyframes ps-fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .pricing-sheet-main-wrapper {
     max-width: 100% !important;
     width: 100% !important;
+    padding: 0 14px;
 }
 
 .pricing-sheet-main-section {
@@ -20,58 +51,58 @@
 }
 
 .pricing-sheet-form-root .form-section {
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    background: #ffffff;
-    margin-bottom: 14px;
+    border: 1px solid var(--ps-border);
+    border-radius: var(--ps-radius);
+    background: var(--ps-surface);
+    margin-bottom: 16px;
     overflow: hidden;
+    box-shadow: var(--ps-shadow);
 }
 
 .pricing-sheet-form-root .form-section .section-head {
     margin: 0;
-    padding: 10px 14px;
-    border-bottom: 1px solid #e8edf4;
-    background: #f8fafc;
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.2px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--ps-border);
+    background: linear-gradient(180deg, #fbfdff 0%, var(--ps-surface-soft) 100%);
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 0.8px;
     text-transform: uppercase;
-    color: #334155;
+    color: var(--ps-text-soft);
 }
 
 .pricing-sheet-form-root .form-section .section-body {
-    padding: 12px 14px;
-}
-
-.pricing-sheet-form-root .control-input,
-.pricing-sheet-form-root .form-control,
-.pricing-sheet-form-root .awesomplete input {
-    min-height: 36px;
-    font-size: 13px;
+    padding: 14px 16px;
 }
 
 .ps-card {
-    border: 1px solid #dde5ef;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    border: 1px solid var(--ps-border);
+    border-radius: var(--ps-radius);
+    background: var(--ps-surface);
+    box-shadow: var(--ps-shadow);
+    transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.ps-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
 }
 
 .ps-card-pad {
-    padding: 14px;
+    padding: 16px;
 }
 
 .ps-kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(210px, 1fr));
-    gap: 10px;
+    gap: 12px;
 }
 
 .ps-kpi {
-    border: 1px solid #e6ebf2;
-    border-radius: 10px;
-    padding: 12px;
-    min-height: 88px;
+    border: 1px solid var(--ps-border);
+    border-radius: 12px;
+    padding: 14px;
+    min-height: 94px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -79,35 +110,41 @@
 
 .ps-kpi .ps-kpi-label {
     font-size: 11px;
-    letter-spacing: 0.2px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--ps-text-soft);
 }
 
 .ps-kpi .ps-kpi-value {
     font-size: 24px;
     line-height: 1.1;
-    margin-top: 2px;
-    font-weight: 700;
+    margin-top: 6px;
+    font-weight: 800;
+    color: var(--ps-text);
 }
 
 .ps-grid-two {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 12px;
 }
 
 .ps-table-wrap {
     overflow: auto;
+    border-radius: 12px;
 }
 
 .ps-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
 .ps-table th,
 .ps-table td {
-    padding: 11px 10px;
-    border-bottom: 1px solid #e8edf4;
+    padding: 12px 12px;
+    border-bottom: 1px solid #e9eff7;
     white-space: nowrap;
     font-size: 12.5px;
 }
@@ -115,49 +152,70 @@
 .ps-table thead th {
     position: sticky;
     top: 0;
-    background: #f8fafc;
     z-index: 1;
+    background: linear-gradient(180deg, #f8fbff 0%, #f2f7fd 100%);
+    color: var(--ps-text-soft);
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 0.45px;
+    text-transform: uppercase;
+    border-bottom: 2px solid #d6e1ef;
+}
+
+.ps-table tbody tr:hover {
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.04) 0%, rgba(20, 184, 166, 0.04) 100%);
 }
 
 .ps-actions {
-    margin: 8px 0 14px 0;
-    padding: 11px;
-    border: 1px solid #dbe5f0;
-    border-radius: 10px;
-    background: linear-gradient(180deg, #fafcff, #f4f8fd);
+    margin: 10px 0 16px 0;
+    padding: 12px;
+    border: 1px solid #d6e2f0;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fbfdff 0%, #eef5ff 100%);
 }
 
 .ps-actions .btn {
     margin-right: 8px;
     margin-bottom: 6px;
+    border-radius: 8px;
+    transition: transform 150ms ease;
+}
+
+.ps-actions .btn:hover {
+    transform: translateY(-1px);
 }
 
 .ps-actions-title {
-    font-size: 12px;
-    font-weight: 700;
-    color: #243b53;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--ps-text);
     margin-bottom: 8px;
     text-transform: uppercase;
-    letter-spacing: 0.25px;
+    letter-spacing: 0.65px;
 }
 
 .ps-scenario-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 10px;
-    border: 1px solid #cbd9ea;
+    padding: 5px 11px;
+    border: 1px solid #ccdbef;
     border-radius: 999px;
     margin-right: 6px;
     margin-top: 6px;
-    background: #f8fbff;
+    background: linear-gradient(135deg, #f8fbff 0%, #eff6ff 100%);
     font-size: 12px;
+    color: var(--ps-text-soft);
+}
+
+.ps-scenario-chip strong {
+    color: var(--ps-primary);
 }
 
 .ps-overflow-hint {
     font-size: 11px;
     color: #64748b;
-    margin-top: 4px;
+    margin-top: 6px;
 }
 
 @media (max-width: 1360px) {
@@ -175,6 +233,10 @@
 }
 
 @media (max-width: 900px) {
+    .pricing-sheet-main-wrapper {
+        padding: 0 10px;
+    }
+
     .ps-kpi-grid {
         grid-template-columns: 1fr;
     }
