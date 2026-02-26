@@ -12,9 +12,6 @@ class PricingScenarioPolicy(Document):
         for row in self.scenario_rules or []:
             row.sales_person = (row.sales_person or "").strip()
             row.geography_territory = (row.geography_territory or "").strip()
-            row.geography_country = (row.geography_country or "").strip()
-            row.geography_city = (row.geography_city or "").strip()
-            row.geography_region = (row.geography_region or "").strip()
             row.customer_segment = (row.customer_segment or "").strip().upper()
             row.customer_type = (row.customer_type or "").strip()
             row.tier = (row.tier or "").strip()
@@ -32,9 +29,6 @@ class PricingScenarioPolicy(Document):
                 row.pricing_scenario,
                 row.sales_person.lower(),
                 row.geography_territory.lower(),
-                row.geography_country.lower(),
-                row.geography_city.lower(),
-                row.geography_region.lower(),
                 row.customer_segment.lower(),
                 row.customer_type.lower(),
                 row.tier.lower(),

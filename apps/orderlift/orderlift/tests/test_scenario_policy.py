@@ -29,9 +29,9 @@ class TestScenarioPolicyResolver(unittest.TestCase):
     def test_fallback_rule_used(self):
         rules = [
             {"pricing_scenario": "SCN-FALLBACK", "priority": 10, "sequence": 90, "is_active": 1},
-            {"pricing_scenario": "SCN-FR", "geography_country": "FR", "priority": 10, "sequence": 90, "is_active": 1},
+            {"pricing_scenario": "SCN-NORTH", "geography_territory": "North", "priority": 10, "sequence": 90, "is_active": 1},
         ]
-        context = {"geography_country": "MA"}
+        context = {"geography_territory": "South"}
         rule = resolve_scenario_rule(rules, context)
         self.assertEqual(rule["pricing_scenario"], "SCN-FALLBACK")
 

@@ -570,9 +570,6 @@ class PricingSheet(Document):
             {
                 "sales_person": row.sales_person,
                 "geography_territory": row.geography_territory,
-                "geography_country": row.geography_country,
-                "geography_city": row.geography_city,
-                "geography_region": row.geography_region,
                 "customer_segment": row.customer_segment,
                 "customer_type": row.customer_type,
                 "tier": row.tier,
@@ -601,9 +598,6 @@ class PricingSheet(Document):
             {
                 "sales_person": rule.sales_person,
                 "geography_territory": rule.geography_territory,
-                "geography_country": rule.geography_country,
-                "geography_city": rule.geography_city,
-                "geography_region": rule.geography_region,
                 "customer_segment": rule.customer_segment,
                 "customer_type": rule.customer_type,
                 "tier": rule.tier,
@@ -652,9 +646,6 @@ class PricingSheet(Document):
                 "pricing_scenario": row.pricing_scenario,
                 "sales_person": row.sales_person,
                 "geography_territory": row.geography_territory,
-                "geography_country": row.geography_country,
-                "geography_city": row.geography_city,
-                "geography_region": row.geography_region,
                 "customer_segment": row.customer_segment,
                 "customer_type": row.customer_type,
                 "tier": row.tier,
@@ -680,9 +671,6 @@ class PricingSheet(Document):
         return {
             "sales_person": self.sales_person,
             "geography_territory": geo.get("geography_territory"),
-            "geography_country": geo.get("geography_country"),
-            "geography_city": geo.get("geography_city"),
-            "geography_region": geo.get("geography_region"),
             "customer_segment": self.customer_segment,
             "customer_type": self.customer_type,
             "tier": self.tier,
@@ -694,63 +682,13 @@ class PricingSheet(Document):
 
     def _resolve_geography_context(self):
         if self.geography_territory:
-            return {
-                "geography_territory": self.geography_territory,
-                "geography_country": "",
-                "geography_city": self.geography_city,
-                "geography_region": self.geography_region,
-            }
-        if self.geography_country:
-            return {
-                "geography_territory": "",
-                "geography_country": self.geography_country,
-                "geography_city": self.geography_city,
-                "geography_region": self.geography_region,
-            }
-        if self.geography_city or self.geography_region:
-            return {
-                "geography_territory": "",
-                "geography_country": "",
-                "geography_city": self.geography_city,
-                "geography_region": self.geography_region,
-            }
+            return {"geography_territory": self.geography_territory}
 
         territory = frappe.db.get_value("Customer", self.customer, "territory") if self.customer else None
         if territory:
-            return {
-                "geography_territory": territory,
-                "geography_country": "",
-                "geography_city": "",
-                "geography_region": "",
-            }
+            return {"geography_territory": territory}
 
-        if self.customer and frappe.db.exists("DocType", "Address"):
-            addresses = frappe.get_all(
-                "Dynamic Link",
-                filters={
-                    "link_doctype": "Customer",
-                    "link_name": self.customer,
-                    "parenttype": "Address",
-                },
-                fields=["parent"],
-                limit_page_length=1,
-            )
-            if addresses:
-                country = frappe.db.get_value("Address", addresses[0].parent, "country")
-                if country:
-                    return {
-                        "geography_territory": "",
-                        "geography_country": country,
-                        "geography_city": "",
-                        "geography_region": "",
-                    }
-
-        return {
-            "geography_territory": "",
-            "geography_country": "",
-            "geography_city": "",
-            "geography_region": "",
-        }
+        return {"geography_territory": ""}
 
     def _set_default_sales_person(self):
         if self.sales_person:
@@ -1294,7 +1232,7 @@ class PricingSheet(Document):
 
     def _append_detailed_quotation_items(self, quotation):
         geo = self._resolve_geography_context()
-        geography_label = geo.get("geography_territory") or geo.get("geography_country") or geo.get("geography_city") or geo.get("geography_region") or ""
+        geography_label = geo.get("geography_territory") or ""
         for row in self.lines or []:
             if not row.item:
                 continue

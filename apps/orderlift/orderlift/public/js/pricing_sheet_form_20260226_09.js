@@ -19,7 +19,7 @@ function ensurePricingSheetStyles(frm) {
     const link = document.createElement("link");
     link.id = linkId;
     link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260226_08.css?v=20260226-08";
+    link.href = "/assets/orderlift/css/pricing_sheet_20260226_09.css?v=20260226-09";
     document.head.appendChild(link);
 }
 
@@ -309,7 +309,7 @@ function renderProjectionDashboard(frm) {
     const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
     const salesPerson = frm.doc.sales_person || "";
-    const geography = frm.doc.geography_territory || frm.doc.geography_country || frm.doc.geography_city || frm.doc.geography_region || "";
+    const geography = frm.doc.geography_territory || "";
     const scenarioCounts = {};
     lines.forEach((row) => {
         const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
@@ -693,18 +693,6 @@ frappe.ui.form.on("Pricing Sheet", {
     },
 
     geography_territory(frm) {
-        renderProjectionDashboard(frm);
-    },
-
-    geography_country(frm) {
-        renderProjectionDashboard(frm);
-    },
-
-    geography_city(frm) {
-        renderProjectionDashboard(frm);
-    },
-
-    geography_region(frm) {
         renderProjectionDashboard(frm);
     },
 

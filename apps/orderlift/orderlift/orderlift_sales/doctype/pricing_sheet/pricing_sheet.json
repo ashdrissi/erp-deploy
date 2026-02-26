@@ -16,9 +16,6 @@
     "customer_type",
     "tier",
     "geography_territory",
-    "geography_country",
-    "geography_city",
-    "geography_region",
     "section_strategy",
     "pricing_scenario",
     "scenario_policy",
@@ -126,22 +123,6 @@
       "fieldtype": "Link",
       "label": "Territory",
       "options": "Territory"
-    },
-    {
-      "fieldname": "geography_country",
-      "fieldtype": "Link",
-      "label": "Country",
-      "options": "Country"
-    },
-    {
-      "fieldname": "geography_city",
-      "fieldtype": "Data",
-      "label": "City"
-    },
-    {
-      "fieldname": "geography_region",
-      "fieldtype": "Data",
-      "label": "Region"
     },
     {
       "fieldname": "section_strategy",

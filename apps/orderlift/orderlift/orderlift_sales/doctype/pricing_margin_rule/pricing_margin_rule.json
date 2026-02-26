@@ -8,9 +8,6 @@
   "field_order": [
     "sales_person",
     "geography_territory",
-    "geography_country",
-    "geography_city",
-    "geography_region",
     "customer_segment",
     "customer_type",
     "tier",
@@ -39,24 +36,6 @@
       "label": "Territory",
       "options": "Territory",
       "in_list_view": 1
-    },
-    {
-      "fieldname": "geography_country",
-      "fieldtype": "Link",
-      "label": "Country",
-      "options": "Country",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "geography_city",
-      "fieldtype": "Data",
-      "label": "City",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "geography_region",
-      "fieldtype": "Data",
-      "label": "Region"
     },
     {
       "fieldname": "customer_segment",
