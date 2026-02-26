@@ -19,7 +19,7 @@ function ensurePricingSheetStyles(frm) {
     const link = document.createElement("link");
     link.id = linkId;
     link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260224_06.css?v=20260224-06";
+    link.href = "/assets/orderlift/css/pricing_sheet_20260226_07.css?v=20260226-07";
     document.head.appendChild(link);
 }
 
@@ -305,8 +305,11 @@ function renderProjectionDashboard(frm) {
     const warnings = frm.doc.projection_warnings || "";
     const marginPolicy = frm.doc.applied_margin_policy || frm.doc.margin_policy || "";
     const marginRule = frm.doc.applied_margin_rule || "";
+    const scenarioPolicy = frm.doc.applied_scenario_policy || frm.doc.scenario_policy || "";
     const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
+    const salesPerson = frm.doc.sales_person || "";
+    const geography = [frm.doc.geography_type || "", frm.doc.geography_value || ""].filter(Boolean).join(": ");
     const scenarioCounts = {};
     lines.forEach((row) => {
         const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
@@ -407,6 +410,9 @@ function renderProjectionDashboard(frm) {
             </div>
             <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
             <div style="margin-top:6px;font-size:12px;color:#334155;">
+                <span class="ps-scenario-chip"><strong>${__("Sales Person")}</strong> ${frappe.utils.escape_html(salesPerson || "-")}</span>
+                <span class="ps-scenario-chip"><strong>${__("Geography")}</strong> ${frappe.utils.escape_html(geography || "-")}</span>
+                <span class="ps-scenario-chip"><strong>${__("Scenario Policy")}</strong> ${frappe.utils.escape_html(scenarioPolicy || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Margin Policy")}</strong> ${frappe.utils.escape_html(marginPolicy || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Margin Rule")}</strong> ${frappe.utils.escape_html(marginRule || __("No rule"))}</span>
                 <span class="ps-scenario-chip"><strong>${__("Customs Policy")}</strong> ${frappe.utils.escape_html(customsPolicy || "-")}</span>
@@ -519,6 +525,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
         frm.set_query("item", "lines", queryConfig);
         frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
+        frm.set_query("scenario_policy", () => ({ filters: { is_active: 1 } }));
         frm.set_query("margin_policy", () => ({ filters: { is_active: 1 } }));
         frm.set_query("customs_policy", () => ({ filters: { is_active: 1 } }));
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
@@ -673,7 +680,23 @@ frappe.ui.form.on("Pricing Sheet", {
         renderProjectionDashboard(frm);
     },
 
+    scenario_policy(frm) {
+        renderProjectionDashboard(frm);
+    },
+
     customs_policy(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    sales_person(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    geography_type(frm) {
+        renderProjectionDashboard(frm);
+    },
+
+    geography_value(frm) {
         renderProjectionDashboard(frm);
     },
 

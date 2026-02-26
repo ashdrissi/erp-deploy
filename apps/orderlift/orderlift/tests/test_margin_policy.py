@@ -43,6 +43,35 @@ class TestMarginPolicyResolver(unittest.TestCase):
         rule = resolve_margin_rule(rules, customer_type="Installateur", tier="Eco")
         self.assertEqual(rule["margin_percent"], 12)
 
+    def test_item_and_sales_person_specific_rule(self):
+        rules = [
+            {
+                "item_group": "Motors",
+                "sales_person": "SP-001",
+                "margin_percent": 11,
+                "priority": 10,
+                "sequence": 90,
+                "is_active": 1,
+            },
+            {
+                "item": "A1",
+                "sales_person": "SP-001",
+                "margin_percent": 18,
+                "priority": 10,
+                "sequence": 90,
+                "is_active": 1,
+            },
+        ]
+        rule = resolve_margin_rule(
+            rules,
+            context={
+                "item": "A1",
+                "item_group": "Motors",
+                "sales_person": "SP-001",
+            },
+        )
+        self.assertEqual(rule["margin_percent"], 18)
+
 
 if __name__ == "__main__":
     unittest.main()

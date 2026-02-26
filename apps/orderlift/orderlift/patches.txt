@@ -5,3 +5,4 @@ orderlift.patches.v1_0.seed_logistics_example_scenarios
 orderlift.patches.v1_0.backfill_pricing_sheet_multi_scenario_fields
 orderlift.patches.v1_0.create_default_margin_policy
 orderlift.patches.v1_0.create_default_customs_policy
+orderlift.patches.v1_0.create_default_scenario_policy

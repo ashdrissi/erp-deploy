@@ -75,10 +75,39 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
+                    "fieldname": "source_scenario_rule",
+                    "label": "Source Scenario Rule",
+                    "fieldtype": "Data",
+                    "insert_after": "source_margin_percent",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_margin_rule",
+                    "label": "Source Margin Rule",
+                    "fieldtype": "Data",
+                    "insert_after": "source_scenario_rule",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_sales_person",
+                    "label": "Source Sales Person",
+                    "fieldtype": "Link",
+                    "options": "Sales Person",
+                    "insert_after": "source_margin_rule",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_geography",
+                    "label": "Source Geography",
+                    "fieldtype": "Data",
+                    "insert_after": "source_sales_person",
+                    "read_only": 1,
+                },
+                {
                     "fieldname": "source_customs_applied",
                     "label": "Source Customs Applied",
                     "fieldtype": "Currency",
-                    "insert_after": "source_margin_percent",
+                    "insert_after": "source_geography",
                     "read_only": 1,
                 },
                 {
@@ -135,6 +164,7 @@ def ensure_pricing_workspace():
         {"label": "Quotation", "type": "DocType", "link_to": "Quotation"},
         {"label": "Pricing Sheet", "type": "DocType", "link_to": "Pricing Sheet"},
         {"label": "Pricing Scenario", "type": "DocType", "link_to": "Pricing Scenario"},
+        {"label": "Scenario Policies", "type": "DocType", "link_to": "Pricing Scenario Policy"},
         {"label": "Margin Policies", "type": "DocType", "link_to": "Pricing Margin Policy"},
         {"label": "Customs Policies", "type": "DocType", "link_to": "Pricing Customs Policy"},
     ]

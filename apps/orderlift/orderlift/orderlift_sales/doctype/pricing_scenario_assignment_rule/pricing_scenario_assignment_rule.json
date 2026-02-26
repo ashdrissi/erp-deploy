@@ -1,11 +1,12 @@
 {
   "actions": [],
-  "creation": "2026-02-23 00:00:00",
+  "creation": "2026-02-26 00:00:00",
   "doctype": "DocType",
   "document_type": "Document",
   "editable_grid": 1,
   "engine": "InnoDB",
   "field_order": [
+    "pricing_scenario",
     "sales_person",
     "geography_type",
     "geography_value",
@@ -15,14 +16,20 @@
     "item",
     "item_group",
     "material",
-    "margin_percent",
-    "applies_to",
     "sequence",
     "priority",
     "is_active",
     "notes"
   ],
   "fields": [
+    {
+      "fieldname": "pricing_scenario",
+      "fieldtype": "Link",
+      "label": "Pricing Scenario",
+      "options": "Pricing Scenario",
+      "reqd": 1,
+      "in_list_view": 1
+    },
     {
       "fieldname": "sales_person",
       "fieldtype": "Link",
@@ -52,15 +59,13 @@
       "fieldname": "customer_type",
       "fieldtype": "Select",
       "label": "Customer Type",
-      "options": "\nInstallateur\nDistributeur\nPromoteur\nParticulier",
-      "in_list_view": 1
+      "options": "\nInstallateur\nDistributeur\nPromoteur\nParticulier"
     },
     {
       "fieldname": "tier",
       "fieldtype": "Select",
       "label": "Tier",
-      "options": "\nEco\nIntermediaire\nLuxe",
-      "in_list_view": 1
+      "options": "\nEco\nIntermediaire\nLuxe"
     },
     {
       "fieldname": "item",
@@ -80,23 +85,6 @@
       "fieldtype": "Select",
       "label": "Material",
       "options": "\nSTEEL\nALUM\nGALVA\nINOX\nCOPPER\nOTHER"
-    },
-    {
-      "fieldname": "margin_percent",
-      "fieldtype": "Percent",
-      "label": "Margin Percent",
-      "reqd": 1,
-      "default": "0",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "applies_to",
-      "fieldtype": "Select",
-      "label": "Applies To",
-      "options": "Base Price\nRunning Total",
-      "default": "Running Total",
-      "reqd": 1,
-      "in_list_view": 1
     },
     {
       "fieldname": "sequence",
@@ -127,10 +115,10 @@
   ],
   "istable": 1,
   "links": [],
-  "modified": "2026-02-23 00:00:00.000000",
+  "modified": "2026-02-26 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
-  "name": "Pricing Margin Rule",
+  "name": "Pricing Scenario Assignment Rule",
   "owner": "Administrator",
   "permissions": [],
   "sort_field": "modified",

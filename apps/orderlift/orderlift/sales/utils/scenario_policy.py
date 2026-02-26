@@ -1,20 +1,13 @@
-def resolve_margin_rule(rules, customer_type=None, tier=None, context=None):
-    ctx = {
-        "customer_type": customer_type,
-        "tier": tier,
-    }
-    if context:
-        ctx.update(context)
-
+def resolve_scenario_rule(rules, context=None):
+    context = context or {}
     active = [rule for rule in (rules or []) if _to_int(rule.get("is_active", 1))]
     if not active:
         return None
 
     scored = []
     for rule in active:
-        if not _matches(rule, ctx):
+        if not _matches(rule, context):
             continue
-
         scored.append(
             (
                 -_specificity(rule),

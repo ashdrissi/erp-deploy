@@ -10,12 +10,16 @@
     "naming_series",
     "sheet_name",
     "customer",
+    "sales_person",
     "column_break_identity",
     "customer_segment",
     "customer_type",
     "tier",
+    "geography_type",
+    "geography_value",
     "section_strategy",
     "pricing_scenario",
+    "scenario_policy",
     "margin_policy",
     "customs_policy",
     "product_bundle",
@@ -44,6 +48,7 @@
     "calc_runtime_ms",
     "applied_margin_policy",
     "applied_margin_rule",
+    "applied_scenario_policy",
     "applied_customs_policy",
     "customs_total_applied",
     "projection_warnings"
@@ -82,6 +87,13 @@
       "in_standard_filter": 1
     },
     {
+      "fieldname": "sales_person",
+      "fieldtype": "Link",
+      "label": "Sales Person",
+      "options": "Sales Person",
+      "in_standard_filter": 1
+    },
+    {
       "fieldname": "column_break_identity",
       "fieldtype": "Column Break"
     },
@@ -108,6 +120,17 @@
       "options": "Eco\nIntermediaire\nLuxe"
     },
     {
+      "fieldname": "geography_type",
+      "fieldtype": "Select",
+      "label": "Geography Type",
+      "options": "\nTerritory\nCountry\nRegion"
+    },
+    {
+      "fieldname": "geography_value",
+      "fieldtype": "Data",
+      "label": "Geography Value"
+    },
+    {
       "fieldname": "section_strategy",
       "fieldtype": "Section Break",
       "label": "Pricing Strategy"
@@ -118,6 +141,13 @@
       "label": "Default Pricing Scenario",
       "options": "Pricing Scenario",
       "reqd": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "scenario_policy",
+      "fieldtype": "Link",
+      "label": "Scenario Policy",
+      "options": "Pricing Scenario Policy",
       "in_standard_filter": 1
     },
     {
@@ -208,6 +238,12 @@
       "fieldname": "applied_margin_rule",
       "fieldtype": "Small Text",
       "label": "Applied Margin Rule",
+      "read_only": 1
+    },
+    {
+      "fieldname": "applied_scenario_policy",
+      "fieldtype": "Data",
+      "label": "Applied Scenario Policy",
       "read_only": 1
     },
     {
