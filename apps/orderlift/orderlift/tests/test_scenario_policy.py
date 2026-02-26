@@ -29,9 +29,9 @@ class TestScenarioPolicyResolver(unittest.TestCase):
     def test_fallback_rule_used(self):
         rules = [
             {"pricing_scenario": "SCN-FALLBACK", "priority": 10, "sequence": 90, "is_active": 1},
-            {"pricing_scenario": "SCN-FR", "geography_type": "Country", "geography_value": "FR", "priority": 10, "sequence": 90, "is_active": 1},
+            {"pricing_scenario": "SCN-FR", "geography_country": "FR", "priority": 10, "sequence": 90, "is_active": 1},
         ]
-        context = {"geography_type": "Country", "geography_value": "MA"}
+        context = {"geography_country": "MA"}
         rule = resolve_scenario_rule(rules, context)
         self.assertEqual(rule["pricing_scenario"], "SCN-FALLBACK")
 
@@ -43,6 +43,15 @@ class TestScenarioPolicyResolver(unittest.TestCase):
         context = {"item_group": "Machines"}
         rule = resolve_scenario_rule(rules, context)
         self.assertEqual(rule["pricing_scenario"], "SCN-P5")
+
+    def test_bundle_rule_applies_when_item_missing(self):
+        rules = [
+            {"pricing_scenario": "SCN-GENERIC", "priority": 10, "sequence": 90, "is_active": 1},
+            {"pricing_scenario": "SCN-BUNDLE", "source_bundle": "KIT-ALPHA", "priority": 10, "sequence": 90, "is_active": 1},
+        ]
+        context = {"source_bundle": "KIT-ALPHA", "item": "", "item_group": ""}
+        rule = resolve_scenario_rule(rules, context)
+        self.assertEqual(rule["pricing_scenario"], "SCN-BUNDLE")
 
 
 if __name__ == "__main__":

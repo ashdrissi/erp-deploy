@@ -569,12 +569,15 @@ class PricingSheet(Document):
         rule_dicts = [
             {
                 "sales_person": row.sales_person,
-                "geography_type": row.geography_type,
-                "geography_value": row.geography_value,
+                "geography_territory": row.geography_territory,
+                "geography_country": row.geography_country,
+                "geography_city": row.geography_city,
+                "geography_region": row.geography_region,
                 "customer_segment": row.customer_segment,
                 "customer_type": row.customer_type,
                 "tier": row.tier,
                 "item": row.item,
+                "source_bundle": row.source_bundle,
                 "item_group": row.item_group,
                 "material": row.material,
                 "margin_percent": flt(row.margin_percent),
@@ -597,12 +600,15 @@ class PricingSheet(Document):
         rule_dicts = [
             {
                 "sales_person": rule.sales_person,
-                "geography_type": rule.geography_type,
-                "geography_value": rule.geography_value,
+                "geography_territory": rule.geography_territory,
+                "geography_country": rule.geography_country,
+                "geography_city": rule.geography_city,
+                "geography_region": rule.geography_region,
                 "customer_segment": rule.customer_segment,
                 "customer_type": rule.customer_type,
                 "tier": rule.tier,
                 "item": rule.item,
+                "source_bundle": rule.source_bundle,
                 "item_group": rule.item_group,
                 "material": rule.material,
                 "margin_percent": flt(rule.margin_percent),
@@ -645,12 +651,15 @@ class PricingSheet(Document):
             {
                 "pricing_scenario": row.pricing_scenario,
                 "sales_person": row.sales_person,
-                "geography_type": row.geography_type,
-                "geography_value": row.geography_value,
+                "geography_territory": row.geography_territory,
+                "geography_country": row.geography_country,
+                "geography_city": row.geography_city,
+                "geography_region": row.geography_region,
                 "customer_segment": row.customer_segment,
                 "customer_type": row.customer_type,
                 "tier": row.tier,
                 "item": row.item,
+                "source_bundle": row.source_bundle,
                 "item_group": row.item_group,
                 "material": row.material,
                 "sequence": cint(row.sequence),
@@ -667,26 +676,53 @@ class PricingSheet(Document):
         item_details = item_details or {}
         item_code = row.item if row else None
         item_meta = item_details.get(item_code) or {}
-        geography_type, geography_value = self._resolve_geography_context()
+        geo = self._resolve_geography_context()
         return {
             "sales_person": self.sales_person,
-            "geography_type": geography_type,
-            "geography_value": geography_value,
+            "geography_territory": geo.get("geography_territory"),
+            "geography_country": geo.get("geography_country"),
+            "geography_city": geo.get("geography_city"),
+            "geography_region": geo.get("geography_region"),
             "customer_segment": self.customer_segment,
             "customer_type": self.customer_type,
             "tier": self.tier,
             "item": item_code,
+            "source_bundle": row.source_bundle,
             "item_group": item_meta.get("item_group"),
             "material": item_meta.get("custom_material"),
         }
 
     def _resolve_geography_context(self):
-        if self.geography_type and self.geography_value:
-            return self.geography_type, self.geography_value
+        if self.geography_territory:
+            return {
+                "geography_territory": self.geography_territory,
+                "geography_country": "",
+                "geography_city": self.geography_city,
+                "geography_region": self.geography_region,
+            }
+        if self.geography_country:
+            return {
+                "geography_territory": "",
+                "geography_country": self.geography_country,
+                "geography_city": self.geography_city,
+                "geography_region": self.geography_region,
+            }
+        if self.geography_city or self.geography_region:
+            return {
+                "geography_territory": "",
+                "geography_country": "",
+                "geography_city": self.geography_city,
+                "geography_region": self.geography_region,
+            }
 
         territory = frappe.db.get_value("Customer", self.customer, "territory") if self.customer else None
         if territory:
-            return "Territory", territory
+            return {
+                "geography_territory": territory,
+                "geography_country": "",
+                "geography_city": "",
+                "geography_region": "",
+            }
 
         if self.customer and frappe.db.exists("DocType", "Address"):
             addresses = frappe.get_all(
@@ -702,9 +738,19 @@ class PricingSheet(Document):
             if addresses:
                 country = frappe.db.get_value("Address", addresses[0].parent, "country")
                 if country:
-                    return "Country", country
+                    return {
+                        "geography_territory": "",
+                        "geography_country": country,
+                        "geography_city": "",
+                        "geography_region": "",
+                    }
 
-        return "", ""
+        return {
+            "geography_territory": "",
+            "geography_country": "",
+            "geography_city": "",
+            "geography_region": "",
+        }
 
     def _set_default_sales_person(self):
         if self.sales_person:
@@ -860,7 +906,7 @@ class PricingSheet(Document):
     def _format_margin_rule(self, rule):
         if not rule:
             return ""
-        scope = rule.get("item") or rule.get("item_group") or rule.get("material") or "Any"
+        scope = rule.get("item") or rule.get("source_bundle") or rule.get("item_group") or rule.get("material") or "Any"
         sales_person = rule.get("sales_person") or "Any"
         return _("{0} / {1}: {2}% on {3}").format(
             sales_person,
@@ -1247,8 +1293,8 @@ class PricingSheet(Document):
         return quotation.name
 
     def _append_detailed_quotation_items(self, quotation):
-        geography_type, geography_value = self._resolve_geography_context()
-        geography_label = f"{geography_type}: {geography_value}" if geography_type and geography_value else ""
+        geo = self._resolve_geography_context()
+        geography_label = geo.get("geography_territory") or geo.get("geography_country") or geo.get("geography_city") or geo.get("geography_region") or ""
         for row in self.lines or []:
             if not row.item:
                 continue

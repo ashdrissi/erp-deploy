@@ -15,8 +15,10 @@
     "customer_segment",
     "customer_type",
     "tier",
-    "geography_type",
-    "geography_value",
+    "geography_territory",
+    "geography_country",
+    "geography_city",
+    "geography_region",
     "section_strategy",
     "pricing_scenario",
     "scenario_policy",
@@ -120,15 +122,26 @@
       "options": "Eco\nIntermediaire\nLuxe"
     },
     {
-      "fieldname": "geography_type",
-      "fieldtype": "Select",
-      "label": "Geography Type",
-      "options": "\nTerritory\nCountry\nRegion"
+      "fieldname": "geography_territory",
+      "fieldtype": "Link",
+      "label": "Territory",
+      "options": "Territory"
     },
     {
-      "fieldname": "geography_value",
+      "fieldname": "geography_country",
+      "fieldtype": "Link",
+      "label": "Country",
+      "options": "Country"
+    },
+    {
+      "fieldname": "geography_city",
       "fieldtype": "Data",
-      "label": "Geography Value"
+      "label": "City"
+    },
+    {
+      "fieldname": "geography_region",
+      "fieldtype": "Data",
+      "label": "Region"
     },
     {
       "fieldname": "section_strategy",

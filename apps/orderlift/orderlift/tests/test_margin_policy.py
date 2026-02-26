@@ -72,6 +72,14 @@ class TestMarginPolicyResolver(unittest.TestCase):
         )
         self.assertEqual(rule["margin_percent"], 18)
 
+    def test_bundle_rule_when_item_not_set(self):
+        rules = [
+            {"source_bundle": "KIT-1", "margin_percent": 21, "priority": 10, "sequence": 90, "is_active": 1},
+            {"margin_percent": 8, "priority": 10, "sequence": 90, "is_active": 1},
+        ]
+        rule = resolve_margin_rule(rules, context={"source_bundle": "KIT-1", "item": ""})
+        self.assertEqual(rule["margin_percent"], 21)
+
 
 if __name__ == "__main__":
     unittest.main()

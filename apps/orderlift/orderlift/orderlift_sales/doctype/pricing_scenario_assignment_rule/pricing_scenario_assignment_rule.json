@@ -8,12 +8,15 @@
   "field_order": [
     "pricing_scenario",
     "sales_person",
-    "geography_type",
-    "geography_value",
+    "geography_territory",
+    "geography_country",
+    "geography_city",
+    "geography_region",
     "customer_segment",
     "customer_type",
     "tier",
     "item",
+    "source_bundle",
     "item_group",
     "material",
     "sequence",
@@ -38,16 +41,29 @@
       "in_list_view": 1
     },
     {
-      "fieldname": "geography_type",
-      "fieldtype": "Select",
-      "label": "Geography Type",
-      "options": "\nTerritory\nCountry\nRegion"
+      "fieldname": "geography_territory",
+      "fieldtype": "Link",
+      "label": "Territory",
+      "options": "Territory",
+      "in_list_view": 1
     },
     {
-      "fieldname": "geography_value",
-      "fieldtype": "Data",
-      "label": "Geography Value",
+      "fieldname": "geography_country",
+      "fieldtype": "Link",
+      "label": "Country",
+      "options": "Country",
       "in_list_view": 1
+    },
+    {
+      "fieldname": "geography_city",
+      "fieldtype": "Data",
+      "label": "City",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "geography_region",
+      "fieldtype": "Data",
+      "label": "Region"
     },
     {
       "fieldname": "customer_segment",
@@ -75,10 +91,18 @@
       "in_list_view": 1
     },
     {
+      "fieldname": "source_bundle",
+      "fieldtype": "Link",
+      "label": "Product Bundle",
+      "options": "Product Bundle",
+      "in_list_view": 1
+    },
+    {
       "fieldname": "item_group",
       "fieldtype": "Link",
       "label": "Item Group",
-      "options": "Item Group"
+      "options": "Item Group",
+      "in_list_view": 1
     },
     {
       "fieldname": "material",

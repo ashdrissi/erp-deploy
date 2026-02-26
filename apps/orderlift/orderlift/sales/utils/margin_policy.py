@@ -35,12 +35,15 @@ def resolve_margin_rule(rules, customer_type=None, tier=None, context=None):
 def _matches(rule, context):
     for key in (
         "sales_person",
-        "geography_type",
-        "geography_value",
+        "geography_territory",
+        "geography_country",
+        "geography_city",
+        "geography_region",
         "customer_segment",
         "customer_type",
         "tier",
         "item",
+        "source_bundle",
         "item_group",
         "material",
     ):
@@ -55,11 +58,14 @@ def _matches(rule, context):
 def _specificity(rule):
     weights = {
         "item": 32,
+        "source_bundle": 24,
         "item_group": 16,
         "material": 8,
         "sales_person": 16,
-        "geography_value": 8,
-        "geography_type": 2,
+        "geography_territory": 8,
+        "geography_country": 7,
+        "geography_city": 6,
+        "geography_region": 5,
         "customer_type": 4,
         "tier": 2,
         "customer_segment": 1,
