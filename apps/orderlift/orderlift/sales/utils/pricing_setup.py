@@ -24,6 +24,14 @@ def after_migrate():
                     "default": "0",
                     "non_negative": 1,
                 },
+                {
+                    "fieldname": "custom_volume_m3",
+                    "label": "Volume (m3)",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_weight_kg",
+                    "default": "0",
+                    "non_negative": 1,
+                },
             ],
             "Quotation": [
                 {

@@ -21,6 +21,13 @@ function renderExpenseGuide(frm) {
                 Final Unit Price = Base Price + sequential expenses.<br>
                 <b>Percentage</b>: basis * value / 100 &nbsp;|&nbsp; <b>Fixed</b>: add exact amount.
             </div>
+            <div style="font-size:12px;color:#334155;line-height:1.6;margin-top:8px;">
+                <b>Transport Allocation</b>: ${frm.doc.transport_is_active ? "Enabled" : "Disabled"}<br>
+                ${frappe.utils.escape_html(frm.doc.transport_allocation_mode || "By Value")} | Container Price: ${frappe.format(
+                    frm.doc.transport_container_price || 0,
+                    { fieldtype: "Currency" }
+                )}
+            </div>
             <div style="margin-top:10px;">${pills || "<span style='font-size:12px;color:#64748b;'>No active expense yet.</span>"}</div>
         </div>
     `;
@@ -59,6 +66,10 @@ frappe.ui.form.on("Pricing Scenario", {
 
         renderExpenseGuide(frm);
     },
+
+    transport_is_active: renderExpenseGuide,
+    transport_allocation_mode: renderExpenseGuide,
+    transport_container_price: renderExpenseGuide,
 });
 
 frappe.ui.form.on("Pricing Scenario Expense", {

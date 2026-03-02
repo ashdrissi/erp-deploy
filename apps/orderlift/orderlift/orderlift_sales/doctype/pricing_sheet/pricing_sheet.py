@@ -10,6 +10,7 @@ from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve
 from orderlift.sales.utils.margin_policy import resolve_margin_rule
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 from orderlift.sales.utils.pricing_projection import apply_expenses
+from orderlift.sales.utils.transport_allocation import compute_transport_allocation
 
 
 MISSING_BUY_PRICE_MSG = "No buying price in {price_list}"
@@ -111,6 +112,18 @@ class PricingSheet(Document):
             if customs_calc.get("warning"):
                 warnings.append(_("Row {0}: {1}").format(row.idx, customs_calc.get("warning")))
 
+            transport_calc = self._compute_transport_for_row(
+                row=row,
+                qty=qty,
+                base_amount=base_amount,
+                item_details=item_details,
+                transport_config=cache.get("transport_config") or {},
+            )
+            if transport_calc.get("warning"):
+                warnings.append(_("Row {0}: {1}").format(row.idx, transport_calc.get("warning")))
+
+            effective_line_expenses = self._inject_transport_expense(effective_line_expenses, transport_calc)
+
             line_margin_rule = self._resolve_margin_rule_for_row(row, item_details, margin_policy)
             if not line_margin_rule:
                 warnings.append(_("Row {0}: no margin rule matched; dynamic margin is 0.").format(row.idx))
@@ -131,6 +144,7 @@ class PricingSheet(Document):
                     "benchmark_prices": cache["benchmark_prices"],
                     "has_line_override": has_line_override,
                     "customs_calc": customs_calc,
+                    "transport_calc": transport_calc,
                     "line_margin_rule": line_margin_rule,
                 }
             )
@@ -162,6 +176,8 @@ class PricingSheet(Document):
             base_amount = snap["base_amount"]
             pricing = snap["pricing"]
             customs_calc = snap.get("customs_calc") or {}
+            transport_calc = snap.get("transport_calc") or {}
+            line_margin_rule = snap.get("line_margin_rule")
             sheet_fixed_total = snap["sheet_fixed_total"]
             scenario_name = snap["scenario_name"]
             alloc = scenario_allocation.get(scenario_name) or {
@@ -219,6 +235,11 @@ class PricingSheet(Document):
             row.customs_by_percent = flt(customs_calc.get("by_percent") or 0)
             row.customs_applied = flt(customs_calc.get("applied") or 0)
             row.customs_basis = customs_calc.get("basis") or ""
+            row.transport_allocation_mode = transport_calc.get("mode") or ""
+            row.transport_container_type = transport_calc.get("container_type") or ""
+            row.transport_basis_total = flt(transport_calc.get("denominator") or 0)
+            row.transport_numerator = flt(transport_calc.get("numerator") or 0)
+            row.transport_allocated = flt(transport_calc.get("applied") or 0)
 
             row.price_floor_violation = 1 if flt(row.final_sell_unit_price) < 0 else 0
             if row.price_floor_violation:
@@ -841,6 +862,75 @@ class PricingSheet(Document):
             exp["expense_key"] = exp.get("expense_key") or make_expense_key(exp)
         return out
 
+    def _inject_transport_expense(self, expenses, transport_calc):
+        applied = flt((transport_calc or {}).get("applied") or 0)
+        if applied <= 0:
+            return list(expenses or [])
+
+        out = list(expenses or [])
+        out.append(
+            {
+                "label": "Container Transport Allocation",
+                "type": "Fixed",
+                "value": applied,
+                "applies_to": "Base Price",
+                "scope": "Per Line",
+                "sequence": 15,
+                "is_active": 1,
+                "is_overridden": 0,
+                "override_source": "transport_policy",
+            }
+        )
+        out = sorted(out, key=lambda x: (cint(x.get("sequence")), cint(x.get("idx") or 0)))
+        for exp in out:
+            exp["expense_key"] = exp.get("expense_key") or make_expense_key(exp)
+        return out
+
+    def _extract_transport_config(self, scenario):
+        return {
+            "is_active": cint(getattr(scenario, "transport_is_active", 0)),
+            "container_type": (getattr(scenario, "transport_container_type", "") or "").strip(),
+            "allocation_mode": (getattr(scenario, "transport_allocation_mode", "By Value") or "By Value").strip().title(),
+            "container_price": flt(getattr(scenario, "transport_container_price", 0)),
+            "total_merch_value": flt(getattr(scenario, "transport_total_merch_value", 0)),
+            "total_weight_kg": flt(getattr(scenario, "transport_total_weight_kg", 0)),
+            "total_volume_m3": flt(getattr(scenario, "transport_total_volume_m3", 0)),
+        }
+
+    def _compute_transport_for_row(self, row, qty, base_amount, item_details, transport_config):
+        details = item_details.get(row.item) or {}
+        unit_weight_kg = flt(details.get("custom_weight_kg"))
+        unit_volume_m3 = flt(details.get("custom_volume_m3"))
+        line_weight_kg = flt(qty) * unit_weight_kg
+        line_volume_m3 = flt(qty) * unit_volume_m3
+
+        out = {
+            "mode": (transport_config.get("allocation_mode") or "By Value").strip().title(),
+            "container_type": transport_config.get("container_type") or "",
+            "denominator": 0.0,
+            "numerator": 0.0,
+            "applied": 0.0,
+            "warning": "",
+        }
+
+        if cint(transport_config.get("is_active")) != 1:
+            return out
+
+        calc = compute_transport_allocation(
+            mode=transport_config.get("allocation_mode"),
+            container_price=transport_config.get("container_price"),
+            line_base_amount=base_amount,
+            line_weight_kg=line_weight_kg,
+            line_volume_m3=line_volume_m3,
+            totals={
+                "total_merch_value": transport_config.get("total_merch_value"),
+                "total_weight_kg": transport_config.get("total_weight_kg"),
+                "total_volume_m3": transport_config.get("total_volume_m3"),
+            },
+        )
+        out.update(calc)
+        return out
+
     def _format_margin_rule(self, rule):
         if not rule:
             return ""
@@ -878,6 +968,7 @@ class PricingSheet(Document):
                 "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=False),
                 "line_expenses": line_expenses,
                 "sheet_fixed_total": sheet_fixed_total,
+                "transport_config": self._extract_transport_config(scenario),
             }
 
         return caches
@@ -1405,7 +1496,7 @@ def get_item_details_map(item_codes):
     rows = frappe.get_all(
         "Item",
         filters={"name": ["in", item_codes]},
-        fields=["name", "item_group", "custom_material", "custom_weight_kg"],
+        fields=["name", "item_group", "custom_material", "custom_weight_kg", "custom_volume_m3"],
         limit_page_length=0,
     )
     return {
@@ -1413,6 +1504,7 @@ def get_item_details_map(item_codes):
             "item_group": row.item_group,
             "custom_material": row.custom_material,
             "custom_weight_kg": flt(row.custom_weight_kg),
+            "custom_volume_m3": flt(row.custom_volume_m3),
         }
         for row in rows
     }

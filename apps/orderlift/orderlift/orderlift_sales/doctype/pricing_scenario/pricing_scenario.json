@@ -11,6 +11,15 @@
     "description",
     "buying_price_list",
     "benchmark_price_list",
+    "section_transport",
+    "transport_is_active",
+    "transport_container_type",
+    "transport_allocation_mode",
+    "transport_container_price",
+    "column_break_transport",
+    "transport_total_merch_value",
+    "transport_total_weight_kg",
+    "transport_total_volume_m3",
     "expense_help_html",
     "expenses"
   ],
@@ -53,6 +62,58 @@
       "label": "Benchmark Price List",
       "options": "Price List",
       "default": "Benchmark Selling"
+    },
+    {
+      "fieldname": "section_transport",
+      "fieldtype": "Section Break",
+      "label": "Container Transport Allocation"
+    },
+    {
+      "fieldname": "transport_is_active",
+      "fieldtype": "Check",
+      "label": "Enable Transport Allocation",
+      "default": "0"
+    },
+    {
+      "fieldname": "transport_container_type",
+      "fieldtype": "Data",
+      "label": "Container Type",
+      "description": "Examples: 20ft, 40ft"
+    },
+    {
+      "fieldname": "transport_allocation_mode",
+      "fieldtype": "Select",
+      "label": "Allocation Mode",
+      "options": "By Value\nBy Kg\nBy M3",
+      "default": "By Value"
+    },
+    {
+      "fieldname": "transport_container_price",
+      "fieldtype": "Currency",
+      "label": "Container Price",
+      "default": "0"
+    },
+    {
+      "fieldname": "column_break_transport",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "transport_total_merch_value",
+      "fieldtype": "Currency",
+      "label": "Total Merchandise Value in Container",
+      "default": "0"
+    },
+    {
+      "fieldname": "transport_total_weight_kg",
+      "fieldtype": "Float",
+      "label": "Total Weight in Container (kg)",
+      "default": "0"
+    },
+    {
+      "fieldname": "transport_total_volume_m3",
+      "fieldtype": "Float",
+      "label": "Total Volume in Container (m3)",
+      "default": "0"
     },
     {
       "fieldname": "expense_help_html",

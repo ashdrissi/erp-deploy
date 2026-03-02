@@ -40,6 +40,11 @@
     "customs_by_percent",
     "customs_applied",
     "customs_basis",
+    "transport_allocation_mode",
+    "transport_container_type",
+    "transport_basis_total",
+    "transport_numerator",
+    "transport_allocated",
     "price_floor_violation",
     "benchmark_price",
     "benchmark_delta_abs",
@@ -269,6 +274,36 @@
       "fieldname": "customs_basis",
       "fieldtype": "Data",
       "label": "Customs Basis",
+      "read_only": 1
+    },
+    {
+      "fieldname": "transport_allocation_mode",
+      "fieldtype": "Data",
+      "label": "Transport Allocation Mode",
+      "read_only": 1
+    },
+    {
+      "fieldname": "transport_container_type",
+      "fieldtype": "Data",
+      "label": "Transport Container Type",
+      "read_only": 1
+    },
+    {
+      "fieldname": "transport_basis_total",
+      "fieldtype": "Float",
+      "label": "Transport Basis Total",
+      "read_only": 1
+    },
+    {
+      "fieldname": "transport_numerator",
+      "fieldtype": "Float",
+      "label": "Transport Numerator",
+      "read_only": 1
+    },
+    {
+      "fieldname": "transport_allocated",
+      "fieldtype": "Currency",
+      "label": "Transport Allocated",
       "read_only": 1
     },
     {

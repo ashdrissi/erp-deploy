@@ -44,7 +44,24 @@ class PricingScenario(Document):
 
     def validate(self):
         self.buying_price_list = self.buying_price_list or "Buying"
+        self._validate_transport_settings()
         self._validate_expenses()
+
+    def _validate_transport_settings(self):
+        self.transport_is_active = 1 if flt(self.transport_is_active) else 0
+        self.transport_allocation_mode = (self.transport_allocation_mode or "By Value").strip().title()
+        if self.transport_allocation_mode not in ("By Value", "By Kg", "By M3"):
+            frappe.throw(_("Transport Allocation Mode must be By Value, By Kg, or By M3."))
+
+        self.transport_container_price = flt(self.transport_container_price)
+        self.transport_total_merch_value = flt(self.transport_total_merch_value)
+        self.transport_total_weight_kg = flt(self.transport_total_weight_kg)
+        self.transport_total_volume_m3 = flt(self.transport_total_volume_m3)
+
+        if self.transport_container_price < 0:
+            frappe.throw(_("Container Price cannot be negative."))
+        if self.transport_total_merch_value < 0 or self.transport_total_weight_kg < 0 or self.transport_total_volume_m3 < 0:
+            frappe.throw(_("Container totals cannot be negative."))
 
     def _validate_expenses(self):
         if not self.expenses:
