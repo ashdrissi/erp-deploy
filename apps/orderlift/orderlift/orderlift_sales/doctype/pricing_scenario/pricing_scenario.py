@@ -24,7 +24,7 @@ class PricingScenario(Document):
                 "label": "Handling",
                 "type": "Fixed",
                 "value": 12,
-                "applies_to": "Running Total",
+                "applies_to": "Base Price",
                 "scope": "Per Unit",
                 "is_active": 1,
             },
@@ -33,7 +33,7 @@ class PricingScenario(Document):
                 "label": "Commercial Margin",
                 "type": "Percentage",
                 "value": 15,
-                "applies_to": "Running Total",
+                "applies_to": "Base Price",
                 "scope": "Per Unit",
                 "is_active": 1,
             },
@@ -76,9 +76,7 @@ class PricingScenario(Document):
             if row.type not in ("Percentage", "Fixed"):
                 frappe.throw(_("Row {0}: Type must be Percentage or Fixed.").format(row.idx))
 
-            row.applies_to = (row.applies_to or "Running Total").strip().title()
-            if row.applies_to not in ("Base Price", "Running Total"):
-                frappe.throw(_("Row {0}: Applies To must be Base Price or Running Total.").format(row.idx))
+            row.applies_to = "Base Price"
 
             row.scope = (row.scope or "Per Unit").strip().title()
             if row.scope not in ("Per Unit", "Per Line", "Per Sheet"):

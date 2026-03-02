@@ -185,7 +185,7 @@ class PricingSheet(Document):
                         "label": "Sheet Allocation",
                         "type": "Fixed",
                         "value": allocated_sheet,
-                        "applies_to": "Running Total",
+                        "applies_to": "Base Price",
                         "scope": "Per Sheet",
                         "sequence": 9999,
                         "basis": projected_total,
@@ -826,7 +826,7 @@ class PricingSheet(Document):
             "label": "Dynamic Margin",
             "type": "Percentage",
             "value": flt(margin_rule.get("margin_percent")),
-            "applies_to": (margin_rule.get("applies_to") or "Running Total"),
+            "applies_to": "Base Price",
             "scope": "Per Unit",
             "sequence": cint(margin_rule.get("sequence") or 90),
             "is_active": 1,
@@ -850,7 +850,7 @@ class PricingSheet(Document):
             sales_person,
             scope,
             flt(rule.get("margin_percent")),
-            rule.get("applies_to") or "Running Total",
+            "Base Price",
         )
 
     def _build_scenario_caches(self, scenario_docs, item_codes):

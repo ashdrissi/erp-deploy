@@ -61,7 +61,7 @@
       "fieldname": "applies_to",
       "fieldtype": "Select",
       "label": "Applies To",
-      "options": "Base Price\nRunning Total",
+      "options": "Base Price",
       "read_only": 1
     },
     {

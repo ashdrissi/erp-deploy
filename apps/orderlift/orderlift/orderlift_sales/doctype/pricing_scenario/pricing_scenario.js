@@ -8,7 +8,7 @@ function renderExpenseGuide(frm) {
                 `<span style="display:inline-block;padding:6px 10px;border:1px solid #d9dee8;border-radius:999px;margin:4px 6px 0 0;background:#f8fafc;">${frappe.utils.escape_html(
                     row.label || "Expense"
                 )} (#${row.sequence || "-"}): ${frappe.format(row.value || 0, { fieldtype: row.type === "Percentage" ? "Percent" : "Currency" })} on ${
-                    row.applies_to || "Running Total"
+                    row.applies_to || "Base Price"
                 } (${row.scope || "Per Unit"})
                 }</span>`
         )
@@ -38,9 +38,9 @@ frappe.ui.form.on("Pricing Scenario", {
 
             [
                 ["Freight", "Percentage", 8, "Base Price"],
-                ["Insurance", "Percentage", 1.5, "Running Total"],
-                ["Handling", "Fixed", 12, "Running Total"],
-                ["Commercial Margin", "Percentage", 15, "Running Total"],
+                ["Insurance", "Percentage", 1.5, "Base Price"],
+                ["Handling", "Fixed", 12, "Base Price"],
+                ["Commercial Margin", "Percentage", 15, "Base Price"],
             ].forEach(([label, type, value, applies_to], index) => {
                 const row = frm.add_child("expenses");
                 row.sequence = (index + 1) * 10;

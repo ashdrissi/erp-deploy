@@ -10,12 +10,12 @@ class TestPricingProjection(unittest.TestCase):
             qty=2,
             expenses=[
                 {"label": "Freight", "type": "Percentage", "value": 10, "applies_to": "Base Price", "sequence": 10},
-                {"label": "Margin", "type": "Percentage", "value": 10, "applies_to": "Running Total", "sequence": 20},
+                {"label": "Margin", "type": "Percentage", "value": 10, "applies_to": "Base Price", "sequence": 20},
                 {"label": "Handling", "type": "Fixed", "value": 5, "scope": "Per Unit", "sequence": 30},
             ],
         )
-        self.assertAlmostEqual(result["projected_unit"], 126.0, places=4)
-        self.assertAlmostEqual(result["projected_line"], 252.0, places=4)
+        self.assertAlmostEqual(result["projected_unit"], 125.0, places=4)
+        self.assertAlmostEqual(result["projected_line"], 250.0, places=4)
 
     def test_fixed_per_line_and_per_sheet(self):
         result = apply_expenses(
@@ -35,7 +35,7 @@ class TestPricingProjection(unittest.TestCase):
             base_unit=200,
             qty=1,
             expenses=[
-                {"label": "Discount", "type": "Percentage", "value": -15, "applies_to": "Running Total", "sequence": 10}
+                {"label": "Discount", "type": "Percentage", "value": -15, "applies_to": "Base Price", "sequence": 10}
             ],
         )
         self.assertAlmostEqual(result["projected_unit"], 170.0, places=4)
@@ -49,9 +49,9 @@ class TestPricingProjection(unittest.TestCase):
                     "label": "Margin",
                     "type": "Percentage",
                     "value": 20,
-                    "applies_to": "Running Total",
+                    "applies_to": "Base Price",
                     "sequence": 10,
-                    "expense_key": "10|margin|percentage|running total|per unit",
+                    "expense_key": "10|margin|percentage|base price|per unit",
                     "is_overridden": 1,
                     "override_source": "line",
                 }
@@ -60,7 +60,7 @@ class TestPricingProjection(unittest.TestCase):
         self.assertEqual(result["steps"][0].get("is_overridden"), 1)
         self.assertEqual(
             result["steps"][0].get("expense_key"),
-            "10|margin|percentage|running total|per unit",
+            "10|margin|percentage|base price|per unit",
         )
         self.assertEqual(result["steps"][0].get("override_source"), "line")
 

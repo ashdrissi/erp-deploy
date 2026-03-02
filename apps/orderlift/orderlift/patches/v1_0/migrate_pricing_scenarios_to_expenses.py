@@ -41,12 +41,12 @@ def _legacy_rows(doc):
 
     taxes_pct = _get_legacy_float(doc, "taxes_percent_of_buy")
     if taxes_pct:
-        rows.append(_mk(sequence, "Taxes", "Percentage", taxes_pct, "Running Total"))
+        rows.append(_mk(sequence, "Taxes", "Percentage", taxes_pct, "Base Price"))
         sequence += 10
 
     margin_pct = _get_legacy_float(doc, "margin_percent_of_buy")
     if margin_pct:
-        rows.append(_mk(sequence, "Margin", "Percentage", margin_pct, "Running Total"))
+        rows.append(_mk(sequence, "Margin", "Percentage", margin_pct, "Base Price"))
         sequence += 10
 
     transport_total = _legacy_sum(
@@ -60,7 +60,7 @@ def _legacy_rows(doc):
         ],
     )
     if transport_total:
-        rows.append(_mk(sequence, "Transport", "Fixed", transport_total, "Running Total", scope="Per Sheet"))
+        rows.append(_mk(sequence, "Transport", "Fixed", transport_total, "Base Price", scope="Per Sheet"))
         sequence += 10
 
     team_total = _legacy_sum(
@@ -68,7 +68,7 @@ def _legacy_rows(doc):
         ["cars_amortization", "hr_cost", "rent_office_stock", "accountant_other"],
     )
     if team_total:
-        rows.append(_mk(sequence, "Team Office Charges", "Fixed", team_total, "Running Total", scope="Per Sheet"))
+        rows.append(_mk(sequence, "Team Office Charges", "Fixed", team_total, "Base Price", scope="Per Sheet"))
 
     return rows
 
@@ -76,8 +76,8 @@ def _legacy_rows(doc):
 def _default_rows():
     return [
         _mk(10, "Freight", "Percentage", 8, "Base Price"),
-        _mk(20, "Handling", "Fixed", 12, "Running Total"),
-        _mk(30, "Commercial Margin", "Percentage", 15, "Running Total"),
+        _mk(20, "Handling", "Fixed", 12, "Base Price"),
+        _mk(30, "Commercial Margin", "Percentage", 15, "Base Price"),
     ]
 
 

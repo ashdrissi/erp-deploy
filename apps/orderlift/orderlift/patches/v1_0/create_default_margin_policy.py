@@ -24,7 +24,7 @@ def execute():
             "customer_type": "",
             "tier": "",
             "margin_percent": 15,
-            "applies_to": "Running Total",
+            "applies_to": "Base Price",
             "sequence": 90,
             "priority": 10,
             "is_active": 1,

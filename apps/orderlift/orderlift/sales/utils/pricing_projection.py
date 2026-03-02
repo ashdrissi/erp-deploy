@@ -27,7 +27,7 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
 
     for expense in ordered:
         expense_type = (expense.get("type") or "Percentage").strip().title()
-        applies_to = (expense.get("applies_to") or "Running Total").strip().title()
+        applies_to = "Base Price"
         scope = (expense.get("scope") or "Per Unit").strip().title()
         value = float(expense.get("value") or 0.0)
         sequence = int(expense.get("sequence") or 0)
@@ -36,7 +36,7 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
         is_overridden = 1 if float(expense.get("is_overridden") or 0) else 0
         override_source = expense.get("override_source")
 
-        basis = float(base_unit) if applies_to == "Base Price" else float(running_total)
+        basis = float(base_unit)
         delta_unit = 0.0
         delta_line = 0.0
         delta_sheet = 0.0

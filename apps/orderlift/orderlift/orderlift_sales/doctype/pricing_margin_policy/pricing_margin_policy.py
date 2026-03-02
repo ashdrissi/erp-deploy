@@ -22,13 +22,10 @@ class PricingMarginPolicy(Document):
             row.sequence = cint(row.sequence or 90)
             row.priority = cint(row.priority or 10)
             row.margin_percent = flt(row.margin_percent)
-            row.applies_to = (row.applies_to or "Running Total").strip().title()
+            row.applies_to = "Base Price"
 
             if row.item and row.item_group:
                 frappe.throw(_("Row {0}: set Item or Item Group, not both.").format(row.idx))
-
-            if row.applies_to not in ("Base Price", "Running Total"):
-                frappe.throw(_("Row {0}: Applies To must be Base Price or Running Total.").format(row.idx))
 
             if row.margin_percent < -100:
                 frappe.throw(_("Row {0}: Margin percent cannot be below -100.").format(row.idx))
