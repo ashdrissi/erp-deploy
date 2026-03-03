@@ -317,12 +317,21 @@ class PricingSheet(Document):
                     )
                 )
 
-            self._set_benchmark_status(
-                row,
-                snap["benchmark_price_list"],
-                snap["benchmark_prices"],
-                flt(row.final_sell_unit_price),
-            )
+            # Benchmark status: prefer new policy reference, fall back to old single-source
+            br_active = br and flt(br.get("benchmark_reference") or 0) > 0
+            if br_active:
+                # Fix 1: use new multi-source benchmark_reference for status
+                row.benchmark_price = flt(br["benchmark_reference"])  # Fix 4: sync fields
+                self._set_benchmark_status_from_reference(
+                    row, flt(br["benchmark_reference"]), flt(row.final_sell_unit_price),
+                )
+            else:
+                self._set_benchmark_status(
+                    row,
+                    snap["benchmark_price_list"],
+                    snap["benchmark_prices"],
+                    flt(row.final_sell_unit_price),
+                )
 
             total_expenses += flt(row.expense_total)
             total_final += flt(row.final_sell_total)
@@ -1449,6 +1458,32 @@ class PricingSheet(Document):
         else:
             row.benchmark_status = "OK"
             row.benchmark_note = _("Within benchmark range")
+
+    def _set_benchmark_status_from_reference(self, row, benchmark_ref, computed_unit):
+        """Set benchmark status using the new multi-source benchmark_reference.
+
+        Same logic as _set_benchmark_status but uses a pre-computed reference
+        instead of looking up from a single price list.
+        """
+        if not benchmark_ref or flt(benchmark_ref) <= 0:
+            row.benchmark_delta_abs = 0
+            row.benchmark_delta_pct = 0
+            row.benchmark_status = "No Benchmark"
+            row.benchmark_note = _("Benchmark reference is zero")
+            return
+
+        row.benchmark_delta_abs = flt(computed_unit) - flt(benchmark_ref)
+        row.benchmark_delta_pct = (row.benchmark_delta_abs / flt(benchmark_ref)) * 100
+
+        if flt(computed_unit) < flt(benchmark_ref) * 0.8:
+            row.benchmark_status = "Too Low"
+            row.benchmark_note = _("Below benchmark (policy)")
+        elif flt(computed_unit) > flt(benchmark_ref) * 1.1:
+            row.benchmark_status = "Too High"
+            row.benchmark_note = _("Above benchmark (policy)")
+        else:
+            row.benchmark_status = "OK"
+            row.benchmark_note = _("Within benchmark range (policy)")
 
     def _reset_totals(self):
         self.total_buy = 0

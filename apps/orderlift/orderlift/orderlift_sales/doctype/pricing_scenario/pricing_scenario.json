@@ -60,9 +60,10 @@
     {
       "fieldname": "benchmark_price_list",
       "fieldtype": "Link",
-      "label": "Benchmark Price List",
+      "label": "Benchmark Price List (Legacy)",
       "options": "Price List",
-      "default": "Benchmark Selling"
+      "default": "Benchmark Selling",
+      "description": "Deprecated: Use Benchmark Policy on Margin Policy instead. This field is only used when no benchmark policy is active."
     },
     {
       "fieldname": "section_transport",
