@@ -49,6 +49,7 @@
     "applied_margin_rule",
     "applied_scenario_policy",
     "applied_customs_policy",
+    "applied_benchmark_policy",
     "customs_total_applied",
     "projection_warnings"
   ],
@@ -247,6 +248,12 @@
       "read_only": 1
     },
     {
+      "fieldname": "applied_benchmark_policy",
+      "fieldtype": "Data",
+      "label": "Applied Benchmark Policy",
+      "read_only": 1
+    },
+    {
       "fieldname": "customs_total_applied",
       "fieldtype": "Currency",
       "label": "Customs Total Applied",
@@ -336,7 +343,7 @@
   ],
   "is_submittable": 0,
   "links": [],
-  "modified": "2026-02-22 00:00:00.000000",
+  "modified": "2026-03-03 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Sheet",

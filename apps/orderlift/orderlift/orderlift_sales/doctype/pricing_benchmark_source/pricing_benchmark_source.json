@@ -1,0 +1,57 @@
+{
+    "actions": [],
+    "creation": "2026-03-03 00:00:00",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "price_list",
+        "label",
+        "weight",
+        "is_active"
+    ],
+    "fields": [
+        {
+            "fieldname": "price_list",
+            "fieldtype": "Link",
+            "label": "Price List",
+            "options": "Price List",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "label",
+            "fieldtype": "Data",
+            "label": "Label",
+            "in_list_view": 1,
+            "description": "Display name (e.g. Competitor A)"
+        },
+        {
+            "fieldname": "weight",
+            "fieldtype": "Float",
+            "label": "Weight",
+            "default": "1",
+            "in_list_view": 1,
+            "description": "For weighted average method"
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        }
+    ],
+    "istable": 1,
+    "links": [],
+    "modified": "2026-03-03 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Sales",
+    "name": "Pricing Benchmark Source",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

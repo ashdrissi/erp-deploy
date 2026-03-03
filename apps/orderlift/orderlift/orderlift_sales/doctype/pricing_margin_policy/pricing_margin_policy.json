@@ -10,6 +10,10 @@
     "company",
     "is_active",
     "is_default",
+    "column_break_mode",
+    "margin_mode",
+    "benchmark_policy",
+    "fallback_margin_percent",
     "notes",
     "heading_rules",
     "margin_rules"
@@ -49,6 +53,36 @@
       "label": "Notes"
     },
     {
+      "fieldname": "column_break_mode",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "margin_mode",
+      "fieldtype": "Select",
+      "label": "Margin Mode",
+      "options": "Profile-Based\nBenchmark-Driven\nBenchmark then Profile",
+      "default": "Profile-Based",
+      "reqd": 1,
+      "in_list_view": 1,
+      "description": "Profile-Based = old rules. Benchmark-Driven = ratio bands only. Benchmark then Profile = try benchmark, fallback to profile rules."
+    },
+    {
+      "fieldname": "benchmark_policy",
+      "fieldtype": "Link",
+      "label": "Benchmark Policy",
+      "options": "Pricing Benchmark Policy",
+      "depends_on": "eval:doc.margin_mode !== 'Profile-Based'",
+      "mandatory_depends_on": "eval:doc.margin_mode === 'Benchmark-Driven'"
+    },
+    {
+      "fieldname": "fallback_margin_percent",
+      "fieldtype": "Percent",
+      "label": "Fallback Margin %",
+      "default": "10",
+      "depends_on": "eval:doc.margin_mode !== 'Profile-Based'",
+      "description": "Used when benchmark data is insufficient"
+    },
+    {
       "fieldname": "heading_rules",
       "fieldtype": "Heading",
       "label": "Margin Rules"
@@ -63,7 +97,7 @@
   ],
   "is_submittable": 0,
   "links": [],
-  "modified": "2026-02-23 00:00:00.000000",
+  "modified": "2026-03-03 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Margin Policy",

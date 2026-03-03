@@ -10,6 +10,7 @@ from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve
 from orderlift.sales.utils.margin_policy import resolve_margin_rule
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 from orderlift.sales.utils.pricing_projection import apply_expenses
+from orderlift.sales.utils.benchmark_policy import resolve_benchmark_margin
 from orderlift.sales.utils.transport_allocation import compute_transport_allocation
 
 
@@ -31,6 +32,7 @@ class PricingSheet(Document):
             self.applied_margin_policy = ""
             self.applied_margin_rule = ""
             self.applied_customs_policy = ""
+            self.applied_benchmark_policy = ""
             self.calculated_on = now_datetime()
             self.calculated_by = frappe.session.user
             self.calc_runtime_ms = (perf_counter() - started) * 1000
@@ -53,6 +55,12 @@ class PricingSheet(Document):
         customs_policy = self._resolve_customs_policy()
         self.applied_customs_policy = customs_policy.name if customs_policy else ""
 
+        # Resolve benchmark policy (linked from margin policy)
+        benchmark_policy_doc = self._resolve_benchmark_policy(margin_policy)
+        margin_mode = getattr(margin_policy, "margin_mode", None) or "Profile-Based" if margin_policy else "Profile-Based"
+        fallback_margin = flt(getattr(margin_policy, "fallback_margin_percent", None) or 10) if margin_policy else 10
+        self.applied_benchmark_policy = benchmark_policy_doc.name if benchmark_policy_doc else ""
+
         warnings = []
         if margin_policy and margin_rule:
             self.applied_margin_rule = self._format_margin_rule(margin_rule)
@@ -63,7 +71,7 @@ class PricingSheet(Document):
         if not scenario_policy:
             warnings.append(_("No active scenario policy found; scenario falls back to line/bundle/default selection."))
 
-        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
+        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, benchmark_policy_doc=benchmark_policy_doc)
         self._sync_line_override_rows_for_lines(
             lines,
             scenario_caches,
@@ -124,11 +132,52 @@ class PricingSheet(Document):
 
             effective_line_expenses = self._inject_transport_expense(effective_line_expenses, transport_calc)
 
-            line_margin_rule = self._resolve_margin_rule_for_row(row, item_details, margin_policy)
-            if not line_margin_rule:
-                warnings.append(_("Row {0}: no margin rule matched; dynamic margin is 0.").format(row.idx))
+            # --- Benchmark-driven margin resolution ---
+            benchmark_result = None
+            line_margin_rule = None
+            margin_source = ""
 
-            effective_line_expenses = self._inject_margin_expense(effective_line_expenses, line_margin_rule)
+            if margin_mode in ("Benchmark-Driven", "Benchmark then Profile") and benchmark_policy_doc:
+                landed_cost = self._compute_landed_cost(
+                    base_unit, qty, effective_line_expenses, customs_calc, transport_calc
+                )
+                benchmark_result = self._resolve_benchmark_for_row(
+                    row, landed_cost, benchmark_policy_doc, item_details,
+                    cache.get("benchmark_price_map") or {},
+                    line_context,
+                )
+                if benchmark_result and not benchmark_result.get("is_fallback"):
+                    effective_line_expenses = self._inject_benchmark_margin_expense(
+                        effective_line_expenses, benchmark_result
+                    )
+                    margin_source = "Benchmark"
+                elif margin_mode == "Benchmark then Profile":
+                    # Benchmark failed, try profile-based
+                    line_margin_rule = self._resolve_margin_rule_for_row(row, item_details, margin_policy)
+                    if line_margin_rule:
+                        effective_line_expenses = self._inject_margin_expense(effective_line_expenses, line_margin_rule)
+                        margin_source = "Profile"
+                    else:
+                        # Use fallback margin from benchmark result
+                        effective_line_expenses = self._inject_fallback_margin_expense(
+                            effective_line_expenses, benchmark_result, fallback_margin
+                        )
+                        margin_source = "Fallback"
+                else:
+                    # Benchmark-Driven mode but benchmark failed, use fallback
+                    effective_line_expenses = self._inject_fallback_margin_expense(
+                        effective_line_expenses, benchmark_result, fallback_margin
+                    )
+                    margin_source = "Fallback"
+                for w in (benchmark_result or {}).get("warnings") or []:
+                    warnings.append(_("Row {0}: {1}").format(row.idx, w))
+            else:
+                # Profile-Based mode (original behavior)
+                line_margin_rule = self._resolve_margin_rule_for_row(row, item_details, margin_policy)
+                if not line_margin_rule:
+                    warnings.append(_("Row {0}: no margin rule matched; dynamic margin is 0.").format(row.idx))
+                effective_line_expenses = self._inject_margin_expense(effective_line_expenses, line_margin_rule)
+                margin_source = "Profile"
 
             pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=effective_line_expenses)
             line_snapshots.append(
@@ -146,6 +195,8 @@ class PricingSheet(Document):
                     "customs_calc": customs_calc,
                     "transport_calc": transport_calc,
                     "line_margin_rule": line_margin_rule,
+                    "benchmark_result": benchmark_result,
+                    "margin_source": margin_source,
                 }
             )
             total_base += base_amount
@@ -240,6 +291,16 @@ class PricingSheet(Document):
             row.transport_basis_total = flt(transport_calc.get("denominator") or 0)
             row.transport_numerator = flt(transport_calc.get("numerator") or 0)
             row.transport_allocated = flt(transport_calc.get("applied") or 0)
+
+            # Benchmark trace fields
+            br = snap.get("benchmark_result") or {}
+            row.benchmark_reference = flt(br.get("benchmark_reference") or 0)
+            row.benchmark_source_count = cint(br.get("source_count") or 0)
+            row.benchmark_ratio = flt(br.get("ratio") or 0)
+            row.benchmark_method = br.get("method") or ""
+            matched_br = br.get("matched_rule") or {}
+            row.resolved_benchmark_rule = self._format_benchmark_rule(matched_br) if matched_br else ""
+            row.margin_source = snap.get("margin_source") or ""
 
             row.price_floor_violation = 1 if flt(row.final_sell_unit_price) < 0 else 0
             if row.price_floor_violation:
@@ -862,6 +923,108 @@ class PricingSheet(Document):
             exp["expense_key"] = exp.get("expense_key") or make_expense_key(exp)
         return out
 
+    # --- Benchmark-driven margin helpers ---
+
+    def _resolve_benchmark_policy(self, margin_policy):
+        """Fetch the Pricing Benchmark Policy linked from the margin policy."""
+        if not margin_policy:
+            return None
+        bp_name = getattr(margin_policy, "benchmark_policy", None) or ""
+        if not bp_name:
+            return None
+        try:
+            return frappe.get_doc("Pricing Benchmark Policy", bp_name)
+        except frappe.DoesNotExistError:
+            return None
+
+    def _compute_landed_cost(self, base_unit, qty, expenses, customs_calc, transport_calc):
+        """Compute landed cost = base + all expenses EXCEPT margin.
+
+        This runs apply_expenses on the non-margin expenses to get the
+        fully-loaded cost before any margin is applied.
+        """
+        # expenses list before margin injection already excludes margin
+        pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=expenses)
+        landed = flt(pricing["projected_unit"])
+        # Add customs (per-unit equivalent)
+        if customs_calc and flt(customs_calc.get("applied")):
+            landed += flt(customs_calc["applied"]) / qty if qty else 0
+        return landed
+
+    def _resolve_benchmark_for_row(self, row, landed_cost, benchmark_policy_doc, item_details, price_map, line_context):
+        """Resolve benchmark margin for a single pricing line."""
+        sources = [
+            {
+                "price_list": src.price_list,
+                "label": src.label or src.price_list,
+                "weight": flt(src.weight) or 1.0,
+                "is_active": cint(src.is_active),
+            }
+            for src in benchmark_policy_doc.benchmark_sources or []
+        ]
+        rules = [
+            {
+                "ratio_min": flt(r.ratio_min),
+                "ratio_max": flt(r.ratio_max),
+                "target_margin_percent": flt(r.target_margin_percent),
+                "item": r.item or "",
+                "item_group": r.item_group or "",
+                "material": r.material or "",
+                "source_bundle": r.source_bundle or "",
+                "geography_territory": r.geography_territory or "",
+                "priority": cint(r.priority or 10),
+                "sequence": cint(r.sequence or 90),
+                "is_active": cint(r.is_active),
+                "idx": cint(r.idx or 0),
+            }
+            for r in benchmark_policy_doc.benchmark_rules or []
+        ]
+
+        return resolve_benchmark_margin(
+            item_code=row.item,
+            landed_cost=landed_cost,
+            benchmark_sources=sources,
+            benchmark_rules=rules,
+            method=benchmark_policy_doc.method or "Median",
+            min_sources=cint(benchmark_policy_doc.min_sources_required or 2),
+            fallback_margin=flt(benchmark_policy_doc.fallback_margin_percent or 10),
+            price_map=price_map,
+            context=line_context,
+        )
+
+    def _inject_benchmark_margin_expense(self, expenses, benchmark_result):
+        """Inject margin expense from benchmark result."""
+        if not benchmark_result:
+            return expenses
+        margin_pct = flt(benchmark_result.get("target_margin_percent"))
+        matched_rule = benchmark_result.get("matched_rule") or {}
+        return self._inject_margin_expense(expenses, {
+            "margin_percent": margin_pct,
+            "sequence": cint(matched_rule.get("sequence") or 90),
+        })
+
+    def _inject_fallback_margin_expense(self, expenses, benchmark_result, fallback_margin):
+        """Inject fallback margin when benchmark data insufficient."""
+        margin_pct = flt(
+            (benchmark_result or {}).get("target_margin_percent") or fallback_margin
+        )
+        return self._inject_margin_expense(expenses, {
+            "margin_percent": margin_pct,
+            "sequence": 90,
+        })
+
+    def _format_benchmark_rule(self, rule):
+        """Format a benchmark rule for display."""
+        if not rule:
+            return ""
+        scope = rule.get("item") or rule.get("item_group") or rule.get("material") or "Any"
+        return _("Ratio {0}-{1}: {2}% ({3})").format(
+            f"{flt(rule.get('ratio_min')):.2f}",
+            f"{flt(rule.get('ratio_max')):.2f}" if flt(rule.get("ratio_max")) > 0 else "∞",
+            flt(rule.get("target_margin_percent")),
+            scope,
+        )
+
     def _inject_transport_expense(self, expenses, transport_calc):
         applied = flt((transport_calc or {}).get("applied") or 0)
         if applied <= 0:
@@ -943,7 +1106,19 @@ class PricingSheet(Document):
             "Base Price",
         )
 
-    def _build_scenario_caches(self, scenario_docs, item_codes):
+    def _build_scenario_caches(self, scenario_docs, item_codes, benchmark_policy_doc=None):
+        # Pre-fetch benchmark prices from all sources in the benchmark policy
+        benchmark_price_map = {}
+        if benchmark_policy_doc:
+            for src in benchmark_policy_doc.benchmark_sources or []:
+                if not cint(src.is_active):
+                    continue
+                pl = src.price_list
+                if pl and pl not in benchmark_price_map:
+                    benchmark_price_map[pl] = get_latest_item_prices(
+                        item_codes, pl, buying=False
+                    )
+
         caches = {}
         for name, scenario in scenario_docs.items():
             buying_price_list = scenario.buying_price_list or "Buying"
@@ -966,6 +1141,7 @@ class PricingSheet(Document):
                 "benchmark_price_list": benchmark_price_list,
                 "buy_prices": get_latest_item_prices(item_codes, buying_price_list, buying=True),
                 "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=False),
+                "benchmark_price_map": benchmark_price_map,
                 "line_expenses": line_expenses,
                 "sheet_fixed_total": sheet_fixed_total,
                 "transport_config": self._extract_transport_config(scenario),

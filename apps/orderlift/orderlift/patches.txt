@@ -7,3 +7,4 @@ orderlift.patches.v1_0.create_default_margin_policy
 orderlift.patches.v1_0.create_default_customs_policy
 orderlift.patches.v1_0.create_default_scenario_policy
 orderlift.patches.v1_0.normalize_applies_to_base_price
+orderlift.patches.v1_0.create_default_benchmark_policy

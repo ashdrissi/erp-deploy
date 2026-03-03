@@ -1,0 +1,118 @@
+{
+    "actions": [],
+    "creation": "2026-03-03 00:00:00",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "ratio_min",
+        "ratio_max",
+        "target_margin_percent",
+        "item",
+        "item_group",
+        "material",
+        "source_bundle",
+        "geography_territory",
+        "priority",
+        "sequence",
+        "is_active",
+        "notes"
+    ],
+    "fields": [
+        {
+            "fieldname": "ratio_min",
+            "fieldtype": "Float",
+            "label": "Ratio Min",
+            "reqd": 1,
+            "default": "0",
+            "in_list_view": 1,
+            "description": "Lower bound (inclusive) of landed_cost / benchmark_ref"
+        },
+        {
+            "fieldname": "ratio_max",
+            "fieldtype": "Float",
+            "label": "Ratio Max",
+            "default": "0",
+            "in_list_view": 1,
+            "description": "Upper bound (exclusive). 0 = unlimited"
+        },
+        {
+            "fieldname": "target_margin_percent",
+            "fieldtype": "Percent",
+            "label": "Target Margin %",
+            "reqd": 1,
+            "default": "0",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "item",
+            "fieldtype": "Link",
+            "label": "Item",
+            "options": "Item",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "item_group",
+            "fieldtype": "Link",
+            "label": "Item Group",
+            "options": "Item Group"
+        },
+        {
+            "fieldname": "material",
+            "fieldtype": "Select",
+            "label": "Material",
+            "options": "\nSTEEL\nALUM\nGALVA\nINOX\nCOPPER\nOTHER"
+        },
+        {
+            "fieldname": "source_bundle",
+            "fieldtype": "Link",
+            "label": "Product Bundle",
+            "options": "Product Bundle"
+        },
+        {
+            "fieldname": "geography_territory",
+            "fieldtype": "Link",
+            "label": "Territory",
+            "options": "Territory"
+        },
+        {
+            "fieldname": "priority",
+            "fieldtype": "Int",
+            "label": "Priority",
+            "default": "10",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "sequence",
+            "fieldtype": "Int",
+            "label": "Sequence",
+            "default": "90",
+            "in_list_view": 1,
+            "description": "Expense injection sequence"
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "notes",
+            "fieldtype": "Small Text",
+            "label": "Notes"
+        }
+    ],
+    "istable": 1,
+    "links": [],
+    "modified": "2026-03-03 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Sales",
+    "name": "Pricing Benchmark Rule",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}
