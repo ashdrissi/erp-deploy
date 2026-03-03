@@ -6,6 +6,7 @@
     "document_type": "Document",
     "engine": "InnoDB",
     "field_order": [
+        "section_identity",
         "policy_name",
         "company",
         "is_active",
@@ -14,13 +15,21 @@
         "method",
         "min_sources_required",
         "fallback_margin_percent",
+        "section_notes",
         "notes",
-        "heading_sources",
+        "section_sources",
+        "sources_help_html",
         "benchmark_sources",
-        "heading_rules",
+        "section_rules",
+        "rules_help_html",
         "benchmark_rules"
     ],
     "fields": [
+        {
+            "fieldname": "section_identity",
+            "fieldtype": "Section Break",
+            "label": "Policy Settings"
+        },
         {
             "fieldname": "policy_name",
             "fieldtype": "Data",
@@ -79,14 +88,26 @@
             "description": "Used when benchmark data is insufficient"
         },
         {
+            "fieldname": "section_notes",
+            "fieldtype": "Section Break",
+            "label": "Notes",
+            "collapsible": 1
+        },
+        {
             "fieldname": "notes",
             "fieldtype": "Small Text",
             "label": "Notes"
         },
         {
-            "fieldname": "heading_sources",
-            "fieldtype": "Heading",
+            "fieldname": "section_sources",
+            "fieldtype": "Section Break",
             "label": "Benchmark Sources"
+        },
+        {
+            "fieldname": "sources_help_html",
+            "fieldtype": "HTML",
+            "label": "Sources Help",
+            "options": ""
         },
         {
             "fieldname": "benchmark_sources",
@@ -96,9 +117,15 @@
             "reqd": 1
         },
         {
-            "fieldname": "heading_rules",
-            "fieldtype": "Heading",
+            "fieldname": "section_rules",
+            "fieldtype": "Section Break",
             "label": "Ratio-Band Rules"
+        },
+        {
+            "fieldname": "rules_help_html",
+            "fieldtype": "HTML",
+            "label": "Rules Help",
+            "options": ""
         },
         {
             "fieldname": "benchmark_rules",
@@ -110,7 +137,7 @@
     ],
     "is_submittable": 0,
     "links": [],
-    "modified": "2026-03-03 00:00:00.000000",
+    "modified": "2026-03-03 21:00:00.000000",
     "modified_by": "Administrator",
     "module": "Orderlift Sales",
     "name": "Pricing Benchmark Policy",

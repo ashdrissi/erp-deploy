@@ -6,6 +6,7 @@
   "document_type": "Document",
   "engine": "InnoDB",
   "field_order": [
+    "section_identity",
     "policy_name",
     "company",
     "is_active",
@@ -14,11 +15,19 @@
     "margin_mode",
     "benchmark_policy",
     "fallback_margin_percent",
+    "section_notes",
     "notes",
-    "heading_rules",
+    "section_benchmark_help",
+    "benchmark_help_html",
+    "section_rules",
     "margin_rules"
   ],
   "fields": [
+    {
+      "fieldname": "section_identity",
+      "fieldtype": "Section Break",
+      "label": "Policy Settings"
+    },
     {
       "fieldname": "policy_name",
       "fieldtype": "Data",
@@ -48,11 +57,6 @@
       "in_list_view": 1
     },
     {
-      "fieldname": "notes",
-      "fieldtype": "Small Text",
-      "label": "Notes"
-    },
-    {
       "fieldname": "column_break_mode",
       "fieldtype": "Column Break"
     },
@@ -63,8 +67,7 @@
       "options": "Profile-Based\nBenchmark-Driven\nBenchmark then Profile",
       "default": "Profile-Based",
       "reqd": 1,
-      "in_list_view": 1,
-      "description": "Profile-Based = old rules. Benchmark-Driven = ratio bands only. Benchmark then Profile = try benchmark, fallback to profile rules."
+      "in_list_view": 1
     },
     {
       "fieldname": "benchmark_policy",
@@ -83,8 +86,33 @@
       "description": "Used when benchmark data is insufficient"
     },
     {
-      "fieldname": "heading_rules",
-      "fieldtype": "Heading",
+      "fieldname": "section_notes",
+      "fieldtype": "Section Break",
+      "label": "Notes",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    },
+    {
+      "fieldname": "section_benchmark_help",
+      "fieldtype": "Section Break",
+      "label": "How Margin Mode Works",
+      "depends_on": "eval:doc.margin_mode !== 'Profile-Based'",
+      "collapsible": 1,
+      "collapsible_depends_on": "eval:!doc.__islocal"
+    },
+    {
+      "fieldname": "benchmark_help_html",
+      "fieldtype": "HTML",
+      "label": "Benchmark Help",
+      "depends_on": "eval:doc.margin_mode !== 'Profile-Based'"
+    },
+    {
+      "fieldname": "section_rules",
+      "fieldtype": "Section Break",
       "label": "Margin Rules"
     },
     {
@@ -97,7 +125,7 @@
   ],
   "is_submittable": 0,
   "links": [],
-  "modified": "2026-03-03 00:00:00.000000",
+  "modified": "2026-03-03 21:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Sales",
   "name": "Pricing Margin Policy",
