@@ -20,6 +20,7 @@
     "transport_total_merch_value",
     "transport_total_weight_kg",
     "transport_total_volume_m3",
+    "section_flow",
     "expense_help_html",
     "expenses"
   ],
@@ -114,6 +115,11 @@
       "fieldtype": "Float",
       "label": "Total Volume in Container (m3)",
       "default": "0"
+    },
+    {
+      "fieldname": "section_flow",
+      "fieldtype": "Section Break",
+      "label": "Pricing Flow"
     },
     {
       "fieldname": "expense_help_html",

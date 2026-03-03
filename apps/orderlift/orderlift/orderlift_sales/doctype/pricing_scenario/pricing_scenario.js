@@ -35,8 +35,48 @@ function renderExpenseGuide(frm) {
     frm.fields_dict.expense_help_html.$wrapper.html(html);
 }
 
+function ensureScenarioLayoutStyles() {
+    if (document.getElementById("pricing-scenario-layout-style")) {
+        return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "pricing-scenario-layout-style";
+    style.textContent = `
+        .ps-scenario-flow-fullwidth .section-body > .form-column {
+            width: 100%;
+            max-width: 100%;
+            flex: 0 0 100%;
+        }
+
+        .ps-scenario-flow-fullwidth .section-body > .form-column:empty {
+            display: none;
+        }
+
+        .ps-scenario-flow-fullwidth .grid-field {
+            width: 100%;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function applyFlowSectionFullWidth(frm) {
+    const field = frm.fields_dict.expense_help_html;
+    if (!field || !field.$wrapper) {
+        return;
+    }
+
+    const $section = field.$wrapper.closest(".form-section");
+    if ($section && $section.length) {
+        $section.addClass("ps-scenario-flow-fullwidth");
+    }
+}
+
 frappe.ui.form.on("Pricing Scenario", {
     refresh(frm) {
+        ensureScenarioLayoutStyles();
+        applyFlowSectionFullWidth(frm);
+
         frm.add_custom_button(__("Add Starter Expenses"), () => {
             if ((frm.doc.expenses || []).length) {
                 frappe.show_alert({ message: __("Expenses already exist"), indicator: "orange" });
@@ -61,10 +101,12 @@ frappe.ui.form.on("Pricing Scenario", {
 
             frm.refresh_field("expenses");
             renderExpenseGuide(frm);
+            applyFlowSectionFullWidth(frm);
             frappe.show_alert({ message: __("Starter expenses added"), indicator: "green" });
         });
 
         renderExpenseGuide(frm);
+        applyFlowSectionFullWidth(frm);
     },
 
     transport_is_active: renderExpenseGuide,
