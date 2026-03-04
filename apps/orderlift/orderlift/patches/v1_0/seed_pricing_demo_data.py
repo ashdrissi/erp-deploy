@@ -152,46 +152,53 @@ def _seed_agent_pricing_rules():
         if frappe.db.exists("Agent Pricing Rules", {"sales_person": sp}):
             continue
 
-        apr = frappe.new_doc("Agent Pricing Rules")
-        apr.sales_person = sp
+        try:
+            apr = frappe.new_doc("Agent Pricing Rules")
+            apr.sales_person = sp
 
-        if i % 2 == 0:
-            # Dynamic mode
-            apr.pricing_mode = "Dynamic Calculation Engine"
-            apr.max_discount_percent = 15
+            if i % 2 == 0:
+                # Dynamic mode
+                apr.pricing_mode = "Dynamic Calculation Engine"
+                apr.max_discount_percent = 15
 
-            # Set default policies if they exist
-            buying_list = frappe.db.get_value("Price List", {"buying": 1}, "name")
-            if buying_list:
-                apr.default_buying_price_list = buying_list
+                # Set default policies if they exist
+                buying_list = frappe.db.get_value("Price List", {"buying": 1}, "name")
+                if buying_list:
+                    apr.default_buying_price_list = buying_list
 
-            margin_policy = frappe.db.get_value("Pricing Margin Policy", {"is_active": 1}, "name")
-            if margin_policy:
-                apr.default_margin_policy = margin_policy
+                if frappe.db.exists("DocType", "Pricing Margin Rule"):
+                    margin_policy = frappe.db.get_value("Pricing Margin Rule", {}, "name")
+                    if margin_policy:
+                        apr.default_margin_policy = margin_policy
 
-            customs_policy = frappe.db.get_value("Pricing Customs Policy", {"is_active": 1}, "name")
-            if customs_policy:
-                apr.default_customs_policy = customs_policy
+                if frappe.db.exists("DocType", "Pricing Customs Policy"):
+                    customs_policy = frappe.db.get_value("Pricing Customs Policy", {}, "name")
+                    if customs_policy:
+                        apr.default_customs_policy = customs_policy
 
-            scenario = frappe.db.get_value("Pricing Scenario", {"is_active": 1}, "name")
-            if scenario:
-                apr.default_expense_policy = scenario
-        else:
-            # Static mode
-            apr.pricing_mode = "Pick from Published Selling Price List"
-            apr.max_discount_percent = 10
+                if frappe.db.exists("DocType", "Pricing Scenario"):
+                    scenario = frappe.db.get_value("Pricing Scenario", {}, "name")
+                    if scenario:
+                        apr.default_expense_policy = scenario
+            else:
+                # Static mode
+                apr.pricing_mode = "Pick from Published Selling Price List"
+                apr.max_discount_percent = 10
 
-            selling_lists = frappe.get_all(
-                "Price List", filters={"selling": 1}, pluck="name", limit_page_length=3
-            )
-            for seq, pl in enumerate(selling_lists):
-                apr.append("allocated_price_lists", {
-                    "selling_price_list": pl,
-                    "default_sequence": (seq + 1) * 10,
-                    "is_active": 1,
-                })
+                selling_lists = frappe.get_all(
+                    "Price List", filters={"selling": 1}, pluck="name", limit_page_length=3
+                )
+                for seq, pl in enumerate(selling_lists):
+                    apr.append("allocated_price_lists", {
+                        "selling_price_list": pl,
+                        "default_sequence": (seq + 1) * 10,
+                        "is_active": 1,
+                    })
 
-        apr.insert(ignore_permissions=True)
+            apr.insert(ignore_permissions=True)
+        except Exception:
+            frappe.log_error(f"Failed to seed Agent Pricing Rules for {sp}")
+            frappe.clear_messages()
 
 
 # ─────────────────────────────────────────────────────
