@@ -16,8 +16,7 @@ required_apps = ["frappe"]
 # Assets — injected into Desk for all logged-in users
 # ---------------------------------------------------------
 app_include_css = [
-    "/assets/custom_desk_theme/css/theme_20260220_2015.css?v=20260222-1",
-]   
+]
 app_include_js = ["/assets/custom_desk_theme/js/custom_theme.js?v=20260222-1"]
 
 # ---------------------------------------------------------

@@ -341,8 +341,8 @@ $(document).ready(() => {
 												frappe.msgprint(
 													__(
 														"Language switched to " +
-															values.language.split(" - ")[0] +
-															". Reloading..."
+														values.language.split(" - ")[0] +
+														". Reloading..."
 													)
 												);
 												location.reload();
@@ -461,45 +461,45 @@ $(document).ready(() => {
 	mo.observe(document.body, { childList: true, subtree: true });
 })();
 (function () {
-  const titleStyle = `
+	const titleStyle = `
     color: #00E5FF;
     font-size: 28px;
     font-weight: 700;
     text-shadow: 1px 1px 2px #000;
   `;
 
-  const textStyle = `
+	const textStyle = `
     color: #B2EBF2;
     font-size: 13px;
   `;
 
-  const warnStyle = `
+	const warnStyle = `
     color: #FF5252;
     font-size: 14px;
     font-weight: bold;
   `;
 
-  const linkStyle = `
+	const linkStyle = `
     color: #80DEEA;
     font-size: 12px;
     text-decoration: underline;
   `;
 
-  console.clear();
+	console.clear();
 
-  console.log("%cInfintrix Technologies LLC", titleStyle);
-  console.log(
-    "%cERPNext Implementation • AI Automation • Custom Engineering Systems",
-    textStyle
-  );
-  console.log(
-    "%c⚠️  Unauthorized modification may break core business logic",
-    warnStyle
-  );
-  console.log(
-    "%chttps://infintrixtech.com",
-    linkStyle
-  );
+	console.log("%cInfintrix Technologies LLC", titleStyle);
+	console.log(
+		"%cERPNext Implementation • AI Automation • Custom Engineering Systems",
+		textStyle
+	);
+	console.log(
+		"%c⚠️  Unauthorized modification may break core business logic",
+		warnStyle
+	);
+	console.log(
+		"%chttps://infintrixtech.com",
+		linkStyle
+	);
 })();
 
 
@@ -543,3 +543,25 @@ $(document).ready(() => {
 //   const mo = new MutationObserver(() => processAll());
 //   mo.observe(document.body, { childList: true, subtree: true });
 // })();
+
+(function renameERPNextText() {
+	function updateSubtitle() {
+		document.querySelectorAll('span, div, p, a, h1, h2, h3, h4, h5, h6, label').forEach(el => {
+			if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+				if (el.textContent.trim() === 'ERPNext') {
+					el.textContent = 'Orderlift';
+				} else if (el.textContent.trim() === 'ERPNext Settings') {
+					el.textContent = 'Orderlift Settings';
+				}
+			}
+		});
+	}
+	const observer = new MutationObserver(() => updateSubtitle());
+	if (document.body) {
+		observer.observe(document.body, { childList: true, subtree: true });
+	} else {
+		document.addEventListener("DOMContentLoaded", () => {
+			observer.observe(document.body, { childList: true, subtree: true });
+		});
+	}
+})();
