@@ -103,7 +103,7 @@
       "fieldname": "scenario_source",
       "fieldtype": "Select",
       "label": "Scenario Source",
-      "options": "Line\nBundle Rule\nSheet Default",
+      "options": "Line\nBundle Rule\nPolicy Rule\nSheet Default",
       "read_only": 1,
       "in_list_view": 1
     },
