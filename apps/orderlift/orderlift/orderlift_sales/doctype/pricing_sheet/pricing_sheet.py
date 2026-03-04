@@ -61,6 +61,9 @@ class PricingSheet(Document):
         fallback_margin = flt(getattr(margin_policy, "fallback_margin_percent", None) or 10) if margin_policy else 10
         self.applied_benchmark_policy = benchmark_policy_doc.name if benchmark_policy_doc else ""
 
+        # Resolve dynamic modifiers (tier & zone) from benchmark policy
+        tier_mod, zone_mod = self._resolve_dynamic_modifiers(benchmark_policy_doc)
+
         warnings = []
         if margin_policy and margin_rule:
             self.applied_margin_rule = self._format_margin_rule(margin_rule)
@@ -178,6 +181,13 @@ class PricingSheet(Document):
                     warnings.append(_("Row {0}: no margin rule matched; dynamic margin is 0.").format(row.idx))
                 effective_line_expenses = self._inject_margin_expense(effective_line_expenses, line_margin_rule)
                 margin_source = "Profile"
+
+            # --- Inject dynamic modifiers (Tier & Zone) ---
+            effective_line_expenses, row_tier_mod, row_zone_mod = self._inject_modifier_expenses(
+                effective_line_expenses, tier_mod, zone_mod
+            )
+            row.tier_modifier_amount = row_tier_mod
+            row.zone_modifier_amount = row_zone_mod
 
             pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=effective_line_expenses)
             line_snapshots.append(
@@ -931,6 +941,96 @@ class PricingSheet(Document):
         for exp in out:
             exp["expense_key"] = exp.get("expense_key") or make_expense_key(exp)
         return out
+
+    def _resolve_dynamic_modifiers(self, benchmark_policy_doc):
+        """Resolve tier and zone modifiers from the benchmark policy.
+
+        Returns (tier_mod_dict, zone_mod_dict) — each is a dict with
+        'amount', 'type' ('Fixed'|'Percentage'), 'label', or None if
+        no match.
+        """
+        tier_mod = None
+        zone_mod = None
+        if not benchmark_policy_doc:
+            return tier_mod, zone_mod
+
+        sheet_tier = (self.tier or "").strip()
+        sheet_territory = (self.geography_territory or "").strip()
+
+        # Match tier modifier
+        if sheet_tier:
+            for row in (benchmark_policy_doc.get("tier_modifiers") or []):
+                if not row.get("is_active"):
+                    continue
+                if (row.get("tier") or "").strip() == sheet_tier:
+                    tier_mod = {
+                        "amount": flt(row.get("modifier_amount")),
+                        "type": row.get("modifier_type") or "Fixed",
+                        "label": "Tier: {}".format(sheet_tier),
+                    }
+                    break
+
+        # Match zone modifier
+        if sheet_territory:
+            for row in (benchmark_policy_doc.get("zone_modifiers") or []):
+                if not row.get("is_active"):
+                    continue
+                if (row.get("territory") or "").strip() == sheet_territory:
+                    zone_mod = {
+                        "amount": flt(row.get("modifier_amount")),
+                        "type": row.get("modifier_type") or "Fixed",
+                        "label": "Zone: {}".format(sheet_territory),
+                    }
+                    break
+
+        return tier_mod, zone_mod
+
+    def _inject_modifier_expenses(self, expenses, tier_mod, zone_mod):
+        """Inject tier and zone modifiers as additional expenses.
+
+        Returns (updated_expenses, tier_amount, zone_amount).
+        """
+        out = list(expenses or [])
+        tier_amount = 0.0
+        zone_amount = 0.0
+
+        if tier_mod and flt(tier_mod["amount"]) != 0:
+            tier_amount = flt(tier_mod["amount"])
+            exp_type = "Percentage" if tier_mod["type"] == "Percentage" else "Fixed"
+            tier_expense = {
+                "label": "Tier Modifier ({})".format(tier_mod["label"]),
+                "type": exp_type,
+                "value": tier_amount,
+                "applies_to": "Base Price",
+                "scope": "Per Unit",
+                "sequence": 95,
+                "is_active": 1,
+                "is_overridden": 0,
+                "override_source": "tier_modifier",
+            }
+            out.append(tier_expense)
+
+        if zone_mod and flt(zone_mod["amount"]) != 0:
+            zone_amount = flt(zone_mod["amount"])
+            exp_type = "Percentage" if zone_mod["type"] == "Percentage" else "Fixed"
+            zone_expense = {
+                "label": "Zone Modifier ({})".format(zone_mod["label"]),
+                "type": exp_type,
+                "value": zone_amount,
+                "applies_to": "Base Price",
+                "scope": "Per Unit",
+                "sequence": 96,
+                "is_active": 1,
+                "is_overridden": 0,
+                "override_source": "zone_modifier",
+            }
+            out.append(zone_expense)
+
+        out = sorted(out, key=lambda x: (cint(x.get("sequence")), cint(x.get("idx") or 0)))
+        for exp in out:
+            exp["expense_key"] = exp.get("expense_key") or make_expense_key(exp)
+
+        return out, tier_amount, zone_amount
 
     # --- Benchmark-driven margin helpers ---
 

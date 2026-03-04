@@ -57,6 +57,8 @@
     "benchmark_method",
     "resolved_benchmark_rule",
     "margin_source",
+    "tier_modifier_amount",
+    "zone_modifier_amount",
     "pricing_breakdown_json",
     "breakdown_preview"
   ],
@@ -397,6 +399,20 @@
       "options": "\nBenchmark\nProfile\nFallback",
       "read_only": 1,
       "in_list_view": 1
+    },
+    {
+      "fieldname": "tier_modifier_amount",
+      "fieldtype": "Currency",
+      "label": "Tier Modifier",
+      "read_only": 1,
+      "description": "Dynamic adjustment applied based on customer tier"
+    },
+    {
+      "fieldname": "zone_modifier_amount",
+      "fieldtype": "Currency",
+      "label": "Zone Modifier",
+      "read_only": 1,
+      "description": "Dynamic adjustment applied based on territory/zone"
     },
     {
       "fieldname": "pricing_breakdown_json",

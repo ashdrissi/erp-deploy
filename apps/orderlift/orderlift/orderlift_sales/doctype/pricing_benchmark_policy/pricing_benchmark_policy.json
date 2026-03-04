@@ -22,7 +22,12 @@
         "benchmark_sources",
         "section_rules",
         "rules_help_html",
-        "benchmark_rules"
+        "benchmark_rules",
+        "section_modifiers",
+        "modifiers_help_html",
+        "tier_modifiers",
+        "column_break_modifiers",
+        "zone_modifiers"
     ],
     "fields": [
         {
@@ -133,6 +138,33 @@
             "label": "Benchmark Rules",
             "options": "Pricing Benchmark Rule",
             "reqd": 1
+        },
+        {
+            "fieldname": "section_modifiers",
+            "fieldtype": "Section Break",
+            "label": "Dynamic Modifiers (Tier & Zoning)"
+        },
+        {
+            "fieldname": "modifiers_help_html",
+            "fieldtype": "HTML",
+            "label": "Modifiers Help",
+            "options": ""
+        },
+        {
+            "fieldname": "tier_modifiers",
+            "fieldtype": "Table",
+            "label": "Tier Modifiers",
+            "options": "Pricing Tier Modifier"
+        },
+        {
+            "fieldname": "column_break_modifiers",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "zone_modifiers",
+            "fieldtype": "Table",
+            "label": "Zone Modifiers",
+            "options": "Pricing Zone Modifier"
         }
     ],
     "is_submittable": 0,

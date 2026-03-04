@@ -1,0 +1,60 @@
+{
+    "actions": [],
+    "creation": "2026-03-04 00:00:00",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "territory",
+        "modifier_amount",
+        "modifier_type",
+        "is_active"
+    ],
+    "fields": [
+        {
+            "fieldname": "territory",
+            "fieldtype": "Link",
+            "label": "Territory (Zone)",
+            "options": "Territory",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "modifier_amount",
+            "fieldtype": "Currency",
+            "label": "Modifier Amount",
+            "default": "0",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Positive = surcharge, Negative = discount (in MAD)"
+        },
+        {
+            "fieldname": "modifier_type",
+            "fieldtype": "Select",
+            "label": "Type",
+            "options": "Fixed\nPercentage",
+            "default": "Fixed",
+            "in_list_view": 1,
+            "description": "Fixed (MAD) or Percentage of computed unit price"
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        }
+    ],
+    "istable": 1,
+    "links": [],
+    "modified": "2026-03-04 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Sales",
+    "name": "Pricing Zone Modifier",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}
