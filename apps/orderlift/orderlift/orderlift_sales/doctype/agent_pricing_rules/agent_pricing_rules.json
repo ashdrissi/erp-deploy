@@ -1,0 +1,167 @@
+{
+    "actions": [],
+    "autoname": "format:APR-{sales_person}",
+    "creation": "2026-03-04 00:00:00",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "engine": "InnoDB",
+    "field_order": [
+        "section_profile",
+        "sales_person",
+        "max_discount_percent",
+        "column_break_profile",
+        "pricing_mode",
+        "section_dynamic",
+        "dynamic_help_html",
+        "default_buying_price_list",
+        "default_margin_policy",
+        "column_break_dynamic",
+        "default_expense_policy",
+        "default_customs_policy",
+        "section_static",
+        "static_help_html",
+        "allocated_price_lists"
+    ],
+    "fields": [
+        {
+            "fieldname": "section_profile",
+            "fieldtype": "Section Break",
+            "label": "Agent Profiling & Core Settings"
+        },
+        {
+            "fieldname": "sales_person",
+            "fieldtype": "Link",
+            "label": "Agent / Sales Rep",
+            "options": "Sales Person",
+            "reqd": 1,
+            "unique": 1,
+            "in_list_view": 1,
+            "in_standard_filter": 1
+        },
+        {
+            "fieldname": "max_discount_percent",
+            "fieldtype": "Percent",
+            "label": "Maximum Allowed Discount (%)",
+            "default": "10",
+            "description": "Cannot go above this discount margin globally on their pricing sheets."
+        },
+        {
+            "fieldname": "column_break_profile",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "pricing_mode",
+            "fieldtype": "Select",
+            "label": "Mode of Price Calculation",
+            "options": "Pick from Published Selling Price List\nDynamic Calculation Engine",
+            "default": "Pick from Published Selling Price List",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Static = pick from published lists. Dynamic = engine runs the pipeline calculation."
+        },
+        {
+            "fieldname": "section_dynamic",
+            "fieldtype": "Section Break",
+            "label": "Dynamic Calculation Mode Defaults",
+            "depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'"
+        },
+        {
+            "fieldname": "dynamic_help_html",
+            "fieldtype": "HTML",
+            "label": "Dynamic Help",
+            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>If \"Dynamic Calculation Engine\" is selected, the agent will use these globally configured lists and policies whenever they start a new calculation.</p>"
+        },
+        {
+            "fieldname": "default_buying_price_list",
+            "fieldtype": "Link",
+            "label": "Base Buying Price List",
+            "options": "Price List",
+            "mandatory_depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'"
+        },
+        {
+            "fieldname": "default_margin_policy",
+            "fieldtype": "Link",
+            "label": "Margin Policy",
+            "options": "Pricing Margin Rule"
+        },
+        {
+            "fieldname": "column_break_dynamic",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "default_expense_policy",
+            "fieldtype": "Link",
+            "label": "Expenses Policy (Pricing Scenario)",
+            "options": "Pricing Scenario"
+        },
+        {
+            "fieldname": "default_customs_policy",
+            "fieldtype": "Link",
+            "label": "Customs Policy",
+            "options": "Pricing Customs Policy"
+        },
+        {
+            "fieldname": "section_static",
+            "fieldtype": "Section Break",
+            "label": "Allocated Selling Price Lists",
+            "depends_on": "eval:doc.pricing_mode=='Pick from Published Selling Price List'"
+        },
+        {
+            "fieldname": "static_help_html",
+            "fieldtype": "HTML",
+            "label": "Static Help",
+            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>If \"Pick from Published List\" is selected, the agent is restricted to picking final prices from these lists.</p>"
+        },
+        {
+            "fieldname": "allocated_price_lists",
+            "fieldtype": "Table",
+            "label": "Allocated Selling Price Lists",
+            "options": "Agent Allocated Price List"
+        }
+    ],
+    "is_submittable": 0,
+    "links": [],
+    "modified": "2026-03-04 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Sales",
+    "name": "Agent Pricing Rules",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "role": "Orderlift Admin",
+            "read": 1,
+            "write": 1,
+            "create": 1,
+            "delete": 1,
+            "report": 1,
+            "export": 1,
+            "share": 1,
+            "print": 1,
+            "email": 1
+        },
+        {
+            "role": "Sales Manager",
+            "read": 1,
+            "write": 1,
+            "create": 1,
+            "delete": 1,
+            "report": 1,
+            "share": 1,
+            "print": 1,
+            "email": 1
+        },
+        {
+            "role": "Orderlift Commercial",
+            "read": 1,
+            "report": 1,
+            "print": 1
+        }
+    ],
+    "search_fields": "sales_person,pricing_mode",
+    "show_name_in_global_search": 1,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "title_field": "sales_person",
+    "track_changes": 1
+}

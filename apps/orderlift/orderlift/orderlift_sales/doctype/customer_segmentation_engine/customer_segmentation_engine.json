@@ -1,0 +1,137 @@
+{
+    "actions": [],
+    "autoname": "format:CSEG-{#####}",
+    "creation": "2026-03-04 00:00:00",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "engine": "InnoDB",
+    "field_order": [
+        "section_config",
+        "engine_name",
+        "target_customer_type",
+        "is_active",
+        "column_break_config",
+        "description",
+        "section_rules",
+        "rules_help_html",
+        "segmentation_rules",
+        "section_results",
+        "results_html"
+    ],
+    "fields": [
+        {
+            "fieldname": "section_config",
+            "fieldtype": "Section Break",
+            "label": "Engine Configuration"
+        },
+        {
+            "fieldname": "engine_name",
+            "fieldtype": "Data",
+            "label": "Engine Name",
+            "reqd": 1,
+            "in_list_view": 1,
+            "in_standard_filter": 1
+        },
+        {
+            "fieldname": "target_customer_type",
+            "fieldtype": "Select",
+            "label": "Target Customer Type",
+            "options": "\nInstaller\nDistributor\nRetailer\nWholesaler\nEnd User",
+            "in_list_view": 1,
+            "description": "Only customers of this type will be evaluated"
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "column_break_config",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description / Notes"
+        },
+        {
+            "fieldname": "section_rules",
+            "fieldtype": "Section Break",
+            "label": "Segment Rules Engine"
+        },
+        {
+            "fieldname": "rules_help_html",
+            "fieldtype": "HTML",
+            "label": "Rules Help",
+            "options": "<div style='background:#fffbeb;border:1px solid #fef08a;border-radius:8px;padding:16px;margin-bottom:16px;'><h4 style='margin:0 0 8px;color:#854d0e;'>Dynamic Rule Builder</h4><p style='font-size:13px;color:#4b5563;margin:0;line-height:1.5;'>Write conditions using available variables: <code>Revenue_12M</code>, <code>RFM_score</code>, <code>Customer_Age_Days</code>, <code>Total_Orders</code>.<br>Operators: <code>&gt;=</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&lt;</code>, <code>==</code>, <code>AND</code>, <code>OR</code>.<br>Use <code>DEFAULT</code> for catch-all fallback rule. Engine evaluates top-down by <strong>Priority</strong> (lowest first) until a match is found.</p></div>"
+        },
+        {
+            "fieldname": "segmentation_rules",
+            "fieldtype": "Table",
+            "label": "Segmentation Rules",
+            "options": "Customer Segmentation Rule",
+            "reqd": 1
+        },
+        {
+            "fieldname": "section_results",
+            "fieldtype": "Section Break",
+            "label": "Segment Snapshots (Results)",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "results_html",
+            "fieldtype": "HTML",
+            "label": "Results",
+            "options": ""
+        }
+    ],
+    "is_submittable": 0,
+    "links": [],
+    "modified": "2026-03-04 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Sales",
+    "name": "Customer Segmentation Engine",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "role": "Orderlift Admin",
+            "read": 1,
+            "write": 1,
+            "create": 1,
+            "delete": 1,
+            "report": 1,
+            "export": 1,
+            "import": 1,
+            "share": 1,
+            "print": 1,
+            "email": 1
+        },
+        {
+            "role": "Sales Manager",
+            "read": 1,
+            "write": 1,
+            "create": 1,
+            "delete": 1,
+            "report": 1,
+            "export": 1,
+            "share": 1,
+            "print": 1,
+            "email": 1
+        },
+        {
+            "role": "Orderlift Commercial",
+            "read": 1,
+            "report": 1,
+            "print": 1
+        }
+    ],
+    "search_fields": "engine_name,target_customer_type",
+    "show_name_in_global_search": 1,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "title_field": "engine_name",
+    "track_changes": 1
+}

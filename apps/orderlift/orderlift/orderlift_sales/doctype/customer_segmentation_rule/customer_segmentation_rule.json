@@ -1,0 +1,59 @@
+{
+    "actions": [],
+    "creation": "2026-03-04 00:00:00",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "designated_segment",
+        "condition",
+        "priority",
+        "is_active"
+    ],
+    "fields": [
+        {
+            "fieldname": "designated_segment",
+            "fieldtype": "Data",
+            "label": "Designated Segment",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Tier or segment name to assign (e.g. Gold, Silver, Bronze)"
+        },
+        {
+            "fieldname": "condition",
+            "fieldtype": "Small Text",
+            "label": "Condition / Rule Logic",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Python-like condition: Revenue_12M >= 2000000 OR RFM_score >= 8. Use DEFAULT for catch-all."
+        },
+        {
+            "fieldname": "priority",
+            "fieldtype": "Int",
+            "label": "Priority",
+            "default": "10",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Evaluated top-down by priority (lowest first). First match wins."
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        }
+    ],
+    "istable": 1,
+    "links": [],
+    "modified": "2026-03-04 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Sales",
+    "name": "Customer Segmentation Rule",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}
