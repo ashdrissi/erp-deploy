@@ -1,17 +1,35 @@
 # Copyright (c) 2026, Orderlift and contributors
 # For license information, please see license.txt
 
-import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, cint, getdate, date_diff, nowdate
 
 
+# Maps user-friendly Select labels → internal variable names
+VARIABLE_MAP = {
+    "Revenue (12 months)": "Revenue_12M",
+    "RFM Score": "RFM_score",
+    "Customer Age (Days)": "Customer_Age_Days",
+    "Total Orders": "Total_Orders",
+}
+
+# Maps user-friendly operator labels → Python operators
+OPERATOR_MAP = {
+    "≥ (greater or equal)": ">=",
+    "> (greater than)": ">",
+    "≤ (less or equal)": "<=",
+    "< (less than)": "<",
+    "= (equals)": "==",
+    "≠ (not equal)": "!=",
+}
+
+
 class CustomerSegmentationEngine(Document):
     """Rules engine for auto-assigning customer segments/tiers.
 
-    Each rule has a condition string evaluated against customer variables.
+    Each rule uses structured dropdowns (variable, operator, value).
     Rules are evaluated top-down by priority — first match wins.
     """
 
@@ -19,20 +37,21 @@ class CustomerSegmentationEngine(Document):
         self._validate_rules()
 
     def _validate_rules(self):
-        """Check that all rule conditions are syntactically valid."""
+        """Check that all rule rows are properly configured."""
         for rule in self.segmentation_rules or []:
-            condition = (rule.condition or "").strip()
-            if not condition:
-                frappe.throw(_("Row {0}: Condition cannot be empty.").format(rule.idx))
-            if condition.upper() == "DEFAULT":
+            if not rule.designated_segment:
+                frappe.throw(_("Row {0}: Assign Segment is required.").format(rule.idx))
+            if rule.is_default:
                 continue
-            # Quick syntax check by attempting parse
-            try:
-                self._parse_condition(condition)
-            except Exception as e:
+            if not rule.variable_1 or not rule.operator_1:
                 frappe.throw(
-                    _("Row {0}: Invalid condition syntax: {1}").format(rule.idx, str(e))
+                    _("Row {0}: First condition (If / Is / Value) is required unless Catch-All is checked.").format(rule.idx)
                 )
+            if rule.connector:
+                if not rule.variable_2 or not rule.operator_2:
+                    frappe.throw(
+                        _("Row {0}: Second condition is required when AND/OR connector is set.").format(rule.idx)
+                    )
 
     @frappe.whitelist()
     def calculate_segments(self):
@@ -117,7 +136,7 @@ class CustomerSegmentationEngine(Document):
             WHERE customer = %s AND docstatus = 1
         """, customer_name)[0][0]) if customer_name else 0
 
-        # Simple RFM proxy (0-10 scale based on recency + frequency + monetary)
+        # Simple RFM proxy (0-10 scale)
         rfm_score = self._compute_rfm_score(customer_name, revenue_12m, total_orders, age_days)
 
         return {
@@ -178,11 +197,11 @@ class CustomerSegmentationEngine(Document):
         )
 
         for rule in active_rules:
-            condition = (rule.condition or "").strip()
-            if condition.upper() == "DEFAULT":
+            if rule.is_default:
                 return rule.designated_segment, rule.idx, 100
+
             try:
-                result = self._eval_condition(condition, variables)
+                result = self._eval_structured_rule(rule, variables)
                 if result:
                     return rule.designated_segment, rule.idx, 100
             except Exception:
@@ -190,37 +209,52 @@ class CustomerSegmentationEngine(Document):
 
         return None, None, 0
 
-    def _eval_condition(self, condition, variables):
-        """Safely evaluate a condition string against variables.
+    def _eval_structured_rule(self, rule, variables):
+        """Evaluate a structured rule (dropdown-based) against variables."""
+        # Resolve first condition
+        var_key_1 = VARIABLE_MAP.get(rule.variable_1)
+        op_1 = OPERATOR_MAP.get(rule.operator_1)
+        if not var_key_1 or not op_1:
+            return False
 
-        Supports: >=, <=, >, <, ==, !=, AND, OR, NOT, parentheses
-        Variables: Revenue_12M, RFM_score, Customer_Age_Days, Total_Orders
-        """
-        parsed = self._parse_condition(condition)
-        # Safe eval with only allowed variables
-        safe_dict = {k: v for k, v in variables.items()}
-        return bool(eval(parsed, {"__builtins__": {}}, safe_dict))  # noqa: S307
+        val_1 = flt(variables.get(var_key_1, 0))
+        threshold_1 = flt(rule.value_1)
+        result_1 = self._compare(val_1, op_1, threshold_1)
 
-    def _parse_condition(self, condition):
-        """Parse user-friendly condition to safe Python expression."""
-        expr = condition.strip()
+        # Single condition
+        if not rule.connector:
+            return result_1
 
-        # Normalize logical operators (case-insensitive)
-        expr = re.sub(r'\bAND\b', ' and ', expr, flags=re.IGNORECASE)
-        expr = re.sub(r'\bOR\b', ' or ', expr, flags=re.IGNORECASE)
-        expr = re.sub(r'\bNOT\b', ' not ', expr, flags=re.IGNORECASE)
+        # Resolve second condition
+        var_key_2 = VARIABLE_MAP.get(rule.variable_2)
+        op_2 = OPERATOR_MAP.get(rule.operator_2)
+        if not var_key_2 or not op_2:
+            return result_1
 
-        # Only allow safe tokens: numbers, variable names, operators, parens
-        allowed = re.compile(
-            r'^[\s\d\w_.>=<!()and or not+-]+$', re.IGNORECASE
-        )
-        if not allowed.match(expr):
-            raise ValueError("Unsafe characters in condition: {}".format(expr))
+        val_2 = flt(variables.get(var_key_2, 0))
+        threshold_2 = flt(rule.value_2)
+        result_2 = self._compare(val_2, op_2, threshold_2)
 
-        # Block dangerous builtins
-        dangerous = ['import', 'exec', 'eval', 'open', 'os', 'sys', '__']
-        for d in dangerous:
-            if d in expr.lower():
-                raise ValueError("Forbidden keyword: {}".format(d))
+        if rule.connector == "AND":
+            return result_1 and result_2
+        elif rule.connector == "OR":
+            return result_1 or result_2
 
-        return expr
+        return result_1
+
+    @staticmethod
+    def _compare(actual, operator, threshold):
+        """Safe comparison without eval."""
+        if operator == ">=":
+            return actual >= threshold
+        elif operator == ">":
+            return actual > threshold
+        elif operator == "<=":
+            return actual <= threshold
+        elif operator == "<":
+            return actual < threshold
+        elif operator == "==":
+            return actual == threshold
+        elif operator == "!=":
+            return actual != threshold
+        return False

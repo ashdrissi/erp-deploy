@@ -7,26 +7,35 @@
     "engine": "InnoDB",
     "field_order": [
         "designated_segment",
-        "condition",
+        "is_default",
         "priority",
-        "is_active"
+        "is_active",
+        "variable_1",
+        "operator_1",
+        "value_1",
+        "connector",
+        "variable_2",
+        "operator_2",
+        "value_2"
     ],
     "fields": [
         {
             "fieldname": "designated_segment",
             "fieldtype": "Data",
-            "label": "Designated Segment",
+            "label": "Assign Segment",
             "reqd": 1,
             "in_list_view": 1,
-            "description": "Tier or segment name to assign (e.g. Gold, Silver, Bronze)"
+            "columns": 2,
+            "description": "Tier to assign (e.g. Gold, Silver, Bronze, Eco)"
         },
         {
-            "fieldname": "condition",
-            "fieldtype": "Small Text",
-            "label": "Condition / Rule Logic",
-            "reqd": 1,
+            "fieldname": "is_default",
+            "fieldtype": "Check",
+            "label": "Catch-All (Default)",
+            "default": "0",
             "in_list_view": 1,
-            "description": "Python-like condition: Revenue_12M >= 2000000 OR RFM_score >= 8. Use DEFAULT for catch-all."
+            "columns": 1,
+            "description": "If checked, this rule matches all remaining customers (no conditions needed)"
         },
         {
             "fieldname": "priority",
@@ -35,19 +44,83 @@
             "default": "10",
             "reqd": 1,
             "in_list_view": 1,
-            "description": "Evaluated top-down by priority (lowest first). First match wins."
+            "columns": 1,
+            "description": "Lower number = evaluated first"
         },
         {
             "fieldname": "is_active",
             "fieldtype": "Check",
-            "label": "Is Active",
+            "label": "Active",
             "default": "1",
-            "in_list_view": 1
+            "in_list_view": 1,
+            "columns": 1
+        },
+        {
+            "fieldname": "variable_1",
+            "fieldtype": "Select",
+            "label": "If",
+            "options": "\nRevenue (12 months)\nRFM Score\nCustomer Age (Days)\nTotal Orders",
+            "in_list_view": 1,
+            "columns": 2,
+            "depends_on": "eval:!doc.is_default",
+            "mandatory_depends_on": "eval:!doc.is_default"
+        },
+        {
+            "fieldname": "operator_1",
+            "fieldtype": "Select",
+            "label": "Is",
+            "options": "\n≥ (greater or equal)\n> (greater than)\n≤ (less or equal)\n< (less than)\n= (equals)\n≠ (not equal)",
+            "in_list_view": 1,
+            "columns": 1,
+            "depends_on": "eval:!doc.is_default",
+            "mandatory_depends_on": "eval:!doc.is_default"
+        },
+        {
+            "fieldname": "value_1",
+            "fieldtype": "Float",
+            "label": "Value",
+            "in_list_view": 1,
+            "columns": 1,
+            "depends_on": "eval:!doc.is_default",
+            "mandatory_depends_on": "eval:!doc.is_default"
+        },
+        {
+            "fieldname": "connector",
+            "fieldtype": "Select",
+            "label": "And / Or",
+            "options": "\nAND\nOR",
+            "in_list_view": 1,
+            "columns": 1,
+            "depends_on": "eval:!doc.is_default",
+            "description": "Leave empty for single condition"
+        },
+        {
+            "fieldname": "variable_2",
+            "fieldtype": "Select",
+            "label": "If (2nd)",
+            "options": "\nRevenue (12 months)\nRFM Score\nCustomer Age (Days)\nTotal Orders",
+            "depends_on": "eval:doc.connector",
+            "mandatory_depends_on": "eval:doc.connector"
+        },
+        {
+            "fieldname": "operator_2",
+            "fieldtype": "Select",
+            "label": "Is (2nd)",
+            "options": "\n≥ (greater or equal)\n> (greater than)\n≤ (less or equal)\n< (less than)\n= (equals)\n≠ (not equal)",
+            "depends_on": "eval:doc.connector",
+            "mandatory_depends_on": "eval:doc.connector"
+        },
+        {
+            "fieldname": "value_2",
+            "fieldtype": "Float",
+            "label": "Value (2nd)",
+            "depends_on": "eval:doc.connector",
+            "mandatory_depends_on": "eval:doc.connector"
         }
     ],
     "istable": 1,
     "links": [],
-    "modified": "2026-03-04 00:00:00.000000",
+    "modified": "2026-03-04 19:30:00.000000",
     "modified_by": "Administrator",
     "module": "Orderlift Sales",
     "name": "Customer Segmentation Rule",
