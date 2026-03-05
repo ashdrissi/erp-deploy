@@ -54,73 +54,47 @@ def resolve_benchmark_margin(
     )
 
     # Validate data quality
+    is_fallback = False
     if len(prices) < min_sources:
         warnings.append(
             f"Only {len(prices)} benchmark source(s) for {item_code}; "
-            f"need {min_sources}. Using fallback margin {fallback_margin}%."
+            f"need {min_sources}. Benchmark comparison disabled."
         )
-        return {
-            "target_margin_percent": flt(fallback_margin),
-            "benchmark_reference": 0,
-            "source_count": len(prices),
-            "method": method,
-            "ratio": 0,
-            "matched_rule": None,
-            "warnings": warnings,
-            "is_fallback": True,
-            "source_labels": source_labels,
-        }
+        is_fallback = True
 
     # Compute benchmark reference
-    weights = _get_weights(benchmark_sources, source_labels)
-    benchmark_ref = _compute_reference(prices, method, weights)
-
-    if flt(benchmark_ref) <= 0:
-        warnings.append(f"Benchmark reference for {item_code} is zero; using fallback.")
-        return {
-            "target_margin_percent": flt(fallback_margin),
-            "benchmark_reference": 0,
-            "source_count": len(prices),
-            "method": method,
-            "ratio": 0,
-            "matched_rule": None,
-            "warnings": warnings,
-            "is_fallback": True,
-            "source_labels": source_labels,
-        }
+    benchmark_ref = 0.0
+    if not is_fallback:
+        weights = _get_weights(benchmark_sources, source_labels)
+        benchmark_ref = _compute_reference(prices, method, weights)
+        if flt(benchmark_ref) <= 0:
+            warnings.append(f"Benchmark reference for {item_code} is zero. Benchmark comparison disabled.")
+            is_fallback = True
 
     # Compute ratio
-    ratio = flt(landed_cost) / flt(benchmark_ref)
+    ratio = flt(landed_cost) / flt(benchmark_ref) if not is_fallback and benchmark_ref > 0 else 0.0
 
     # Match benchmark rule
     matched = _match_benchmark_rule(ratio, benchmark_rules, context)
 
-    if not matched:
+    target_margin = flt(fallback_margin)
+    if matched:
+        target_margin = flt(matched.get("target_margin_percent"))
+    else:
         warnings.append(
-            f"No benchmark rule matched ratio {ratio:.3f} for {item_code}; "
+            f"No benchmark rule matched for {item_code}; "
             f"using fallback margin {fallback_margin}%."
         )
-        return {
-            "target_margin_percent": flt(fallback_margin),
-            "benchmark_reference": flt(benchmark_ref),
-            "source_count": len(prices),
-            "method": method,
-            "ratio": ratio,
-            "matched_rule": None,
-            "warnings": warnings,
-            "is_fallback": True,
-            "source_labels": source_labels,
-        }
 
     return {
-        "target_margin_percent": flt(matched.get("target_margin_percent")),
+        "target_margin_percent": target_margin,
         "benchmark_reference": flt(benchmark_ref),
         "source_count": len(prices),
         "method": method,
         "ratio": ratio,
         "matched_rule": matched,
         "warnings": warnings,
-        "is_fallback": False,
+        "is_fallback": is_fallback,
         "source_labels": source_labels,
     }
 
@@ -244,7 +218,10 @@ def _match_benchmark_rule(ratio, rules, context=None):
 
 def _scope_matches(rule, context):
     """Check if rule scope filters match the context."""
-    for key in ("item", "item_group", "material", "source_bundle", "geography_territory"):
+    for key in (
+        "item", "item_group", "material", "source_bundle", 
+        "geography_territory", "customer_type", "tier"
+    ):
         rule_val = _norm(rule.get(key))
         if not rule_val:
             continue
@@ -256,10 +233,12 @@ def _scope_matches(rule, context):
 def _scope_specificity(rule):
     """Compute specificity score for scope filters (higher = more specific)."""
     weights = {
-        "item": 32,
-        "source_bundle": 16,
-        "item_group": 8,
-        "material": 4,
+        "item": 256,
+        "source_bundle": 128,
+        "item_group": 64,
+        "material": 32,
+        "customer_type": 8,
+        "tier": 4,
         "geography_territory": 2,
     }
     score = 0

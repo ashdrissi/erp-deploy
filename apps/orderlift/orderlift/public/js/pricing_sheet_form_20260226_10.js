@@ -105,18 +105,7 @@ function renderContextActions(frm) {
     ]);
 
     mount("scenario_overrides", __("Scenario Override Actions"), [
-        {
-            label: __("Preview Margin Rule"),
-            handler: async () => {
-                const policy = frm.doc.applied_margin_policy || frm.doc.margin_policy || "-";
-                const rule = frm.doc.applied_margin_rule || __("No active rule matched");
-                frappe.msgprint({
-                    title: __("Margin Rule Preview"),
-                    message: `<b>${__("Policy")}</b>: ${frappe.utils.escape_html(policy)}<br><b>${__("Rule")}</b>: ${frappe.utils.escape_html(rule)}`,
-                    indicator: "blue",
-                });
-            },
-        },
+
         {
             label: __("Load Scenario Values"),
             handler: async () => {
@@ -314,8 +303,7 @@ function renderProjectionDashboard(frm) {
     const totalFinal = frm.doc.total_selling || 0;
     const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
     const warnings = frm.doc.projection_warnings || "";
-    const marginPolicy = frm.doc.applied_margin_policy || frm.doc.margin_policy || "";
-    const marginRule = frm.doc.applied_margin_rule || "";
+    const pricingPolicy = frm.doc.applied_benchmark_policy || frm.doc.benchmark_policy || "";
     const scenarioPolicy = frm.doc.applied_scenario_policy || frm.doc.scenario_policy || "";
     const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
@@ -424,11 +412,9 @@ function renderProjectionDashboard(frm) {
                 <span class="ps-scenario-chip"><strong>${__("Sales Person")}</strong> ${frappe.utils.escape_html(salesPerson || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Geography")}</strong> ${frappe.utils.escape_html(geography || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Scenario Policy")}</strong> ${frappe.utils.escape_html(scenarioPolicy || "-")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Margin Policy")}</strong> ${frappe.utils.escape_html(marginPolicy || "-")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Margin Rule")}</strong> ${frappe.utils.escape_html(marginRule || __("No rule"))}</span>
+                <span class="ps-scenario-chip"><strong>${__("Pricing Policy")}</strong> ${frappe.utils.escape_html(pricingPolicy || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Customs Policy")}</strong> ${frappe.utils.escape_html(customsPolicy || "-")}</span>
                 <span class="ps-scenario-chip"><strong>${__("Customs Total")}</strong> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
-                ${frm.doc.applied_benchmark_policy ? `<span class="ps-scenario-chip" style="background:#ecfdf5;color:#166534;"><strong>${__("Benchmark Policy")}</strong> ${frappe.utils.escape_html(frm.doc.applied_benchmark_policy)}</span>` : ""}
             </div>
             ${warningBlock}
         </div>
@@ -529,6 +515,66 @@ async function openQuotationPreview(frm) {
     });
 }
 
+function setAgentPolicyQueries(frm, context) {
+    const isDynamic = (context || {}).pricing_mode === "Dynamic Calculation Engine";
+    const scenarios = (context || {}).allowed_pricing_scenarios || [];
+    const benchmarks = (context || {}).allowed_benchmark_policies || [];
+    const customs = (context || {}).allowed_customs_policies || [];
+
+    frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
+    frm.set_query("scenario_policy", () => ({ filters: { is_active: 1 } }));
+
+    frm.set_query("pricing_scenario", () => {
+        if (isDynamic && scenarios.length) {
+            return { filters: { name: ["in", scenarios] } };
+        }
+        return { filters: { is_active: 1 } };
+    });
+
+    frm.set_query("benchmark_policy", () => {
+        if (isDynamic && benchmarks.length) {
+            return { filters: { is_active: 1, name: ["in", benchmarks] } };
+        }
+        return { filters: { is_active: 1 } };
+    });
+
+    frm.set_query("customs_policy", () => {
+        if (isDynamic && customs.length) {
+            return { filters: { is_active: 1, name: ["in", customs] } };
+        }
+        return { filters: { is_active: 1 } };
+    });
+}
+
+async function applyAgentDynamicDefaults(frm) {
+    setAgentPolicyQueries(frm, null);
+    if (!frm.doc.sales_person) {
+        return;
+    }
+
+    const response = await frappe.call({
+        method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_agent_dynamic_defaults",
+        args: { sales_person: frm.doc.sales_person },
+    });
+    const context = response.message || {};
+    setAgentPolicyQueries(frm, context);
+
+    if (context.pricing_mode !== "Dynamic Calculation Engine") {
+        return;
+    }
+
+    const selected = context.selected || {};
+    if (selected.pricing_scenario) {
+        await frm.set_value("pricing_scenario", selected.pricing_scenario);
+    }
+    if (selected.benchmark_policy) {
+        await frm.set_value("benchmark_policy", selected.benchmark_policy);
+    }
+    if (selected.customs_policy) {
+        await frm.set_value("customs_policy", selected.customs_policy);
+    }
+}
+
 frappe.ui.form.on("Pricing Sheet", {
     setup(frm) {
         const queryConfig = () => ({
@@ -536,10 +582,7 @@ frappe.ui.form.on("Pricing Sheet", {
         });
 
         frm.set_query("item", "lines", queryConfig);
-        frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
-        frm.set_query("scenario_policy", () => ({ filters: { is_active: 1 } }));
-        frm.set_query("margin_policy", () => ({ filters: { is_active: 1 } }));
-        frm.set_query("customs_policy", () => ({ filters: { is_active: 1 } }));
+        setAgentPolicyQueries(frm, null);
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
         if (frm.fields_dict.lines.grid.get_field("margin_source")) {
             frm.fields_dict.lines.grid.get_field("margin_source").formatter = (value) => marginSourceBadge(value);
@@ -689,9 +732,27 @@ frappe.ui.form.on("Pricing Sheet", {
         renderProjectionDashboard(frm);
         renderContextActions(frm);
         setTimeout(() => collapseAdvancedSections(frm), 0);
+        if (frm.doc.sales_person) {
+            frm.events.sales_person(frm);
+        }
     },
 
-    margin_policy(frm) {
+    async customer(frm) {
+        if (!frm.doc.customer) {
+            frm.set_value("customer_type", "");
+            frm.set_value("tier", "");
+            renderProjectionDashboard(frm);
+            return;
+        }
+
+        const response = await frappe.db.get_value("Customer", frm.doc.customer, ["customer_group", "tier"]);
+        const values = response.message || {};
+        await frm.set_value("customer_type", values.customer_group || "");
+        await frm.set_value("tier", values.tier || "");
+        renderProjectionDashboard(frm);
+    },
+
+    benchmark_policy(frm) {
         renderProjectionDashboard(frm);
     },
 
@@ -703,7 +764,8 @@ frappe.ui.form.on("Pricing Sheet", {
         renderProjectionDashboard(frm);
     },
 
-    sales_person(frm) {
+    async sales_person(frm) {
+        await applyAgentDynamicDefaults(frm);
         renderProjectionDashboard(frm);
     },
 

@@ -34,11 +34,11 @@
         },
         {
             "fieldname": "target_customer_type",
-            "fieldtype": "Select",
-            "label": "Target Customer Type",
-            "options": "\nInstaller\nDistributor\nRetailer\nWholesaler\nEnd User",
+            "fieldtype": "Link",
+            "label": "Target Customer Group",
+            "options": "Customer Group",
             "in_list_view": 1,
-            "description": "Only customers of this type will be evaluated"
+            "description": "Only customers in this customer group will be evaluated"
         },
         {
             "fieldname": "is_active",

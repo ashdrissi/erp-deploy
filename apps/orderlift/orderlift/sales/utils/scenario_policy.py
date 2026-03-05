@@ -29,7 +29,6 @@ def _matches(rule, context):
     for key in (
         "sales_person",
         "geography_territory",
-        "customer_segment",
         "customer_type",
         "tier",
         "item",
@@ -55,7 +54,6 @@ def _specificity(rule):
         "geography_territory": 8,
         "customer_type": 4,
         "tier": 2,
-        "customer_segment": 1,
     }
     score = 0
     for key, weight in weights.items():

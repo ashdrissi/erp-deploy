@@ -100,16 +100,15 @@ class CustomerSegmentationEngine(Document):
         return results
 
     def _get_target_customers(self):
-        """Fetch customers matching the target type."""
+        """Fetch customers matching the target customer group."""
         filters = {"disabled": 0}
         if self.target_customer_type:
-            filters["customer_type"] = self.target_customer_type
+            filters["customer_group"] = self.target_customer_type
 
         return frappe.get_all(
             "Customer",
             filters=filters,
-            fields=["name", "customer_name", "customer_type", "creation",
-                     "territory", "customer_group"],
+            fields=["name", "customer_name", "customer_group", "creation", "territory"],
             order_by="name",
             limit_page_length=0,
         )

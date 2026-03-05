@@ -163,13 +163,14 @@ def _seed_agent_pricing_rules():
 
                 # Set default policies if they exist
                 buying_list = frappe.db.get_value("Price List", {"buying": 1}, "name")
+                scenario = None
                 if buying_list:
                     apr.default_buying_price_list = buying_list
 
-                if frappe.db.exists("DocType", "Pricing Margin Rule"):
-                    margin_policy = frappe.db.get_value("Pricing Margin Rule", {}, "name")
-                    if margin_policy:
-                        apr.default_margin_policy = margin_policy
+                if frappe.db.exists("DocType", "Pricing Benchmark Policy"):
+                    benchmark_policy = frappe.db.get_value("Pricing Benchmark Policy", {}, "name")
+                    if benchmark_policy:
+                        apr.default_benchmark_policy = benchmark_policy
 
                 if frappe.db.exists("DocType", "Pricing Customs Policy"):
                     customs_policy = frappe.db.get_value("Pricing Customs Policy", {}, "name")
@@ -180,6 +181,17 @@ def _seed_agent_pricing_rules():
                     scenario = frappe.db.get_value("Pricing Scenario", {}, "name")
                     if scenario:
                         apr.default_expense_policy = scenario
+
+                if buying_list and scenario:
+                    apr.append("dynamic_pricing_configs", {
+                        "buying_price_list": buying_list,
+                        "pricing_scenario": scenario,
+                        "customs_policy": apr.default_customs_policy,
+                        "benchmark_policy": apr.default_benchmark_policy,
+                        "priority": 10,
+                        "is_default": 1,
+                        "is_active": 1,
+                    })
             else:
                 # Static mode
                 apr.pricing_mode = "Pick from Published Selling Price List"

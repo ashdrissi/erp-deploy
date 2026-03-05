@@ -7,11 +7,14 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime, nowdate
 
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
-from orderlift.sales.utils.margin_policy import resolve_margin_rule
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 from orderlift.sales.utils.pricing_projection import apply_expenses
 from orderlift.sales.utils.benchmark_policy import resolve_benchmark_margin
 from orderlift.sales.utils.transport_allocation import compute_transport_allocation
+from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules import (
+    DYNAMIC_MODE,
+    build_dynamic_context,
+)
 
 
 MISSING_BUY_PRICE_MSG = "No buying price in {price_list}"
@@ -23,14 +26,13 @@ class PricingSheet(Document):
 
     def recalculate(self):
         started = perf_counter()
+        self._sync_customer_context()
         lines = self.lines or []
         self.projection_warnings = ""
 
         if not lines:
             self._reset_totals()
             self.applied_scenario_policy = ""
-            self.applied_margin_policy = ""
-            self.applied_margin_rule = ""
             self.applied_customs_policy = ""
             self.applied_benchmark_policy = ""
             self.calculated_on = now_datetime()
@@ -42,6 +44,7 @@ class PricingSheet(Document):
         item_details = get_item_details_map(item_codes)
         item_groups = {code: (item_details.get(code) or {}).get("item_group") for code in item_codes}
         self._set_default_sales_person()
+        self._apply_agent_dynamic_defaults()
 
         scenario_policy = self._resolve_scenario_policy()
         self.applied_scenario_policy = scenario_policy.name if scenario_policy else ""
@@ -49,26 +52,20 @@ class PricingSheet(Document):
         scenario_docs = self._collect_scenarios_or_throw(lines, item_details=item_details, scenario_policy=scenario_policy)
         self._sync_override_rows_for_scenarios(scenario_docs)
 
-        margin_policy, margin_rule = self._resolve_margin_policy_and_rule(item_details=item_details)
-        self.applied_margin_policy = margin_policy.name if margin_policy else ""
-        self.applied_margin_rule = _("Per-line resolution") if margin_policy else ""
         customs_policy = self._resolve_customs_policy()
         self.applied_customs_policy = customs_policy.name if customs_policy else ""
 
-        # Resolve benchmark policy (linked from margin policy)
-        benchmark_policy_doc = self._resolve_benchmark_policy(margin_policy)
-        margin_mode = getattr(margin_policy, "margin_mode", None) or "Profile-Based" if margin_policy else "Profile-Based"
-        fallback_margin = flt(getattr(margin_policy, "fallback_margin_percent", None) or 10) if margin_policy else 10
+        # Resolve pricing policy (formerly benchmark policy)
+        benchmark_policy_doc = self._resolve_benchmark_policy()
+        fallback_margin = flt(getattr(benchmark_policy_doc, "fallback_margin_percent", None) or 10) if benchmark_policy_doc else 10
         self.applied_benchmark_policy = benchmark_policy_doc.name if benchmark_policy_doc else ""
 
         # Resolve dynamic modifiers (tier & zone) from benchmark policy
         tier_mod, zone_mod = self._resolve_dynamic_modifiers(benchmark_policy_doc)
 
         warnings = []
-        if margin_policy and margin_rule:
-            self.applied_margin_rule = self._format_margin_rule(margin_rule)
-        if not margin_policy:
-            warnings.append(_("No active margin policy found; dynamic margin is disabled."))
+        if not benchmark_policy_doc:
+            warnings.append(_("No active pricing policy found; dynamic margin is disabled."))
         if not customs_policy:
             warnings.append(_("No active customs policy found; customs costs default to zero."))
         if not scenario_policy:
@@ -137,10 +134,9 @@ class PricingSheet(Document):
 
             # --- Benchmark-driven margin resolution ---
             benchmark_result = None
-            line_margin_rule = None
             margin_source = ""
 
-            if margin_mode in ("Benchmark-Driven", "Benchmark then Profile") and benchmark_policy_doc:
+            if benchmark_policy_doc:
                 landed_cost = self._compute_landed_cost(
                     base_unit, qty, effective_line_expenses, customs_calc, transport_calc
                 )
@@ -149,38 +145,16 @@ class PricingSheet(Document):
                     cache.get("benchmark_price_map") or {},
                     line_context,
                 )
-                if benchmark_result and not benchmark_result.get("is_fallback"):
+                if benchmark_result:
                     effective_line_expenses = self._inject_benchmark_margin_expense(
                         effective_line_expenses, benchmark_result
                     )
-                    margin_source = "Benchmark"
-                elif margin_mode == "Benchmark then Profile":
-                    # Benchmark failed, try profile-based
-                    line_margin_rule = self._resolve_margin_rule_for_row(row, item_details, margin_policy)
-                    if line_margin_rule:
-                        effective_line_expenses = self._inject_margin_expense(effective_line_expenses, line_margin_rule)
-                        margin_source = "Profile"
-                    else:
-                        # Use fallback margin from benchmark result
-                        effective_line_expenses = self._inject_fallback_margin_expense(
-                            effective_line_expenses, benchmark_result, fallback_margin
-                        )
-                        margin_source = "Fallback"
-                else:
-                    # Benchmark-Driven mode but benchmark failed, use fallback
-                    effective_line_expenses = self._inject_fallback_margin_expense(
-                        effective_line_expenses, benchmark_result, fallback_margin
-                    )
-                    margin_source = "Fallback"
+                    margin_source = "Pricing Rule" if benchmark_result.get("is_fallback") else "Benchmark & Rule"
+                    
                 for w in (benchmark_result or {}).get("warnings") or []:
                     warnings.append(_("Row {0}: {1}").format(row.idx, w))
             else:
-                # Profile-Based mode (original behavior)
-                line_margin_rule = self._resolve_margin_rule_for_row(row, item_details, margin_policy)
-                if not line_margin_rule:
-                    warnings.append(_("Row {0}: no margin rule matched; dynamic margin is 0.").format(row.idx))
-                effective_line_expenses = self._inject_margin_expense(effective_line_expenses, line_margin_rule)
-                margin_source = "Profile"
+                warnings.append(_("Row {0}: no pricing policy found; margin is 0.").format(row.idx))
 
             # --- Inject dynamic modifiers (Tier & Zone) ---
             effective_line_expenses, row_tier_mod, row_zone_mod = self._inject_modifier_expenses(
@@ -204,7 +178,6 @@ class PricingSheet(Document):
                     "has_line_override": has_line_override,
                     "customs_calc": customs_calc,
                     "transport_calc": transport_calc,
-                    "line_margin_rule": line_margin_rule,
                     "benchmark_result": benchmark_result,
                     "margin_source": margin_source,
                 }
@@ -238,7 +211,6 @@ class PricingSheet(Document):
             pricing = snap["pricing"]
             customs_calc = snap.get("customs_calc") or {}
             transport_calc = snap.get("transport_calc") or {}
-            line_margin_rule = snap.get("line_margin_rule")
             sheet_fixed_total = snap["sheet_fixed_total"]
             scenario_name = snap["scenario_name"]
             alloc = scenario_allocation.get(scenario_name) or {
@@ -287,7 +259,7 @@ class PricingSheet(Document):
             row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
             row.final_sell_total = flt(row.final_sell_unit_price) * qty
             row.margin_pct = ((flt(row.final_sell_unit_price) - base_unit) / base_unit * 100) if base_unit > 0 else 0
-            row.resolved_margin_rule = self._format_margin_rule(line_margin_rule)
+            row.resolved_margin_rule = ""
             row.customs_material = customs_calc.get("material") or ""
             row.customs_weight_kg = flt(customs_calc.get("weight_kg") or 0)
             row.customs_rate_per_kg = flt(customs_calc.get("rate_per_kg") or 0)
@@ -647,76 +619,6 @@ class PricingSheet(Document):
 
         return docs
 
-    def _resolve_margin_policy_and_rule(self, item_details=None):
-        policy_doc = None
-        if self.margin_policy and frappe.db.exists("Pricing Margin Policy", self.margin_policy):
-            policy_doc = frappe.get_doc("Pricing Margin Policy", self.margin_policy)
-        else:
-            default_name = frappe.db.get_value(
-                "Pricing Margin Policy",
-                {"is_default": 1, "is_active": 1},
-                "name",
-            )
-            if default_name:
-                policy_doc = frappe.get_doc("Pricing Margin Policy", default_name)
-                self.margin_policy = default_name
-
-        if not policy_doc:
-            return None, None
-
-        item_details = item_details or {}
-        first_line = (self.lines or [None])[0]
-        sample_context = self._build_rule_context(first_line, item_details=item_details)
-        rule_dicts = [
-            {
-                "sales_person": row.sales_person,
-                "geography_territory": row.geography_territory,
-                "customer_segment": row.customer_segment,
-                "customer_type": row.customer_type,
-                "tier": row.tier,
-                "item": row.item,
-                "source_bundle": row.source_bundle,
-                "item_group": row.item_group,
-                "material": row.material,
-                "margin_percent": flt(row.margin_percent),
-                "applies_to": row.applies_to,
-                "sequence": cint(row.sequence),
-                "priority": cint(row.priority),
-                "is_active": cint(row.is_active),
-                "idx": cint(row.idx),
-            }
-            for row in (policy_doc.margin_rules or [])
-        ]
-        rule = resolve_margin_rule(rule_dicts, context=sample_context)
-        return policy_doc, rule
-
-    def _resolve_margin_rule_for_row(self, row, item_details, margin_policy):
-        if not margin_policy:
-            return None
-
-        context = self._build_rule_context(row=row, item_details=item_details)
-        rule_dicts = [
-            {
-                "sales_person": rule.sales_person,
-                "geography_territory": rule.geography_territory,
-                "customer_segment": rule.customer_segment,
-                "customer_type": rule.customer_type,
-                "tier": rule.tier,
-                "item": rule.item,
-                "source_bundle": rule.source_bundle,
-                "item_group": rule.item_group,
-                "material": rule.material,
-                "margin_percent": flt(rule.margin_percent),
-                "applies_to": rule.applies_to,
-                "sequence": cint(rule.sequence),
-                "priority": cint(rule.priority),
-                "is_active": cint(rule.is_active),
-                "idx": cint(rule.idx),
-            }
-            for rule in (margin_policy.margin_rules or [])
-        ]
-        return resolve_margin_rule(rule_dicts, context=context)
-
     def _resolve_scenario_policy(self):
         if not frappe.db.exists("DocType", "Pricing Scenario Policy"):
             return None
@@ -804,6 +706,59 @@ class PricingSheet(Document):
         sales_person = frappe.db.get_value("Sales Person", filters, "name")
         if sales_person:
             self.sales_person = sales_person
+
+    def _apply_agent_dynamic_defaults(self):
+        context = build_dynamic_context(sales_person=self.sales_person)
+        if context.get("pricing_mode") != DYNAMIC_MODE:
+            return
+
+        selected = context.get("selected") or {}
+        if selected.get("pricing_scenario"):
+            self.pricing_scenario = selected.get("pricing_scenario")
+        if selected.get("customs_policy"):
+            self.customs_policy = selected.get("customs_policy")
+        if selected.get("benchmark_policy"):
+            self.benchmark_policy = selected.get("benchmark_policy")
+
+        self._assert_agent_dynamic_allowed(
+            "pricing_scenario",
+            context.get("allowed_pricing_scenarios") or [],
+            _("Agent rule does not allow Pricing Scenario {0} for sales person {1}."),
+        )
+        self._assert_agent_dynamic_allowed(
+            "customs_policy",
+            context.get("allowed_customs_policies") or [],
+            _("Agent rule does not allow Customs Policy {0} for sales person {1}."),
+        )
+        self._assert_agent_dynamic_allowed(
+            "benchmark_policy",
+            context.get("allowed_benchmark_policies") or [],
+            _("Agent rule does not allow Pricing Policy {0} for sales person {1}."),
+        )
+
+    def _assert_agent_dynamic_allowed(self, fieldname, allowed_values, message_template):
+        value = (getattr(self, fieldname, None) or "").strip()
+        if not value:
+            return
+        if not allowed_values:
+            return
+        if value in allowed_values:
+            return
+        frappe.throw(message_template.format(value, self.sales_person or "-"))
+
+    def _sync_customer_context(self):
+        if not self.customer:
+            return
+
+        customer_values = frappe.db.get_value(
+            "Customer",
+            self.customer,
+            ["customer_group", "tier"],
+            as_dict=True,
+        ) or {}
+
+        self.customer_type = (customer_values.get("customer_group") or "").strip()
+        self.tier = (customer_values.get("tier") or "").strip()
 
     def _format_scenario_rule(self, rule):
         if not rule:
@@ -932,7 +887,7 @@ class PricingSheet(Document):
             "sequence": cint(margin_rule.get("sequence") or 90),
             "is_active": 1,
             "is_overridden": 0,
-            "override_source": "margin_policy",
+            "override_source": "pricing_policy",
         }
 
         out = list(expenses or [])
@@ -1034,17 +989,21 @@ class PricingSheet(Document):
 
     # --- Benchmark-driven margin helpers ---
 
-    def _resolve_benchmark_policy(self, margin_policy):
-        """Fetch the Pricing Benchmark Policy linked from the margin policy."""
-        if not margin_policy:
-            return None
-        bp_name = getattr(margin_policy, "benchmark_policy", None) or ""
-        if not bp_name:
-            return None
-        try:
-            return frappe.get_doc("Pricing Benchmark Policy", bp_name)
-        except frappe.DoesNotExistError:
-            return None
+    def _resolve_benchmark_policy(self):
+        """Fetch the Pricing Benchmark Policy linked to the sheet or fallback to default."""
+        if self.benchmark_policy and frappe.db.exists("Pricing Benchmark Policy", self.benchmark_policy):
+            return frappe.get_doc("Pricing Benchmark Policy", self.benchmark_policy)
+        
+        default_name = frappe.db.get_value(
+            "Pricing Benchmark Policy",
+            {"is_default": 1, "is_active": 1},
+            "name",
+        )
+        if default_name:
+            self.benchmark_policy = default_name
+            return frappe.get_doc("Pricing Benchmark Policy", default_name)
+            
+        return None
 
     def _compute_landed_cost(self, base_unit, qty, expenses, customs_calc, transport_calc):
         """Compute landed cost = base + all expenses EXCEPT margin.
@@ -1654,8 +1613,8 @@ class PricingSheet(Document):
                 item_data["source_pricing_override"] = cint(
                     row.is_manual_override or row.has_scenario_override or row.has_line_override
                 )
-            if frappe.db.has_column("Quotation Item", "source_margin_policy"):
-                item_data["source_margin_policy"] = self.margin_policy or ""
+            if frappe.db.has_column("Quotation Item", "source_pricing_policy"):
+                item_data["source_pricing_policy"] = self.benchmark_policy or ""
             if frappe.db.has_column("Quotation Item", "source_margin_percent"):
                 item_data["source_margin_percent"] = flt(row.margin_pct)
             if frappe.db.has_column("Quotation Item", "source_scenario_rule"):
@@ -1935,3 +1894,8 @@ def get_item_pricing_defaults(item_code, pricing_scenario=None):
         "buy_price": flt(buy_price),
         "item_group": item_group,
     }
+
+
+@frappe.whitelist()
+def get_agent_dynamic_defaults(sales_person=None):
+    return build_dynamic_context(sales_person=sales_person)

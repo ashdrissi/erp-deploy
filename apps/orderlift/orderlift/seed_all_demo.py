@@ -516,13 +516,14 @@ def _seed_agent_pricing_rules():
                 apr.max_discount_percent = 15
 
                 buying_list = frappe.db.get_value("Price List", {"buying": 1}, "name")
+                scenario = None
                 if buying_list:
                     apr.default_buying_price_list = buying_list
 
-                if frappe.db.exists("DocType", "Pricing Margin Rule"):
-                    margin = frappe.db.get_value("Pricing Margin Rule", {}, "name")
-                    if margin:
-                        apr.default_margin_policy = margin
+                if frappe.db.exists("DocType", "Pricing Benchmark Policy"):
+                    pricing_policy = frappe.db.get_value("Pricing Benchmark Policy", {}, "name")
+                    if pricing_policy:
+                        apr.default_benchmark_policy = pricing_policy
 
                 if frappe.db.exists("DocType", "Pricing Customs Policy"):
                     customs = frappe.db.get_value("Pricing Customs Policy", {}, "name")
@@ -533,6 +534,17 @@ def _seed_agent_pricing_rules():
                     scenario = frappe.db.get_value("Pricing Scenario", {}, "name")
                     if scenario:
                         apr.default_expense_policy = scenario
+
+                if buying_list and scenario:
+                    apr.append("dynamic_pricing_configs", {
+                        "buying_price_list": buying_list,
+                        "pricing_scenario": scenario,
+                        "customs_policy": apr.default_customs_policy,
+                        "benchmark_policy": apr.default_benchmark_policy,
+                        "priority": 10,
+                        "is_default": 1,
+                        "is_active": 1,
+                    })
             else:
                 apr.pricing_mode = "Pick from Published Selling Price List"
                 apr.max_discount_percent = 10
@@ -656,11 +668,11 @@ def _seed_pricing_sheet():
         doc.customer = customer
 
         # Set policies explicitly to ensure rich data
-        margin_policy = frappe.db.get_value("Pricing Margin Policy", {"is_active": 1}, "name")
+        pricing_policy = frappe.db.get_value("Pricing Benchmark Policy", {"is_active": 1}, "name")
         customs_policy = frappe.db.get_value("Pricing Customs Policy", {"is_active": 1}, "name")
         scenario_policy = frappe.db.get_value("Pricing Scenario Policy", {"is_active": 1}, "name")
         
-        if margin_policy: doc.margin_policy = margin_policy
+        if pricing_policy: doc.benchmark_policy = pricing_policy
         if customs_policy: doc.customs_policy = customs_policy
         if scenario_policy: doc.scenario_policy = scenario_policy
         
@@ -678,4 +690,3 @@ def _seed_pricing_sheet():
         print(f"   Created Pricing Sheet: {doc.name}")
     except Exception as e:
         print(f"   ⚠ Failed: {e}")
-

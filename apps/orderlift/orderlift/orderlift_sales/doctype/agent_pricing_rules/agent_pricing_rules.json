@@ -13,8 +13,10 @@
         "pricing_mode",
         "section_dynamic",
         "dynamic_help_html",
+        "dynamic_pricing_configs",
+        "section_dynamic_legacy",
         "default_buying_price_list",
-        "default_margin_policy",
+        "default_benchmark_policy",
         "column_break_dynamic",
         "default_expense_policy",
         "default_customs_policy",
@@ -69,20 +71,35 @@
             "fieldname": "dynamic_help_html",
             "fieldtype": "HTML",
             "label": "Dynamic Help",
-            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>If \"Dynamic Calculation Engine\" is selected, the agent will use these globally configured lists and policies whenever they start a new calculation.</p>"
+            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>Configure one or more dynamic rows. The engine auto-picks the default row when set, otherwise the lowest priority row. Pricing Scenario, Customs Policy, and Pricing Policy are applied automatically on Pricing Sheet.</p>"
+        },
+        {
+            "fieldname": "dynamic_pricing_configs",
+            "fieldtype": "Table",
+            "label": "Dynamic Configuration Matrix",
+            "options": "Agent Dynamic Pricing Config",
+            "depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'"
+        },
+        {
+            "fieldname": "section_dynamic_legacy",
+            "fieldtype": "Section Break",
+            "label": "Legacy Dynamic Defaults",
+            "depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'",
+            "collapsible": 1,
+            "description": "Backward compatibility only. Use Dynamic Configuration Matrix for new setup."
         },
         {
             "fieldname": "default_buying_price_list",
             "fieldtype": "Link",
             "label": "Base Buying Price List",
             "options": "Price List",
-            "mandatory_depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'"
+            "depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'"
         },
         {
-            "fieldname": "default_margin_policy",
+            "fieldname": "default_benchmark_policy",
             "fieldtype": "Link",
-            "label": "Margin Policy",
-            "options": "Pricing Margin Rule"
+            "label": "Pricing Policy",
+            "options": "Pricing Benchmark Policy"
         },
         {
             "fieldname": "column_break_dynamic",

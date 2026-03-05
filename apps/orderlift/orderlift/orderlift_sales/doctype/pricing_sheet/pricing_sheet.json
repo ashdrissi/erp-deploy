@@ -19,7 +19,7 @@
     "section_strategy",
     "pricing_scenario",
     "scenario_policy",
-    "margin_policy",
+    "benchmark_policy",
     "customs_policy",
     "product_bundle",
     "column_break_strategy",
@@ -45,8 +45,6 @@
     "calculated_by",
     "column_break_runtime",
     "calc_runtime_ms",
-    "applied_margin_policy",
-    "applied_margin_rule",
     "applied_scenario_policy",
     "applied_customs_policy",
     "applied_benchmark_policy",
@@ -107,17 +105,22 @@
     },
     {
       "fieldname": "customer_type",
-      "fieldtype": "Select",
-      "label": "Customer Type",
-      "options": "Installateur\nDistributeur\nPromoteur\nParticulier",
+      "fieldtype": "Link",
+      "label": "Customer Group",
+      "options": "Customer Group",
+      "fetch_from": "customer.customer_group",
+      "fetch_if_empty": 1,
+      "read_only": 1,
       "reqd": 1,
       "in_list_view": 1
     },
     {
       "fieldname": "tier",
-      "fieldtype": "Select",
+      "fieldtype": "Data",
       "label": "Tier",
-      "options": "Eco\nIntermediaire\nLuxe"
+      "fetch_from": "customer.tier",
+      "fetch_if_empty": 1,
+      "read_only": 1
     },
     {
       "fieldname": "geography_territory",
@@ -146,10 +149,10 @@
       "in_standard_filter": 1
     },
     {
-      "fieldname": "margin_policy",
+      "fieldname": "benchmark_policy",
       "fieldtype": "Link",
-      "label": "Margin Policy",
-      "options": "Pricing Margin Policy",
+      "label": "Pricing Policy",
+      "options": "Pricing Benchmark Policy",
       "in_standard_filter": 1
     },
     {
@@ -224,18 +227,6 @@
       "read_only": 1
     },
     {
-      "fieldname": "applied_margin_policy",
-      "fieldtype": "Data",
-      "label": "Applied Margin Policy",
-      "read_only": 1
-    },
-    {
-      "fieldname": "applied_margin_rule",
-      "fieldtype": "Small Text",
-      "label": "Applied Margin Rule",
-      "read_only": 1
-    },
-    {
       "fieldname": "applied_scenario_policy",
       "fieldtype": "Data",
       "label": "Applied Scenario Policy",
@@ -250,7 +241,7 @@
     {
       "fieldname": "applied_benchmark_policy",
       "fieldtype": "Data",
-      "label": "Applied Benchmark Policy",
+      "label": "Applied Pricing Policy",
       "read_only": 1
     },
     {
