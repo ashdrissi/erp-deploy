@@ -13,8 +13,8 @@ function statusBadge(value) {
 function marginSourceBadge(value) {
     const src = value || "";
     const map = {
-        Benchmark: "green",
-        Profile: "yellow",
+        "Benchmark & Rule": "green",
+        "Pricing Rule": "yellow",
         Fallback: "red",
     };
     const color = map[src] || "gray";

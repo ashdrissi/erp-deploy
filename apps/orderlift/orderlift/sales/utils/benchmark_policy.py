@@ -74,13 +74,16 @@ def resolve_benchmark_margin(
     # Compute ratio
     ratio = flt(landed_cost) / flt(benchmark_ref) if not is_fallback and benchmark_ref > 0 else 0.0
 
-    # Match benchmark rule
-    matched = _match_benchmark_rule(ratio, benchmark_rules, context)
+    # Match benchmark rule only when benchmark comparison is valid
+    matched = None
+    if not is_fallback:
+        matched = _match_benchmark_rule(ratio, benchmark_rules, context)
 
     target_margin = flt(fallback_margin)
     if matched:
         target_margin = flt(matched.get("target_margin_percent"))
-    else:
+    elif not is_fallback:
+        is_fallback = True
         warnings.append(
             f"No benchmark rule matched for {item_code}; "
             f"using fallback margin {fallback_margin}%."

@@ -9,7 +9,6 @@
         "ratio_min",
         "ratio_max",
         "target_margin_percent",
-        "customer_segment",
         "customer_type",
         "item_group",
         "material",
@@ -44,12 +43,6 @@
             "reqd": 1,
             "default": "0",
             "in_list_view": 1
-        },
-        {
-            "fieldname": "customer_segment",
-            "fieldtype": "Select",
-            "label": "Customer Segment",
-            "options": "\nB2B\nB2C"
         },
         {
             "fieldname": "customer_type",

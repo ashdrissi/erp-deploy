@@ -9,7 +9,6 @@
     "pricing_scenario",
     "sales_person",
     "geography_territory",
-    "customer_segment",
     "customer_type",
     "tier",
     "item",
@@ -45,22 +44,15 @@
       "in_list_view": 1
     },
     {
-      "fieldname": "customer_segment",
-      "fieldtype": "Select",
-      "label": "Customer Segment",
-      "options": "\nB2B\nB2C"
-    },
-    {
       "fieldname": "customer_type",
-      "fieldtype": "Select",
-      "label": "Customer Type",
-      "options": "\nInstallateur\nDistributeur\nPromoteur\nParticulier"
+      "fieldtype": "Link",
+      "label": "Customer Group",
+      "options": "Customer Group"
     },
     {
       "fieldname": "tier",
-      "fieldtype": "Select",
-      "label": "Tier",
-      "options": "\nEco\nIntermediaire\nLuxe"
+      "fieldtype": "Data",
+      "label": "Tier"
     },
     {
       "fieldname": "item",

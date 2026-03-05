@@ -4,7 +4,7 @@ from time import perf_counter
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, flt, now_datetime, nowdate
+from frappe.utils import cint, flt, now_datetime, nowdate, getdate, date_diff
 
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
@@ -64,6 +64,9 @@ class PricingSheet(Document):
         tier_mod, zone_mod = self._resolve_dynamic_modifiers(benchmark_policy_doc)
 
         warnings = []
+        tier_warning = self._get_dynamic_tier_staleness_warning()
+        if tier_warning:
+            warnings.append(tier_warning)
         if not benchmark_policy_doc:
             warnings.append(_("No active pricing policy found; dynamic margin is disabled."))
         if not customs_policy:
@@ -649,7 +652,6 @@ class PricingSheet(Document):
                 "pricing_scenario": row.pricing_scenario,
                 "sales_person": row.sales_person,
                 "geography_territory": row.geography_territory,
-                "customer_segment": row.customer_segment,
                 "customer_type": row.customer_type,
                 "tier": row.tier,
                 "item": row.item,
@@ -674,7 +676,6 @@ class PricingSheet(Document):
         return {
             "sales_person": self.sales_person,
             "geography_territory": geo.get("geography_territory"),
-            "customer_segment": self.customer_segment,
             "customer_type": self.customer_type,
             "tier": self.tier,
             "item": item_code,
@@ -736,6 +737,19 @@ class PricingSheet(Document):
             _("Agent rule does not allow Pricing Policy {0} for sales person {1}."),
         )
 
+        allowed_scenarios = context.get("allowed_pricing_scenarios") or []
+        if allowed_scenarios:
+            for row in self.lines or []:
+                row_scenario = (row.get("pricing_scenario") or "").strip()
+                if row_scenario and row_scenario not in allowed_scenarios:
+                    frappe.throw(
+                        _("Line {0}: Pricing Scenario {1} is not allowed for sales person {2}.").format(
+                            row.idx,
+                            row_scenario,
+                            self.sales_person or "-",
+                        )
+                    )
+
     def _assert_agent_dynamic_allowed(self, fieldname, allowed_values, message_template):
         value = (getattr(self, fieldname, None) or "").strip()
         if not value:
@@ -748,6 +762,8 @@ class PricingSheet(Document):
 
     def _sync_customer_context(self):
         if not self.customer:
+            self.customer_type = ""
+            self.tier = ""
             return
 
         customer_values = frappe.db.get_value(
@@ -759,6 +775,34 @@ class PricingSheet(Document):
 
         self.customer_type = (customer_values.get("customer_group") or "").strip()
         self.tier = (customer_values.get("tier") or "").strip()
+
+    def _get_dynamic_tier_staleness_warning(self):
+        if not self.customer:
+            return ""
+        if not frappe.db.has_column("Customer", "enable_dynamic_segmentation"):
+            return ""
+        if not frappe.db.has_column("Customer", "tier_last_calculated_on"):
+            return ""
+
+        values = frappe.db.get_value(
+            "Customer",
+            self.customer,
+            ["enable_dynamic_segmentation", "tier_last_calculated_on", "tier"],
+            as_dict=True,
+        ) or {}
+        if cint(values.get("enable_dynamic_segmentation")) != 1:
+            return ""
+        if not values.get("tier"):
+            return _("Customer has Dynamic Segmentation enabled but no tier is currently assigned.")
+
+        calc_on = values.get("tier_last_calculated_on")
+        if not calc_on:
+            return _("Customer tier has no calculation timestamp; consider re-running segmentation.")
+
+        stale_days = date_diff(nowdate(), getdate(calc_on))
+        if stale_days > 7:
+            return _("Customer tier is {0} days old; consider re-running segmentation.").format(stale_days)
+        return ""
 
     def _format_scenario_rule(self, rule):
         if not rule:

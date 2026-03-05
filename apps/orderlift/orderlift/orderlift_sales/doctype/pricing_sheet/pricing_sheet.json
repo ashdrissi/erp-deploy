@@ -100,7 +100,6 @@
       "fieldtype": "Select",
       "label": "Customer Segment",
       "options": "B2B\nB2C",
-      "reqd": 1,
       "in_list_view": 1
     },
     {

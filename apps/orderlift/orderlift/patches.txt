@@ -8,3 +8,4 @@ orderlift.patches.v1_0.create_default_scenario_policy
 orderlift.patches.v1_0.normalize_applies_to_base_price
 orderlift.patches.v1_0.create_default_benchmark_policy
 orderlift.patches.v1_0.seed_pricing_demo_data
+orderlift.patches.v1_0.normalize_pricing_customer_group_and_tier_mode
