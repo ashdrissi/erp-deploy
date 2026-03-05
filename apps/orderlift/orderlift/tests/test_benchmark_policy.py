@@ -94,16 +94,16 @@ class TestMatchBenchmarkRule(unittest.TestCase):
         rule = _match_benchmark_rule(0.5, rules)
         self.assertEqual(rule["target_margin_percent"], 10)
 
-    def test_scope_filter_item(self):
+    def test_scope_filter_item_group(self):
         rules = [
-            {"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 25, "is_active": 1, "item": "PIPE-100", "priority": 10, "idx": 1},
+            {"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 25, "is_active": 1, "item_group": "Pipes", "priority": 10, "idx": 1},
             {"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 10, "is_active": 1, "priority": 10, "idx": 2},
         ]
-        # With matching item
-        rule = _match_benchmark_rule(0.5, rules, context={"item": "PIPE-100"})
+        # With matching item group
+        rule = _match_benchmark_rule(0.5, rules, context={"item_group": "Pipes"})
         self.assertEqual(rule["target_margin_percent"], 25)
-        # Without matching item
-        rule = _match_benchmark_rule(0.5, rules, context={"item": "OTHER"})
+        # Without matching item group
+        rule = _match_benchmark_rule(0.5, rules, context={"item_group": "Cables"})
         self.assertEqual(rule["target_margin_percent"], 10)
 
     def test_no_match(self):

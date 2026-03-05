@@ -1035,7 +1035,6 @@ class PricingSheet(Document):
                 "ratio_min": flt(r.ratio_min),
                 "ratio_max": flt(r.ratio_max),
                 "target_margin_percent": flt(r.target_margin_percent),
-                "item": r.item or "",
                 "item_group": r.item_group or "",
                 "material": r.material or "",
                 "source_bundle": r.source_bundle or "",
@@ -1085,7 +1084,7 @@ class PricingSheet(Document):
         """Format a benchmark rule for display."""
         if not rule:
             return ""
-        scope = rule.get("item") or rule.get("item_group") or rule.get("material") or "Any"
+        scope = rule.get("source_bundle") or rule.get("item_group") or rule.get("material") or "Any"
         return _("Ratio {0}-{1}: {2}% ({3})").format(
             f"{flt(rule.get('ratio_min')):.2f}",
             f"{flt(rule.get('ratio_max')):.2f}" if flt(rule.get("ratio_max")) > 0 else "∞",

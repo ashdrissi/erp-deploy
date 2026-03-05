@@ -48,9 +48,6 @@ class PricingBenchmarkPolicy(Document):
             if row.target_margin_percent < -100:
                 frappe.throw(_("Row {0}: target margin cannot be below -100%.").format(row.idx))
 
-            if row.item and row.item_group:
-                frappe.throw(_("Row {0}: set Item or Item Group, not both.").format(row.idx))
-
             if cint(row.is_active):
                 active += 1
 

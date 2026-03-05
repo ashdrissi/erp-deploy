@@ -22,7 +22,6 @@ def execute():
         "benchmark_rules",
         {
             "customer_type": "",
-            "tier": "",
             "target_margin_percent": 15,
             "min_sources_required": 1,
             "fallback_margin": 15,

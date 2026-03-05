@@ -219,8 +219,7 @@ def _match_benchmark_rule(ratio, rules, context=None):
 def _scope_matches(rule, context):
     """Check if rule scope filters match the context."""
     for key in (
-        "item", "item_group", "material", "source_bundle", 
-        "geography_territory", "customer_type", "tier"
+        "item_group", "material", "source_bundle", "geography_territory", "customer_type"
     ):
         rule_val = _norm(rule.get(key))
         if not rule_val:
@@ -233,12 +232,10 @@ def _scope_matches(rule, context):
 def _scope_specificity(rule):
     """Compute specificity score for scope filters (higher = more specific)."""
     weights = {
-        "item": 256,
         "source_bundle": 128,
         "item_group": 64,
         "material": 32,
         "customer_type": 8,
-        "tier": 4,
         "geography_territory": 2,
     }
     score = 0

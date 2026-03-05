@@ -11,8 +11,6 @@
         "target_margin_percent",
         "customer_segment",
         "customer_type",
-        "tier",
-        "item",
         "item_group",
         "material",
         "source_bundle",
@@ -58,20 +56,6 @@
             "fieldtype": "Select",
             "label": "Customer Type",
             "options": "\nInstallateur\nDistributeur\nPromoteur\nParticulier",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "tier",
-            "fieldtype": "Select",
-            "label": "Tier",
-            "options": "\nEco\nIntermediaire\nLuxe",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "item",
-            "fieldtype": "Link",
-            "label": "Item",
-            "options": "Item",
             "in_list_view": 1
         },
         {
