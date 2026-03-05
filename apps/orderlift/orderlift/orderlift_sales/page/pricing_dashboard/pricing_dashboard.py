@@ -32,7 +32,7 @@ def get_dashboard_data(filters=None):
         filters=sheet_filters,
         fields=[
             "name", "sheet_name", "customer", "pricing_scenario",
-            "margin_policy", "applied_margin_policy", "applied_benchmark_policy",
+            "benchmark_policy", "applied_benchmark_policy",
             "total_buy", "total_expenses", "total_selling",
             "calculated_on", "sales_person", "geography_territory",
         ],

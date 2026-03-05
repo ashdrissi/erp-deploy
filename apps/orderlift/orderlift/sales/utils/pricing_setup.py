@@ -6,6 +6,17 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 def after_migrate():
     create_custom_fields(
         {
+            "Customer": [
+                {
+                    "fieldname": "tier",
+                    "label": "Tier",
+                    "fieldtype": "Select",
+                    "options": "\nEco\nIntermediaire\nLuxe",
+                    "insert_after": "customer_group",
+                    "in_list_view": 1,
+                    "in_standard_filter": 1,
+                }
+            ],
             "Item": [
                 {
                     "fieldname": "custom_material",
@@ -68,10 +79,10 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
-                    "fieldname": "source_margin_policy",
-                    "label": "Source Margin Policy",
+                    "fieldname": "source_pricing_policy",
+                    "label": "Source Pricing Policy",
                     "fieldtype": "Link",
-                    "options": "Pricing Margin Policy",
+                    "options": "Pricing Benchmark Policy",
                     "insert_after": "source_pricing_override",
                     "read_only": 1,
                 },
@@ -79,7 +90,7 @@ def after_migrate():
                     "fieldname": "source_margin_percent",
                     "label": "Source Margin Percent",
                     "fieldtype": "Percent",
-                    "insert_after": "source_margin_policy",
+                    "insert_after": "source_pricing_policy",
                     "read_only": 1,
                 },
                 {
@@ -173,7 +184,7 @@ def ensure_pricing_workspace():
         {"label": "Pricing Sheet", "type": "DocType", "link_to": "Pricing Sheet"},
         {"label": "Pricing Scenario", "type": "DocType", "link_to": "Pricing Scenario"},
         {"label": "Scenario Policies", "type": "DocType", "link_to": "Pricing Scenario Policy"},
-        {"label": "Margin Policies", "type": "DocType", "link_to": "Pricing Margin Policy"},
+        {"label": "Pricing Policies", "type": "DocType", "link_to": "Pricing Benchmark Policy"},
         {"label": "Customs Policies", "type": "DocType", "link_to": "Pricing Customs Policy"},
     ]
 

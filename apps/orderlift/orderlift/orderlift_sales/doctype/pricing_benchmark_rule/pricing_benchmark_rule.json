@@ -9,6 +9,9 @@
         "ratio_min",
         "ratio_max",
         "target_margin_percent",
+        "customer_segment",
+        "customer_type",
+        "tier",
         "item",
         "item_group",
         "material",
@@ -24,7 +27,6 @@
             "fieldname": "ratio_min",
             "fieldtype": "Float",
             "label": "Ratio Min",
-            "reqd": 1,
             "default": "0",
             "in_list_view": 1,
             "description": "Lower bound (inclusive) of landed_cost / benchmark_ref"
@@ -43,6 +45,26 @@
             "label": "Target Margin %",
             "reqd": 1,
             "default": "0",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "customer_segment",
+            "fieldtype": "Select",
+            "label": "Customer Segment",
+            "options": "\nB2B\nB2C"
+        },
+        {
+            "fieldname": "customer_type",
+            "fieldtype": "Select",
+            "label": "Customer Type",
+            "options": "\nInstallateur\nDistributeur\nPromoteur\nParticulier",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "tier",
+            "fieldtype": "Select",
+            "label": "Tier",
+            "options": "\nEco\nIntermediaire\nLuxe",
             "in_list_view": 1
         },
         {

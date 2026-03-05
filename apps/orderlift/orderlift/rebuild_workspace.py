@@ -12,17 +12,44 @@ def execute():
         "Customer Segmentation Rule", "Pricing Tier Modifier", "Pricing Zone Modifier"
     ]
     
+    icon_map = {
+        'Customer': 'users',
+        'Quotation': 'file-text',
+        'Sale Order': 'shopping-cart',
+        'Stock Entry': 'truck',
+        'Warehouse': 'home',
+        'Stock Ledger': 'book',
+        'Projected Quantity': 'activity',
+        'Item': 'box',
+        'Product Bundle': 'layers',
+        'Price List': 'list',
+        'Item Price': 'tag',
+        'Pricing Rule': 'award',
+        'Companies': 'briefcase',
+        'Logistics Hub Cockpit': 'map-pin',
+        'Container Load Plan': 'grid',
+        'Container Profile': 'database',
+        'Shipment Analysis': 'pie-chart',
+        'Hub Logistique': 'navigation',
+        'Dashboard': 'dashboard',
+        'Sales': 'shopping-cart',
+        'Stock Visibility': 'eye',
+        'Base Articles': 'box',
+        'Logistics': 'truck'
+    }
+
     # 1. Gather existing non-pricing items
     other_items = []
     for item in ws.get("items", []):
         if item.label not in pricing_labels and getattr(item, 'link_to', '') not in pricing_labels:
+            new_icon = icon_map.get(item.label) or item.icon
             other_items.append({
                 'type': item.type,
                 'label': item.label,
                 'link_type': item.link_type,
                 'link_to': getattr(item, 'link_to', ''),
                 'child': item.child,
-                'icon': item.icon
+                'icon': new_icon
             })
             
     # Clear the table entirely
@@ -50,4 +77,4 @@ def execute():
 
     ws.save(ignore_permissions=True)
     frappe.db.commit()
-    print("Workspace Main Dashboard completely ordered and rebuilt.")
+    print("Workspace Main Dashboard completely ordered and rebuilt with icons.")
