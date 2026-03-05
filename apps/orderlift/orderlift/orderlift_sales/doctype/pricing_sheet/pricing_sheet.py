@@ -910,20 +910,37 @@ class PricingSheet(Document):
             return tier_mod, zone_mod
 
         sheet_tier = (self.tier or "").strip()
+        sheet_customer_group = (self.customer_type or "").strip()
         sheet_territory = (self.geography_territory or "").strip()
 
         # Match tier modifier
         if sheet_tier:
+            tier_default_row = None
             for row in (benchmark_policy_doc.get("tier_modifiers") or []):
                 if not row.get("is_active"):
                     continue
-                if (row.get("tier") or "").strip() == sheet_tier:
+                if (row.get("tier") or "").strip() != sheet_tier:
+                    continue
+
+                row_customer_group = (row.get("customer_group") or "").strip()
+                if row_customer_group:
+                    if row_customer_group != sheet_customer_group:
+                        continue
                     tier_mod = {
                         "amount": flt(row.get("modifier_amount")),
                         "type": row.get("modifier_type") or "Fixed",
-                        "label": "Tier: {}".format(sheet_tier),
+                        "label": "Tier: {} / Group: {}".format(sheet_tier, row_customer_group),
                     }
                     break
+                if tier_default_row is None:
+                    tier_default_row = row
+
+            if not tier_mod and tier_default_row:
+                tier_mod = {
+                    "amount": flt(tier_default_row.get("modifier_amount")),
+                    "type": tier_default_row.get("modifier_type") or "Fixed",
+                    "label": "Tier: {}".format(sheet_tier),
+                }
 
         # Match zone modifier
         if sheet_territory:

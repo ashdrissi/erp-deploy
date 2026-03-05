@@ -83,10 +83,24 @@ class CustomerSegmentationEngine(Document):
         for r in results:
             if r["assigned_segment"]:
                 try:
-                    frappe.db.set_value(
-                        "Customer", r["customer"], "tier", r["assigned_segment"],
-                        update_modified=False,
-                    )
+                    is_dynamic = 1
+                    if frappe.db.has_column("Customer", "enable_dynamic_segmentation"):
+                        is_dynamic = cint(
+                            frappe.db.get_value(
+                                "Customer", r["customer"], "enable_dynamic_segmentation"
+                            )
+                            or 0
+                        )
+                    if is_dynamic != 1:
+                        continue
+
+                    values = {"tier": r["assigned_segment"]}
+                    if frappe.db.has_column("Customer", "tier_source"):
+                        values["tier_source"] = self.engine_name or self.name
+                    if frappe.db.has_column("Customer", "tier_last_calculated_on"):
+                        values["tier_last_calculated_on"] = frappe.utils.now_datetime()
+
+                    frappe.db.set_value("Customer", r["customer"], values, update_modified=False)
                     updated += 1
                 except Exception:
                     pass
@@ -257,3 +271,41 @@ class CustomerSegmentationEngine(Document):
         elif operator == "!=":
             return actual != threshold
         return False
+
+
+@frappe.whitelist()
+def get_customer_group_tiers(customer_group=None):
+    customer_group = (customer_group or "").strip()
+    if not customer_group:
+        return []
+
+    active_engines = frappe.get_all(
+        "Customer Segmentation Engine",
+        filters={"is_active": 1, "target_customer_type": customer_group},
+        pluck="name",
+        limit_page_length=0,
+    )
+
+    if not active_engines:
+        active_engines = frappe.get_all(
+            "Customer Segmentation Engine",
+            filters={"is_active": 1, "target_customer_type": ["in", ["", None]]},
+            pluck="name",
+            limit_page_length=0,
+        )
+
+    tiers = set()
+    for engine_name in active_engines:
+        rows = frappe.get_all(
+            "Customer Segmentation Rule",
+            filters={"parent": engine_name, "is_active": 1},
+            fields=["designated_segment", "priority"],
+            order_by="priority asc, idx asc",
+            limit_page_length=0,
+        )
+        for row in rows:
+            value = (row.get("designated_segment") or "").strip()
+            if value:
+                tiers.add(value)
+
+    return sorted(tiers)

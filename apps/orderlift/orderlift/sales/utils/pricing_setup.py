@@ -8,14 +8,49 @@ def after_migrate():
         {
             "Customer": [
                 {
+                    "fieldname": "enable_dynamic_segmentation",
+                    "label": "Enable Dynamic Segmentation",
+                    "fieldtype": "Check",
+                    "default": "1",
+                    "insert_after": "customer_group",
+                    "in_standard_filter": 1,
+                    "description": "If enabled, Tier is maintained by segmentation engines.",
+                },
+                {
                     "fieldname": "tier",
                     "label": "Tier",
                     "fieldtype": "Select",
-                    "options": "\nEco\nIntermediaire\nLuxe",
-                    "insert_after": "customer_group",
+                    "options": "",
+                    "insert_after": "enable_dynamic_segmentation",
                     "in_list_view": 1,
                     "in_standard_filter": 1,
-                }
+                    "depends_on": "eval:doc.enable_dynamic_segmentation==1",
+                },
+                {
+                    "fieldname": "manual_tier",
+                    "label": "Manual Tier",
+                    "fieldtype": "Select",
+                    "options": "",
+                    "insert_after": "tier",
+                    "in_standard_filter": 1,
+                    "depends_on": "eval:doc.enable_dynamic_segmentation==0",
+                    "description": "Used when dynamic segmentation is disabled.",
+                },
+                {
+                    "fieldname": "tier_last_calculated_on",
+                    "label": "Tier Last Calculated On",
+                    "fieldtype": "Datetime",
+                    "insert_after": "manual_tier",
+                    "read_only": 1,
+                    "depends_on": "eval:doc.enable_dynamic_segmentation==1",
+                },
+                {
+                    "fieldname": "tier_source",
+                    "label": "Tier Source",
+                    "fieldtype": "Data",
+                    "insert_after": "tier_last_calculated_on",
+                    "read_only": 1,
+                },
             ],
             "Item": [
                 {
@@ -158,6 +193,7 @@ def after_migrate():
     )
 
     frappe.clear_cache(doctype="Item")
+    frappe.clear_cache(doctype="Customer")
     frappe.clear_cache(doctype="Quotation")
     frappe.clear_cache(doctype="Quotation Item")
     frappe.clear_cache(doctype="Selling Settings")

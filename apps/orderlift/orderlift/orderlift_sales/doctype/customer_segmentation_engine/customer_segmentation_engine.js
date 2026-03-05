@@ -17,7 +17,7 @@ frappe.ui.form.on('Customer Segmentation Engine', {
 
             frm.add_custom_button(__('Apply to Customers'), function () {
                 frappe.confirm(
-                    __('This will update the Tier field on all matched customers. Continue?'),
+                    __('This will update Tier only for customers with Dynamic Segmentation enabled. Continue?'),
                     function () {
                         frappe.call({
                             method: 'apply_segments',

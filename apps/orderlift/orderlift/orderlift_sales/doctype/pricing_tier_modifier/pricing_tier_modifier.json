@@ -6,12 +6,21 @@
     "editable_grid": 1,
     "engine": "InnoDB",
     "field_order": [
+        "customer_group",
         "tier",
         "modifier_amount",
         "modifier_type",
         "is_active"
     ],
     "fields": [
+        {
+            "fieldname": "customer_group",
+            "fieldtype": "Link",
+            "label": "Customer Group",
+            "options": "Customer Group",
+            "in_list_view": 1,
+            "description": "Optional. If set, modifier applies only to this customer group."
+        },
         {
             "fieldname": "tier",
             "fieldtype": "Select",

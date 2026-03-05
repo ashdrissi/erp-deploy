@@ -29,9 +29,36 @@ const RULES_HELP = `
                 <tr><td>0.80 – ∞</td><td>${__("Tight / at-market")}</td><td class="pbp-margin-low">8%</td></tr>
             </tbody>
         </table>
-        <p style="margin-top:8px;font-size:12px;color:#64748b;">${__("Tip: Set Ratio Max to 0 for 'unlimited' (catches everything above Ratio Min). Use scope filters (Item, Material, Territory) to create product-specific rules.")}</p>
+        <p style="margin-top:8px;font-size:12px;color:#64748b;">${__("Tip: Set Ratio Max to 0 for 'unlimited' (catches everything above Ratio Min). Use scope filters (Customer Group, Material, Territory) to create targeted rules.")}</p>
     </div>
 </div>`;
+
+function benchmarkRuleCustomerGroups(frm) {
+    const values = [];
+    for (const row of frm.doc.benchmark_rules || []) {
+        if (!row.customer_type) {
+            continue;
+        }
+        values.push(row.customer_type);
+    }
+    return [...new Set(values)];
+}
+
+function applyTierModifierCustomerGroupQuery(frm) {
+    const groups = benchmarkRuleCustomerGroups(frm);
+    const field = frm.fields_dict.tier_modifiers?.grid?.get_field("customer_group");
+    if (!field) {
+        return;
+    }
+
+    field.get_query = () => {
+        if (!groups.length) {
+            return {};
+        }
+        return { filters: { name: ["in", groups] } };
+    };
+    frm.refresh_field("tier_modifiers");
+}
 
 frappe.ui.form.on("Pricing Benchmark Policy", {
     refresh(frm) {
@@ -39,6 +66,19 @@ frappe.ui.form.on("Pricing Benchmark Policy", {
         frm.fields_dict.sources_help_html && frm.fields_dict.sources_help_html.$wrapper.html(SOURCES_HELP);
         frm.fields_dict.rules_help_html && frm.fields_dict.rules_help_html.$wrapper.html(RULES_HELP);
         _style_form(frm);
+        applyTierModifierCustomerGroupQuery(frm);
+    },
+    benchmark_rules_add(frm) {
+        applyTierModifierCustomerGroupQuery(frm);
+    },
+    benchmark_rules_remove(frm) {
+        applyTierModifierCustomerGroupQuery(frm);
+    },
+});
+
+frappe.ui.form.on("Pricing Benchmark Rule", {
+    customer_type(frm) {
+        applyTierModifierCustomerGroupQuery(frm);
     },
 });
 

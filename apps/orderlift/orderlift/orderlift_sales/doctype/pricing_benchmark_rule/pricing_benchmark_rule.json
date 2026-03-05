@@ -53,9 +53,9 @@
         },
         {
             "fieldname": "customer_type",
-            "fieldtype": "Select",
-            "label": "Customer Type",
-            "options": "\nInstallateur\nDistributeur\nPromoteur\nParticulier",
+            "fieldtype": "Link",
+            "label": "Customer Group",
+            "options": "Customer Group",
             "in_list_view": 1
         },
         {

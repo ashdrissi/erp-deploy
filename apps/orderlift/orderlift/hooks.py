@@ -84,6 +84,9 @@ doc_events = {
         "on_submit": "orderlift.logistics.utils.delivery_note_logistics.analyze_delivery_note",
         "on_cancel": "orderlift.logistics.utils.delivery_note_logistics.cancel_delivery_note_analysis",
     },
+    "Customer": {
+        "before_save": "orderlift.sales.utils.customer_tier.sync_customer_tier_mode",
+    },
 }
 
 doctype_js = {
@@ -91,6 +94,7 @@ doctype_js = {
     "Sales Order": "public/js/sales_order_logistics.js",
     "Pricing Sheet": "public/js/pricing_sheet_form_20260226_10.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
+    "Customer": "public/js/customer_tier_mode.js",
 }
 
 # ---------------------------------------------------------

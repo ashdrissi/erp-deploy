@@ -14,6 +14,7 @@ class PricingBenchmarkPolicy(Document):
     def validate(self):
         self._validate_sources()
         self._validate_rules()
+        self._validate_tier_modifiers()
 
     def _validate_sources(self):
         active = 0
@@ -53,3 +54,23 @@ class PricingBenchmarkPolicy(Document):
 
         if active == 0:
             frappe.throw(_("At least one active benchmark rule is required."))
+
+    def _validate_tier_modifiers(self):
+        seen = set()
+        for row in self.tier_modifiers or []:
+            row.customer_group = (row.customer_group or "").strip()
+            row.tier = (row.tier or "").strip()
+            row.modifier_type = (row.modifier_type or "Fixed").strip() or "Fixed"
+
+            key = (row.customer_group.lower(), row.tier.lower())
+            if key in seen:
+                if row.customer_group:
+                    frappe.throw(
+                        _("Row {0}: duplicate tier modifier for Customer Group {1} and Tier {2}.").format(
+                            row.idx,
+                            row.customer_group,
+                            row.tier,
+                        )
+                    )
+                frappe.throw(_("Row {0}: duplicate tier-only modifier for Tier {1}.").format(row.idx, row.tier))
+            seen.add(key)
