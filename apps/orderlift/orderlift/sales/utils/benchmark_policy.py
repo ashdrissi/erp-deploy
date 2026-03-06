@@ -26,6 +26,7 @@ def resolve_benchmark_margin(
     fallback_margin=10.0,
     price_map=None,
     context=None,
+    benchmark_basis="Selling Market",
 ):
     """Resolve target margin for an item based on benchmark comparison.
 
@@ -47,6 +48,16 @@ def resolve_benchmark_margin(
     """
     warnings = []
     context = context or {}
+    benchmark_basis = (benchmark_basis or "Selling Market").strip() or "Selling Market"
+
+    source_types = {
+        _norm(src.get("price_list")): _norm(src.get("price_list_type") or src.get("source_kind") or "")
+        for src in (benchmark_sources or [])
+        if src.get("price_list")
+    }
+    basis_warning = _basis_warning(benchmark_basis, source_types)
+    if basis_warning:
+        warnings.append(basis_warning)
 
     # Gather benchmark prices from all active sources
     prices, source_labels = _fetch_benchmark_prices(
@@ -94,6 +105,7 @@ def resolve_benchmark_margin(
         "benchmark_reference": flt(benchmark_ref),
         "source_count": len(prices),
         "method": method,
+        "benchmark_basis": benchmark_basis,
         "ratio": ratio,
         "matched_rule": matched,
         "warnings": warnings,
@@ -252,3 +264,28 @@ def _norm(val):
     if val is None:
         return ""
     return str(val).strip().lower()
+
+
+def _basis_warning(benchmark_basis, source_types):
+    if not source_types:
+        return ""
+
+    kinds = set(source_types.values())
+    selling_like = {"selling", "competitor", "internal"}
+    buying_like = {"buying", "supplier"}
+
+    has_buying = any(k in buying_like for k in kinds)
+    has_selling = any(k in selling_like for k in kinds)
+    has_unknown = any(k in {"", "other", "mixed", "unknown"} for k in kinds)
+
+    if benchmark_basis == "Selling Market":
+        if has_buying or has_unknown:
+            return "Benchmark Basis is 'Selling Market' but one or more sources are buying/unknown lists."
+    elif benchmark_basis == "Buying Supplier":
+        if has_selling or has_unknown:
+            return "Benchmark Basis is 'Buying Supplier' but one or more sources are selling/unknown lists."
+    elif benchmark_basis == "Any List":
+        if has_buying and has_selling:
+            return "Benchmark sources include both buying and selling lists; interpretation is mixed."
+
+    return ""

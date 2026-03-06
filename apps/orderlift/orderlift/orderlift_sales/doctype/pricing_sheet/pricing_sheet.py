@@ -146,6 +146,7 @@ class PricingSheet(Document):
                 benchmark_result = self._resolve_benchmark_for_row(
                     row, landed_cost, benchmark_policy_doc, item_details,
                     cache.get("benchmark_price_map") or {},
+                    cache.get("benchmark_source_types") or {},
                     line_context,
                 )
                 if benchmark_result:
@@ -1080,12 +1081,14 @@ class PricingSheet(Document):
             landed += flt(customs_calc["applied"]) / qty if qty else 0
         return landed
 
-    def _resolve_benchmark_for_row(self, row, landed_cost, benchmark_policy_doc, item_details, price_map, line_context):
+    def _resolve_benchmark_for_row(self, row, landed_cost, benchmark_policy_doc, item_details, price_map, source_types_map, line_context):
         """Resolve benchmark margin for a single pricing line."""
         sources = [
             {
                 "price_list": src.price_list,
                 "label": src.label or src.price_list,
+                "source_kind": src.source_kind or "",
+                "price_list_type": source_types_map.get(src.price_list, ""),
                 "weight": flt(src.weight) or 1.0,
                 "is_active": cint(src.is_active),
             }
@@ -1114,6 +1117,7 @@ class PricingSheet(Document):
             benchmark_sources=sources,
             benchmark_rules=rules,
             method=benchmark_policy_doc.method or "Median",
+            benchmark_basis=benchmark_policy_doc.benchmark_basis or "Selling Market",
             min_sources=cint(benchmark_policy_doc.min_sources_required or 2),
             fallback_margin=flt(benchmark_policy_doc.fallback_margin_percent or 10),
             price_map=price_map,
@@ -1237,14 +1241,17 @@ class PricingSheet(Document):
     def _build_scenario_caches(self, scenario_docs, item_codes, benchmark_policy_doc=None):
         # Pre-fetch benchmark prices from all sources in the benchmark policy
         benchmark_price_map = {}
+        benchmark_source_types = {}
         if benchmark_policy_doc:
             for src in benchmark_policy_doc.benchmark_sources or []:
                 if not cint(src.is_active):
                     continue
                 pl = src.price_list
+                if pl and pl not in benchmark_source_types:
+                    benchmark_source_types[pl] = get_price_list_type(pl)
                 if pl and pl not in benchmark_price_map:
                     benchmark_price_map[pl] = get_latest_item_prices(
-                        item_codes, pl, buying=False
+                        item_codes, pl, buying=None
                     )
 
         caches = {}
@@ -1268,8 +1275,9 @@ class PricingSheet(Document):
                 "buying_price_list": buying_price_list,
                 "benchmark_price_list": benchmark_price_list,
                 "buy_prices": get_latest_item_prices(item_codes, buying_price_list, buying=True),
-                "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=False),
+                "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=None),
                 "benchmark_price_map": benchmark_price_map,
+                "benchmark_source_types": benchmark_source_types,
                 "line_expenses": line_expenses,
                 "sheet_fixed_total": sheet_fixed_total,
                 "transport_config": self._extract_transport_config(scenario),
@@ -1852,8 +1860,9 @@ def get_latest_item_prices(item_codes, price_list, buying):
         "item_codes": tuple(item_codes),
         "price_list": price_list,
         "today": nowdate(),
-        "buying": 1 if buying else 0,
     }
+    if buying is not None:
+        params["buying"] = 1 if buying else 0
 
     conditions = [
         "ip.item_code in %(item_codes)s",
@@ -1867,7 +1876,7 @@ def get_latest_item_prices(item_codes, price_list, buying):
 
     if has_enabled:
         conditions.append("ip.enabled = 1")
-    if has_buying:
+    if has_buying and buying is not None:
         conditions.append("ip.buying = %(buying)s")
     if has_valid_from:
         conditions.append("(ip.valid_from IS NULL OR ip.valid_from <= %(today)s)")
@@ -1894,6 +1903,21 @@ def get_latest_item_prices(item_codes, price_list, buying):
         if row.item_code not in out:
             out[row.item_code] = flt(row.price_list_rate)
     return out
+
+
+def get_price_list_type(price_list_name):
+    if not price_list_name:
+        return "Unknown"
+    values = frappe.db.get_value("Price List", price_list_name, ["buying", "selling"], as_dict=True) or {}
+    is_buying = cint(values.get("buying")) == 1
+    is_selling = cint(values.get("selling")) == 1
+    if is_buying and is_selling:
+        return "Mixed"
+    if is_buying:
+        return "Buying"
+    if is_selling:
+        return "Selling"
+    return "Unknown"
 
 
 def recalculate_pricing_sheet_job(pricing_sheet_name, user=None):

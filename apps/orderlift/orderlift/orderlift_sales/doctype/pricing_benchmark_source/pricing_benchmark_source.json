@@ -7,6 +7,7 @@
     "engine": "InnoDB",
     "field_order": [
         "price_list",
+        "source_kind",
         "label",
         "weight",
         "is_active"
@@ -26,6 +27,13 @@
             "label": "Label",
             "in_list_view": 1,
             "description": "Display name (e.g. Competitor A)"
+        },
+        {
+            "fieldname": "source_kind",
+            "fieldtype": "Select",
+            "label": "Source Kind",
+            "options": "\nCompetitor\nSupplier\nInternal\nOther",
+            "description": "Optional classification used for analysis and warnings."
         },
         {
             "fieldname": "weight",

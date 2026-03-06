@@ -19,6 +19,10 @@ class PricingBenchmarkPolicy(Document):
     def _validate_sources(self):
         active = 0
         seen = set()
+        basis = (self.benchmark_basis or "Selling Market").strip() or "Selling Market"
+        source_type_values = []
+        warnings = []
+
         for row in self.benchmark_sources or []:
             row.price_list = (row.price_list or "").strip()
             if not row.price_list:
@@ -26,12 +30,44 @@ class PricingBenchmarkPolicy(Document):
             if row.price_list in seen:
                 frappe.throw(_("Row {0}: duplicate price list {1}.").format(row.idx, row.price_list))
             seen.add(row.price_list)
+
+            row.source_kind = (row.source_kind or "").strip()
             row.weight = flt(row.weight) or 1.0
+
+            price_list_type = _price_list_type(row.price_list)
+            if not row.source_kind:
+                row.source_kind = _default_source_kind(price_list_type)
+
             if cint(row.is_active):
                 active += 1
+                source_type_values.append(price_list_type)
+                mismatch = _basis_mismatch(basis, price_list_type)
+                if mismatch:
+                    warnings.append(
+                        _("Row {0}: source {1} is {2}, which may not fit Benchmark Basis '{3}'.").format(
+                            row.idx,
+                            row.price_list,
+                            price_list_type,
+                            basis,
+                        )
+                    )
 
         if active == 0:
             frappe.throw(_("At least one active benchmark source is required."))
+
+        normalized_types = {t for t in source_type_values if t in {"Selling", "Buying"}}
+        if basis == "Any List" and len(normalized_types) > 1:
+            warnings.append(
+                _("Active benchmark sources mix Buying and Selling lists. Results are valid but interpretation is mixed.")
+            )
+
+        if warnings:
+            frappe.msgprint(
+                "<br>".join(warnings),
+                title=_("Benchmark Basis Warnings"),
+                indicator="orange",
+                alert=True,
+            )
 
     def _validate_rules(self):
         active = 0
@@ -74,3 +110,32 @@ class PricingBenchmarkPolicy(Document):
                     )
                 frappe.throw(_("Row {0}: duplicate tier-only modifier for Tier {1}.").format(row.idx, row.tier))
             seen.add(key)
+
+
+def _price_list_type(price_list_name):
+    values = frappe.db.get_value("Price List", price_list_name, ["buying", "selling"], as_dict=True) or {}
+    is_buying = cint(values.get("buying")) == 1
+    is_selling = cint(values.get("selling")) == 1
+    if is_buying and is_selling:
+        return "Mixed"
+    if is_buying:
+        return "Buying"
+    if is_selling:
+        return "Selling"
+    return "Unknown"
+
+
+def _default_source_kind(price_list_type):
+    if price_list_type == "Buying":
+        return "Supplier"
+    if price_list_type == "Selling":
+        return "Competitor"
+    return "Other"
+
+
+def _basis_mismatch(basis, price_list_type):
+    if basis == "Selling Market":
+        return price_list_type in {"Buying", "Mixed", "Unknown"}
+    if basis == "Buying Supplier":
+        return price_list_type in {"Selling", "Mixed", "Unknown"}
+    return False

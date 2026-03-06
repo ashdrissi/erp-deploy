@@ -12,6 +12,7 @@
         "is_active",
         "is_default",
         "column_break_settings",
+        "benchmark_basis",
         "method",
         "min_sources_required",
         "fallback_margin_percent",
@@ -66,6 +67,15 @@
         {
             "fieldname": "column_break_settings",
             "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "benchmark_basis",
+            "fieldtype": "Select",
+            "label": "Benchmark Basis",
+            "options": "Selling Market\nBuying Supplier\nAny List",
+            "default": "Selling Market",
+            "reqd": 1,
+            "description": "Controls source-type warnings: market comparison, supplier-cost comparison, or mixed-list mode."
         },
         {
             "fieldname": "method",
