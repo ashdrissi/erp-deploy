@@ -144,7 +144,7 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "total_expenses": flt(doc.total_expenses),
             "total_selling": flt(doc.total_selling),
             "gross_margin": flt(doc.total_selling) - flt(doc.total_buy),
-            "global_margin_pct": flt(doc.global_margin_pct),
+            "global_margin_pct": _compute_global_margin_pct(doc),
         },
         "resolved": {
             "pricing_scenario": doc.pricing_scenario or "",
@@ -324,3 +324,13 @@ def _count_enabled_items():
     if frappe.db.has_column("Item", "is_sales_item"):
         filters["is_sales_item"] = 1
     return cint(frappe.db.count("Item", filters=filters))
+
+
+def _compute_global_margin_pct(doc):
+    if hasattr(doc, "global_margin_pct"):
+        return flt(getattr(doc, "global_margin_pct"))
+    total_buy = flt(getattr(doc, "total_buy", 0))
+    total_sell = flt(getattr(doc, "total_selling", 0))
+    if total_sell <= 0:
+        return 0.0
+    return flt(((total_sell - total_buy) / total_sell) * 100)
