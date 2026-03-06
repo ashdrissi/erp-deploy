@@ -10,13 +10,13 @@ frappe.pages["pricing-simulator"].on_page_load = function (wrapper) {
 
     const state = {
         page,
-        rows: [],
-        defaultsApplied: false,
         enabledItemCount: 0,
+        defaultsApplied: false,
+        debounce: null,
     };
 
     buildLayout(state);
-    addItemRow(state, { qty: 10 });
+    loadDefaults(state, false).then(() => runSimulation(state));
 };
 
 function buildLayout(state) {
@@ -24,22 +24,15 @@ function buildLayout(state) {
 
     const controlsWrap = $(
         `<div class="psim-controls">
-            <div class="psim-grid"></div>
-            <div class="psim-actions">
-                <button class="btn btn-default btn-sm" data-action="load-defaults">${__("Load Agent Defaults")}</button>
-                <button class="btn btn-primary btn-sm" data-action="simulate">${__("Run Simulation")}</button>
-            </div>
-        </div>`
-    );
-
-    const itemsWrap = $(
-        `<div class="psim-card">
             <div class="psim-card-head">
-                <div class="psim-title">${__("Simulation Items")}</div>
-                <button class="btn btn-default btn-xs" data-action="add-row">${__("Add Item")}</button>
+                <div class="psim-title">${__("Filters")}</div>
+                <div class="psim-actions">
+                    <button class="btn btn-default btn-xs" data-action="load-defaults">${__("Use Agent Defaults")}</button>
+                    <button class="btn btn-primary btn-xs" data-action="refresh">${__("Refresh")}</button>
+                </div>
             </div>
+            <div class="psim-grid"></div>
             <div class="psim-hint" data-role="auto-hint"></div>
-            <div class="psim-items"></div>
         </div>`
     );
 
@@ -53,23 +46,19 @@ function buildLayout(state) {
     );
 
     page.main.append(controlsWrap);
-    page.main.append(itemsWrap);
     page.main.append(outputWrap);
 
-    state.itemsWrap = itemsWrap.find(".psim-items");
-    state.autoHint = itemsWrap.find('[data-role="auto-hint"]');
+    state.autoHint = controlsWrap.find('[data-role="auto-hint"]');
     state.outputWrap = outputWrap.find(".psim-output");
 
     const grid = controlsWrap.find(".psim-grid");
     state.controls = {
         customer: makeControl(grid, { fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" }),
         sales_person: makeControl(grid, { fieldname: "sales_person", label: __("Sales Person"), fieldtype: "Link", options: "Sales Person" }),
-        run_dynamic: makeControl(grid, { fieldname: "run_dynamic", label: __("Dynamic Simulation"), fieldtype: "Check", default: 1 }),
-        run_static: makeControl(grid, { fieldname: "run_static", label: __("Static Simulation"), fieldtype: "Check", default: 1 }),
-        use_all_enabled_items: makeControl(grid, { fieldname: "use_all_enabled_items", label: __("Use All Enabled Items"), fieldtype: "Check", default: 1 }),
+        view_mode: makeControl(grid, { fieldname: "view_mode", label: __("View"), fieldtype: "Select", options: "Compare (Dynamic vs Static)\nDynamic only\nStatic only", default: "Compare (Dynamic vs Static)" }),
         item_group: makeControl(grid, { fieldname: "item_group", label: __("Item Group Filter"), fieldtype: "Link", options: "Item Group" }),
         default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Default Qty per Item"), fieldtype: "Float", default: 1 }),
-        max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items (0 = all)"), fieldtype: "Int", default: 0 }),
+        max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
         scenario_policy: makeControl(grid, { fieldname: "scenario_policy", label: __("Scenario Policy Override"), fieldtype: "Link", options: "Pricing Scenario Policy" }),
         pricing_scenario: makeControl(grid, { fieldname: "pricing_scenario", label: __("Pricing Scenario Override"), fieldtype: "Link", options: "Pricing Scenario" }),
         customs_policy: makeControl(grid, { fieldname: "customs_policy", label: __("Customs Policy Override"), fieldtype: "Link", options: "Pricing Customs Policy" }),
@@ -77,14 +66,16 @@ function buildLayout(state) {
         static_lists: makeControl(grid, { fieldname: "static_lists", label: __("Static Lists Override"), fieldtype: "Small Text", description: __("Comma-separated selling lists for static simulation." ) }),
     };
 
-    itemsWrap.find('[data-action="add-row"]').on("click", () => addItemRow(state, {}));
     controlsWrap.find('[data-action="load-defaults"]').on("click", () => loadDefaults(state, true));
-    controlsWrap.find('[data-action="simulate"]').on("click", () => runSimulation(state));
+    controlsWrap.find('[data-action="refresh"]').on("click", () => runSimulation(state));
 
-    state.controls.sales_person.$input?.on("change", () => loadDefaults(state, false));
-    state.controls.use_all_enabled_items.$input?.on("change", () => applyItemInputMode(state));
-
-    applyItemInputMode(state);
+    Object.values(state.controls).forEach((control) => {
+        control.$input?.on("change", () => queueRun(state));
+    });
+    state.controls.sales_person.$input?.on("change", async () => {
+        await loadDefaults(state, false);
+        queueRun(state);
+    });
 }
 
 function makeControl(parent, df) {
@@ -99,36 +90,6 @@ function makeControl(parent, df) {
         control.set_value(df.default);
     }
     return control;
-}
-
-function addItemRow(state, values) {
-    const rowWrap = $(
-        `<div class="psim-row">
-            <div class="psim-row-fields"></div>
-            <button class="btn btn-default btn-xs" data-action="remove">${__("Remove")}</button>
-        </div>`
-    );
-    state.itemsWrap.append(rowWrap);
-
-    const fieldsWrap = rowWrap.find(".psim-row-fields");
-    const item = makeControl(fieldsWrap, { fieldname: "item", label: __("Item"), fieldtype: "Link", options: "Item", reqd: 1 });
-    const qty = makeControl(fieldsWrap, { fieldname: "qty", label: __("Qty"), fieldtype: "Float", default: values.qty || 1 });
-    const sourceBundle = makeControl(fieldsWrap, { fieldname: "source_bundle", label: __("Source Bundle"), fieldtype: "Data" });
-
-    if (values.item) item.set_value(values.item);
-    if (values.qty) qty.set_value(values.qty);
-    if (values.source_bundle) sourceBundle.set_value(values.source_bundle);
-
-    const rowState = { rowWrap, item, qty, sourceBundle };
-    state.rows.push(rowState);
-
-    rowWrap.find('[data-action="remove"]').on("click", () => {
-        state.rows = state.rows.filter((r) => r !== rowState);
-        rowWrap.remove();
-        if (!state.rows.length) {
-            addItemRow(state, { qty: 1 });
-        }
-    });
 }
 
 async function loadDefaults(state, forceToast) {
@@ -171,14 +132,6 @@ async function loadDefaults(state, forceToast) {
 }
 
 function collectPayload(state) {
-    const items = state.rows
-        .map((row) => ({
-            item: row.item.get_value(),
-            qty: row.qty.get_value() || 0,
-            source_bundle: row.sourceBundle.get_value() || "",
-        }))
-        .filter((row) => row.item);
-
     return {
         customer: state.controls.customer.get_value() || "",
         sales_person: state.controls.sales_person.get_value() || "",
@@ -187,11 +140,11 @@ function collectPayload(state) {
         customs_policy: state.controls.customs_policy.get_value() || "",
         benchmark_policy: state.controls.benchmark_policy.get_value() || "",
         selling_price_lists: parseList(state.controls.static_lists.get_value()),
-        use_all_enabled_items: Number(state.controls.use_all_enabled_items.get_value() || 0),
+        use_all_enabled_items: 1,
         item_group: state.controls.item_group.get_value() || "",
         default_qty: state.controls.default_qty.get_value() || 1,
         max_items: state.controls.max_items.get_value() || 0,
-        items,
+        items: [],
     };
 }
 
@@ -202,19 +155,18 @@ function parseList(value) {
         .filter(Boolean);
 }
 
+function queueRun(state) {
+    if (state.debounce) {
+        clearTimeout(state.debounce);
+    }
+    state.debounce = setTimeout(() => runSimulation(state), 300);
+}
+
 async function runSimulation(state) {
     const payload = collectPayload(state);
-    if (!payload.use_all_enabled_items && !payload.items.length) {
-        frappe.msgprint(__("Add at least one item to run simulation."));
-        return;
-    }
-
-    const runDynamic = Number(state.controls.run_dynamic.get_value() || 0) === 1;
-    const runStatic = Number(state.controls.run_static.get_value() || 0) === 1;
-    if (!runDynamic && !runStatic) {
-        frappe.msgprint(__("Enable Dynamic and/or Static simulation."));
-        return;
-    }
+    const selectedView = state.controls.view_mode.get_value() || "Compare (Dynamic vs Static)";
+    const runDynamic = selectedView !== "Static only";
+    const runStatic = selectedView !== "Dynamic only";
 
     state.outputWrap.html(`<div class="psim-loading">${__("Running simulation...")}</div>`);
 
@@ -233,24 +185,11 @@ async function runSimulation(state) {
     }
 }
 
-function applyItemInputMode(state) {
-    const useAll = Number(state.controls.use_all_enabled_items.get_value() || 0) === 1;
-    state.itemsWrap.closest('.psim-card').find('[data-action="add-row"]').prop('disabled', useAll);
-    state.itemsWrap.css('display', useAll ? 'none' : 'block');
-    renderAutoHint(state);
-}
-
 function renderAutoHint(state) {
-    const useAll = Number(state.controls.use_all_enabled_items.get_value() || 0) === 1;
-    if (!useAll) {
-        state.autoHint.html("");
-        return;
-    }
-
     const count = Number(state.enabledItemCount || 0);
     const text = count > 0
-        ? __("Auto mode enabled: {0} enabled item(s) available for simulation.", [count])
-        : __("Auto mode enabled: all enabled items will be loaded at run time.");
+        ? __("Showing auto-simulated table for {0} enabled item(s).", [count])
+        : __("All enabled items will be auto-loaded at runtime.");
     state.autoHint.html(`<div class="psim-auto-hint">${frappe.utils.escape_html(text)}</div>`);
 }
 
@@ -266,7 +205,10 @@ async function runSingleMode(payload, mode) {
 function renderComparison(state, inputItems, dynamicData, staticData) {
     const dynRows = Object.fromEntries((dynamicData.rows || []).map((r) => [r.item, r]));
     const staRows = Object.fromEntries((staticData.rows || []).map((r) => [r.item, r]));
-    const keys = [...new Set((inputItems || []).map((x) => x.item))];
+    const keys = [...new Set([
+        ...(dynamicData.rows || []).map((x) => x.item),
+        ...(staticData.rows || []).map((x) => x.item),
+    ])];
 
     const tableRows = keys.map((item) => {
         const d = dynRows[item] || {};
@@ -430,6 +372,7 @@ function injectStyles() {
             gap: 10px;
         }
         .psim-actions { margin-top: 12px; display: flex; gap: 8px; }
+        .psim-controls .psim-actions { margin-top: 0; }
         .psim-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .psim-title { font-weight: 700; color: #0f172a; }
         .psim-hint { margin-bottom: 8px; }
@@ -441,22 +384,6 @@ function injectStyles() {
             padding: 8px 10px;
             font-size: 12px;
             font-weight: 600;
-        }
-        .psim-row {
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 10px;
-            margin-bottom: 8px;
-            background: linear-gradient(135deg, #fafafa, #f8fafc);
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-        }
-        .psim-row-fields {
-            flex: 1;
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
-            gap: 8px;
         }
         .psim-output { min-height: 90px; }
         .psim-loading { color: #334155; }
@@ -500,7 +427,7 @@ function injectStyles() {
         .psim-delta-neg { color: #9a3412; font-weight: 700; }
         .psim-muted { color: #94a3b8; }
         @media (max-width: 900px) {
-            .psim-row-fields { grid-template-columns: 1fr; }
+            .psim-grid { grid-template-columns: 1fr; }
         }
     `;
     document.head.appendChild(style);
