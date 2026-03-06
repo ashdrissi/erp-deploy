@@ -44,6 +44,7 @@ def get_dashboard_data(filters=None):
         return {"kpis": _empty_kpis(), "items": [], "scenarios": [], "sheets": []}
 
     sheet_names = [s.name for s in sheets]
+    sheet_basis = _get_sheet_basis_map(sheets)
 
     items = frappe.get_all(
         "Pricing Sheet Item",
@@ -73,6 +74,29 @@ def get_dashboard_data(filters=None):
     benchmark_coverage = (len(benchmarked) / total_items * 100) if total_items else 0
     avg_ratio = (sum(flt(i.benchmark_ratio) for i in benchmarked) / len(benchmarked)) if benchmarked else 0
 
+    basis_metrics = {}
+    for i in items:
+        basis = sheet_basis.get(i.parent, "Selling Market")
+        bucket = basis_metrics.setdefault(
+            basis,
+            {"items": 0, "benchmarked": 0, "ratio_sum": 0.0},
+        )
+        bucket["items"] += 1
+        if i.benchmark_reference and flt(i.benchmark_reference) > 0:
+            bucket["benchmarked"] += 1
+            bucket["ratio_sum"] += flt(i.benchmark_ratio)
+
+    basis_metrics_out = {}
+    for basis, bucket in basis_metrics.items():
+        benchmarked_count = cint(bucket.get("benchmarked") or 0)
+        item_count = cint(bucket.get("items") or 0)
+        basis_metrics_out[basis] = {
+            "items": item_count,
+            "benchmarked": benchmarked_count,
+            "coverage": (benchmarked_count / item_count * 100) if item_count else 0,
+            "avg_ratio": (flt(bucket.get("ratio_sum")) / benchmarked_count) if benchmarked_count else 0,
+        }
+
     margin_sources = {}
     for i in items:
         src = i.margin_source or "Unknown"
@@ -99,6 +123,7 @@ def get_dashboard_data(filters=None):
         "margin_sources": margin_sources,
         "status_counts": status_counts,
         "scenarios_count": len(scenarios_set),
+        "basis_metrics": basis_metrics_out,
     }
 
     # Serialize child rows
@@ -123,6 +148,7 @@ def get_dashboard_data(filters=None):
             "benchmark_sources": cint(i.benchmark_source_count),
             "benchmark_status": i.benchmark_status or "",
             "benchmark_delta_pct": flt(i.benchmark_delta_pct),
+            "benchmark_basis": sheet_basis.get(i.parent, "Selling Market"),
             "margin_source": i.margin_source or "",
             "scenario": i.resolved_pricing_scenario or "",
             "margin_rule": i.resolved_margin_rule or "",
@@ -144,6 +170,7 @@ def get_dashboard_data(filters=None):
                 "total_buy": flt(s.total_buy),
                 "total_sell": flt(s.total_selling),
                 "benchmark_policy": s.applied_benchmark_policy or "",
+                "benchmark_basis": sheet_basis.get(s.name, "Selling Market"),
                 "calculated_on": str(s.calculated_on or ""),
             }
             for s in sheets
@@ -163,4 +190,32 @@ def _empty_kpis():
         "margin_sources": {},
         "status_counts": {},
         "scenarios_count": 0,
+        "basis_metrics": {},
     }
+
+
+def _get_sheet_basis_map(sheets):
+    policy_names = {
+        (s.applied_benchmark_policy or s.benchmark_policy or "").strip()
+        for s in (sheets or [])
+        if (s.applied_benchmark_policy or s.benchmark_policy)
+    }
+
+    policy_basis = {}
+    if policy_names and frappe.db.has_column("Pricing Benchmark Policy", "benchmark_basis"):
+        rows = frappe.get_all(
+            "Pricing Benchmark Policy",
+            filters={"name": ["in", list(policy_names)]},
+            fields=["name", "benchmark_basis"],
+            limit_page_length=0,
+        )
+        policy_basis = {
+            row.name: (row.benchmark_basis or "Selling Market")
+            for row in rows
+        }
+
+    out = {}
+    for s in sheets or []:
+        policy_name = (s.applied_benchmark_policy or s.benchmark_policy or "").strip()
+        out[s.name] = policy_basis.get(policy_name, "Selling Market")
+    return out

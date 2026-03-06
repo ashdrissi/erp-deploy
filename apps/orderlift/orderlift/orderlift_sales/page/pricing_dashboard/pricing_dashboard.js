@@ -64,12 +64,35 @@ function _render(page, data) {
     const k = data.kpis || {};
     const items = data.items || [];
     const sheets = data.sheets || [];
+    const basisMetrics = k.basis_metrics || {};
 
     const marginSourcePills = Object.entries(k.margin_sources || {})
         .map(([src, count]) => {
-            const colors = { Benchmark: "#d1fae5", Profile: "#fef3c7", Fallback: "#fee2e2", Unknown: "#f1f5f9" };
-            const textColors = { Benchmark: "#065f46", Profile: "#92400e", Fallback: "#991b1b", Unknown: "#64748b" };
+            const colors = {
+                "Benchmark & Rule": "#d1fae5",
+                "Pricing Rule": "#fef3c7",
+                Fallback: "#fee2e2",
+                Benchmark: "#d1fae5",
+                Profile: "#fef3c7",
+                Unknown: "#f1f5f9",
+            };
+            const textColors = {
+                "Benchmark & Rule": "#065f46",
+                "Pricing Rule": "#92400e",
+                Fallback: "#991b1b",
+                Benchmark: "#065f46",
+                Profile: "#92400e",
+                Unknown: "#64748b",
+            };
             return `<span class="pd-pill" style="background:${colors[src] || colors.Unknown};color:${textColors[src] || textColors.Unknown}">${__(src)} <strong>${count}</strong></span>`;
+        })
+        .join("");
+
+    const basisPills = Object.entries(basisMetrics)
+        .map(([basis, stats]) => {
+            const ratio = Number(stats.avg_ratio || 0).toFixed(3);
+            const coverage = Number(stats.coverage || 0).toFixed(0);
+            return `<span class="pd-pill" style="background:#eef2ff;color:#3730a3">${__(basis)} <strong>${ratio}</strong> · ${coverage}%</span>`;
         })
         .join("");
 
@@ -84,7 +107,13 @@ function _render(page, data) {
     const itemRows = items
         .map((i) => {
             const statusColor = { OK: "green", "Too Low": "orange", "Too High": "red", "No Benchmark": "gray" }[i.benchmark_status] || "gray";
-            const sourceColor = { Benchmark: "green", Profile: "yellow", Fallback: "red" }[i.margin_source] || "gray";
+            const sourceColor = {
+                "Benchmark & Rule": "green",
+                "Pricing Rule": "yellow",
+                Fallback: "red",
+                Benchmark: "green",
+                Profile: "yellow",
+            }[i.margin_source] || "gray";
             const ratioDisplay = i.benchmark_ratio ? i.benchmark_ratio.toFixed(3) : "-";
             return `
                 <tr>
@@ -99,6 +128,7 @@ function _render(page, data) {
                     <td class="pd-cell-right">${i.margin_pct.toFixed(1)}%</td>
                     <td class="pd-cell-right">${i.benchmark_ref ? frappe.format(i.benchmark_ref, { fieldtype: "Currency" }) : "-"}</td>
                     <td class="pd-cell-right pd-cell-mono">${ratioDisplay}</td>
+                    <td>${frappe.utils.escape_html(i.benchmark_basis || "Selling Market")}</td>
                     <td><span class="indicator-pill ${statusColor}">${__(i.benchmark_status || "-")}</span></td>
                     <td><span class="indicator-pill ${sourceColor}">${__(i.margin_source || "-")}</span></td>
                     <td class="pd-cell-sheet">
@@ -106,7 +136,7 @@ function _render(page, data) {
                     </td>
                 </tr>`;
         })
-        .join("") || `<tr><td colspan="12" class="pd-empty">${__("No pricing data found. Try adjusting filters or create a Pricing Sheet first.")}</td></tr>`;
+        .join("") || `<tr><td colspan="13" class="pd-empty">${__("No pricing data found. Try adjusting filters or create a Pricing Sheet first.")}</td></tr>`;
 
     const html = `
     <div class="pd-content">
@@ -144,7 +174,7 @@ function _render(page, data) {
                 <div class="pd-kpi-icon">⚖️</div>
                 <div class="pd-kpi-body">
                     <div class="pd-kpi-value">${(k.avg_ratio || 0).toFixed(3)}</div>
-                    <div class="pd-kpi-label">${__("Avg Cost/Benchmark Ratio")}</div>
+                    <div class="pd-kpi-label">${__("Avg Cost/Reference Ratio")}</div>
                 </div>
             </div>
             <div class="pd-kpi pd-kpi-teal">
@@ -184,6 +214,13 @@ function _render(page, data) {
             </div>
         </div>
 
+        <div class="pd-distrib-row">
+            <div class="pd-distrib-card" style="grid-column: 1 / -1;">
+                <div class="pd-distrib-title">${__("Benchmark Basis (Avg Ratio · Coverage)")}</div>
+                <div class="pd-pill-row">${basisPills || `<span class="pd-muted">${__("No basis data")}</span>`}</div>
+            </div>
+        </div>
+
         <!-- Item Table -->
         <div class="pd-table-card">
             <div class="pd-table-header">
@@ -203,6 +240,7 @@ function _render(page, data) {
                             <th class="pd-th-right">${__("Margin %")}</th>
                             <th class="pd-th-right">${__("Benchmark Ref")}</th>
                             <th class="pd-th-right">${__("Ratio")}</th>
+                            <th>${__("Basis")}</th>
                             <th>${__("Status")}</th>
                             <th>${__("Source")}</th>
                             <th>${__("Sheet")}</th>
