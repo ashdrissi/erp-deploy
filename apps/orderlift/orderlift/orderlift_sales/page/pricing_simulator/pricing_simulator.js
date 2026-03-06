@@ -56,6 +56,7 @@ function buildLayout(state) {
         customer: makeControl(grid, { fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" }),
         sales_person: makeControl(grid, { fieldname: "sales_person", label: __("Sales Person"), fieldtype: "Link", options: "Sales Person" }),
         view_mode: makeControl(grid, { fieldname: "view_mode", label: __("View"), fieldtype: "Select", options: "Compare (Dynamic vs Static)\nDynamic only\nStatic only", default: "Compare (Dynamic vs Static)" }),
+        only_priced_items: makeControl(grid, { fieldname: "only_priced_items", label: __("Only Priced Items"), fieldtype: "Check", default: 1 }),
         item_group: makeControl(grid, { fieldname: "item_group", label: __("Item Group Filter"), fieldtype: "Link", options: "Item Group" }),
         default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Default Qty per Item"), fieldtype: "Float", default: 1 }),
         max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
@@ -144,6 +145,7 @@ function collectPayload(state) {
         item_group: state.controls.item_group.get_value() || "",
         default_qty: state.controls.default_qty.get_value() || 1,
         max_items: state.controls.max_items.get_value() || 0,
+        only_priced_items: Number(state.controls.only_priced_items.get_value() || 0),
         items: [],
     };
 }
@@ -175,7 +177,7 @@ async function runSimulation(state) {
         const staticResult = runStatic ? await runSingleMode(payload, "Static") : null;
 
         if (dynamicResult && staticResult) {
-            renderComparison(state, payload.items, dynamicResult, staticResult);
+            renderComparison(state, dynamicResult, staticResult);
         } else {
             renderResults(state, dynamicResult || staticResult || {});
         }
@@ -202,13 +204,22 @@ async function runSingleMode(payload, mode) {
     return resp.message || {};
 }
 
-function renderComparison(state, inputItems, dynamicData, staticData) {
+function renderComparison(state, dynamicData, staticData) {
     const dynRows = Object.fromEntries((dynamicData.rows || []).map((r) => [r.item, r]));
     const staRows = Object.fromEntries((staticData.rows || []).map((r) => [r.item, r]));
-    const keys = [...new Set([
+    let keys = [...new Set([
         ...(dynamicData.rows || []).map((x) => x.item),
         ...(staticData.rows || []).map((x) => x.item),
     ])];
+
+    const onlyPriced = Number(state.controls.only_priced_items.get_value() || 0) === 1;
+    if (onlyPriced) {
+        keys = keys.filter((item) => {
+            const d = dynRows[item] || {};
+            const s = staRows[item] || {};
+            return Number(d.buy_price || 0) > 0 || Number(s.selected_price || 0) > 0;
+        });
+    }
 
     const tableRows = keys.map((item) => {
         const d = dynRows[item] || {};
@@ -237,9 +248,7 @@ function renderComparison(state, inputItems, dynamicData, staticData) {
         ...(staticData.warnings || []).map((w) => `[Static] ${w}`),
     ];
 
-    const warningHtml = combinedWarnings.length
-        ? `<div class="psim-warnings">${combinedWarnings.map((w) => `<div>• ${frappe.utils.escape_html(w)}</div>`).join("")}</div>`
-        : `<div class="psim-clean">${__("No warnings")}</div>`;
+    const warningHtml = renderWarnings(combinedWarnings);
 
     state.outputWrap.html(`
         <div class="psim-mode"><strong>${__("Comparison Matrix: Dynamic vs Static")}</strong></div>
@@ -302,9 +311,7 @@ function renderResults(state, data) {
     const tableRows = rows.map((row) => (mode === "Static" ? staticRow(row) : dynamicRow(row))).join("") ||
         `<tr><td colspan="9" class="psim-muted">${__("No rows")}</td></tr>`;
 
-    const warningHtml = warnings.length
-        ? `<div class="psim-warnings">${warnings.map((w) => `<div>• ${frappe.utils.escape_html(w)}</div>`).join("")}</div>`
-        : `<div class="psim-clean">${__("No warnings")}</div>`;
+    const warningHtml = renderWarnings(warnings);
 
     state.outputWrap.html(`
         <div class="psim-mode">${__("Mode")}: <strong>${frappe.utils.escape_html(mode)}</strong></div>
@@ -346,6 +353,21 @@ function staticRow(row) {
         <td>${frappe.format(row.line_total || 0, { fieldtype: "Currency" })}</td>
         <td>${row.option_count || 0}</td>
     </tr>`;
+}
+
+function renderWarnings(warnings) {
+    if (!warnings || !warnings.length) {
+        return `<div class="psim-clean">${__("No warnings")}</div>`;
+    }
+
+    const first = warnings.slice(0, 6);
+    const rest = warnings.slice(6);
+    const top = first.map((w) => `<div>• ${frappe.utils.escape_html(w)}</div>`).join("");
+    const more = rest.length
+        ? `<details class="psim-warn-more"><summary>${__("Show {0} more warnings", [rest.length])}</summary>${rest.map((w) => `<div>• ${frappe.utils.escape_html(w)}</div>`).join("")}</details>`
+        : "";
+
+    return `<div class="psim-warnings">${top}${more}</div>`;
 }
 
 function injectStyles() {
@@ -411,6 +433,8 @@ function injectStyles() {
             padding: 10px;
             margin-bottom: 10px;
         }
+        .psim-warn-more { margin-top: 8px; }
+        .psim-warn-more summary { cursor: pointer; font-weight: 700; }
         .psim-clean {
             background: #ecfdf5;
             color: #065f46;

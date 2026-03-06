@@ -113,27 +113,31 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
     doc.recalculate()
 
     rows = []
+    only_priced = cint(data.get("only_priced_items") or 0) == 1
+    filtered_out = 0
     for line in doc.lines or []:
-        rows.append(
-            {
-                "item": line.item,
-                "qty": flt(line.qty),
-                "buy_price": flt(line.buy_price),
-                "base_amount": flt(line.base_amount),
-                "final_sell_unit_price": flt(line.final_sell_unit_price),
-                "final_sell_total": flt(line.final_sell_total),
-                "margin_pct": flt(line.margin_pct),
-                "resolved_pricing_scenario": line.resolved_pricing_scenario or "",
-                "benchmark_reference": flt(line.benchmark_reference),
-                "benchmark_ratio": flt(line.benchmark_ratio),
-                "benchmark_status": line.benchmark_status or "",
-                "margin_source": line.margin_source or "",
-                "tier_modifier_amount": flt(line.tier_modifier_amount),
-                "zone_modifier_amount": flt(line.zone_modifier_amount),
-                "customs_applied": flt(line.customs_applied),
-                "transport_allocated": flt(line.transport_allocated),
-            }
-        )
+        row = {
+            "item": line.item,
+            "qty": flt(line.qty),
+            "buy_price": flt(line.buy_price),
+            "base_amount": flt(line.base_amount),
+            "final_sell_unit_price": flt(line.final_sell_unit_price),
+            "final_sell_total": flt(line.final_sell_total),
+            "margin_pct": flt(line.margin_pct),
+            "resolved_pricing_scenario": line.resolved_pricing_scenario or "",
+            "benchmark_reference": flt(line.benchmark_reference),
+            "benchmark_ratio": flt(line.benchmark_ratio),
+            "benchmark_status": line.benchmark_status or "",
+            "margin_source": line.margin_source or "",
+            "tier_modifier_amount": flt(line.tier_modifier_amount),
+            "zone_modifier_amount": flt(line.zone_modifier_amount),
+            "customs_applied": flt(line.customs_applied),
+            "transport_allocated": flt(line.transport_allocated),
+        }
+        if only_priced and flt(row.get("buy_price")) <= 0:
+            filtered_out += 1
+            continue
+        rows.append(row)
 
     return {
         "mode": resolved_mode,
@@ -152,7 +156,8 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "benchmark_policy": doc.benchmark_policy or "",
             "scenario_policy": doc.scenario_policy or "",
         },
-        "warnings": _split_warnings(doc.projection_warnings),
+        "warnings": _split_warnings(doc.projection_warnings)
+        + ([_("Filtered out {0} unpriced dynamic item(s)." ).format(filtered_out)] if filtered_out else []),
     }
 
 
@@ -181,6 +186,8 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
 
     rows = []
     missing = 0
+    only_priced = cint(data.get("only_priced_items") or 0) == 1
+    filtered_out = 0
     for row in items:
         code = row.get("item")
         qty = flt(row.get("qty") or 0)
@@ -194,22 +201,26 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
         if not options:
             missing += 1
 
-        rows.append(
-            {
-                "item": code,
-                "qty": qty,
-                "selected_price_list": selected.get("price_list") or "",
-                "selected_price": flt(selected.get("rate")),
-                "line_total": flt(selected.get("rate")) * qty,
-                "options": options,
-                "option_count": len(options),
-            }
-        )
+        out_row = {
+            "item": code,
+            "qty": qty,
+            "selected_price_list": selected.get("price_list") or "",
+            "selected_price": flt(selected.get("rate")),
+            "line_total": flt(selected.get("rate")) * qty,
+            "options": options,
+            "option_count": len(options),
+        }
+        if only_priced and flt(out_row.get("selected_price")) <= 0:
+            filtered_out += 1
+            continue
+        rows.append(out_row)
 
     total = sum(flt(x.get("line_total")) for x in rows)
     warnings = []
     if missing:
         warnings.append(_("{0} item(s) have no static price in selected lists.").format(missing))
+    if filtered_out:
+        warnings.append(_("Filtered out {0} unpriced static item(s)." ).format(filtered_out))
 
     return {
         "mode": resolved_mode,
