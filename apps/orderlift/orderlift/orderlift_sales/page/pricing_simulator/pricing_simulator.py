@@ -163,6 +163,14 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
         requested_lists = _get_static_lists(agent_doc)
 
     if not requested_lists:
+        requested_lists = frappe.get_all(
+            "Price List",
+            filters={"enabled": 1, "selling": 1},
+            pluck="name",
+            limit_page_length=50,
+        )
+
+    if not requested_lists:
         frappe.throw(_("Static simulation requires at least one selling price list (from agent or manual override)."))
 
     item_codes = [x.get("item") for x in items]
@@ -255,8 +263,17 @@ def _resolve_items_for_simulation(data):
     }
     if frappe.db.has_column("Item", "is_sales_item"):
         filters["is_sales_item"] = 1
-    if item_group:
-        filters["item_group"] = item_group
+
+    warnings = []
+    if item_group and item_group != "All Item Groups":
+        if _is_item_group_node(item_group):
+            descendants = _descendant_leaf_item_groups(item_group)
+            if descendants:
+                filters["item_group"] = ["in", descendants]
+            else:
+                warnings.append(_("Selected Item Group has no leaf item groups."))
+        else:
+            filters["item_group"] = item_group
 
     rows = frappe.get_all(
         "Item",
@@ -276,7 +293,6 @@ def _resolve_items_for_simulation(data):
         if row.get("name")
     ]
 
-    warnings = []
     if not out:
         warnings.append(_("No enabled items found for selected filters."))
     else:
@@ -311,12 +327,28 @@ def _get_static_lists(agent_doc):
 
 
 def _split_warnings(text):
-    lines = []
+    grouped = {}
+    ordered = []
     for raw in (text or "").splitlines():
         value = raw.strip()
-        if value:
-            lines.append(value)
-    return lines
+        if not value:
+            continue
+        normalized = value
+        if normalized.lower().startswith("row ") and ":" in normalized:
+            normalized = normalized.split(":", 1)[1].strip()
+        if normalized not in grouped:
+            grouped[normalized] = 0
+            ordered.append(normalized)
+        grouped[normalized] += 1
+
+    out = []
+    for msg in ordered:
+        count = grouped.get(msg, 0)
+        if count > 1:
+            out.append(_("{0} rows: {1}").format(count, msg))
+        else:
+            out.append(msg)
+    return out
 
 
 def _count_enabled_items():
@@ -334,3 +366,26 @@ def _compute_global_margin_pct(doc):
     if total_sell <= 0:
         return 0.0
     return flt(((total_sell - total_buy) / total_sell) * 100)
+
+
+def _is_item_group_node(item_group_name):
+    return cint(frappe.db.get_value("Item Group", item_group_name, "is_group") or 0) == 1
+
+
+def _descendant_leaf_item_groups(item_group_name):
+    node = frappe.db.get_value("Item Group", item_group_name, ["lft", "rgt"], as_dict=True) or {}
+    lft = cint(node.get("lft") or 0)
+    rgt = cint(node.get("rgt") or 0)
+    if not lft or not rgt:
+        return []
+
+    return frappe.get_all(
+        "Item Group",
+        filters={
+            "lft": [">=", lft],
+            "rgt": ["<=", rgt],
+            "is_group": 0,
+        },
+        pluck="name",
+        limit_page_length=0,
+    )
