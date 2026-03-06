@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import frappe
 from frappe import _
@@ -28,6 +29,7 @@ def get_simulation_defaults(sales_person=None, mode="Auto"):
             "agent_mode": "",
             "dynamic": {},
             "static": {"selling_price_lists": []},
+            "enabled_item_count": _count_enabled_items(),
             "warnings": [_("No Agent Pricing Rules found for selected sales person.")] if sales_person else [],
         }
 
@@ -53,6 +55,7 @@ def get_simulation_defaults(sales_person=None, mode="Auto"):
             "allowed_benchmarks": dynamic_context.get("allowed_benchmark_policies") or [],
         },
         "static": {"selling_price_lists": static_lists},
+        "enabled_item_count": _count_enabled_items(),
         "warnings": [],
     }
 
@@ -60,7 +63,7 @@ def get_simulation_defaults(sales_person=None, mode="Auto"):
 @frappe.whitelist()
 def run_pricing_simulation(payload=None):
     data = json.loads(payload) if isinstance(payload, str) else (payload or {})
-    items = _normalize_items(data.get("items") or [])
+    items, item_warnings = _resolve_items_for_simulation(data)
     if not items:
         frappe.throw(_("Add at least one item to simulate."))
 
@@ -72,8 +75,12 @@ def run_pricing_simulation(payload=None):
     resolved_mode = _resolve_mode(requested_mode, (agent_doc.pricing_mode if agent_doc else ""))
 
     if resolved_mode == "Static":
-        return _run_static_simulation(data, items, agent_doc, resolved_mode)
-    return _run_dynamic_simulation(data, items, agent_doc, resolved_mode)
+        out = _run_static_simulation(data, items, agent_doc, resolved_mode)
+    else:
+        out = _run_dynamic_simulation(data, items, agent_doc, resolved_mode)
+    out["warnings"] = (item_warnings or []) + (out.get("warnings") or [])
+    out["simulated_item_count"] = len(items)
+    return out
 
 
 def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
@@ -229,6 +236,54 @@ def _normalize_items(items):
     return out
 
 
+def _resolve_items_for_simulation(data):
+    use_all = cint(data.get("use_all_enabled_items") or 0) == 1
+    qty_default = flt(data.get("default_qty") or 1)
+    if qty_default <= 0:
+        qty_default = 1
+
+    if not use_all:
+        return _normalize_items(data.get("items") or []), []
+
+    item_group = (data.get("item_group") or "").strip()
+    max_items = cint(data.get("max_items") or 0)
+    if max_items < 0:
+        max_items = 0
+
+    filters: dict[str, Any] = {
+        "disabled": 0,
+    }
+    if frappe.db.has_column("Item", "is_sales_item"):
+        filters["is_sales_item"] = 1
+    if item_group:
+        filters["item_group"] = item_group
+
+    rows = frappe.get_all(
+        "Item",
+        filters=filters,
+        fields=["name"],
+        order_by="name asc",
+        limit_page_length=max_items if max_items > 0 else 0,
+    )
+
+    out = [
+        {
+            "item": row.get("name"),
+            "qty": qty_default,
+            "source_bundle": "",
+        }
+        for row in rows
+        if row.get("name")
+    ]
+
+    warnings = []
+    if not out:
+        warnings.append(_("No enabled items found for selected filters."))
+    else:
+        warnings.append(_("Auto-loaded {0} enabled item(s) for simulation.").format(len(out)))
+    return out, warnings
+
+
 def _resolve_mode(requested_mode, agent_mode):
     requested_mode = (requested_mode or "Auto").strip()
     if requested_mode in {"Dynamic", "Static"}:
@@ -262,3 +317,10 @@ def _split_warnings(text):
         if value:
             lines.append(value)
     return lines
+
+
+def _count_enabled_items():
+    filters = {"disabled": 0}
+    if frappe.db.has_column("Item", "is_sales_item"):
+        filters["is_sales_item"] = 1
+    return cint(frappe.db.count("Item", filters=filters))
