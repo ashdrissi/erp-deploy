@@ -12,7 +12,6 @@
         "is_active",
         "is_default",
         "column_break_settings",
-        "benchmark_basis",
         "method",
         "min_sources_required",
         "fallback_margin_percent",
@@ -75,7 +74,10 @@
             "options": "Selling Market\nBuying Supplier\nAny List",
             "default": "Selling Market",
             "reqd": 1,
-            "description": "Controls source-type warnings: market comparison, supplier-cost comparison, or mixed-list mode."
+            "description": "Auto-derived from active benchmark source lists.",
+            "hidden": 1,
+            "read_only": 1,
+            "no_copy": 1
         },
         {
             "fieldname": "method",

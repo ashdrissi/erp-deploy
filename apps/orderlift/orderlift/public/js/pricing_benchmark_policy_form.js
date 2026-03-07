@@ -5,7 +5,7 @@ const SOURCES_HELP = `
     <div class="pbp-help-icon">📊</div>
     <div class="pbp-help-body">
         <div class="pbp-help-title">${__("What are Benchmark Sources?")}</div>
-        <p>${__("Each source is a <strong>Price List</strong> used as benchmark reference. Depending on Benchmark Basis, you can use selling lists (market), buying lists (supplier), or a mixed set. The engine fetches item prices from active sources and combines them using Median / Average / Weighted Average.")}</p>
+        <p>${__("Each source is a <strong>Price List</strong> used as benchmark reference. The system now auto-detects whether the policy is market-based, supplier-based, or mixed based on the active source lists you add here. The engine fetches item prices from active sources and combines them using Median / Average / Weighted Average.")}</p>
         <ul>
             <li><strong>${__("Price List")}</strong> — ${__("Select an existing Selling price list (e.g. 'Competitor A Selling')")}</li>
             <li><strong>${__("Label")}</strong> — ${__("A friendly name shown in reports (e.g. 'Competitor A')")}</li>

@@ -12,9 +12,30 @@ from frappe.utils import cint, flt
 
 class PricingBenchmarkPolicy(Document):
     def validate(self):
+        self._sync_benchmark_basis()
         self._validate_sources()
         self._validate_rules()
         self._validate_tier_modifiers()
+
+    def _sync_benchmark_basis(self):
+        active_types = []
+        for row in self.benchmark_sources or []:
+            if not cint(row.is_active):
+                continue
+            price_list = (row.price_list or "").strip()
+            if not price_list:
+                continue
+            active_types.append(_price_list_type(price_list))
+
+        normalized = {t for t in active_types if t in {"Buying", "Selling"}}
+        if normalized == {"Buying"}:
+            self.benchmark_basis = "Buying Supplier"
+        elif normalized == {"Selling"}:
+            self.benchmark_basis = "Selling Market"
+        elif normalized:
+            self.benchmark_basis = "Any List"
+        else:
+            self.benchmark_basis = self.benchmark_basis or "Selling Market"
 
     def _validate_sources(self):
         active = 0
