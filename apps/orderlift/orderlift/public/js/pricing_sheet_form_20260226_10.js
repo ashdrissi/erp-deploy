@@ -23,15 +23,16 @@ function marginSourceBadge(value) {
 
 function ensurePricingSheetStyles(frm) {
     const linkId = "pricing-sheet-ux-css";
-    if (document.getElementById(linkId)) {
-        return;
+    const version = "v=20260307-02";
+    let link = document.getElementById(linkId);
+    if (!link) {
+        link = document.createElement("link");
+        link.id = linkId;
+        link.rel = "stylesheet";
+        document.head.appendChild(link);
     }
-
-    const link = document.createElement("link");
-    link.id = linkId;
-    link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/pricing_sheet_20260226_10.css?v=20260226-10";
-    document.head.appendChild(link);
+    const expected = `/assets/orderlift/css/pricing_sheet_20260226_10.css?${version}`;
+    if (link.href !== expected) link.href = expected;
 }
 
 function renderContextActions(frm) {
