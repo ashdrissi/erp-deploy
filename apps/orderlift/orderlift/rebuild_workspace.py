@@ -73,8 +73,6 @@ def execute():
     ws.append('items', {'type': 'Link', 'label': 'Benchmark Policy', 'link_type': 'DocType', 'link_to': 'Pricing Benchmark Policy', 'child': 1, 'icon': 'award'})
     ws.append('items', {'type': 'Link', 'label': 'Customs Policy', 'link_type': 'DocType', 'link_to': 'Pricing Customs Policy', 'child': 1, 'icon': 'shield'})
     ws.append('items', {'type': 'Link', 'label': 'Margin Policy', 'link_type': 'DocType', 'link_to': 'Pricing Margin Policy', 'child': 1, 'icon': 'percentage'})
-    ws.append('items', {'type': 'Link', 'label': 'Scenario Policy', 'link_type': 'DocType', 'link_to': 'Pricing Scenario Policy', 'child': 1, 'icon': 'workflow'})
-
     ws.save(ignore_permissions=True)
     frappe.db.commit()
     print("Workspace Main Dashboard completely ordered and rebuilt with icons.")

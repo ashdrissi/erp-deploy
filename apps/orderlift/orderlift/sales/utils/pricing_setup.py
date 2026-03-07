@@ -219,7 +219,6 @@ def ensure_pricing_workspace():
         {"label": "Quotation", "type": "DocType", "link_to": "Quotation"},
         {"label": "Pricing Sheet", "type": "DocType", "link_to": "Pricing Sheet"},
         {"label": "Pricing Scenario", "type": "DocType", "link_to": "Pricing Scenario"},
-        {"label": "Scenario Policies", "type": "DocType", "link_to": "Pricing Scenario Policy"},
         {"label": "Pricing Policies", "type": "DocType", "link_to": "Pricing Benchmark Policy"},
         {"label": "Customs Policies", "type": "DocType", "link_to": "Pricing Customs Policy"},
     ]

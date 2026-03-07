@@ -40,7 +40,6 @@ class PricingSheet(Document):
 
         if not lines:
             self._reset_totals()
-            self.applied_scenario_policy = ""
             self.applied_customs_policy = ""
             self.applied_benchmark_policy = ""
             self.calculated_on = now_datetime()
@@ -54,10 +53,7 @@ class PricingSheet(Document):
         self._set_default_sales_person()
         self._apply_agent_dynamic_defaults()
 
-        scenario_policy = self._resolve_scenario_policy()
-        self.applied_scenario_policy = scenario_policy.name if scenario_policy else ""
-
-        scenario_docs = self._collect_scenarios_or_throw(lines, item_details=item_details, scenario_policy=scenario_policy)
+        scenario_docs = self._collect_scenarios_or_throw(lines)
         self._sync_override_rows_for_scenarios(scenario_docs)
 
         customs_policy = self._resolve_customs_policy()
@@ -79,15 +75,11 @@ class PricingSheet(Document):
             warnings.append(_("No active pricing policy found; dynamic margin is disabled."))
         if not customs_policy:
             warnings.append(_("No active customs policy found; customs costs default to zero."))
-        if not scenario_policy:
-            warnings.append(_("No active scenario policy found; scenario falls back to line/bundle/default selection."))
-
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, benchmark_policy_doc=benchmark_policy_doc)
         self._sync_line_override_rows_for_lines(
             lines,
             scenario_caches,
             item_details=item_details,
-            scenario_policy=scenario_policy,
         )
 
         total_base = 0.0
@@ -111,7 +103,6 @@ class PricingSheet(Document):
             scenario_name, source, scenario_rule = self._resolve_line_scenario(
                 row,
                 line_context=line_context,
-                scenario_policy=scenario_policy,
             )
             row.resolved_pricing_scenario = scenario_name
             row.scenario_source = source
@@ -462,7 +453,6 @@ class PricingSheet(Document):
         self.total_selling = flt(total_final)
         self.customs_total_applied = 0.0
         self.applied_benchmark_policy = ""
-        self.applied_scenario_policy = ""
         self.applied_customs_policy = ""
         self.resolved_mode = "Static"
         self.projection_warnings = "\n".join(warnings)
@@ -476,8 +466,7 @@ class PricingSheet(Document):
         lines = self.lines or []
         item_codes = sorted({row.item for row in lines if row.item})
         item_details = get_item_details_map(item_codes)
-        scenario_policy = self._resolve_scenario_policy()
-        scenario_docs = self._collect_scenarios_or_throw(lines, item_details=item_details, scenario_policy=scenario_policy)
+        scenario_docs = self._collect_scenarios_or_throw(lines)
         self._sync_override_rows_for_scenarios(scenario_docs)
         self.recalculate()
         self.save(ignore_permissions=True)
@@ -488,8 +477,7 @@ class PricingSheet(Document):
         lines = self.lines or []
         item_codes = sorted({row.item for row in lines if row.item})
         item_details = get_item_details_map(item_codes)
-        scenario_policy = self._resolve_scenario_policy()
-        scenario_docs = self._collect_scenarios_or_throw(lines, item_details=item_details, scenario_policy=scenario_policy)
+        scenario_docs = self._collect_scenarios_or_throw(lines)
         self._sync_override_rows_for_scenarios(scenario_docs)
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
         self._sync_line_override_rows_for_lines(
@@ -497,7 +485,6 @@ class PricingSheet(Document):
             scenario_caches,
             line_name=line_name,
             item_details=item_details,
-            scenario_policy=scenario_policy,
         )
         self.recalculate()
         self.save(ignore_permissions=True)
@@ -601,8 +588,7 @@ class PricingSheet(Document):
         lines = self.lines or []
         item_codes = sorted({row.item for row in lines if row.item})
         item_details = get_item_details_map(item_codes)
-        scenario_policy = self._resolve_scenario_policy()
-        scenario_docs = self._collect_scenarios_or_throw(lines, item_details=item_details, scenario_policy=scenario_policy)
+        scenario_docs = self._collect_scenarios_or_throw(lines)
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
 
         buy_price_cache_by_list = {
@@ -613,7 +599,7 @@ class PricingSheet(Document):
 
         for row in lines:
             context = self._build_rule_context(row=row, item_details=item_details)
-            scenario_name, source, _ = self._resolve_line_scenario(row, line_context=context, scenario_policy=scenario_policy)
+            scenario_name, source, _ = self._resolve_line_scenario(row, line_context=context)
             row.resolved_pricing_scenario = scenario_name
             row.scenario_source = source
             cache = scenario_caches.get(scenario_name)
@@ -723,7 +709,7 @@ class PricingSheet(Document):
         self.refresh_buy_prices()
         return self.name
 
-    def _collect_scenarios_or_throw(self, lines, item_details=None, scenario_policy=None):
+    def _collect_scenarios_or_throw(self, lines):
         scenario_names = set()
         default_scenario = (self.pricing_scenario or "").strip()
         if default_scenario:
@@ -737,13 +723,9 @@ class PricingSheet(Document):
             if cint(rule.is_active) and rule.pricing_scenario:
                 scenario_names.add(rule.pricing_scenario)
 
-        item_details = item_details or {}
-        if scenario_policy:
-            for row in lines:
-                ctx = self._build_rule_context(row=row, item_details=item_details)
-                matched = self._resolve_scenario_rule_for_row(ctx, scenario_policy)
-                if matched and matched.get("pricing_scenario"):
-                    scenario_names.add(matched.get("pricing_scenario"))
+        for row in (self.scenario_mappings or []):
+            if cint(row.is_active) and row.pricing_scenario:
+                scenario_names.add(row.pricing_scenario)
 
         if not scenario_names:
             frappe.throw(_("Please select at least one Pricing Scenario."))
@@ -760,54 +742,6 @@ class PricingSheet(Document):
             frappe.throw(_("Missing Pricing Scenario(s): {0}").format(", ".join(sorted(missing))))
 
         return docs
-
-    def _resolve_scenario_policy(self):
-        if not frappe.db.exists("DocType", "Pricing Scenario Policy"):
-            return None
-
-        policy_doc = None
-        if self.scenario_policy and frappe.db.exists("Pricing Scenario Policy", self.scenario_policy):
-            policy_doc = frappe.get_doc("Pricing Scenario Policy", self.scenario_policy)
-        else:
-            default_name = frappe.db.get_value(
-                "Pricing Scenario Policy",
-                {"is_default": 1, "is_active": 1},
-                "name",
-            )
-            if default_name:
-                policy_doc = frappe.get_doc("Pricing Scenario Policy", default_name)
-                self.scenario_policy = default_name
-
-        if not policy_doc or cint(policy_doc.is_active) != 1:
-            return None
-        return policy_doc
-
-    def _resolve_scenario_rule_for_row(self, context, scenario_policy):
-        if not scenario_policy:
-            return None
-
-        rules = [
-            {
-                "pricing_scenario": getattr(row, "pricing_scenario", ""),
-                "source_buying_price_list": getattr(row, "source_buying_price_list", ""),
-                "customs_policy": getattr(row, "customs_policy", ""),
-                "benchmark_policy": getattr(row, "benchmark_policy", ""),
-                "sales_person": getattr(row, "sales_person", ""),
-                "geography_territory": getattr(row, "geography_territory", ""),
-                "customer_type": getattr(row, "customer_type", ""),
-                "tier": getattr(row, "tier", ""),
-                "item": getattr(row, "item", ""),
-                "source_bundle": getattr(row, "source_bundle", ""),
-                "item_group": getattr(row, "item_group", ""),
-                "material": getattr(row, "material", ""),
-                "sequence": cint(row.sequence),
-                "priority": cint(row.priority),
-                "is_active": cint(row.is_active),
-                "idx": cint(row.idx),
-            }
-            for row in (scenario_policy.scenario_rules or [])
-        ]
-        return resolve_scenario_rule(rules, context=context)
 
     def _build_rule_context(self, row=None, item_details=None):
         row = row or frappe._dict()
@@ -862,6 +796,22 @@ class PricingSheet(Document):
         if self.pricing_scenario:
             return (frappe.db.get_value("Pricing Scenario", self.pricing_scenario, "buying_price_list") or "").strip()
         return ""
+
+    def _resolve_sheet_scenario_mapping(self, context):
+        rules = [
+            {
+                "pricing_scenario": getattr(row, "pricing_scenario", ""),
+                "source_buying_price_list": getattr(row, "source_buying_price_list", ""),
+                "customs_policy": getattr(row, "customs_policy", ""),
+                "benchmark_policy": getattr(row, "benchmark_policy", ""),
+                "priority": cint(getattr(row, "priority", 10) or 10),
+                "sequence": cint(getattr(row, "idx", 0) or 0),
+                "is_active": cint(getattr(row, "is_active", 1)),
+                "idx": cint(getattr(row, "idx", 0) or 0),
+            }
+            for row in (self.scenario_mappings or [])
+        ]
+        return resolve_scenario_rule(rules, context=context)
 
     def _resolve_row_customs_policy(self, matched_rule, default_policy, policy_cache):
         if matched_rule and matched_rule.get("customs_policy"):
@@ -1178,34 +1128,44 @@ class PricingSheet(Document):
         sheet_customer_group = (self.customer_type or "").strip()
         sheet_territory = (self.geography_territory or "").strip()
 
-        # Match tier modifier
-        if sheet_tier:
-            tier_default_row = None
-            for row in (benchmark_policy_doc.get("tier_modifiers") or []):
-                if not row.get("is_active"):
+        tier_exact_group_row = None
+        tier_only_row = None
+        group_only_row = None
+
+        for row in (benchmark_policy_doc.get("tier_modifiers") or []):
+            if not row.get("is_active"):
+                continue
+
+            row_tier = (row.get("tier") or "").strip()
+            row_customer_group = (row.get("customer_group") or "").strip()
+
+            if row_tier and sheet_tier and row_tier == sheet_tier:
+                if row_customer_group and row_customer_group == sheet_customer_group and tier_exact_group_row is None:
+                    tier_exact_group_row = row
                     continue
-                if (row.get("tier") or "").strip() != sheet_tier:
+                if not row_customer_group and tier_only_row is None:
+                    tier_only_row = row
                     continue
 
-                row_customer_group = (row.get("customer_group") or "").strip()
-                if row_customer_group:
-                    if row_customer_group != sheet_customer_group:
-                        continue
-                    tier_mod = {
-                        "amount": flt(row.get("modifier_amount")),
-                        "type": row.get("modifier_type") or "Fixed",
-                        "label": "Tier: {} / Group: {}".format(sheet_tier, row_customer_group),
-                    }
-                    break
-                if tier_default_row is None:
-                    tier_default_row = row
+            if row_customer_group and not row_tier and row_customer_group == sheet_customer_group and group_only_row is None:
+                group_only_row = row
 
-            if not tier_mod and tier_default_row:
-                tier_mod = {
-                    "amount": flt(tier_default_row.get("modifier_amount")),
-                    "type": tier_default_row.get("modifier_type") or "Fixed",
-                    "label": "Tier: {}".format(sheet_tier),
-                }
+        selected_row = tier_exact_group_row or tier_only_row or group_only_row
+        if selected_row:
+            row_tier = (selected_row.get("tier") or "").strip()
+            row_customer_group = (selected_row.get("customer_group") or "").strip()
+            if row_tier and row_customer_group:
+                label = "Tier: {} / Group: {}".format(row_tier, row_customer_group)
+            elif row_tier:
+                label = "Tier: {}".format(row_tier)
+            else:
+                label = "Group: {}".format(row_customer_group)
+
+            tier_mod = {
+                "amount": flt(selected_row.get("modifier_amount")),
+                "type": selected_row.get("modifier_type") or "Fixed",
+                "label": label,
+            }
 
         # Match zone modifier
         if sheet_territory:
@@ -1574,7 +1534,7 @@ class PricingSheet(Document):
 
         return out
 
-    def _sync_line_override_rows_for_lines(self, lines, scenario_caches, line_name=None, item_details=None, scenario_policy=None):
+    def _sync_line_override_rows_for_lines(self, lines, scenario_caches, line_name=None, item_details=None):
         existing = {}
         valid_keys = set()
         item_details = item_details or {}
@@ -1592,7 +1552,6 @@ class PricingSheet(Document):
             scenario_name, _, _ = self._resolve_line_scenario(
                 line,
                 line_context=line_context,
-                scenario_policy=scenario_policy,
             )
             cache = scenario_caches.get(scenario_name)
             if not cache:
@@ -1684,7 +1643,7 @@ class PricingSheet(Document):
 
         return out, has_line_override
 
-    def _resolve_line_scenario(self, row, line_context=None, scenario_policy=None):
+    def _resolve_line_scenario(self, row, line_context=None):
         if row.pricing_scenario:
             return row.pricing_scenario, "Line", None
 
@@ -1693,11 +1652,9 @@ class PricingSheet(Document):
             if bundle_scenario:
                 return bundle_scenario, "Bundle Rule", None
 
-        if scenario_policy:
-            line_context = line_context or self._build_rule_context(row)
-            matched = self._resolve_scenario_rule_for_row(line_context, scenario_policy)
-            if matched and matched.get("pricing_scenario"):
-                return matched.get("pricing_scenario"), "Policy Rule", matched
+        mapping = self._resolve_sheet_scenario_mapping(line_context or self._build_rule_context(row))
+        if mapping and mapping.get("pricing_scenario"):
+            return mapping.get("pricing_scenario"), "Sheet Mapping", mapping
 
         if self.pricing_scenario:
             return self.pricing_scenario, "Sheet Default", None

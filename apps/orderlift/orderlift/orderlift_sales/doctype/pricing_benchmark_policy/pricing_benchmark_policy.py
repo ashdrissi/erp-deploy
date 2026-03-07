@@ -119,14 +119,23 @@ class PricingBenchmarkPolicy(Document):
             row.tier = (row.tier or "").strip()
             row.modifier_type = (row.modifier_type or "Fixed").strip() or "Fixed"
 
+            if not row.customer_group and not row.tier:
+                frappe.throw(_("Row {0}: set Customer Group, Tier, or both for a dynamic modifier.").format(row.idx))
+
             key = (row.customer_group.lower(), row.tier.lower())
             if key in seen:
                 if row.customer_group:
+                    if row.tier:
+                        frappe.throw(
+                            _("Row {0}: duplicate tier modifier for Customer Group {1} and Tier {2}.").format(
+                                row.idx,
+                                row.customer_group,
+                                row.tier,
+                            )
+                        )
                     frappe.throw(
-                        _("Row {0}: duplicate tier modifier for Customer Group {1} and Tier {2}.").format(
-                            row.idx,
-                            row.customer_group,
-                            row.tier,
+                        _("Row {0}: duplicate customer-group modifier for Customer Group {1}.").format(
+                            row.idx, row.customer_group
                         )
                     )
                 frappe.throw(_("Row {0}: duplicate tier-only modifier for Tier {1}.").format(row.idx, row.tier))

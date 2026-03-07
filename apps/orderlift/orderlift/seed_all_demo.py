@@ -16,7 +16,6 @@ def execute():
     _seed_margin_policies()
     _seed_benchmark_policy()
     _seed_market_prices()
-    _seed_scenario_policies()
     _seed_agent_pricing_rules()
     _seed_segmentation_engine()
     _seed_pricing_sheet()
@@ -419,80 +418,7 @@ def _seed_market_prices():
 
 
 # ─────────────────────────────────────────────────────
-# 7. Scenario Policies (assignment rules)
-# ─────────────────────────────────────────────────────
-
-def _seed_scenario_policies():
-    print("→ Seeding scenario policies…")
-
-    if frappe.db.exists("Pricing Scenario Policy", {"policy_name": "Morocco Default Routing"}):
-        return
-
-    scenarios = frappe.get_all("Pricing Scenario", pluck="name", limit=4)
-    if not scenarios:
-        print("   No scenarios found — skipping")
-        return
-
-    try:
-        doc = frappe.new_doc("Pricing Scenario Policy")
-        doc.policy_name = "Morocco Default Routing"
-        doc.is_active = 1
-        doc.is_default = 1
-        doc.notes = "Routes items to the correct pricing scenario based on material, territory, and customer segment."
-
-        territories = frappe.get_all("Territory", filters={"is_group": 0}, pluck="name", limit=5)
-
-        # Rule 1: Steel items → Full Container scenario
-        if len(scenarios) >= 1:
-            doc.append("scenario_rules", {
-                "pricing_scenario": scenarios[0],
-                "material": "STEEL",
-                "priority": 10,
-                "sequence": 10,
-                "is_active": 1,
-                "notes": "Steel imports via full container",
-            })
-
-        # Rule 2: Copper items → Groupage
-        if len(scenarios) >= 2:
-            doc.append("scenario_rules", {
-                "pricing_scenario": scenarios[1],
-                "material": "COPPER",
-                "priority": 20,
-                "sequence": 20,
-                "is_active": 1,
-                "notes": "Copper via groupage (smaller volumes)",
-            })
-
-        # Rule 3: Local territory → Local purchase
-        if len(scenarios) >= 3 and territories:
-            doc.append("scenario_rules", {
-                "pricing_scenario": scenarios[2],
-                "geography_territory": territories[0] if territories else None,
-                "priority": 30,
-                "sequence": 30,
-                "is_active": 1,
-                "notes": "Local territory → local purchase scenario",
-            })
-
-        # Rule 4: Default fallback
-        if scenarios:
-            doc.append("scenario_rules", {
-                "pricing_scenario": scenarios[0],
-                "priority": 99,
-                "sequence": 99,
-                "is_active": 1,
-                "notes": "Default fallback scenario",
-            })
-
-        doc.insert(ignore_permissions=True)
-        print(f"   Created scenario policy: Morocco Default Routing")
-    except Exception as e:
-        print(f"   ⚠ Failed: {e}")
-
-
-# ─────────────────────────────────────────────────────
-# 8. Agent Pricing Rules
+# 7. Agent Pricing Rules
 # ─────────────────────────────────────────────────────
 
 def _seed_agent_pricing_rules():
@@ -565,7 +491,7 @@ def _seed_agent_pricing_rules():
 
 
 # ─────────────────────────────────────────────────────
-# 9. Customer Segmentation Engine
+# 8. Customer Segmentation Engine
 # ─────────────────────────────────────────────────────
 
 def _seed_segmentation_engine():
@@ -633,7 +559,7 @@ def _seed_segmentation_engine():
 
 
 # ─────────────────────────────────────────────────────
-# 10. Pricing Sheet
+# 9. Pricing Sheet
 # ─────────────────────────────────────────────────────
 
 def _seed_pricing_sheet():
@@ -670,11 +596,8 @@ def _seed_pricing_sheet():
         # Set policies explicitly to ensure rich data
         pricing_policy = frappe.db.get_value("Pricing Benchmark Policy", {"is_active": 1}, "name")
         customs_policy = frappe.db.get_value("Pricing Customs Policy", {"is_active": 1}, "name")
-        scenario_policy = frappe.db.get_value("Pricing Scenario Policy", {"is_active": 1}, "name")
-        
         if pricing_policy: doc.benchmark_policy = pricing_policy
         if customs_policy: doc.customs_policy = customs_policy
-        if scenario_policy: doc.scenario_policy = scenario_policy
         
         scenario = frappe.db.get_value("Pricing Scenario", {}, "name")
         if scenario: doc.pricing_scenario = scenario

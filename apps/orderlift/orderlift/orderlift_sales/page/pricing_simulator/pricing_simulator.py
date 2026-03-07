@@ -95,7 +95,6 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
     doc.pricing_scenario = (data.get("pricing_scenario") or selected.get("pricing_scenario") or "").strip()
     doc.customs_policy = (data.get("customs_policy") or selected.get("customs_policy") or "").strip()
     doc.benchmark_policy = (data.get("benchmark_policy") or selected.get("benchmark_policy") or "").strip()
-    doc.scenario_policy = (data.get("scenario_policy") or "").strip()
     doc.geography_territory = (data.get("geography_territory") or "").strip()
     doc.minimum_margin_percent = flt(data.get("minimum_margin_percent") or 0)
 
@@ -156,7 +155,6 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "pricing_scenario": doc.pricing_scenario or "",
             "customs_policy": doc.customs_policy or "",
             "benchmark_policy": doc.benchmark_policy or "",
-            "scenario_policy": doc.scenario_policy or "",
         },
         "warnings": _split_warnings(doc.projection_warnings)
         + ([_("Filtered out {0} unpriced dynamic item(s)." ).format(filtered_out)] if filtered_out else []),

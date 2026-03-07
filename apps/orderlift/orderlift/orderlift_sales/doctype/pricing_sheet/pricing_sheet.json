@@ -12,16 +12,16 @@
   "customer",
   "sales_person",
   "column_break_identity",
-  "customer_segment",
   "customer_type",
   "tier",
   "geography_territory",
   "section_strategy",
   "pricing_scenario",
-  "scenario_policy",
   "benchmark_policy",
   "customs_policy",
   "product_bundle",
+  "heading_scenario_mappings",
+  "scenario_mappings",
   "column_break_strategy",
   "resolved_mode",
   "selected_price_list",
@@ -47,7 +47,6 @@
   "calculated_by",
   "column_break_runtime",
   "calc_runtime_ms",
-  "applied_scenario_policy",
   "applied_customs_policy",
   "applied_benchmark_policy",
   "customs_total_applied",
@@ -98,13 +97,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "customer_segment",
-   "fieldtype": "Select",
-   "label": "Customer Segment",
-   "options": "B2B\nB2C",
-   "in_list_view": 1
-  },
-  {
    "fieldname": "customer_type",
    "fieldtype": "Link",
    "label": "Customer Group",
@@ -143,13 +135,6 @@
    "in_standard_filter": 1
   },
   {
-   "fieldname": "scenario_policy",
-   "fieldtype": "Link",
-   "label": "Scenario Policy",
-   "options": "Pricing Scenario Policy",
-   "in_standard_filter": 1
-  },
-  {
    "fieldname": "benchmark_policy",
    "fieldtype": "Link",
    "label": "Pricing Policy",
@@ -168,6 +153,17 @@
    "fieldtype": "Link",
    "label": "Default Product Bundle",
    "options": "Product Bundle"
+  },
+  {
+   "fieldname": "heading_scenario_mappings",
+   "fieldtype": "Section Break",
+   "label": "Scenario Mappings"
+  },
+  {
+   "fieldname": "scenario_mappings",
+   "fieldtype": "Table",
+   "label": "Scenario Mappings",
+   "options": "Pricing Sheet Scenario Mapping"
   },
   {
    "fieldname": "column_break_strategy",
@@ -242,12 +238,6 @@
    "fieldname": "calc_runtime_ms",
    "fieldtype": "Float",
    "label": "Calc Runtime (ms)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "applied_scenario_policy",
-   "fieldtype": "Data",
-   "label": "Applied Scenario Policy",
    "read_only": 1
   },
   {

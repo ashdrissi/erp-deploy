@@ -132,7 +132,6 @@ function buildLayout(state) {
         only_priced_items: makeControl(grid, { fieldname: "only_priced_items", label: __("Only Priced Items"), fieldtype: "Check", default: 1 }),
         default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Qty per Item"), fieldtype: "Float", default: 1 }),
         max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
-        scenario_policy: makeControl(grid, { fieldname: "scenario_policy", label: __("Scenario Policy"), fieldtype: "Link", options: "Pricing Scenario Policy" }),
         pricing_scenario: makeControl(grid, { fieldname: "pricing_scenario", label: __("Pricing Scenario"), fieldtype: "Link", options: "Pricing Scenario" }),
         customs_policy: makeControl(grid, { fieldname: "customs_policy", label: __("Customs Policy"), fieldtype: "Link", options: "Pricing Customs Policy" }),
         benchmark_policy: makeControl(grid, { fieldname: "benchmark_policy", label: __("Pricing Policy"), fieldtype: "Link", options: "Pricing Benchmark Policy" }),
@@ -268,7 +267,6 @@ function collectPayload(state) {
     return {
         customer: state.controls.customer.get_value() || "",
         sales_person: state.controls.sales_person.get_value() || "",
-        scenario_policy: state.controls.scenario_policy.get_value() || "",
         pricing_scenario: state.controls.pricing_scenario.get_value() || "",
         customs_policy: state.controls.customs_policy.get_value() || "",
         benchmark_policy: state.controls.benchmark_policy.get_value() || "",

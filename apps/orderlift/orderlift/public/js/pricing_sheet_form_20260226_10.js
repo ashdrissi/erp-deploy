@@ -230,7 +230,7 @@ function applyModeLayout(frm) {
         .append(`<span class="ps-mode-badge" style="background:${badgeColor};color:#fff;border-radius:20px;padding:2px 12px;font-size:11px;font-weight:700;margin-left:10px;display:inline-block;vertical-align:middle;">${badgeLabel}</span>`);
 
     // Dynamic-only fields — visible only in dynamic mode
-    const dynamicFields = ["benchmark_policy", "scenario_policy", "customs_policy",
+    const dynamicFields = ["benchmark_policy", "customs_policy",
         "pricing_scenario", "minimum_margin_percent", "strict_margin_guard",
         "product_bundle"];
     // Static-only fields
@@ -414,7 +414,6 @@ function renderProjectionDashboard(frm) {
     const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
     const warnings = frm.doc.projection_warnings || "";
     const pricingPolicy = frm.doc.applied_benchmark_policy || frm.doc.benchmark_policy || "";
-    const scenarioPolicy = frm.doc.applied_scenario_policy || frm.doc.scenario_policy || "";
     const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
     const salesPerson = frm.doc.sales_person || "";
@@ -547,7 +546,6 @@ function renderProjectionDashboard(frm) {
             <div class="ps-chip-row">
                 <span class="ps-scenario-chip"><span class="ps-chip-key">👤</span> ${frappe.utils.escape_html(salesPerson || "—")}</span>
                 <span class="ps-scenario-chip"><span class="ps-chip-key">🌍</span> ${frappe.utils.escape_html(geography || "—")}</span>
-                ${scenarioPolicy ? `<a href="/app/pricing-scenario-policy/${encodeURIComponent(scenarioPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">📐</span> ${frappe.utils.escape_html(scenarioPolicy)}</a>` : ""}
                 ${pricingPolicy ? `<a href="/app/pricing-benchmark-policy/${encodeURIComponent(pricingPolicy)}"  target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🎯</span> ${frappe.utils.escape_html(pricingPolicy)}</a>` : ""}
                 ${customsPolicy ? `<a href="/app/pricing-customs-policy/${encodeURIComponent(customsPolicy)}"   target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🛃</span> ${frappe.utils.escape_html(customsPolicy)}</a>` : ""}
                 <span class="ps-scenario-chip"><span class="ps-chip-key">💵</span> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
@@ -673,9 +671,14 @@ function setAgentPolicyQueries(frm, context) {
     const customs = (context || {}).allowed_customs_policies || [];
 
     frm.set_query("pricing_scenario", "lines", () => ({ filters: {} }));
-    frm.set_query("scenario_policy", () => ({ filters: { is_active: 1 } }));
-
+    frm.set_query("source_buying_price_list", "scenario_mappings", () => ({ filters: { buying: 1 } }));
     frm.set_query("pricing_scenario", () => {
+        if (isDynamic && scenarios.length) {
+            return { filters: { name: ["in", scenarios] } };
+        }
+        return { filters: { is_active: 1 } };
+    });
+    frm.set_query("pricing_scenario", "scenario_mappings", () => {
         if (isDynamic && scenarios.length) {
             return { filters: { name: ["in", scenarios] } };
         }
@@ -688,8 +691,20 @@ function setAgentPolicyQueries(frm, context) {
         }
         return { filters: { is_active: 1 } };
     });
+    frm.set_query("benchmark_policy", "scenario_mappings", () => {
+        if (isDynamic && benchmarks.length) {
+            return { filters: { is_active: 1, name: ["in", benchmarks] } };
+        }
+        return { filters: { is_active: 1 } };
+    });
 
     frm.set_query("customs_policy", () => {
+        if (isDynamic && customs.length) {
+            return { filters: { is_active: 1, name: ["in", customs] } };
+        }
+        return { filters: { is_active: 1 } };
+    });
+    frm.set_query("customs_policy", "scenario_mappings", () => {
         if (isDynamic && customs.length) {
             return { filters: { is_active: 1, name: ["in", customs] } };
         }
@@ -921,10 +936,6 @@ frappe.ui.form.on("Pricing Sheet", {
         renderProjectionDashboard(frm);
     },
 
-    scenario_policy(frm) {
-        renderProjectionDashboard(frm);
-    },
-
     customs_policy(frm) {
         renderProjectionDashboard(frm);
     },
@@ -1035,6 +1046,24 @@ frappe.ui.form.on("Pricing Sheet Bundle Scenario", {
         renderProjectionDashboard(frm);
     },
     bundle_scenario_rules_remove(frm) {
+        renderProjectionDashboard(frm);
+    },
+});
+
+frappe.ui.form.on("Pricing Sheet Scenario Mapping", {
+    source_buying_price_list(frm) {
+        renderProjectionDashboard(frm);
+    },
+    pricing_scenario(frm) {
+        renderProjectionDashboard(frm);
+    },
+    customs_policy(frm) {
+        renderProjectionDashboard(frm);
+    },
+    benchmark_policy(frm) {
+        renderProjectionDashboard(frm);
+    },
+    scenario_mappings_remove(frm) {
         renderProjectionDashboard(frm);
     },
 });
