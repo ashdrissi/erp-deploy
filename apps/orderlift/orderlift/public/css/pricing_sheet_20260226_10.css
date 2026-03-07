@@ -75,13 +75,13 @@
     padding: 14px 16px;
 }
 
-.pricing-sheet-form-root .ps-dashboard-section .section-body > .form-column {
+.pricing-sheet-form-root .ps-dashboard-section .section-body>.form-column {
     width: 100%;
     max-width: 100%;
     flex: 0 0 100%;
 }
 
-.pricing-sheet-form-root .ps-dashboard-section .section-body > .form-column:empty {
+.pricing-sheet-form-root .ps-dashboard-section .section-body>.form-column:empty {
     display: none;
 }
 
@@ -255,4 +255,152 @@
         width: 100%;
         margin-right: 0;
     }
+}
+
+/* ── Margin badges ─────────────────────────────────────────────────────────── */
+.ps-mgn-good,
+.ps-mgn-mid,
+.ps-mgn-bad {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ps-mgn-good {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.ps-mgn-mid {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.ps-mgn-bad {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ── Override badge ─────────────────────────────────────────────────────────── */
+.ps-override-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: #6366f1;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+/* ── Smart warnings ─────────────────────────────────────────────────────────── */
+.ps-warn-info {
+    font-size: 11px;
+    color: #64748b;
+    padding: 5px 0;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.ps-warn-block {
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    background: #fff7ed;
+    margin: 8px 0;
+    overflow: hidden;
+}
+
+.ps-warn-summary {
+    cursor: pointer;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #9a3412;
+    list-style: none;
+}
+
+.ps-warn-summary::-webkit-details-marker {
+    display: none;
+}
+
+.ps-warn-body {
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #9a3412;
+    border-top: 1px solid #fed7aa;
+    line-height: 1.7;
+}
+
+.ps-warn-clean {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 7px 12px;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+/* ── Item / chip links ──────────────────────────────────────────────────────── */
+.ps-item-link {
+    color: #4f46e5;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.ps-item-link:hover {
+    text-decoration: underline;
+    color: #3730a3;
+}
+
+.ps-scenario-chip.ps-chip-link {
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.ps-scenario-chip.ps-chip-link:hover {
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+    border-color: #a5b4fc;
+}
+
+.ps-ovr-pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    margin-left: 3px;
+}
+
+/* ── Preview table ──────────────────────────────────────────────────────────── */
+.ps-preview-head {
+    padding: 8px 12px;
+    background: #f8fafc;
+    font-weight: 700;
+    font-size: 12px;
+    color: #334155;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ps-preview-count {
+    background: #e0e7ff;
+    color: #3730a3;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ps-preview-scroll {
+    max-height: 360px;
+    overflow-y: auto;
+    overflow-x: auto;
 }

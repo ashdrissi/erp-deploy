@@ -62,7 +62,36 @@ function renderContextActions(frm) {
         field.$wrapper.before($bar);
     };
 
+    // Override count badges on collapsed section labels
+    const badgeSections = [
+        { field: "scenario_overrides", rows: frm.doc.scenario_overrides || [] },
+        { field: "line_overrides", rows: frm.doc.line_overrides || [] },
+        { field: "bundle_scenario_rules", rows: frm.doc.bundle_scenario_rules || [] },
+    ];
+    badgeSections.forEach(({ field, rows }) => {
+        const f = frm.fields_dict[field];
+        if (!f) return;
+        const $head = f.$wrapper.closest(".form-section").find(".section-head");
+        $head.find(".ps-override-badge").remove();
+        if (rows.length > 0) {
+            $head.append(`<span class="ps-override-badge">${rows.length}</span>`);
+        }
+    });
+
     mount("lines", __("Pricing Sheet Actions"), [
+        {
+            label: __("↻ Recalculate"),
+            handler: async () => {
+                try {
+                    await frm.save();
+                    frm.refresh_field("lines");
+                    renderProjectionDashboard(frm);
+                    frappe.show_alert({ message: __("Pricing recalculated"), indicator: "green" });
+                } catch (e) {
+                    frappe.msgprint({ title: __("Recalculation Failed"), message: __("Could not recalculate."), indicator: "red" });
+                }
+            },
+        },
         {
             label: __("Refresh Base Prices"),
             handler: async () => {
@@ -219,6 +248,49 @@ function collapseAdvancedSections(frm) {
     });
 }
 
+// ── Dashboard helpers ─────────────────────────────────────────────────────────
+
+function psMarginBadge(pct) {
+    const v = Number(pct || 0);
+    const cls = v >= 20 ? "ps-mgn-good" : v >= 10 ? "ps-mgn-mid" : "ps-mgn-bad";
+    return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+}
+
+function psDashLink(doctype, name, label) {
+    if (!name) return frappe.utils.escape_html(label || "—");
+    const url = `/app/${frappe.router.slug(doctype)}/${encodeURIComponent(name)}`;
+    return `<a href="${url}" class="ps-item-link" target="_blank" title="Open ${frappe.utils.escape_html(name)}">${frappe.utils.escape_html(label || name)}</a>`;
+}
+
+function psSmartWarnings(raw) {
+    if (!raw || !raw.trim()) return `<div class="ps-warn-clean">✓ No warnings</div>`;
+
+    const INFO_RE = /auto-loaded|filtered out/i;
+    const BENCH_RE = /Only\s+\d+ benchmark source\(s\) for (.+?);/i;
+    const infoLines = [], configLines = [];
+    const benchItems = {};
+
+    for (const line of raw.split("\n")) {
+        const msg = line.replace(/^\[(Dynamic|Static)\]\s*/i, "").trim();
+        if (!msg) continue;
+        const bm = msg.match(BENCH_RE);
+        if (bm) { (benchItems[bm[1]] = benchItems[bm[1]] || true); continue; }
+        if (INFO_RE.test(msg)) infoLines.push(msg);
+        else configLines.push(msg);
+    }
+    const bCount = Object.keys(benchItems).length;
+    if (bCount) configLines.push(`${bCount} item(s) have no benchmark sources — comparison disabled`);
+
+    let html = "";
+    if (infoLines.length)
+        html += `<div class="ps-warn-info">ℹ ${infoLines.map((l) => frappe.utils.escape_html(l)).join(" · ")}</div>`;
+    if (configLines.length) {
+        const rows = configLines.map((w) => `<div>• ${frappe.utils.escape_html(w)}</div>`).join("");
+        html += `<details class="ps-warn-block"><summary class="ps-warn-summary">⚠ ${configLines.length} warning(s)</summary><div class="ps-warn-body">${rows}</div></details>`;
+    }
+    return html || `<div class="ps-warn-clean">✓ No warnings</div>`;
+}
+
 function aggregateExpenseImpact(lines) {
     const totals = {};
     (lines || []).forEach((row) => {
@@ -297,7 +369,6 @@ function renderProjectionDashboard(frm) {
     }
 
     const lines = frm.doc.lines || [];
-    const topRows = lines.slice(0, 8);
     const totalBase = frm.doc.total_buy || 0;
     const totalExpenses = frm.doc.total_expenses || 0;
     const totalFinal = frm.doc.total_selling || 0;
@@ -309,41 +380,40 @@ function renderProjectionDashboard(frm) {
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
     const salesPerson = frm.doc.sales_person || "";
     const geography = frm.doc.geography_territory || "";
+
     const scenarioCounts = {};
     lines.forEach((row) => {
         const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
         scenarioCounts[key] = (scenarioCounts[key] || 0) + 1;
     });
     const scenarioPills = Object.entries(scenarioCounts)
-        .map(([name, count]) => {
-            return `<span class="ps-scenario-chip">${frappe.utils.escape_html(name)}<strong>${count}</strong></span>`;
-        })
-        .join("");
+        .map(([name, count]) =>
+            `<a href="/app/pricing-scenario/${encodeURIComponent(name)}" target="_blank" class="ps-scenario-chip" title="Open ${frappe.utils.escape_html(name)}">${frappe.utils.escape_html(name)}<strong>${count}</strong></a>`
+        ).join("");
 
-    const rowsHtml =
-        topRows
-            .map((row, index) => {
-                const item = frappe.utils.escape_html(row.item || "-");
-                const preview = frappe.utils.escape_html(row.breakdown_preview || __("No expenses"));
-                const floor = row.price_floor_violation ? `<span class="indicator-pill red">${__("Floor")}</span>` : "";
-                const scn = frappe.utils.escape_html(row.resolved_pricing_scenario || row.pricing_scenario || "-");
-                const scnOverride = row.has_scenario_override ? `<span class="indicator-pill orange">${__("Edited")}</span>` : "";
-                return `
-                    <tr>
-                        <td>${item}</td>
-                        <td>${scn} ${scnOverride}</td>
-                        <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
-                        <td style="text-align:right;">${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
-                        <td style="text-align:right;">${frappe.format(row.projected_unit_price || 0, { fieldtype: "Currency" })}</td>
-                        <td style="text-align:right;">${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</td>
-                        <td>${floor}</td>
-                        <td>${preview}</td>
-                        <td style="text-align:right;"><button class="btn btn-xs btn-default" data-breakdown-index="${index}">${__("View")}</button></td>
-                    </tr>
-                `;
-            })
-            .join("") ||
-        `<tr><td colspan="9" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
+    const rowsHtml = lines
+        .map((row, index) => {
+            const itemCell = psDashLink("Item", row.item, row.item);
+            const scnCell = psDashLink("Pricing Scenario", row.resolved_pricing_scenario || row.pricing_scenario, row.resolved_pricing_scenario || row.pricing_scenario || "—");
+            const scnOverride = row.has_scenario_override ? `<span class="indicator-pill orange ps-ovr-pill">${__("Edited")}</span>` : "";
+            const floor = row.price_floor_violation ? `<span class="indicator-pill red ps-ovr-pill">${__("Floor")}</span>` : "";
+            const preview = frappe.utils.escape_html(row.breakdown_preview || __("No expenses"));
+            return `
+                <tr>
+                    <td>${itemCell}</td>
+                    <td>${scnCell} ${scnOverride}</td>
+                    <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
+                    <td style="text-align:right;">${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
+                    <td style="text-align:right;">${frappe.format(row.projected_unit_price || 0, { fieldtype: "Currency" })}</td>
+                    <td style="text-align:right;"><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
+                    <td>${psMarginBadge(row.margin_pct)}</td>
+                    <td>${floor}</td>
+                    <td>${preview}</td>
+                    <td style="text-align:right;"><button class="btn btn-xs btn-default" data-breakdown-index="${index}">${__("View")}</button></td>
+                </tr>
+            `;
+        }).join("") ||
+        `<tr><td colspan="10" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
 
     const impacts = aggregateExpenseImpact(lines)
         .slice(0, 6)
@@ -378,11 +448,7 @@ function renderProjectionDashboard(frm) {
             })
             .join("") || `<tr><td colspan="9" style="padding:8px;color:#64748b;">${__("No customs data")}</td></tr>`;
 
-    const warningBlock = warnings
-        ? `<div style="border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;padding:10px;border-radius:10px;margin:10px 0;white-space:pre-line;">${frappe.utils.escape_html(
-            warnings
-        )}</div>`
-        : "";
+    const warningBlock = psSmartWarnings(warnings);
 
     ensurePricingSheetStyles(frm);
 
@@ -409,17 +475,19 @@ function renderProjectionDashboard(frm) {
             </div>
             <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
             <div style="margin-top:6px;font-size:12px;color:#334155;">
-                <span class="ps-scenario-chip"><strong>${__("Sales Person")}</strong> ${frappe.utils.escape_html(salesPerson || "-")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Geography")}</strong> ${frappe.utils.escape_html(geography || "-")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Scenario Policy")}</strong> ${frappe.utils.escape_html(scenarioPolicy || "-")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Pricing Policy")}</strong> ${frappe.utils.escape_html(pricingPolicy || "-")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Customs Policy")}</strong> ${frappe.utils.escape_html(customsPolicy || "-")}</span>
+                <span class="ps-scenario-chip"><strong>${__("Sales Person")}</strong> ${frappe.utils.escape_html(salesPerson || "—")}</span>
+                <span class="ps-scenario-chip"><strong>${__("Geography")}</strong> ${frappe.utils.escape_html(geography || "—")}</span>
+                ${scenarioPolicy ? `<a href="/app/pricing-scenario-policy/${encodeURIComponent(scenarioPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><strong>${__("Scenario Policy")}</strong> ${frappe.utils.escape_html(scenarioPolicy)}</a>` : `<span class="ps-scenario-chip"><strong>${__("Scenario Policy")}</strong> —</span>`}
+                ${pricingPolicy ? `<a href="/app/pricing-benchmark-policy/${encodeURIComponent(pricingPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><strong>${__("Pricing Policy")}</strong> ${frappe.utils.escape_html(pricingPolicy)}</a>` : `<span class="ps-scenario-chip"><strong>${__("Pricing Policy")}</strong> —</span>`}
+                ${customsPolicy ? `<a href="/app/pricing-customs-policy/${encodeURIComponent(customsPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><strong>${__("Customs Policy")}</strong> ${frappe.utils.escape_html(customsPolicy)}</a>` : `<span class="ps-scenario-chip"><strong>${__("Customs Policy")}</strong> —</span>`}
                 <span class="ps-scenario-chip"><strong>${__("Customs Total")}</strong> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
             </div>
             ${warningBlock}
         </div>
         <div class="ps-grid-two">
             <div class="ps-card ps-table-wrap">
+                <div class="ps-preview-head">${__("Lines Preview")} <span class="ps-preview-count">${lines.length} ${__("items")}</span></div>
+                <div class="ps-preview-scroll">
                 <table class="ps-table">
                     <thead style="background:#f8fafc;">
                         <tr>
@@ -429,6 +497,7 @@ function renderProjectionDashboard(frm) {
                             <th style="text-align:right;">${__("Base")}</th>
                             <th style="text-align:right;">${__("Projected")}</th>
                             <th style="text-align:right;">${__("Final")}</th>
+                            <th style="text-align:left;">${__("Margin")}</th>
                             <th style="text-align:left;">${__("Flags")}</th>
                             <th style="text-align:left;">${__("Expense Flow")}</th>
                             <th style="text-align:right;">${__("Detail")}</th>
@@ -436,6 +505,7 @@ function renderProjectionDashboard(frm) {
                     </thead>
                     <tbody>${rowsHtml}</tbody>
                 </table>
+                </div>
                 <div class="ps-overflow-hint">${__("Tip: Scroll horizontally for all pricing columns on smaller screens.")}</div>
             </div>
             <div class="ps-card ps-table-wrap">
@@ -476,10 +546,8 @@ function renderProjectionDashboard(frm) {
     frm.fields_dict.projection_dashboard.$wrapper.html(html);
     frm.fields_dict.projection_dashboard.$wrapper.find("[data-breakdown-index]").on("click", function () {
         const i = Number($(this).attr("data-breakdown-index"));
-        const row = topRows[i];
-        if (row) {
-            showBreakdownDialog(row);
-        }
+        const row = lines[i];
+        if (row) showBreakdownDialog(row);
     });
 }
 
@@ -735,6 +803,18 @@ frappe.ui.form.on("Pricing Sheet", {
         if (frm.doc.sales_person) {
             frm.events.sales_person(frm);
         }
+
+        // Keyboard shortcut: Ctrl+Shift+R = Recalculate
+        $(document).off("keydown.psheet").on("keydown.psheet", async (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === "R" && frm.doc.doctype === "Pricing Sheet") {
+                e.preventDefault();
+                try {
+                    await frm.save();
+                    renderProjectionDashboard(frm);
+                    frappe.show_alert({ message: __("Pricing recalculated"), indicator: "green" });
+                } catch (_) { }
+            }
+        });
     },
 
     async customer(frm) {
