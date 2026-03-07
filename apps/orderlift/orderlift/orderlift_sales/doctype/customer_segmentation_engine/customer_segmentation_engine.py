@@ -276,20 +276,25 @@ class CustomerSegmentationEngine(Document):
 @frappe.whitelist()
 def get_customer_group_tiers(customer_group=None):
     customer_group = (customer_group or "").strip()
-    if not customer_group:
-        return []
-
-    active_engines = frappe.get_all(
-        "Customer Segmentation Engine",
-        filters={"is_active": 1, "target_customer_type": customer_group},
-        pluck="name",
-        limit_page_length=0,
-    )
-
-    if not active_engines:
+    if customer_group:
         active_engines = frappe.get_all(
             "Customer Segmentation Engine",
-            filters={"is_active": 1, "target_customer_type": ["in", ["", None]]},
+            filters={"is_active": 1, "target_customer_type": customer_group},
+            pluck="name",
+            limit_page_length=0,
+        )
+
+        if not active_engines:
+            active_engines = frappe.get_all(
+                "Customer Segmentation Engine",
+                filters={"is_active": 1, "target_customer_type": ["in", ["", None]]},
+                pluck="name",
+                limit_page_length=0,
+            )
+    else:
+        active_engines = frappe.get_all(
+            "Customer Segmentation Engine",
+            filters={"is_active": 1},
             pluck="name",
             limit_page_length=0,
         )

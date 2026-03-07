@@ -60,6 +60,30 @@ function applyTierModifierCustomerGroupQuery(frm) {
     frm.refresh_field("tier_modifiers");
 }
 
+async function fetchSegmentationTiers(customerGroup) {
+    const response = await frappe.call({
+        method: "orderlift.orderlift_sales.doctype.customer_segmentation_engine.customer_segmentation_engine.get_customer_group_tiers",
+        args: { customer_group: customerGroup || "" },
+    });
+    return response.message || [];
+}
+
+async function applyTierModifierTierOptions(frm, customerGroup) {
+    const tiers = await fetchSegmentationTiers(customerGroup);
+    const options = ["", ...tiers].join("\n");
+
+    frm.fields_dict.tier_modifiers?.grid?.update_docfield_property("tier", "options", options);
+
+    if (frm.cur_grid && frm.cur_grid.docfields) {
+        const tierField = frm.cur_grid.docfields.find((df) => df.fieldname === "tier");
+        if (tierField) {
+            tierField.options = options;
+        }
+    }
+
+    frm.refresh_field("tier_modifiers");
+}
+
 frappe.ui.form.on("Pricing Benchmark Policy", {
     refresh(frm) {
         _inject_styles();
@@ -67,6 +91,7 @@ frappe.ui.form.on("Pricing Benchmark Policy", {
         frm.fields_dict.rules_help_html && frm.fields_dict.rules_help_html.$wrapper.html(RULES_HELP);
         _style_form(frm);
         applyTierModifierCustomerGroupQuery(frm);
+        applyTierModifierTierOptions(frm, "");
     },
     benchmark_rules_add(frm) {
         applyTierModifierCustomerGroupQuery(frm);
@@ -79,6 +104,17 @@ frappe.ui.form.on("Pricing Benchmark Policy", {
 frappe.ui.form.on("Pricing Benchmark Rule", {
     customer_type(frm) {
         applyTierModifierCustomerGroupQuery(frm);
+    },
+});
+
+frappe.ui.form.on("Pricing Tier Modifier", {
+    form_render(frm, cdt, cdn) {
+        const row = locals[cdt][cdn] || {};
+        applyTierModifierTierOptions(frm, row.customer_group || "");
+    },
+    customer_group(frm, cdt, cdn) {
+        const row = locals[cdt][cdn] || {};
+        applyTierModifierTierOptions(frm, row.customer_group || "");
     },
 });
 
