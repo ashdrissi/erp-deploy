@@ -10,6 +10,7 @@ class PricingScenarioPolicy(Document):
         active = 0
 
         for row in self.scenario_rules or []:
+            row.source_buying_price_list = (row.source_buying_price_list or "").strip()
             row.sales_person = (row.sales_person or "").strip()
             row.geography_territory = (row.geography_territory or "").strip()
             row.customer_type = (row.customer_type or "").strip()
@@ -18,6 +19,8 @@ class PricingScenarioPolicy(Document):
             row.source_bundle = (row.source_bundle or "").strip()
             row.item_group = (row.item_group or "").strip()
             row.material = (row.material or "").strip().upper()
+            row.customs_policy = (row.customs_policy or "").strip()
+            row.benchmark_policy = (row.benchmark_policy or "").strip()
             row.sequence = cint(row.sequence or 90)
             row.priority = cint(row.priority or 10)
 
@@ -26,6 +29,9 @@ class PricingScenarioPolicy(Document):
 
             key = (
                 row.pricing_scenario,
+                row.source_buying_price_list.lower(),
+                row.customs_policy.lower(),
+                row.benchmark_policy.lower(),
                 row.sales_person.lower(),
                 row.geography_territory.lower(),
                 row.customer_type.lower(),

@@ -733,6 +733,7 @@ frappe.ui.form.on("Pricing Sheet", {
         });
 
         frm.set_query("item", "lines", queryConfig);
+        frm.set_query("source_buying_price_list", "lines", () => ({ filters: { buying: 1 } }));
         setAgentPolicyQueries(frm, null);
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
         if (frm.fields_dict.lines.grid.get_field("margin_source")) {
@@ -954,6 +955,7 @@ frappe.ui.form.on("Pricing Sheet Item", {
             args: {
                 item_code: row.item,
                 pricing_scenario: row.pricing_scenario || frm.doc.pricing_scenario,
+                source_buying_price_list: row.source_buying_price_list,
             },
             callback: (r) => {
                 const data = r.message || {};
@@ -982,6 +984,28 @@ frappe.ui.form.on("Pricing Sheet Item", {
 
     pricing_scenario(frm) {
         renderProjectionDashboard(frm);
+    },
+
+    source_buying_price_list(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row.item) {
+            renderProjectionDashboard(frm);
+            return;
+        }
+
+        frappe.call({
+            method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_item_pricing_defaults",
+            args: {
+                item_code: row.item,
+                pricing_scenario: row.pricing_scenario || frm.doc.pricing_scenario,
+                source_buying_price_list: row.source_buying_price_list,
+            },
+            callback: (r) => {
+                const data = r.message || {};
+                frappe.model.set_value(cdt, cdn, "buy_price", data.buy_price || 0);
+                renderProjectionDashboard(frm);
+            },
+        });
     },
 });
 

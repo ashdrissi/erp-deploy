@@ -93,6 +93,7 @@ doctype_js = {
     "Delivery Note": "public/js/delivery_note_logistics.js",
     "Sales Order": "public/js/sales_order_logistics.js",
     "Pricing Sheet": "public/js/pricing_sheet_form_20260226_10.js",
+    "Pricing Scenario Policy": "public/js/pricing_scenario_policy_form.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
 }

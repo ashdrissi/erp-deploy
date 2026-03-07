@@ -27,6 +27,7 @@ def resolve_scenario_rule(rules, context=None):
 
 def _matches(rule, context):
     for key in (
+        "source_buying_price_list",
         "sales_person",
         "geography_territory",
         "customer_type",
@@ -46,6 +47,7 @@ def _matches(rule, context):
 
 def _specificity(rule):
     weights = {
+        "source_buying_price_list": 40,
         "item": 32,
         "source_bundle": 24,
         "item_group": 16,

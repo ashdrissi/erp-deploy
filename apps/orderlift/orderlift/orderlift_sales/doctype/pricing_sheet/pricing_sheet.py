@@ -68,8 +68,8 @@ class PricingSheet(Document):
         fallback_margin = flt(getattr(benchmark_policy_doc, "fallback_margin_percent", None) or 10) if benchmark_policy_doc else 10
         self.applied_benchmark_policy = benchmark_policy_doc.name if benchmark_policy_doc else ""
 
-        # Resolve dynamic modifiers (tier & zone) from benchmark policy
-        tier_mod, zone_mod = self._resolve_dynamic_modifiers(benchmark_policy_doc)
+        customs_policy_cache = {customs_policy.name: customs_policy} if customs_policy else {}
+        benchmark_policy_cache = {benchmark_policy_doc.name: benchmark_policy_doc} if benchmark_policy_doc else {}
 
         warnings = []
         tier_warning = self._get_dynamic_tier_staleness_warning()
@@ -94,6 +94,12 @@ class PricingSheet(Document):
         total_expenses = 0.0
         total_final = 0.0
         line_snapshots = []
+
+        buy_price_cache_by_list = {
+            cache.get("buying_price_list"): cache.get("buy_prices") or {}
+            for cache in scenario_caches.values()
+            if cache.get("buying_price_list")
+        }
 
         for row in lines:
             qty = flt(row.qty)
@@ -121,13 +127,19 @@ class PricingSheet(Document):
                 cache["line_expenses"],
             )
 
-            self._set_buy_price_from_map(row, cache["buying_price_list"], cache["buy_prices"])
+            self._set_buy_price_for_row(
+                row,
+                cache["buying_price_list"],
+                cache["buy_prices"],
+                buy_price_cache_by_list,
+            )
 
             base_unit = flt(row.buy_price)
             base_amount = qty * base_unit
             row.base_amount = base_amount
 
-            customs_calc = self._compute_customs_for_row(row, base_amount, item_details, customs_policy)
+            row_customs_policy = self._resolve_row_customs_policy(scenario_rule, customs_policy, customs_policy_cache)
+            customs_calc = self._compute_customs_for_row(row, base_amount, item_details, row_customs_policy)
             if customs_calc.get("warning"):
                 warnings.append(_("Row {0}: {1}").format(row.idx, customs_calc.get("warning")))
 
@@ -147,14 +159,22 @@ class PricingSheet(Document):
             benchmark_result = None
             margin_source = ""
 
-            if benchmark_policy_doc:
+            row_benchmark_policy = self._resolve_row_benchmark_policy(scenario_rule, benchmark_policy_doc, benchmark_policy_cache)
+            row_tier_mod, row_zone_mod = self._resolve_dynamic_modifiers(row_benchmark_policy)
+
+            if row_benchmark_policy:
                 landed_cost = self._compute_landed_cost(
                     base_unit, qty, effective_line_expenses, customs_calc, transport_calc
                 )
+                benchmark_runtime = self._get_benchmark_runtime_cache(
+                    row_benchmark_policy,
+                    benchmark_policy_cache,
+                    item_codes,
+                )
                 benchmark_result = self._resolve_benchmark_for_row(
-                    row, landed_cost, benchmark_policy_doc, item_details,
-                    cache.get("benchmark_price_map") or {},
-                    cache.get("benchmark_source_types") or {},
+                    row, landed_cost, row_benchmark_policy, item_details,
+                    benchmark_runtime.get("benchmark_price_map") or {},
+                    benchmark_runtime.get("benchmark_source_types") or {},
                     line_context,
                 )
                 if benchmark_result:
@@ -170,7 +190,7 @@ class PricingSheet(Document):
 
             # --- Inject dynamic modifiers (Tier & Zone) ---
             effective_line_expenses, row_tier_mod, row_zone_mod = self._inject_modifier_expenses(
-                effective_line_expenses, tier_mod, zone_mod
+                effective_line_expenses, row_tier_mod, row_zone_mod
             )
             row.tier_modifier_amount = row_tier_mod
             row.zone_modifier_amount = row_zone_mod
@@ -585,6 +605,12 @@ class PricingSheet(Document):
         scenario_docs = self._collect_scenarios_or_throw(lines, item_details=item_details, scenario_policy=scenario_policy)
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
 
+        buy_price_cache_by_list = {
+            cache.get("buying_price_list"): cache.get("buy_prices") or {}
+            for cache in scenario_caches.values()
+            if cache.get("buying_price_list")
+        }
+
         for row in lines:
             context = self._build_rule_context(row=row, item_details=item_details)
             scenario_name, source, _ = self._resolve_line_scenario(row, line_context=context, scenario_policy=scenario_policy)
@@ -593,7 +619,13 @@ class PricingSheet(Document):
             cache = scenario_caches.get(scenario_name)
             if not cache:
                 continue
-            self._set_buy_price_from_map(row, cache["buying_price_list"], cache["buy_prices"], force_refresh=True)
+            self._set_buy_price_for_row(
+                row,
+                cache["buying_price_list"],
+                cache["buy_prices"],
+                buy_price_cache_by_list,
+                force_refresh=True,
+            )
 
         self.recalculate()
         self.save(ignore_permissions=True)
@@ -757,6 +789,9 @@ class PricingSheet(Document):
         rules = [
             {
                 "pricing_scenario": row.pricing_scenario,
+                "source_buying_price_list": row.source_buying_price_list,
+                "customs_policy": row.customs_policy,
+                "benchmark_policy": row.benchmark_policy,
                 "sales_person": row.sales_person,
                 "geography_territory": row.geography_territory,
                 "customer_type": row.customer_type,
@@ -780,7 +815,9 @@ class PricingSheet(Document):
         item_code = row.item if row else None
         item_meta = item_details.get(item_code) or {}
         geo = self._resolve_geography_context()
+        source_buying_price_list = (getattr(row, "source_buying_price_list", "") or "").strip()
         return {
+            "source_buying_price_list": source_buying_price_list or self._resolve_source_buying_price_list(),
             "sales_person": self.sales_person,
             "geography_territory": geo.get("geography_territory"),
             "customer_type": self.customer_type,
@@ -814,6 +851,67 @@ class PricingSheet(Document):
         sales_person = frappe.db.get_value("Sales Person", filters, "name")
         if sales_person:
             self.sales_person = sales_person
+
+    def _resolve_source_buying_price_list(self):
+        context = build_dynamic_context(sales_person=self.sales_person)
+        selected = context.get("selected") or {}
+        buying_price_list = (selected.get("buying_price_list") or "").strip()
+        if buying_price_list:
+            return buying_price_list
+
+        if self.pricing_scenario:
+            return (frappe.db.get_value("Pricing Scenario", self.pricing_scenario, "buying_price_list") or "").strip()
+        return ""
+
+    def _resolve_row_customs_policy(self, matched_rule, default_policy, policy_cache):
+        if matched_rule and matched_rule.get("customs_policy"):
+            return self._get_named_doc("Pricing Customs Policy", matched_rule.get("customs_policy"), policy_cache)
+        return default_policy
+
+    def _resolve_row_benchmark_policy(self, matched_rule, default_policy, policy_cache):
+        if matched_rule and matched_rule.get("benchmark_policy"):
+            return self._get_named_doc("Pricing Benchmark Policy", matched_rule.get("benchmark_policy"), policy_cache)
+        return default_policy
+
+    def _get_named_doc(self, doctype, name, cache):
+        name = (name or "").strip()
+        if not name:
+            return None
+        if name in cache:
+            return cache[name]
+        if not frappe.db.exists(doctype, name):
+            return None
+        doc = frappe.get_doc(doctype, name)
+        if cint(getattr(doc, "is_active", 1)) != 1:
+            return None
+        cache[name] = doc
+        return doc
+
+    def _get_benchmark_runtime_cache(self, benchmark_policy_doc, runtime_cache, item_codes):
+        if not benchmark_policy_doc:
+            return {"benchmark_price_map": {}, "benchmark_source_types": {}}
+        key = f"__runtime__::{benchmark_policy_doc.name}"
+        cached = runtime_cache.get(key)
+        if cached:
+            return cached
+
+        benchmark_price_map = {}
+        benchmark_source_types = {}
+        for src in benchmark_policy_doc.benchmark_sources or []:
+            if not cint(src.is_active):
+                continue
+            pl = src.price_list
+            if pl and pl not in benchmark_source_types:
+                benchmark_source_types[pl] = get_price_list_type(pl)
+            if pl and pl not in benchmark_price_map:
+                benchmark_price_map[pl] = get_latest_item_prices(item_codes, pl, buying=None)
+
+        cached = {
+            "benchmark_price_map": benchmark_price_map,
+            "benchmark_source_types": benchmark_source_types,
+        }
+        runtime_cache[key] = cached
+        return cached
 
     def _apply_agent_dynamic_defaults(self):
         # --- Static mode: pre-fill selected_price_list ---
@@ -923,7 +1021,14 @@ class PricingSheet(Document):
     def _format_scenario_rule(self, rule):
         if not rule:
             return ""
-        return rule.get("pricing_scenario") or ""
+        parts = [rule.get("pricing_scenario") or ""]
+        if rule.get("source_buying_price_list"):
+            parts.append(_("Buying: {0}").format(rule.get("source_buying_price_list")))
+        if rule.get("customs_policy"):
+            parts.append(_("Customs: {0}").format(rule.get("customs_policy")))
+        if rule.get("benchmark_policy"):
+            parts.append(_("Benchmark: {0}").format(rule.get("benchmark_policy")))
+        return " | ".join([p for p in parts if p])
 
     def _resolve_customs_policy(self):
         if not frappe.db.exists("DocType", "Pricing Customs Policy"):
@@ -1677,6 +1782,26 @@ class PricingSheet(Document):
         row.buy_price_missing = 0
         row.buy_price_message = ""
 
+    def _set_buy_price_for_row(
+        self,
+        row,
+        scenario_buying_price_list,
+        scenario_buy_prices,
+        buy_price_cache_by_list,
+        force_refresh=False,
+    ):
+        buying_price_list = (getattr(row, "source_buying_price_list", "") or "").strip() or scenario_buying_price_list
+        buy_prices = scenario_buy_prices or {}
+
+        if buying_price_list and buying_price_list != scenario_buying_price_list:
+            cached_prices = buy_price_cache_by_list.get(buying_price_list)
+            if cached_prices is None:
+                cached_prices = get_latest_item_prices([row.item], buying_price_list, buying=True) if row.item else {}
+                buy_price_cache_by_list[buying_price_list] = cached_prices
+            buy_prices = cached_prices
+
+        self._set_buy_price_from_map(row, buying_price_list, buy_prices, force_refresh=force_refresh)
+
     def _set_benchmark_status(self, row, benchmark_list, benchmark_prices, computed_unit):
         benchmark_price = benchmark_prices.get(row.item)
         if benchmark_price is None or flt(benchmark_price) <= 0:
@@ -2077,12 +2202,12 @@ def stock_item_query(doctype, txt, searchfield, start, page_len, filters):
 
 
 @frappe.whitelist()
-def get_item_pricing_defaults(item_code, pricing_scenario=None):
+def get_item_pricing_defaults(item_code, pricing_scenario=None, source_buying_price_list=None):
     if not item_code:
         return {"buy_price": 0, "item_group": "Ungrouped"}
 
-    buying_price_list = "Buying"
-    if pricing_scenario and frappe.db.exists("Pricing Scenario", pricing_scenario):
+    buying_price_list = (source_buying_price_list or "").strip() or "Buying"
+    if not source_buying_price_list and pricing_scenario and frappe.db.exists("Pricing Scenario", pricing_scenario):
         buying_price_list = (
             frappe.db.get_value("Pricing Scenario", pricing_scenario, "buying_price_list") or "Buying"
         )
