@@ -8,6 +8,8 @@ from frappe.utils import cint
 
 
 DYNAMIC_MODE = "Dynamic Calculation Engine"
+STATIC_MODE  = "Pick from Published Selling Price List"
+
 
 
 class AgentPricingRules(Document):
@@ -83,6 +85,25 @@ def build_dynamic_context(sales_person=None, agent_doc=None):
         "allowed_pricing_scenarios": sorted({str(r.get("pricing_scenario") or "") for r in rows if r.get("pricing_scenario")}),
         "allowed_customs_policies": sorted({str(r.get("customs_policy") or "") for r in rows if r.get("customs_policy")}),
         "allowed_benchmark_policies": sorted({str(r.get("benchmark_policy") or "") for r in rows if r.get("benchmark_policy")}),
+    }
+
+def build_static_context(sales_person=None, agent_doc=None):
+    """Return ordered selling price lists for a static-mode agent."""
+    if agent_doc is None:
+        if not sales_person:
+            return {"pricing_mode": "", "selling_price_lists": []}
+        name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name")
+        if not name:
+            return {"pricing_mode": "", "selling_price_lists": []}
+        agent_doc = frappe.get_doc("Agent Pricing Rules", name)
+
+    lists = sorted(
+        [r for r in (agent_doc.get("allocated_price_lists") or []) if r.is_active],
+        key=lambda r: r.default_sequence or 10,
+    )
+    return {
+        "pricing_mode": agent_doc.pricing_mode or "",
+        "selling_price_lists": [r.selling_price_list for r in lists],
     }
 
 

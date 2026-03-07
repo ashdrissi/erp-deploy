@@ -218,6 +218,44 @@ function applyFormLayoutClass(frm) {
     }
 }
 
+function applyModeLayout(frm) {
+    const mode = frm.doc.resolved_mode || "";
+    const isStatic = mode === "Static";
+
+    // Mode indicator badge in page subtitle area
+    frm.page.wrapper.find(".ps-mode-badge").remove();
+    const badgeColor = isStatic ? "#6366f1" : "#16a34a";
+    const badgeLabel = isStatic ? "📋 Static" : "⚙ Dynamic";
+    frm.page.wrapper.find(".page-form.flex-between, .page-head .page-title").first()
+        .append(`<span class="ps-mode-badge" style="background:${badgeColor};color:#fff;border-radius:20px;padding:2px 12px;font-size:11px;font-weight:700;margin-left:10px;display:inline-block;vertical-align:middle;">${badgeLabel}</span>`);
+
+    // Dynamic-only fields — visible only in dynamic mode
+    const dynamicFields = ["benchmark_policy", "scenario_policy", "customs_policy",
+        "pricing_scenario", "minimum_margin_percent", "strict_margin_guard",
+        "product_bundle"];
+    // Static-only fields
+    const staticFields = ["selected_price_list"];
+
+    dynamicFields.forEach(fn => frm.toggle_display(fn, !isStatic));
+    staticFields.forEach(fn => frm.toggle_display(fn, isStatic));
+
+    // Collapse override sections in static mode (not relevant)
+    if (isStatic) {
+        const sectionFieldnames = [
+            "heading_bundle_rules",
+            "heading_scenario_overrides",
+            "heading_line_overrides",
+            "section_runtime",
+        ];
+        const sections = (frm.layout && frm.layout.sections) || [];
+        sectionFieldnames.forEach(fieldname => {
+            const section = sections.find(s => s.df && s.df.fieldname === fieldname);
+            if (section && typeof section.collapse === "function") section.collapse();
+        });
+    }
+}
+
+
 function applyDashboardSectionClass(frm) {
     const field = frm.fields_dict.projection_dashboard;
     if (!field || !field.$wrapper) return;
@@ -453,6 +491,7 @@ function renderProjectionDashboard(frm) {
 
     ensurePricingSheetStyles(frm);
 
+    const isStatic = (frm.doc.resolved_mode === "Static");
     const dashId = `ps-dash-${frm.doc.name || "new"}`.replace(/[^a-z0-9-]/gi, "_");
 
     const html = `
@@ -461,13 +500,16 @@ function renderProjectionDashboard(frm) {
         <!-- KPI strip -->
         <div class="ps-kpi-grid ps-kpi-strip">
             <div class="ps-kpi ps-kpi--base">
-                <div class="ps-kpi-label">📦 ${__("Total Base")}</div>
+                <div class="ps-kpi-label">📦 ${isStatic ? __("Buy Price (Info)") : __("Total Base")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
             </div>
-            <div class="ps-kpi ps-kpi--exp">
+            ${!isStatic ? `<div class="ps-kpi ps-kpi--exp">
                 <div class="ps-kpi-label">⚙ ${__("Expenses")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
-            </div>
+            </div>` : `<div class="ps-kpi ps-kpi--margin" style="background:#ede9fe;">
+                <div class="ps-kpi-label">📋 ${__("Price List")}</div>
+                <div class="ps-kpi-value" style="font-size:13px;color:#4f46e5;">${frappe.utils.escape_html(frm.doc.selected_price_list || "—")}</div>
+            </div>`}
             <div class="ps-kpi ps-kpi--final">
                 <div class="ps-kpi-label">💰 ${__("Total Final")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
@@ -486,12 +528,13 @@ function renderProjectionDashboard(frm) {
             <button class="ps-dash-tab" data-tab="lines" data-dash="${dashId}">
                 📋 ${__("Lines")} <span class="ps-preview-count">${lines.length}</span>
             </button>
+            ${!isStatic ? `
             <button class="ps-dash-tab" data-tab="adjustments" data-dash="${dashId}">
                 🔧 ${__("Adjustments")}
             </button>
             <button class="ps-dash-tab" data-tab="customs" data-dash="${dashId}">
                 🛃 ${__("Customs")}
-            </button>
+            </button>` : ""}
         </div>
 
         <!-- Tab: Overview -->
@@ -700,6 +743,7 @@ frappe.ui.form.on("Pricing Sheet", {
     refresh(frm) {
         applyFormLayoutClass(frm);
         applyDashboardSectionClass(frm);
+        applyModeLayout(frm);
 
         frm.add_custom_button(__("Recalculate"), async () => {
             try {

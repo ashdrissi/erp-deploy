@@ -13,7 +13,9 @@ from orderlift.sales.utils.benchmark_policy import resolve_benchmark_margin
 from orderlift.sales.utils.transport_allocation import compute_transport_allocation
 from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules import (
     DYNAMIC_MODE,
+    STATIC_MODE,
     build_dynamic_context,
+    build_static_context,
 )
 
 
@@ -27,6 +29,12 @@ class PricingSheet(Document):
     def recalculate(self):
         started = perf_counter()
         self._sync_customer_context()
+
+        # ── Mode detection: delegate to static path when agent says so ──
+        static_ctx = build_static_context(sales_person=self.sales_person)
+        if static_ctx.get("pricing_mode") == STATIC_MODE:
+            return self._recalculate_static(static_ctx, started)
+
         lines = self.lines or []
         self.projection_warnings = ""
 
@@ -328,6 +336,7 @@ class PricingSheet(Document):
         self.total_selling = flt(total_final)
         self.customs_total_applied = flt(customs_total_applied)
         self.projection_warnings = "\n".join(warnings[:25])
+        self.resolved_mode = "Dynamic"
         self.calculated_on = now_datetime()
         self.calculated_by = frappe.session.user
         self.calc_runtime_ms = (perf_counter() - started) * 1000
@@ -345,8 +354,105 @@ class PricingSheet(Document):
         if cint(self.strict_margin_guard) and warnings:
             frappe.throw(_("Strict guard blocked save:\n{0}").format("\n".join(warnings[:10])))
 
+    def _recalculate_static(self, static_ctx, started):
+        """Price lines from the agent's selling price list instead of the dynamic engine."""
+        lines = self.lines or []
+        self.projection_warnings = ""
+        warnings = []
+
+        if not lines:
+            self._reset_totals()
+            self.resolved_mode = "Static"
+            self.calculated_on = now_datetime()
+            self.calculated_by = frappe.session.user
+            self.calc_runtime_ms = (perf_counter() - started) * 1000
+            return
+
+        # Resolve price list: doc field → agent first list → throw
+        price_list = (self.selected_price_list or "").strip()
+        if not price_list:
+            agent_lists = static_ctx.get("selling_price_lists") or []
+            price_list = agent_lists[0] if agent_lists else ""
+        if not price_list:
+            frappe.throw(_("No Selling Price List configured. Add one to the Agent Pricing Rules allocated lists."))
+        self.selected_price_list = price_list
+
+        # Bulk-fetch Item Prices
+        item_codes = list({row.item for row in lines if row.item})
+        item_prices = {}
+        if item_codes:
+            raw = frappe.get_all(
+                "Item Price",
+                filters={"price_list": price_list, "item_code": ["in", item_codes], "selling": 1},
+                fields=["item_code", "price_list_rate", "currency"],
+                order_by="modified desc",
+            )
+            for rec in raw:
+                if rec["item_code"] not in item_prices:
+                    item_prices[rec["item_code"]] = flt(rec["price_list_rate"])
+
+        total_buy = 0.0
+        total_final = 0.0
+        missing = []
+
+        for row in lines:
+            qty = flt(row.qty)
+            if qty <= 0:
+                frappe.throw(_("Row {0}: Qty must be greater than zero.").format(row.idx))
+
+            list_price = item_prices.get(row.item)
+            if list_price is None:
+                missing.append(row.item or f"Row {row.idx}")
+                list_price = 0.0
+
+            row.static_list_price = list_price
+            row.is_manual_override = 1 if flt(row.manual_sell_unit_price) > 0 else 0
+            row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else list_price
+            row.final_sell_total = row.final_sell_unit_price * qty
+
+            buy = flt(row.buy_price)
+            row.base_amount = buy * qty
+            row.margin_pct = ((row.final_sell_unit_price - buy) / buy * 100) if buy > 0 else 0.0
+            row.expense_total = 0.0
+            row.projected_unit_price = list_price
+            row.projected_total_price = list_price * qty
+
+            # Clear dynamic-only fields
+            row.resolved_pricing_scenario = ""
+            row.scenario_source = ""
+            row.benchmark_reference = 0
+            row.benchmark_ratio = 0
+            row.benchmark_status = "No Benchmark"
+            row.margin_source = "Price List"
+            row.customs_applied = 0
+            row.pricing_breakdown_json = "[]"
+            row.breakdown_preview = f"List: {price_list}"
+            row.price_floor_violation = 0
+
+            total_buy += flt(row.base_amount)
+            total_final += flt(row.final_sell_total)
+
+        if missing:
+            warnings.append(_("{0} item(s) have no price in '{1}': {2}").format(
+                len(missing), price_list, ", ".join(missing[:10])
+            ))
+
+        self.total_buy = flt(total_buy)
+        self.total_expenses = 0.0
+        self.total_selling = flt(total_final)
+        self.customs_total_applied = 0.0
+        self.applied_benchmark_policy = ""
+        self.applied_scenario_policy = ""
+        self.applied_customs_policy = ""
+        self.resolved_mode = "Static"
+        self.projection_warnings = "\n".join(warnings)
+        self.calculated_on = now_datetime()
+        self.calculated_by = frappe.session.user
+        self.calc_runtime_ms = (perf_counter() - started) * 1000
+
     @frappe.whitelist()
     def load_scenario_overrides(self):
+
         lines = self.lines or []
         item_codes = sorted({row.item for row in lines if row.item})
         item_details = get_item_details_map(item_codes)
@@ -710,6 +816,15 @@ class PricingSheet(Document):
             self.sales_person = sales_person
 
     def _apply_agent_dynamic_defaults(self):
+        # --- Static mode: pre-fill selected_price_list ---
+        static_ctx = build_static_context(sales_person=self.sales_person)
+        if static_ctx.get("pricing_mode") == STATIC_MODE:
+            if not self.selected_price_list:
+                lists = static_ctx.get("selling_price_lists") or []
+                if lists:
+                    self.selected_price_list = lists[0]
+            return
+
         context = build_dynamic_context(sales_person=self.sales_person)
         if context.get("pricing_mode") != DYNAMIC_MODE:
             return

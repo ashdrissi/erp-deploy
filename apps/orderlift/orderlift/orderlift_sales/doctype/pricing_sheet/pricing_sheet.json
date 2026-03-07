@@ -1,385 +1,404 @@
 {
-  "actions": [],
-  "autoname": "naming_series:",
-  "creation": "2026-02-16 00:00:00",
-  "doctype": "DocType",
-  "document_type": "Document",
-  "engine": "InnoDB",
-  "field_order": [
-    "section_identity",
-    "naming_series",
-    "sheet_name",
-    "customer",
-    "sales_person",
-    "column_break_identity",
-    "customer_segment",
-    "customer_type",
-    "tier",
-    "geography_territory",
-    "section_strategy",
-    "pricing_scenario",
-    "scenario_policy",
-    "benchmark_policy",
-    "customs_policy",
-    "product_bundle",
-    "column_break_strategy",
-    "output_mode",
-    "minimum_margin_percent",
-    "strict_margin_guard",
-    "section_projection",
-    "projection_dashboard",
-    "heading_lines",
-    "lines",
-    "heading_totals",
-    "total_buy",
-    "total_expenses",
-    "total_selling",
-    "heading_bundle_rules",
-    "bundle_scenario_rules",
-    "heading_scenario_overrides",
-    "scenario_overrides",
-    "heading_line_overrides",
-    "line_overrides",
-    "section_runtime",
-    "calculated_on",
-    "calculated_by",
-    "column_break_runtime",
-    "calc_runtime_ms",
-    "applied_scenario_policy",
-    "applied_customs_policy",
-    "applied_benchmark_policy",
-    "customs_total_applied",
-    "projection_warnings"
-  ],
-  "fields": [
-    {
-      "fieldname": "section_identity",
-      "fieldtype": "Section Break",
-      "label": "Sheet Identity"
-    },
-    {
-      "fieldname": "naming_series",
-      "fieldtype": "Select",
-      "label": "Series",
-      "options": "PSH-.#####",
-      "default": "PSH-.#####",
-      "reqd": 1,
-      "set_only_once": 1,
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "sheet_name",
-      "fieldtype": "Data",
-      "label": "Sheet Name",
-      "reqd": 1,
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "customer",
-      "fieldtype": "Link",
-      "label": "Customer",
-      "options": "Customer",
-      "reqd": 1,
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "sales_person",
-      "fieldtype": "Link",
-      "label": "Sales Person",
-      "options": "Sales Person",
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "column_break_identity",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "customer_segment",
-      "fieldtype": "Select",
-      "label": "Customer Segment",
-      "options": "B2B\nB2C",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "customer_type",
-      "fieldtype": "Link",
-      "label": "Customer Group",
-      "options": "Customer Group",
-      "fetch_from": "customer.customer_group",
-      "fetch_if_empty": 1,
-      "read_only": 1,
-      "reqd": 1,
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "tier",
-      "fieldtype": "Data",
-      "label": "Tier",
-      "fetch_from": "customer.tier",
-      "fetch_if_empty": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "geography_territory",
-      "fieldtype": "Link",
-      "label": "Territory",
-      "options": "Territory"
-    },
-    {
-      "fieldname": "section_strategy",
-      "fieldtype": "Section Break",
-      "label": "Pricing Strategy"
-    },
-    {
-      "fieldname": "pricing_scenario",
-      "fieldtype": "Link",
-      "label": "Default Pricing Scenario",
-      "options": "Pricing Scenario",
-      "reqd": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "scenario_policy",
-      "fieldtype": "Link",
-      "label": "Scenario Policy",
-      "options": "Pricing Scenario Policy",
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "benchmark_policy",
-      "fieldtype": "Link",
-      "label": "Pricing Policy",
-      "options": "Pricing Benchmark Policy",
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "customs_policy",
-      "fieldtype": "Link",
-      "label": "Customs Policy",
-      "options": "Pricing Customs Policy",
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "product_bundle",
-      "fieldtype": "Link",
-      "label": "Default Product Bundle",
-      "options": "Product Bundle"
-    },
-    {
-      "fieldname": "column_break_strategy",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "output_mode",
-      "fieldtype": "Select",
-      "label": "Output Mode",
-      "options": "Avec details\nSans details",
-      "default": "Avec details",
-      "reqd": 1
-    },
-    {
-      "fieldname": "minimum_margin_percent",
-      "fieldtype": "Percent",
-      "label": "Minimum Margin Percent",
-      "default": "0"
-    },
-    {
-      "fieldname": "strict_margin_guard",
-      "fieldtype": "Check",
-      "label": "Strict Margin Guard",
-      "default": "0"
-    },
-    {
-      "fieldname": "section_projection",
-      "fieldtype": "Section Break",
-      "label": "Pricing Projection"
-    },
-    {
-      "fieldname": "section_runtime",
-      "fieldtype": "Section Break",
-      "label": "Runtime & Guardrails",
-      "collapsible": 1
-    },
-    {
-      "fieldname": "calculated_on",
-      "fieldtype": "Datetime",
-      "label": "Calculated On",
-      "read_only": 1
-    },
-    {
-      "fieldname": "calculated_by",
-      "fieldtype": "Link",
-      "label": "Calculated By",
-      "options": "User",
-      "read_only": 1
-    },
-    {
-      "fieldname": "column_break_runtime",
-      "fieldtype": "Column Break"
-    },
-    {
-      "fieldname": "calc_runtime_ms",
-      "fieldtype": "Float",
-      "label": "Calc Runtime (ms)",
-      "read_only": 1
-    },
-    {
-      "fieldname": "applied_scenario_policy",
-      "fieldtype": "Data",
-      "label": "Applied Scenario Policy",
-      "read_only": 1
-    },
-    {
-      "fieldname": "applied_customs_policy",
-      "fieldtype": "Data",
-      "label": "Applied Customs Policy",
-      "read_only": 1
-    },
-    {
-      "fieldname": "applied_benchmark_policy",
-      "fieldtype": "Data",
-      "label": "Applied Pricing Policy",
-      "read_only": 1
-    },
-    {
-      "fieldname": "customs_total_applied",
-      "fieldtype": "Currency",
-      "label": "Customs Total Applied",
-      "read_only": 1
-    },
-    {
-      "fieldname": "projection_warnings",
-      "fieldtype": "Small Text",
-      "label": "Projection Warnings",
-      "read_only": 1
-    },
-    {
-      "fieldname": "heading_bundle_rules",
-      "fieldtype": "Section Break",
-      "label": "Bundle Scenario Rules",
-      "collapsible": 1
-    },
-    {
-      "fieldname": "bundle_scenario_rules",
-      "fieldtype": "Table",
-      "label": "Bundle Scenario Rules",
-      "options": "Pricing Sheet Bundle Scenario"
-    },
-    {
-      "fieldname": "projection_dashboard",
-      "fieldtype": "HTML",
-      "label": "Projection Dashboard"
-    },
-    {
-      "fieldname": "heading_scenario_overrides",
-      "fieldtype": "Section Break",
-      "label": "Scenario Overrides",
-      "collapsible": 1
-    },
-    {
-      "fieldname": "scenario_overrides",
-      "fieldtype": "Table",
-      "label": "Scenario Overrides",
-      "options": "Pricing Sheet Scenario Override"
-    },
-    {
-      "fieldname": "heading_line_overrides",
-      "fieldtype": "Section Break",
-      "label": "Line Overrides",
-      "collapsible": 1
-    },
-    {
-      "fieldname": "line_overrides",
-      "fieldtype": "Table",
-      "label": "Line Overrides",
-      "options": "Pricing Sheet Line Override"
-    },
-    {
-      "fieldname": "heading_lines",
-      "fieldtype": "Heading",
-      "label": "Pricing Sheet"
-    },
-    {
-      "fieldname": "lines",
-      "fieldtype": "Table",
-      "label": "Lines",
-      "options": "Pricing Sheet Item"
-    },
-    {
-      "fieldname": "heading_totals",
-      "fieldtype": "Heading",
-      "label": "Totals"
-    },
-    {
-      "fieldname": "total_buy",
-      "fieldtype": "Currency",
-      "label": "Total Base",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_expenses",
-      "fieldtype": "Currency",
-      "label": "Total Expenses",
-      "read_only": 1
-    },
-    {
-      "fieldname": "total_selling",
-      "fieldtype": "Currency",
-      "label": "Total Final",
-      "read_only": 1
-    }
-  ],
-  "is_submittable": 0,
-  "links": [],
-  "modified": "2026-03-03 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Orderlift Sales",
-  "name": "Pricing Sheet",
-  "naming_rule": "By \"Naming Series\" field",
-  "owner": "Administrator",
-  "permissions": [
-    {
-      "role": "Orderlift Admin",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "delete": 1,
-      "report": 1,
-      "export": 1,
-      "import": 1,
-      "share": 1,
-      "print": 1,
-      "email": 1
-    },
-    {
-      "role": "Sales Manager",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "delete": 1,
-      "report": 1,
-      "export": 1,
-      "share": 1,
-      "print": 1,
-      "email": 1
-    },
-    {
-      "role": "Orderlift Commercial",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "report": 1,
-      "print": 1,
-      "email": 1
-    }
-  ],
-  "search_fields": "sheet_name,customer,pricing_scenario",
-  "show_name_in_global_search": 1,
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": [],
-  "title_field": "sheet_name",
-  "track_changes": 1
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-02-16 00:00:00",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_identity",
+  "naming_series",
+  "sheet_name",
+  "customer",
+  "sales_person",
+  "column_break_identity",
+  "customer_segment",
+  "customer_type",
+  "tier",
+  "geography_territory",
+  "section_strategy",
+  "pricing_scenario",
+  "scenario_policy",
+  "benchmark_policy",
+  "customs_policy",
+  "product_bundle",
+  "column_break_strategy",
+  "resolved_mode",
+  "selected_price_list",
+  "output_mode",
+  "minimum_margin_percent",
+  "strict_margin_guard",
+  "section_projection",
+  "projection_dashboard",
+  "heading_lines",
+  "lines",
+  "heading_totals",
+  "total_buy",
+  "total_expenses",
+  "total_selling",
+  "heading_bundle_rules",
+  "bundle_scenario_rules",
+  "heading_scenario_overrides",
+  "scenario_overrides",
+  "heading_line_overrides",
+  "line_overrides",
+  "section_runtime",
+  "calculated_on",
+  "calculated_by",
+  "column_break_runtime",
+  "calc_runtime_ms",
+  "applied_scenario_policy",
+  "applied_customs_policy",
+  "applied_benchmark_policy",
+  "customs_total_applied",
+  "projection_warnings"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_identity",
+   "fieldtype": "Section Break",
+   "label": "Sheet Identity"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "PSH-.#####",
+   "default": "PSH-.#####",
+   "reqd": 1,
+   "set_only_once": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sheet_name",
+   "fieldtype": "Data",
+   "label": "Sheet Name",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sales_person",
+   "fieldtype": "Link",
+   "label": "Sales Person",
+   "options": "Sales Person",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer_segment",
+   "fieldtype": "Select",
+   "label": "Customer Segment",
+   "options": "B2B\nB2C",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "customer_type",
+   "fieldtype": "Link",
+   "label": "Customer Group",
+   "options": "Customer Group",
+   "fetch_from": "customer.customer_group",
+   "fetch_if_empty": 1,
+   "read_only": 1,
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "tier",
+   "fieldtype": "Data",
+   "label": "Tier",
+   "fetch_from": "customer.tier",
+   "fetch_if_empty": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "geography_territory",
+   "fieldtype": "Link",
+   "label": "Territory",
+   "options": "Territory"
+  },
+  {
+   "fieldname": "section_strategy",
+   "fieldtype": "Section Break",
+   "label": "Pricing Strategy"
+  },
+  {
+   "fieldname": "pricing_scenario",
+   "fieldtype": "Link",
+   "label": "Default Pricing Scenario",
+   "options": "Pricing Scenario",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "scenario_policy",
+   "fieldtype": "Link",
+   "label": "Scenario Policy",
+   "options": "Pricing Scenario Policy",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "benchmark_policy",
+   "fieldtype": "Link",
+   "label": "Pricing Policy",
+   "options": "Pricing Benchmark Policy",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "customs_policy",
+   "fieldtype": "Link",
+   "label": "Customs Policy",
+   "options": "Pricing Customs Policy",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "product_bundle",
+   "fieldtype": "Link",
+   "label": "Default Product Bundle",
+   "options": "Product Bundle"
+  },
+  {
+   "fieldname": "column_break_strategy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "resolved_mode",
+   "fieldtype": "Data",
+   "label": "Resolved Mode",
+   "read_only": 1,
+   "bold": 0,
+   "in_list_view": 0,
+   "description": "Auto-set by recalculate: Dynamic or Static"
+  },
+  {
+   "fieldname": "selected_price_list",
+   "fieldtype": "Link",
+   "label": "Selling Price List",
+   "options": "Price List",
+   "description": "Primary selling price list used in Static mode",
+   "depends_on": "eval:doc.resolved_mode=='Static'"
+  },
+  {
+   "fieldname": "output_mode",
+   "fieldtype": "Select",
+   "label": "Output Mode",
+   "options": "Avec details\nSans details",
+   "default": "Avec details",
+   "reqd": 1
+  },
+  {
+   "fieldname": "minimum_margin_percent",
+   "fieldtype": "Percent",
+   "label": "Minimum Margin Percent",
+   "default": "0"
+  },
+  {
+   "fieldname": "strict_margin_guard",
+   "fieldtype": "Check",
+   "label": "Strict Margin Guard",
+   "default": "0"
+  },
+  {
+   "fieldname": "section_projection",
+   "fieldtype": "Section Break",
+   "label": "Pricing Projection"
+  },
+  {
+   "fieldname": "section_runtime",
+   "fieldtype": "Section Break",
+   "label": "Runtime & Guardrails",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "calculated_on",
+   "fieldtype": "Datetime",
+   "label": "Calculated On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "calculated_by",
+   "fieldtype": "Link",
+   "label": "Calculated By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_runtime",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "calc_runtime_ms",
+   "fieldtype": "Float",
+   "label": "Calc Runtime (ms)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applied_scenario_policy",
+   "fieldtype": "Data",
+   "label": "Applied Scenario Policy",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applied_customs_policy",
+   "fieldtype": "Data",
+   "label": "Applied Customs Policy",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applied_benchmark_policy",
+   "fieldtype": "Data",
+   "label": "Applied Pricing Policy",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customs_total_applied",
+   "fieldtype": "Currency",
+   "label": "Customs Total Applied",
+   "read_only": 1
+  },
+  {
+   "fieldname": "projection_warnings",
+   "fieldtype": "Small Text",
+   "label": "Projection Warnings",
+   "read_only": 1
+  },
+  {
+   "fieldname": "heading_bundle_rules",
+   "fieldtype": "Section Break",
+   "label": "Bundle Scenario Rules",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "bundle_scenario_rules",
+   "fieldtype": "Table",
+   "label": "Bundle Scenario Rules",
+   "options": "Pricing Sheet Bundle Scenario"
+  },
+  {
+   "fieldname": "projection_dashboard",
+   "fieldtype": "HTML",
+   "label": "Projection Dashboard"
+  },
+  {
+   "fieldname": "heading_scenario_overrides",
+   "fieldtype": "Section Break",
+   "label": "Scenario Overrides",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "scenario_overrides",
+   "fieldtype": "Table",
+   "label": "Scenario Overrides",
+   "options": "Pricing Sheet Scenario Override"
+  },
+  {
+   "fieldname": "heading_line_overrides",
+   "fieldtype": "Section Break",
+   "label": "Line Overrides",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "line_overrides",
+   "fieldtype": "Table",
+   "label": "Line Overrides",
+   "options": "Pricing Sheet Line Override"
+  },
+  {
+   "fieldname": "heading_lines",
+   "fieldtype": "Heading",
+   "label": "Pricing Sheet"
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Lines",
+   "options": "Pricing Sheet Item"
+  },
+  {
+   "fieldname": "heading_totals",
+   "fieldtype": "Heading",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "total_buy",
+   "fieldtype": "Currency",
+   "label": "Total Base",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_expenses",
+   "fieldtype": "Currency",
+   "label": "Total Expenses",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_selling",
+   "fieldtype": "Currency",
+   "label": "Total Final",
+   "read_only": 1
+  }
+ ],
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-03-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift Sales",
+ "name": "Pricing Sheet",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "Orderlift Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "import": 1,
+   "share": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Orderlift Commercial",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "report": 1,
+   "print": 1,
+   "email": 1
+  }
+ ],
+ "search_fields": "sheet_name,customer,pricing_scenario",
+ "show_name_in_global_search": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "sheet_name",
+ "track_changes": 1
 }
