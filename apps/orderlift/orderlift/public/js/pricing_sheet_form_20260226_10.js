@@ -442,6 +442,8 @@ function renderProjectionDashboard(frm) {
                     <td>${scnCell} ${scnOverride}</td>
                     <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
                     <td style="text-align:right;">${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
+                    <td style="text-align:right;">${frappe.format(row.expense_unit_price || 0, { fieldtype: "Currency" })}</td>
+                    <td style="text-align:right;">${frappe.format(row.expense_total || 0, { fieldtype: "Currency" })}</td>
                     <td style="text-align:right;">${frappe.format(row.projected_unit_price || 0, { fieldtype: "Currency" })}</td>
                     <td style="text-align:right;"><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
                     <td>${psMarginBadge(row.margin_pct)}</td>
@@ -451,7 +453,7 @@ function renderProjectionDashboard(frm) {
                 </tr>
             `;
         }).join("") ||
-        `<tr><td colspan="10" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
+        `<tr><td colspan="12" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
 
     const impacts = aggregateExpenseImpact(lines)
         .slice(0, 6)
@@ -564,6 +566,8 @@ function renderProjectionDashboard(frm) {
                             <th>${__("Scenario")}</th>
                             <th style="text-align:right;">${__("Qty")}</th>
                             <th style="text-align:right;">${__("Base")}</th>
+                            <th style="text-align:right;">${__("Exp/Unit")}</th>
+                            <th style="text-align:right;">${__("Exp Total")}</th>
                             <th style="text-align:right;">${__("Projected")}</th>
                             <th style="text-align:right;">${__("Final")}</th>
                             <th>${__("Margin")}</th>

@@ -248,6 +248,7 @@ class PricingSheet(Document):
             projected_total = flt(pricing["projected_line"]) + flt(allocated_sheet)
             projected_total += flt(customs_calc.get("applied") or 0)
             projected_unit = projected_total / qty if qty else 0
+            expense_unit = projected_unit - base_unit
             expense_total = projected_total - base_amount
 
             steps = list(pricing["steps"])
@@ -270,6 +271,7 @@ class PricingSheet(Document):
 
             self._append_customs_step(steps, qty, projected_unit, customs_calc)
 
+            row.expense_unit_price = expense_unit
             row.expense_total = expense_total
             row.projected_unit_price = projected_unit
             row.projected_total_price = projected_total
@@ -425,6 +427,7 @@ class PricingSheet(Document):
             row.base_amount = buy * qty
             row.margin_pct = ((row.final_sell_unit_price - buy) / buy * 100) if buy > 0 else 0.0
             row.expense_total = 0.0
+            row.expense_unit_price = 0.0
             row.projected_unit_price = list_price
             row.projected_total_price = list_price * qty
 
