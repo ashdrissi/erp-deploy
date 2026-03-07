@@ -458,7 +458,7 @@ function renderComparisonRows(state) {
         const delta = dynFinal - staPrice;
         const deltaClass = delta >= 0 ? "psim-delta-pos" : "psim-delta-neg";
         return `<tr>
-                <td>${highlight(item, q)}</td>
+                <td>${docLink("Item", item, item, q)}</td>
                 <td>${frappe.format(d.qty || s.qty || 0, { fieldtype: "Float" })}</td>
                 <td><span class="psim-pill">${frappe.utils.escape_html(d.resolved_pricing_scenario || "—")}</span></td>
                 <td>${frappe.format(d.buy_price || 0, { fieldtype: "Currency" })}</td>
@@ -513,7 +513,7 @@ function renderResults(state, data) {
 
     const thead = mode === "Static"
         ? `<tr>${thSort("item", __("Item"))}${thSort("qty", __("Qty"))}${thSort("list", __("List"))}${thSort("price", __("Price"))}${thSort("total", __("Total"))}${thSort("opts", __("Options"))}</tr>`
-        : `<tr>${thSort("item", __("Item"))}${thSort("qty", __("Qty"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("benchmark_ratio", __("Ratio"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("margin_source", __("Source"))}</tr>`;
+        : `<tr>${thSort("item", __("Item"))}${thSort("qty", __("Qty"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("benchmark_ratio", __("Ratio"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("applied_benchmark_policy", __("Policy"))}${thSort("margin_source", __("Source"))}</tr>`;
 
     state.outputWrap.html(`
             <div class="psim-metrics">${cards}</div>
@@ -620,23 +620,36 @@ function compSortVal(row, col) {
 }
 
 // ── Row renderers ──
+
+function docLink(doctype, name, display, q) {
+    if (!name) return display ? frappe.utils.escape_html(display) : "—";
+    const label = display || name;
+    const highlighted = q ? highlight(label, q) : frappe.utils.escape_html(label);
+    const url = `/app/${frappe.router.slug(doctype)}/${encodeURIComponent(name)}`;
+    return `<a href="${url}" class="psim-link" title="Open ${frappe.utils.escape_html(name)}" target="_blank">${highlighted}</a>`;
+}
+
 function dynamicRow(row, q) {
+    const policy = row.applied_benchmark_policy || "";
+    const rule = row.resolved_benchmark_rule || "";
+    const ruleTitle = rule ? ` title="Rule: ${frappe.utils.escape_html(rule)}"` : "";
     return `<tr>
-            <td>${highlight(row.item || "", q)}</td>
+            <td>${docLink("Item", row.item || "", row.item, q)}</td>
             <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
-            <td><span class="psim-pill">${frappe.utils.escape_html(row.resolved_pricing_scenario || "—")}</span></td>
+            <td>${docLink("Pricing Scenario", row.resolved_pricing_scenario, row.resolved_pricing_scenario, null)}</td>
             <td>${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
             <td>${row.benchmark_reference ? frappe.format(row.benchmark_reference, { fieldtype: "Currency" }) : "—"}</td>
             <td>${row.benchmark_ratio ? Number(row.benchmark_ratio).toFixed(3) : "—"}</td>
             <td><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
             <td>${marginBadge(row.margin_pct)}</td>
+            <td${ruleTitle}>${docLink("Pricing Benchmark Policy", policy, policy, null)}</td>
             <td><span class="psim-src">${frappe.utils.escape_html(row.margin_source || "—")}</span></td>
         </tr>`;
 }
 
 function staticRow(row, q) {
     return `<tr>
-            <td>${highlight(row.item || "", q)}</td>
+            <td>${docLink("Item", row.item || "", row.item, q)}</td>
             <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
             <td>${frappe.utils.escape_html(row.selected_price_list || "—")}</td>
             <td>${frappe.format(row.selected_price || 0, { fieldtype: "Currency" })}</td>
@@ -907,8 +920,12 @@ function injectStyles() {
         .psim-warn-more summary { cursor: pointer; font-weight: 700; }
         .psim-clean { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 8px; padding: 7px 12px; margin-bottom: 10px; font-size: 12px; }
 
-            /* Table */
-            .psim-table-wrap { overflow-x: auto; }
+            /* Links */
+        .psim-link { color: #4f46e5; text-decoration: none; font-weight: 600; }
+        .psim-link:hover { text-decoration: underline; color: #3730a3; }
+
+        /* Table */
+        .psim-table-wrap { overflow-x: auto; }
             .psim-table { width: 100%; border-collapse: collapse; font-size: 12px; }
             .psim-table th, .psim-table td { border-bottom: 1px solid #f1f5f9; padding: 6px 8px; white-space: nowrap; }
             .psim-table th { text-transform: uppercase; font-size: 10px; color: #94a3b8; letter-spacing: .05em; background: #f8fafc; position: sticky; top: 0; z-index: 1; }

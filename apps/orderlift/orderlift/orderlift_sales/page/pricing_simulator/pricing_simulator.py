@@ -133,6 +133,8 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "zone_modifier_amount": flt(line.zone_modifier_amount),
             "customs_applied": flt(line.customs_applied),
             "transport_allocated": flt(line.transport_allocated),
+            "applied_benchmark_policy": doc.benchmark_policy or "",
+            "resolved_benchmark_rule": getattr(line, "resolved_benchmark_rule", "") or "",
         }
         if only_priced and flt(row.get("buy_price")) <= 0:
             filtered_out += 1
