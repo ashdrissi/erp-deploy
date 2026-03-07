@@ -651,7 +651,9 @@ function staticRow(row, q) {
     return `<tr>
             <td>${docLink("Item", row.item || "", row.item, q)}</td>
             <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
-            <td>${frappe.utils.escape_html(row.selected_price_list || "—")}</td>
+            <td>${row.selected_price_list
+            ? `<a href="/app/item-price?price_list=${encodeURIComponent(row.selected_price_list)}" class="psim-link" target="_blank" title="View Item Prices for ${frappe.utils.escape_html(row.selected_price_list)}">${frappe.utils.escape_html(row.selected_price_list)}</a>`
+            : "—"}</td>
             <td>${frappe.format(row.selected_price || 0, { fieldtype: "Currency" })}</td>
             <td><strong>${frappe.format(row.line_total || 0, { fieldtype: "Currency" })}</strong></td>
             <td>${row.option_count || 0}</td>
@@ -782,29 +784,45 @@ function injectStyles() {
     const style = document.createElement("style");
     style.id = "pricing-simulator-style";
     style.textContent = `
-            .psim-root { padding: 0 !important; }
+        .psim-root { padding: 0 !important; }
 
-            /* Cards */
-            .psim-controls, .psim-card {
-                max-width: 1400px; margin: 10px auto;
-                background: #fff; border: 1px solid #e2e8f0;
-                border-radius: 12px; padding: 12px 16px;
-                box-shadow: 0 1px 3px rgba(15,23,42,.06);
-            }
+        /* Page wrapper — gives the whole page some breathing room */
+        .psim-root .page-content,
+        .psim-root .page-body { padding: 0 !important; }
 
-            /* Table-view tabs */
-            .psim-tabs {
-                max-width: 1400px; margin: 0 auto 4px;
-                display: flex; gap: 4px; padding: 0 4px;
-            }
-            .psim-tab {
-                padding: 5px 16px; border-radius: 20px; border: none;
-                font-size: 12px; font-weight: 600; cursor: pointer;
-                background: #f1f5f9; color: #64748b;
-                transition: background .15s, color .15s;
-            }
-            .psim-tab:hover    { background: #e2e8f0; color: #334155; }
-            .psim-tab--active  { background: #6366f1; color: #fff !important; }
+        /* Cards */
+        .psim-controls, .psim-card {
+            max-width: 1320px;
+            margin: 14px auto;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 14px 20px;
+            box-shadow: 0 1px 4px rgba(15,23,42,.07);
+        }
+        .psim-controls { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: none; }
+        .psim-card     { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+
+        /* Tab strip — visually bridges controls ↔ results */
+        .psim-tabs {
+            max-width: 1320px;
+            margin: 0 auto;
+            display: flex;
+            gap: 4px;
+            padding: 8px 20px;
+            background: #f8fafc;
+            border-left: 1px solid #e2e8f0;
+            border-right: 1px solid #e2e8f0;
+        }
+        .psim-tab {
+            padding: 5px 18px; border-radius: 20px; border: none;
+            font-size: 12px; font-weight: 600; cursor: pointer;
+            background: transparent; color: #64748b;
+            transition: background .15s, color .15s;
+        }
+        .psim-tab:hover   { background: #e2e8f0; color: #334155; }
+        .psim-tab--active { background: #6366f1; color: #fff !important; }
+
 
             /* Card head */
             .psim-card-head { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
