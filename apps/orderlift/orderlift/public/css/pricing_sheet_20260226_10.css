@@ -404,3 +404,117 @@
     overflow-y: auto;
     overflow-x: auto;
 }
+
+/* ── Tabbed dashboard ───────────────────────────────────────────────────────── */
+
+/* KPI strip — horizontal row, no min-height, smaller */
+.ps-kpi-strip {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+    border: 1px solid var(--ps-border);
+}
+
+.ps-kpi-strip .ps-kpi {
+    min-height: 72px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 0;
+    border-right: 1px solid var(--ps-border);
+}
+
+.ps-kpi-strip .ps-kpi:last-child {
+    border-right: none;
+}
+
+.ps-kpi-strip .ps-kpi-value {
+    font-size: 18px;
+    margin-top: 4px;
+}
+
+.ps-kpi-strip .ps-kpi-label {
+    font-size: 10px;
+}
+
+.ps-kpi--base {
+    background: #f8fafc;
+}
+
+.ps-kpi--exp {
+    background: #fff7ed;
+}
+
+.ps-kpi--final {
+    background: #ecfdf5;
+}
+
+.ps-kpi--margin {
+    background: #eff6ff;
+}
+
+/* Tab bar */
+.ps-dash-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 8px;
+    background: #f1f5f9;
+    border-left: 1px solid var(--ps-border);
+    border-right: 1px solid var(--ps-border);
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.ps-dash-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    background: transparent;
+    color: #64748b;
+    transition: background .15s, color .15s;
+}
+
+.ps-dash-tab:hover {
+    background: #e2e8f0;
+    color: #334155;
+}
+
+.ps-dash-tab--active {
+    background: #6366f1;
+    color: #fff !important;
+}
+
+/* Panels */
+.ps-dash-panel {
+    display: none;
+    padding: 12px 16px;
+    border: 1px solid var(--ps-border);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    background: #fff;
+    min-height: 140px;
+    animation: ps-fade-up 180ms ease-out;
+}
+
+.ps-dash-panel--active {
+    display: block;
+}
+
+/* Chip rows */
+.ps-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.ps-chip-key {
+    font-size: 13px;
+    margin-right: 2px;
+}

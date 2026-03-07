@@ -452,104 +452,143 @@ function renderProjectionDashboard(frm) {
 
     ensurePricingSheetStyles(frm);
 
+    const dashId = `ps-dash-${frm.doc.name || "new"}`.replace(/[^a-z0-9-]/gi, "_");
+
     const html = `
-        <div class="ps-shell">
-        <div class="ps-card ps-card-pad" style="margin-bottom:10px;">
-            <div class="ps-kpi-grid">
-                <div class="ps-kpi" style="background:#f8fafc;">
-                    <div class="ps-kpi-label" style="color:#64748b;">${__("Total Base")}</div>
-                    <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
-                </div>
-                <div class="ps-kpi" style="background:#fff7ed;">
-                    <div class="ps-kpi-label" style="color:#9a3412;">${__("Total Expenses")}</div>
-                    <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
-                </div>
-                <div class="ps-kpi" style="background:#ecfdf5;">
-                    <div class="ps-kpi-label" style="color:#166534;">${__("Total Final")}</div>
-                    <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
-                </div>
-                <div class="ps-kpi" style="background:#eff6ff;">
-                    <div class="ps-kpi-label" style="color:#1d4ed8;">${__("Average Markup")}</div>
-                    <div class="ps-kpi-value">${frappe.format(avgMarkup, { fieldtype: "Percent" })}</div>
-                </div>
+    <div class="ps-shell" id="${dashId}">
+
+        <!-- KPI strip -->
+        <div class="ps-kpi-grid ps-kpi-strip">
+            <div class="ps-kpi ps-kpi--base">
+                <div class="ps-kpi-label">📦 ${__("Total Base")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
             </div>
-            <div style="margin-top:10px;font-size:12px;color:#334155;">${scenarioPills || `<span style="color:#64748b;">${__("No resolved scenario")}</span>`}</div>
-            <div style="margin-top:6px;font-size:12px;color:#334155;">
-                <span class="ps-scenario-chip"><strong>${__("Sales Person")}</strong> ${frappe.utils.escape_html(salesPerson || "—")}</span>
-                <span class="ps-scenario-chip"><strong>${__("Geography")}</strong> ${frappe.utils.escape_html(geography || "—")}</span>
-                ${scenarioPolicy ? `<a href="/app/pricing-scenario-policy/${encodeURIComponent(scenarioPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><strong>${__("Scenario Policy")}</strong> ${frappe.utils.escape_html(scenarioPolicy)}</a>` : `<span class="ps-scenario-chip"><strong>${__("Scenario Policy")}</strong> —</span>`}
-                ${pricingPolicy ? `<a href="/app/pricing-benchmark-policy/${encodeURIComponent(pricingPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><strong>${__("Pricing Policy")}</strong> ${frappe.utils.escape_html(pricingPolicy)}</a>` : `<span class="ps-scenario-chip"><strong>${__("Pricing Policy")}</strong> —</span>`}
-                ${customsPolicy ? `<a href="/app/pricing-customs-policy/${encodeURIComponent(customsPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><strong>${__("Customs Policy")}</strong> ${frappe.utils.escape_html(customsPolicy)}</a>` : `<span class="ps-scenario-chip"><strong>${__("Customs Policy")}</strong> —</span>`}
-                <span class="ps-scenario-chip"><strong>${__("Customs Total")}</strong> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
+            <div class="ps-kpi ps-kpi--exp">
+                <div class="ps-kpi-label">⚙ ${__("Expenses")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
             </div>
+            <div class="ps-kpi ps-kpi--final">
+                <div class="ps-kpi-label">💰 ${__("Total Final")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
+            </div>
+            <div class="ps-kpi ps-kpi--margin">
+                <div class="ps-kpi-label">📈 ${__("Avg Markup")}</div>
+                <div class="ps-kpi-value">${Number(avgMarkup).toFixed(1)}%</div>
+            </div>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="ps-dash-tabs">
+            <button class="ps-dash-tab ps-dash-tab--active" data-tab="overview" data-dash="${dashId}">
+                🧭 ${__("Overview")}
+            </button>
+            <button class="ps-dash-tab" data-tab="lines" data-dash="${dashId}">
+                📋 ${__("Lines")} <span class="ps-preview-count">${lines.length}</span>
+            </button>
+            <button class="ps-dash-tab" data-tab="adjustments" data-dash="${dashId}">
+                🔧 ${__("Adjustments")}
+            </button>
+            <button class="ps-dash-tab" data-tab="customs" data-dash="${dashId}">
+                🛃 ${__("Customs")}
+            </button>
+        </div>
+
+        <!-- Tab: Overview -->
+        <div class="ps-dash-panel ps-dash-panel--active" data-panel="overview" data-dash="${dashId}">
+            <!-- Scenario pills -->
+            <div class="ps-chip-row">
+                ${scenarioPills || `<span class="ps-scenario-chip" style="color:#64748b;">${__("No resolved scenario")}</span>`}
+            </div>
+            <!-- Policy context -->
+            <div class="ps-chip-row">
+                <span class="ps-scenario-chip"><span class="ps-chip-key">👤</span> ${frappe.utils.escape_html(salesPerson || "—")}</span>
+                <span class="ps-scenario-chip"><span class="ps-chip-key">🌍</span> ${frappe.utils.escape_html(geography || "—")}</span>
+                ${scenarioPolicy ? `<a href="/app/pricing-scenario-policy/${encodeURIComponent(scenarioPolicy)}" target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">📐</span> ${frappe.utils.escape_html(scenarioPolicy)}</a>` : ""}
+                ${pricingPolicy ? `<a href="/app/pricing-benchmark-policy/${encodeURIComponent(pricingPolicy)}"  target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🎯</span> ${frappe.utils.escape_html(pricingPolicy)}</a>` : ""}
+                ${customsPolicy ? `<a href="/app/pricing-customs-policy/${encodeURIComponent(customsPolicy)}"   target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🛃</span> ${frappe.utils.escape_html(customsPolicy)}</a>` : ""}
+                <span class="ps-scenario-chip"><span class="ps-chip-key">💵</span> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
+            </div>
+            <!-- Warnings -->
             ${warningBlock}
         </div>
-        <div class="ps-grid-two">
-            <div class="ps-card ps-table-wrap">
-                <div class="ps-preview-head">${__("Lines Preview")} <span class="ps-preview-count">${lines.length} ${__("items")}</span></div>
-                <div class="ps-preview-scroll">
+
+        <!-- Tab: Lines -->
+        <div class="ps-dash-panel" data-panel="lines" data-dash="${dashId}">
+            <div class="ps-preview-scroll">
                 <table class="ps-table">
-                    <thead style="background:#f8fafc;">
+                    <thead>
                         <tr>
-                            <th style="text-align:left;">${__("Item")}</th>
-                            <th style="text-align:left;">${__("Scenario")}</th>
+                            <th>${__("Item")}</th>
+                            <th>${__("Scenario")}</th>
                             <th style="text-align:right;">${__("Qty")}</th>
                             <th style="text-align:right;">${__("Base")}</th>
                             <th style="text-align:right;">${__("Projected")}</th>
                             <th style="text-align:right;">${__("Final")}</th>
-                            <th style="text-align:left;">${__("Margin")}</th>
-                            <th style="text-align:left;">${__("Flags")}</th>
-                            <th style="text-align:left;">${__("Expense Flow")}</th>
+                            <th>${__("Margin")}</th>
+                            <th>${__("Flags")}</th>
+                            <th>${__("Expense Flow")}</th>
                             <th style="text-align:right;">${__("Detail")}</th>
                         </tr>
                     </thead>
                     <tbody>${rowsHtml}</tbody>
                 </table>
-                </div>
-                <div class="ps-overflow-hint">${__("Tip: Scroll horizontally for all pricing columns on smaller screens.")}</div>
             </div>
-            <div class="ps-card ps-table-wrap">
-                <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Price Adjustments Impact")}</div>
+        </div>
+
+        <!-- Tab: Adjustments -->
+        <div class="ps-dash-panel" data-panel="adjustments" data-dash="${dashId}">
+            <table class="ps-table">
+                <thead><tr>
+                    <th>${__("Component")}</th>
+                    <th style="text-align:right;">${__("Total Impact")}</th>
+                </tr></thead>
+                <tbody>${impacts || `<tr><td colspan="2" style="padding:12px;color:#64748b;text-align:center;">${__("No adjustment data yet — run Recalculate.")}</td></tr>`}</tbody>
+            </table>
+        </div>
+
+        <!-- Tab: Customs -->
+        <div class="ps-dash-panel" data-panel="customs" data-dash="${dashId}">
+            <div class="ps-preview-scroll">
                 <table class="ps-table">
-                    <thead>
-                        <tr>
-                            <th style="text-align:left;">${__("Component")}</th>
-                            <th style="text-align:right;">${__("Amount")}</th>
-                        </tr>
-                    </thead>
-                    <tbody>${impacts || `<tr><td colspan="2" style="padding:8px;color:#64748b;">${__("No data")}</td></tr>`}</tbody>
-                </table>
-            </div>
-            <div class="ps-card ps-table-wrap">
-                <div style="padding:8px 10px;background:#f8fafc;font-weight:600;">${__("Customs Calculation (MAX kg vs %)")}</div>
-                <table class="ps-table">
-                    <thead>
-                        <tr>
-                            <th style="text-align:left;">${__("Item")}</th>
-                            <th style="text-align:left;">${__("Material")}</th>
-                            <th style="text-align:right;">${__("W (kg)")}</th>
-                            <th style="text-align:right;">${__("Qty")}</th>
-                            <th style="text-align:right;">${__("Base")}</th>
-                            <th style="text-align:right;">${__("By Kg")}</th>
-                            <th style="text-align:right;">${__("By %")}</th>
-                            <th style="text-align:right;">${__("Max")}</th>
-                            <th style="text-align:left;">${__("Basis")}</th>
-                        </tr>
-                    </thead>
+                    <thead><tr>
+                        <th>${__("Item")}</th>
+                        <th>${__("Material")}</th>
+                        <th style="text-align:right;">${__("W (kg)")}</th>
+                        <th style="text-align:right;">${__("Qty")}</th>
+                        <th style="text-align:right;">${__("Base")}</th>
+                        <th style="text-align:right;">${__("By Kg")}</th>
+                        <th style="text-align:right;">${__("By %")}</th>
+                        <th style="text-align:right;">${__("Max")}</th>
+                        <th>${__("Basis")}</th>
+                    </tr></thead>
                     <tbody>${customsRows}</tbody>
                 </table>
             </div>
         </div>
-        </div>
+
+    </div>
     `;
 
     frm.fields_dict.projection_dashboard.$wrapper.html(html);
+
+    // Tab switching — scoped to this dashId
+    frm.fields_dict.projection_dashboard.$wrapper.find(".ps-dash-tab").on("click", function () {
+        const tab = $(this).data("tab");
+        const root = frm.fields_dict.projection_dashboard.$wrapper.find(`#${dashId}`);
+        root.find(".ps-dash-tab").removeClass("ps-dash-tab--active");
+        root.find(".ps-dash-panel").removeClass("ps-dash-panel--active");
+        $(this).addClass("ps-dash-tab--active");
+        root.find(`[data-panel="${tab}"]`).addClass("ps-dash-panel--active");
+    });
+
+    // Breakdown detail button
     frm.fields_dict.projection_dashboard.$wrapper.find("[data-breakdown-index]").on("click", function () {
         const i = Number($(this).attr("data-breakdown-index"));
         const row = lines[i];
         if (row) showBreakdownDialog(row);
     });
 }
+
 
 async function openQuotationPreview(frm) {
     const preview = await frm.call("get_quotation_preview");
