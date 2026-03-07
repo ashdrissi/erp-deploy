@@ -2,17 +2,16 @@
 
 Custom Frappe app for Orderlift ERP — developed by Syntax Line.
 
-Provides all custom modules on top of ERPNext v15:
+Provides the active custom modules on top of ERPNext:
 - Item Master extensions (cost history, logistics fields)
 - Sales commissions & market price tracking
-- B2B client portal with dynamic pricing
 - Logistics intelligence (container/truck optimizer)
-- CRM with configurable stage notifications
-- SAV (after-sales service) ticketing
-- SIG (geo-location & project tracking)
-- HR extensions
 - Branded PDF print formats
 - Analytics dashboards & reports
+
+Current delivery focus:
+- Active modules: Sales/Pricing, Logistics, analytics dashboards, and branded UX
+- Roadmap modules for now: B2B Portal, CRM, SAV, SIG, and HR extensions
 
 ## Installation
 
