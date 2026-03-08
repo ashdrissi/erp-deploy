@@ -41,7 +41,7 @@ def get_data():
             "color": "#f39c12",
             "icon": "octicon octicon-graph",
             "type": "module",
-            "description": "Sales commissions, market prices, advanced pricing",
+            "description": "Sales commissions and advanced pricing",
         },
         {
             "module_name": "Orderlift CRM",

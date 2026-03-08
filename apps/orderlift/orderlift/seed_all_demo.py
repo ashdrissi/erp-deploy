@@ -3,7 +3,7 @@
 Run via:  bench --site <site> execute orderlift.seed_all_demo.execute
 """
 import frappe
-from frappe.utils import flt, nowdate, add_days, random_string
+from frappe.utils import flt, random_string
 import random
 
 
@@ -15,7 +15,6 @@ def execute():
     _seed_customs_policies()
     _seed_margin_policies()
     _seed_benchmark_policy()
-    _seed_market_prices()
     _seed_agent_pricing_rules()
     _seed_segmentation_engine()
     _seed_pricing_sheet()
@@ -379,42 +378,6 @@ def _seed_benchmark_policy():
 
     doc.save(ignore_permissions=True)
     print(f"   Benchmark policy {policy_name} updated")
-
-
-# ─────────────────────────────────────────────────────
-# 6. Market Price Entries
-# ─────────────────────────────────────────────────────
-
-def _seed_market_prices():
-    print("→ Seeding market price entries…")
-
-    items = frappe.get_all("Item", filters={"disabled": 0, "is_sales_item": 1}, pluck="name", limit=15)
-    if not items:
-        items = frappe.get_all("Item", filters={"disabled": 0}, pluck="name", limit=15)
-
-    sources = ["Competitor A", "Competitor B", "Alibaba", "Made-in-China", "Market Survey", "TradeKey"]
-
-    count = 0
-    for item in items[:10]:
-        for source in random.sample(sources, min(3, len(sources))):
-            if frappe.db.exists("Market Price Entry", {"item": item, "source_name": source}):
-                continue
-
-            try:
-                base = random.uniform(50, 5000)
-                mp = frappe.new_doc("Market Price Entry")
-                mp.item = item
-                mp.source_name = source
-                mp.price = round(base, 2)
-                mp.currency = "MAD"
-                mp.entry_date = add_days(nowdate(), -random.randint(1, 90))
-                mp.notes = f"Collected from {source}"
-                mp.insert(ignore_permissions=True)
-                count += 1
-            except Exception:
-                pass
-
-    print(f"   Created {count} market price entries")
 
 
 # ─────────────────────────────────────────────────────

@@ -1,15 +1,15 @@
 {
     "content": null,
-    "creation": "2026-03-03 00:00:00.000000",
+    "creation": "2026-03-08 00:00:00.000000",
     "docstatus": 0,
     "doctype": "Page",
     "idx": 0,
-    "modified": "2026-03-03 21:00:00.000000",
+    "modified": "2026-03-08 00:00:00.000000",
     "modified_by": "Administrator",
     "module": "Orderlift Sales",
-    "name": "pricing-dashboard",
+    "name": "pricing-builder",
     "owner": "Administrator",
-    "page_name": "pricing-dashboard",
+    "page_name": "pricing-builder",
     "roles": [
         {
             "role": "Orderlift Admin"
@@ -25,5 +25,5 @@
     "standard": "Yes",
     "style": null,
     "system_page": 0,
-    "title": "Pricing Dashboard"
+    "title": "Pricing Builder"
 }

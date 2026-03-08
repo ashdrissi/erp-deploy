@@ -20,14 +20,10 @@
   "benchmark_policy",
   "customs_policy",
   "product_bundle",
+  "selected_price_list",
+  "strict_margin_guard",
   "heading_scenario_mappings",
   "scenario_mappings",
-  "column_break_strategy",
-  "resolved_mode",
-  "selected_price_list",
-  "output_mode",
-  "minimum_margin_percent",
-  "strict_margin_guard",
   "section_projection",
   "projection_dashboard",
   "heading_lines",
@@ -36,19 +32,6 @@
   "total_buy",
   "total_expenses",
   "total_selling",
-  "heading_bundle_rules",
-  "bundle_scenario_rules",
-  "heading_scenario_overrides",
-  "scenario_overrides",
-  "heading_line_overrides",
-  "line_overrides",
-  "section_runtime",
-  "calculated_on",
-  "calculated_by",
-  "column_break_runtime",
-  "calc_runtime_ms",
-  "applied_customs_policy",
-  "applied_benchmark_policy",
   "customs_total_applied",
   "projection_warnings"
  ],
@@ -167,12 +150,14 @@
   },
   {
    "fieldname": "column_break_strategy",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "resolved_mode",
    "fieldtype": "Data",
    "label": "Resolved Mode",
+   "hidden": 1,
    "read_only": 1,
    "bold": 0,
    "in_list_view": 0,
@@ -190,6 +175,7 @@
    "fieldname": "output_mode",
    "fieldtype": "Select",
    "label": "Output Mode",
+   "hidden": 1,
    "options": "Avec details\nSans details",
    "default": "Avec details",
    "reqd": 1
@@ -198,6 +184,7 @@
    "fieldname": "minimum_margin_percent",
    "fieldtype": "Percent",
    "label": "Minimum Margin Percent",
+   "hidden": 1,
    "default": "0"
   },
   {
@@ -214,6 +201,7 @@
   {
    "fieldname": "section_runtime",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Runtime & Guardrails",
    "collapsible": 1
   },
@@ -221,6 +209,7 @@
    "fieldname": "calculated_on",
    "fieldtype": "Datetime",
    "label": "Calculated On",
+   "hidden": 1,
    "read_only": 1
   },
   {
@@ -228,28 +217,33 @@
    "fieldtype": "Link",
    "label": "Calculated By",
    "options": "User",
+   "hidden": 1,
    "read_only": 1
   },
   {
    "fieldname": "column_break_runtime",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "calc_runtime_ms",
    "fieldtype": "Float",
    "label": "Calc Runtime (ms)",
+   "hidden": 1,
    "read_only": 1
   },
   {
    "fieldname": "applied_customs_policy",
    "fieldtype": "Data",
    "label": "Applied Customs Policy",
+   "hidden": 1,
    "read_only": 1
   },
   {
    "fieldname": "applied_benchmark_policy",
    "fieldtype": "Data",
    "label": "Applied Pricing Policy",
+   "hidden": 1,
    "read_only": 1
   },
   {
@@ -267,6 +261,7 @@
   {
    "fieldname": "heading_bundle_rules",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Bundle Scenario Rules",
    "collapsible": 1
   },
@@ -274,6 +269,7 @@
    "fieldname": "bundle_scenario_rules",
    "fieldtype": "Table",
    "label": "Bundle Scenario Rules",
+   "hidden": 1,
    "options": "Pricing Sheet Bundle Scenario"
   },
   {
@@ -284,6 +280,7 @@
   {
    "fieldname": "heading_scenario_overrides",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Scenario Overrides",
    "collapsible": 1
   },
@@ -291,11 +288,13 @@
    "fieldname": "scenario_overrides",
    "fieldtype": "Table",
    "label": "Scenario Overrides",
+   "hidden": 1,
    "options": "Pricing Sheet Scenario Override"
   },
   {
    "fieldname": "heading_line_overrides",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Line Overrides",
    "collapsible": 1
   },
@@ -303,6 +302,7 @@
    "fieldname": "line_overrides",
    "fieldtype": "Table",
    "label": "Line Overrides",
+   "hidden": 1,
    "options": "Pricing Sheet Line Override"
   },
   {

@@ -372,9 +372,14 @@ class PricingSheet(Document):
         lines = self.lines or []
         self.projection_warnings = ""
         warnings = []
+        benchmark_policy_doc = self._resolve_benchmark_policy()
+        tier_mod, zone_mod = self._resolve_dynamic_modifiers(benchmark_policy_doc)
+        modifier_expenses, _, _ = self._inject_modifier_expenses([], tier_mod, zone_mod)
 
         if not lines:
             self._reset_totals()
+            self.applied_benchmark_policy = benchmark_policy_doc.name if benchmark_policy_doc else ""
+            self.applied_customs_policy = ""
             self.resolved_mode = "Static"
             self.calculated_on = now_datetime()
             self.calculated_by = frappe.session.user
@@ -405,6 +410,7 @@ class PricingSheet(Document):
                     item_prices[rec["item_code"]] = flt(rec["price_list_rate"])
 
         total_buy = 0.0
+        total_expenses = 0.0
         total_final = 0.0
         missing = []
 
@@ -419,17 +425,24 @@ class PricingSheet(Document):
                 list_price = 0.0
 
             row.static_list_price = list_price
+            pricing = apply_expenses(base_unit=list_price, qty=qty, expenses=modifier_expenses)
+            projected_unit = flt(pricing.get("projected_unit") or 0)
+            projected_total = flt(pricing.get("projected_line") or 0)
+            expense_unit = projected_unit - flt(list_price)
+            expense_total = projected_total - (flt(list_price) * qty)
             row.is_manual_override = 1 if flt(row.manual_sell_unit_price) > 0 else 0
-            row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else list_price
+            row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
             row.final_sell_total = row.final_sell_unit_price * qty
 
             buy = flt(row.buy_price)
             row.base_amount = buy * qty
             row.margin_pct = ((row.final_sell_unit_price - buy) / buy * 100) if buy > 0 else 0.0
-            row.expense_total = 0.0
-            row.expense_unit_price = 0.0
-            row.projected_unit_price = list_price
-            row.projected_total_price = list_price * qty
+            row.expense_total = expense_total
+            row.expense_unit_price = expense_unit
+            row.projected_unit_price = projected_unit
+            row.projected_total_price = projected_total
+            row.tier_modifier_amount = flt(tier_mod.get("amount") if tier_mod else 0)
+            row.zone_modifier_amount = flt(zone_mod.get("amount") if zone_mod else 0)
 
             # Clear dynamic-only fields
             row.resolved_pricing_scenario = ""
@@ -437,13 +450,17 @@ class PricingSheet(Document):
             row.benchmark_reference = 0
             row.benchmark_ratio = 0
             row.benchmark_status = "No Benchmark"
-            row.margin_source = "Price List"
+            row.margin_source = "Price List + Modifiers" if flt(expense_total) else "Price List"
             row.customs_applied = 0
-            row.pricing_breakdown_json = "[]"
-            row.breakdown_preview = f"List: {price_list}"
+            row.pricing_breakdown_json = json.dumps(pricing.get("steps") or [])
+            row.breakdown_preview = self._build_breakdown_preview(pricing.get("steps") or []) or f"List: {price_list}"
             row.price_floor_violation = 0
+            row.has_scenario_override = 0
+            row.has_line_override = 0
+            row.resolved_benchmark_rule = "Static List Modifiers" if flt(expense_total) else ""
 
             total_buy += flt(row.base_amount)
+            total_expenses += flt(row.expense_total)
             total_final += flt(row.final_sell_total)
 
         if missing:
@@ -452,10 +469,10 @@ class PricingSheet(Document):
             ))
 
         self.total_buy = flt(total_buy)
-        self.total_expenses = 0.0
+        self.total_expenses = flt(total_expenses)
         self.total_selling = flt(total_final)
         self.customs_total_applied = 0.0
-        self.applied_benchmark_policy = ""
+        self.applied_benchmark_policy = benchmark_policy_doc.name if benchmark_policy_doc else ""
         self.applied_customs_policy = ""
         self.resolved_mode = "Static"
         self.projection_warnings = "\n".join(warnings)

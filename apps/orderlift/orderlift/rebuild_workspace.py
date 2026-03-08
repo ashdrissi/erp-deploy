@@ -4,9 +4,9 @@ def execute():
     ws = frappe.get_doc("Workspace Sidebar", "Main Dashboard")
     
     pricing_labels = [
-        "Pricing Dashboard", "Pricing Operations", "Pricing Sheets", "Pricing Scenarios", 
-        "Market Prices", "Policies & Configs", "Agent Rules", "Segmentation Engine",
-        "Benchmark Policy", "Customs Policy", "Margin Policy", "Scenario Policy",
+        "Pricing Operations", "Pricing Builder", "Pricing Sheets", "Pricing Scenarios",
+        "Policies & Configs", "Agent Rules", "Segmentation Engine",
+        "Benchmark Policy", "Customs Policy", "Margin Policy",
         "Pricing Margin Policy", "Pricing Margin Rule", "Pricing Customs Policy",
         "Pricing Customs Rule", "Pricing Benchmark Source", "Pricing Benchmark Rule",
         "Customer Segmentation Rule", "Pricing Tier Modifier", "Pricing Zone Modifier"
@@ -60,12 +60,10 @@ def execute():
         ws.append("items", item)
     
     # 3. Add the Pricing items explicitly at the end
-    ws.append('items', {'type': 'Link', 'label': 'Pricing Dashboard', 'link_type': 'Page', 'link_to': 'pricing-dashboard', 'child': 0, 'icon': 'chart-line'})
-    
     ws.append('items', {'type': 'Section Break', 'label': 'Pricing Operations', 'child': 0})
+    ws.append('items', {'type': 'Link', 'label': 'Pricing Builder', 'link_type': 'Page', 'link_to': 'pricing-builder', 'child': 1, 'icon': 'tool'})
     ws.append('items', {'type': 'Link', 'label': 'Pricing Sheets', 'link_type': 'DocType', 'link_to': 'Pricing Sheet', 'child': 1, 'icon': 'file-text'})
     ws.append('items', {'type': 'Link', 'label': 'Pricing Scenarios', 'link_type': 'DocType', 'link_to': 'Pricing Scenario', 'child': 1, 'icon': 'branch'})
-    ws.append('items', {'type': 'Link', 'label': 'Market Prices', 'link_type': 'DocType', 'link_to': 'Market Price Entry', 'child': 1, 'icon': 'money-coins'})
 
     ws.append('items', {'type': 'Section Break', 'label': 'Policies & Configs', 'child': 0})
     ws.append('items', {'type': 'Link', 'label': 'Agent Rules', 'link_type': 'DocType', 'link_to': 'Agent Pricing Rules', 'child': 1, 'icon': 'users'})
