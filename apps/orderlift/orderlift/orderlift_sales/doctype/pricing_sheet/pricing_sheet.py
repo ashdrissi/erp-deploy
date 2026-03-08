@@ -812,9 +812,6 @@ class PricingSheet(Document):
         buying_price_list = (selected.get("buying_price_list") or "").strip()
         if buying_price_list:
             return buying_price_list
-
-        if self.pricing_scenario:
-            return (frappe.db.get_value("Pricing Scenario", self.pricing_scenario, "buying_price_list") or "").strip()
         return ""
 
     def _resolve_sheet_scenario_mapping(self, context):
@@ -1455,8 +1452,8 @@ class PricingSheet(Document):
                     )
 
         caches = {}
+        default_buying_price_list = self._resolve_source_buying_price_list()
         for name, scenario in scenario_docs.items():
-            buying_price_list = scenario.buying_price_list or "Buying"
             benchmark_price_list = scenario.benchmark_price_list or "Benchmark Selling"
 
             base_expenses = self._active_expenses(scenario)
@@ -1472,9 +1469,11 @@ class PricingSheet(Document):
             ]
 
             caches[name] = {
-                "buying_price_list": buying_price_list,
+                "buying_price_list": default_buying_price_list,
                 "benchmark_price_list": benchmark_price_list,
-                "buy_prices": get_latest_item_prices(item_codes, buying_price_list, buying=True),
+                "buy_prices": get_latest_item_prices(item_codes, default_buying_price_list, buying=True)
+                if default_buying_price_list
+                else {},
                 "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=None),
                 "benchmark_price_map": benchmark_price_map,
                 "benchmark_source_types": benchmark_source_types,
@@ -1750,7 +1749,11 @@ class PricingSheet(Document):
         buy_price = buy_prices.get(row.item)
         if buy_price is None:
             row.buy_price_missing = 1
-            row.buy_price_message = MISSING_BUY_PRICE_MSG.format(price_list=buying_price_list)
+            row.buy_price_message = (
+                MISSING_BUY_PRICE_MSG.format(price_list=buying_price_list)
+                if buying_price_list
+                else _("Missing source buying price list for pricing calculation.")
+            )
             if force_refresh and flt(row.buy_price) <= 0:
                 row.buy_price = 0
             return
@@ -1762,15 +1765,15 @@ class PricingSheet(Document):
     def _set_buy_price_for_row(
         self,
         row,
-        scenario_buying_price_list,
-        scenario_buy_prices,
+        fallback_buying_price_list,
+        fallback_buy_prices,
         buy_price_cache_by_list,
         force_refresh=False,
     ):
-        buying_price_list = (getattr(row, "source_buying_price_list", "") or "").strip() or scenario_buying_price_list
-        buy_prices = scenario_buy_prices or {}
+        buying_price_list = (getattr(row, "source_buying_price_list", "") or "").strip() or fallback_buying_price_list
+        buy_prices = fallback_buy_prices or {}
 
-        if buying_price_list and buying_price_list != scenario_buying_price_list:
+        if buying_price_list and buying_price_list != fallback_buying_price_list:
             cached_prices = buy_price_cache_by_list.get(buying_price_list)
             if cached_prices is None:
                 cached_prices = get_latest_item_prices([row.item], buying_price_list, buying=True) if row.item else {}
@@ -2184,10 +2187,6 @@ def get_item_pricing_defaults(item_code, pricing_scenario=None, source_buying_pr
         return {"buy_price": 0, "item_group": "Ungrouped"}
 
     buying_price_list = (source_buying_price_list or "").strip() or "Buying"
-    if not source_buying_price_list and pricing_scenario and frappe.db.exists("Pricing Scenario", pricing_scenario):
-        buying_price_list = (
-            frappe.db.get_value("Pricing Scenario", pricing_scenario, "buying_price_list") or "Buying"
-        )
 
     buy_price = get_latest_item_price(item_code, buying_price_list, buying=True)
     item_group = frappe.db.get_value("Item", item_code, "item_group") or "Ungrouped"

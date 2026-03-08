@@ -7,6 +7,7 @@
   "engine": "InnoDB",
   "field_order": [
     "section_identity",
+    "builder_header_html",
     "naming_series",
     "builder_name",
     "selling_price_list_name",
@@ -19,11 +20,13 @@
     "section_items",
     "builder_items",
     "section_summary",
+    "summary_panel_html",
     "total_items",
     "ready_items",
     "changed_items",
     "new_items",
     "missing_items",
+    "warnings_panel_html",
     "warnings_html"
   ],
   "fields": [
@@ -31,6 +34,11 @@
       "fieldname": "section_identity",
       "fieldtype": "Section Break",
       "label": "Builder Setup"
+    },
+    {
+      "fieldname": "builder_header_html",
+      "fieldtype": "HTML",
+      "label": "Builder Header"
     },
     {
       "fieldname": "naming_series",
@@ -109,6 +117,11 @@
       "label": "Summary"
     },
     {
+      "fieldname": "summary_panel_html",
+      "fieldtype": "HTML",
+      "label": "Summary Panel"
+    },
+    {
       "fieldname": "total_items",
       "fieldtype": "Int",
       "label": "Total Items",
@@ -139,9 +152,15 @@
       "read_only": 1
     },
     {
+      "fieldname": "warnings_panel_html",
+      "fieldtype": "HTML",
+      "label": "Warnings Panel"
+    },
+    {
       "fieldname": "warnings_html",
       "fieldtype": "Small Text",
       "label": "Warnings",
+      "hidden": 1,
       "read_only": 1
     }
   ],

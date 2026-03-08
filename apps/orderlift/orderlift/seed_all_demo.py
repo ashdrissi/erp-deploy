@@ -157,8 +157,6 @@ def _seed_pricing_scenarios():
             doc = frappe.new_doc("Pricing Scenario")
             doc.scenario_name = s["scenario_name"]
             doc.description = s.get("description", "")
-            if buying_list:
-                doc.buying_price_list = buying_list
             doc.transport_is_active = s.get("transport_is_active", 0)
             doc.transport_container_type = s.get("transport_container_type", "")
             doc.transport_allocation_mode = s.get("transport_allocation_mode", "By Value")

@@ -9,7 +9,6 @@
     "naming_series",
     "scenario_name",
     "description",
-    "buying_price_list",
     "benchmark_price_list",
     "section_transport",
     "transport_is_active",
@@ -48,14 +47,6 @@
       "fieldname": "description",
       "fieldtype": "Small Text",
       "label": "Description"
-    },
-    {
-      "fieldname": "buying_price_list",
-      "fieldtype": "Link",
-      "label": "Buying Price List",
-      "options": "Price List",
-      "default": "Buying",
-      "reqd": 1
     },
     {
       "fieldname": "benchmark_price_list",

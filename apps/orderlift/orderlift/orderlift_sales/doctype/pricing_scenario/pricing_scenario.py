@@ -43,7 +43,6 @@ class PricingScenario(Document):
             self.append("expenses", row)
 
     def validate(self):
-        self.buying_price_list = self.buying_price_list or "Buying"
         self._validate_transport_settings()
         self._validate_expenses()
 

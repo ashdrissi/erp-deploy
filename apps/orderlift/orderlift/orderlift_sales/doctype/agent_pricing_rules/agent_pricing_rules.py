@@ -45,19 +45,6 @@ class AgentPricingRules(Document):
                 frappe.throw(_("Duplicate Dynamic Configuration rows are not allowed."))
             seen.add(key)
 
-            pricing_scenario = row.get("pricing_scenario")
-            buying_price_list = row.get("buying_price_list")
-            if pricing_scenario and buying_price_list:
-                scenario_buying = frappe.db.get_value("Pricing Scenario", pricing_scenario, "buying_price_list")
-                if scenario_buying and scenario_buying != buying_price_list:
-                    frappe.throw(
-                        _("Dynamic config links scenario {0} to buying list {1}, but the scenario uses {2}.").format(
-                            pricing_scenario,
-                            buying_price_list,
-                            scenario_buying,
-                        )
-                    )
-
         if defaults > 1:
             frappe.throw(_("Only one Dynamic Configuration row can be marked as Default."))
 
