@@ -680,13 +680,13 @@ function setAgentPolicyQueries(frm, context) {
         if (isDynamic && scenarios.length) {
             return { filters: { name: ["in", scenarios] } };
         }
-        return { filters: { is_active: 1 } };
+        return { filters: {} };
     });
     frm.set_query("pricing_scenario", "scenario_mappings", () => {
         if (isDynamic && scenarios.length) {
             return { filters: { name: ["in", scenarios] } };
         }
-        return { filters: { is_active: 1 } };
+        return { filters: {} };
     });
 
     frm.set_query("benchmark_policy", () => {

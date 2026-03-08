@@ -42,9 +42,9 @@ def calculate_builder(payload=None):
     item_details = get_item_details_map(item_codes)
     item_meta = _get_builder_item_meta(item_codes)
     published_map = {}
-    target_selling_price_list = (data.get("target_selling_price_list") or "").strip()
-    if target_selling_price_list:
-        published_map = get_latest_item_prices(item_codes, target_selling_price_list, buying=False)
+    selling_price_list_name = (data.get("selling_price_list_name") or "").strip()
+    if selling_price_list_name and frappe.db.exists("Price List", selling_price_list_name):
+        published_map = get_latest_item_prices(item_codes, selling_price_list_name, buying=False)
 
     sheet = frappe.new_doc("Pricing Sheet")
     sheet.customer = ""
@@ -180,6 +180,7 @@ def calculate_builder(payload=None):
             {
                 "item": item_code,
                 "item_name": meta.get("item_name") or item_code,
+                "item_group": details.get("item_group") or "",
                 "buying_list": buying_list,
                 "origin": meta.get("origin") or "",
                 "qty": qty,
@@ -218,16 +219,17 @@ def calculate_builder(payload=None):
 @frappe.whitelist()
 def publish_builder_prices(payload=None):
     data = json.loads(payload) if isinstance(payload, str) else (payload or {})
-    target_selling_price_list = (data.get("target_selling_price_list") or "").strip()
-    if not target_selling_price_list:
-        frappe.throw(_("Target Selling Price List is required."))
+    selling_price_list_name = (data.get("selling_price_list_name") or "").strip()
+    if not selling_price_list_name:
+        frappe.throw(_("Selling Price List Name is required."))
 
     rows = data.get("rows") or []
     selected_only = cint(data.get("selected_only") or 0) == 1
     if not rows:
         frappe.throw(_("No builder rows supplied for publish."))
 
-    currency = frappe.db.get_value("Price List", target_selling_price_list, "currency") or frappe.defaults.get_global_default("currency")
+    price_list_name = _ensure_selling_price_list(selling_price_list_name)
+    currency = frappe.db.get_value("Price List", price_list_name, "currency") or frappe.defaults.get_global_default("currency")
     created = 0
     updated = 0
     skipped = 0
@@ -253,7 +255,7 @@ def publish_builder_prices(payload=None):
             continue
 
         try:
-            existing_name = _get_latest_item_price_name(item_code, target_selling_price_list)
+            existing_name = _get_latest_item_price_name(item_code, price_list_name)
             if existing_name:
                 doc = frappe.get_doc("Item Price", existing_name)
                 doc.price_list_rate = final_price
@@ -267,7 +269,7 @@ def publish_builder_prices(payload=None):
                 updated += 1
             else:
                 doc = frappe.new_doc("Item Price")
-                doc.price_list = target_selling_price_list
+                doc.price_list = price_list_name
                 doc.item_code = item_code
                 doc.price_list_rate = final_price
                 if hasattr(doc, "currency"):
@@ -290,6 +292,7 @@ def publish_builder_prices(payload=None):
         "updated": updated,
         "skipped": skipped,
         "errors": errors,
+        "price_list": price_list_name,
     }
 
 
@@ -573,6 +576,7 @@ def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_p
     return {
         "item": item_code,
         "item_name": item_code,
+        "item_group": "",
         "buying_list": buying_list,
         "origin": origin,
         "qty": qty,
@@ -592,3 +596,25 @@ def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_p
         "customs_policy": "",
         "benchmark_policy": "",
     }
+
+
+def _ensure_selling_price_list(price_list_name):
+    if frappe.db.exists("Price List", price_list_name):
+        return price_list_name
+
+    currency = frappe.defaults.get_global_default("currency") or "MAD"
+    doc = frappe.new_doc("Price List")
+    if hasattr(doc, "price_list_name"):
+        doc.price_list_name = price_list_name
+    if hasattr(doc, "title"):
+        doc.title = price_list_name
+    if hasattr(doc, "enabled"):
+        doc.enabled = 1
+    if hasattr(doc, "selling"):
+        doc.selling = 1
+    if hasattr(doc, "buying"):
+        doc.buying = 0
+    if hasattr(doc, "currency"):
+        doc.currency = currency
+    doc.insert(ignore_permissions=True)
+    return doc.name
