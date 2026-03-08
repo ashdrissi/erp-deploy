@@ -216,7 +216,7 @@ def ensure_pricing_workspace():
         )
 
     shortcuts = [
-        {"label": "Pricing Builder", "type": "Page", "link_to": "pricing-builder"},
+        {"label": "Pricing Builder", "type": "DocType", "link_to": "Pricing Builder"},
         {"label": "Quotation", "type": "DocType", "link_to": "Quotation"},
         {"label": "Pricing Sheet", "type": "DocType", "link_to": "Pricing Sheet"},
         {"label": "Pricing Scenario", "type": "DocType", "link_to": "Pricing Scenario"},

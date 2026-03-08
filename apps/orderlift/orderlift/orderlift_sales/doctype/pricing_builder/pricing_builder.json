@@ -1,0 +1,197 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-03-08 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_identity",
+    "naming_series",
+    "builder_name",
+    "selling_price_list_name",
+    "column_break_identity",
+    "item_group",
+    "default_qty",
+    "max_items",
+    "section_rules",
+    "sourcing_rules",
+    "section_items",
+    "builder_items",
+    "section_summary",
+    "total_items",
+    "ready_items",
+    "changed_items",
+    "new_items",
+    "missing_items",
+    "warnings_html"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_identity",
+      "fieldtype": "Section Break",
+      "label": "Builder Setup"
+    },
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "PBU-.#####",
+      "default": "PBU-.#####",
+      "reqd": 1,
+      "set_only_once": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "builder_name",
+      "fieldtype": "Data",
+      "label": "Builder Name",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "selling_price_list_name",
+      "fieldtype": "Data",
+      "label": "Selling Price List Name",
+      "reqd": 1,
+      "description": "A new selling price list will be created automatically if it does not already exist."
+    },
+    {
+      "fieldname": "column_break_identity",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "item_group",
+      "fieldtype": "Link",
+      "label": "Item Group",
+      "options": "Item Group"
+    },
+    {
+      "fieldname": "default_qty",
+      "fieldtype": "Float",
+      "label": "Qty per Item",
+      "default": "1"
+    },
+    {
+      "fieldname": "max_items",
+      "fieldtype": "Int",
+      "label": "Max Items",
+      "default": "0",
+      "description": "0 loads all items found in the selected buying lists."
+    },
+    {
+      "fieldname": "section_rules",
+      "fieldtype": "Section Break",
+      "label": "Sourcing Rules (Buying Lists & Policies)"
+    },
+    {
+      "fieldname": "sourcing_rules",
+      "fieldtype": "Table",
+      "label": "Sourcing Rules",
+      "options": "Pricing Builder Sourcing Rule",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_items",
+      "fieldtype": "Section Break",
+      "label": "Builder Items"
+    },
+    {
+      "fieldname": "builder_items",
+      "fieldtype": "Table",
+      "label": "Builder Items",
+      "options": "Pricing Builder Item"
+    },
+    {
+      "fieldname": "section_summary",
+      "fieldtype": "Section Break",
+      "label": "Summary"
+    },
+    {
+      "fieldname": "total_items",
+      "fieldtype": "Int",
+      "label": "Total Items",
+      "read_only": 1
+    },
+    {
+      "fieldname": "ready_items",
+      "fieldtype": "Int",
+      "label": "Ready Items",
+      "read_only": 1
+    },
+    {
+      "fieldname": "changed_items",
+      "fieldtype": "Int",
+      "label": "Changed Items",
+      "read_only": 1
+    },
+    {
+      "fieldname": "new_items",
+      "fieldtype": "Int",
+      "label": "New Items",
+      "read_only": 1
+    },
+    {
+      "fieldname": "missing_items",
+      "fieldtype": "Int",
+      "label": "Missing Items",
+      "read_only": 1
+    },
+    {
+      "fieldname": "warnings_html",
+      "fieldtype": "Small Text",
+      "label": "Warnings",
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-03-08 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Builder",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "report": 1,
+      "print": 1
+    }
+  ],
+  "search_fields": "builder_name,selling_price_list_name,item_group",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "builder_name",
+  "track_changes": 1
+}
