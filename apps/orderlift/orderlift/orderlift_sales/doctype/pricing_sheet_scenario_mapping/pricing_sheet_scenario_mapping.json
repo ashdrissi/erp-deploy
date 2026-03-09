@@ -26,7 +26,7 @@
     {
       "fieldname": "pricing_scenario",
       "fieldtype": "Link",
-      "label": "Pricing Scenario",
+      "label": "Expenses Policy",
       "options": "Pricing Scenario",
       "reqd": 1,
       "in_list_view": 1
@@ -41,7 +41,7 @@
     {
       "fieldname": "benchmark_policy",
       "fieldtype": "Link",
-      "label": "Pricing Policy",
+      "label": "Margin & Benchmark Policy",
       "options": "Pricing Benchmark Policy",
       "in_list_view": 1
     },

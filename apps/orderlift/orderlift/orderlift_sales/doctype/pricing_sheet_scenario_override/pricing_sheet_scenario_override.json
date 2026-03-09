@@ -22,7 +22,7 @@
     {
       "fieldname": "scenario",
       "fieldtype": "Link",
-      "label": "Scenario",
+      "label": "Expenses Policy",
       "options": "Pricing Scenario",
       "reqd": 1,
       "in_list_view": 1

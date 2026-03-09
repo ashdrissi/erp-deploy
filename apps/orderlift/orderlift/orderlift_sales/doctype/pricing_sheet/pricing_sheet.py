@@ -20,10 +20,13 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
 
 
 MISSING_BUY_PRICE_MSG = "No buying price in {price_list}"
+PRIVILEGED_PRICING_ROLES = {"Orderlift Admin", "Sales Manager", "System Manager"}
+RESTRICTED_AGENT_ROLE = "Orderlift Commercial"
 
 
 class PricingSheet(Document):
     def before_save(self):
+        self._enforce_agent_pricing_inputs()
         self.recalculate()
 
     def recalculate(self):
@@ -72,7 +75,7 @@ class PricingSheet(Document):
         if tier_warning:
             warnings.append(tier_warning)
         if not benchmark_policy_doc:
-            warnings.append(_("No active pricing policy found; dynamic margin is disabled."))
+            warnings.append(_("No active margin & benchmark policy found; dynamic margin is disabled."))
         if not customs_policy:
             warnings.append(_("No active customs policy found; customs costs default to zero."))
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, benchmark_policy_doc=benchmark_policy_doc)
@@ -177,7 +180,7 @@ class PricingSheet(Document):
                 for w in (benchmark_result or {}).get("warnings") or []:
                     warnings.append(_("Row {0}: {1}").format(row.idx, w))
             else:
-                warnings.append(_("Row {0}: no pricing policy found; margin is 0.").format(row.idx))
+                warnings.append(_("Row {0}: no margin & benchmark policy found; margin is 0.").format(row.idx))
 
             # --- Inject dynamic modifiers (Tier & Zone) ---
             effective_line_expenses, row_tier_mod, row_zone_mod = self._inject_modifier_expenses(
@@ -196,8 +199,6 @@ class PricingSheet(Document):
                     "base_amount": base_amount,
                     "pricing": pricing,
                     "sheet_fixed_total": cache["sheet_fixed_total"],
-                    "benchmark_price_list": cache["benchmark_price_list"],
-                    "benchmark_prices": cache["benchmark_prices"],
                     "has_line_override": has_line_override,
                     "customs_calc": customs_calc,
                     "transport_calc": transport_calc,
@@ -333,12 +334,7 @@ class PricingSheet(Document):
                     row, flt(br["benchmark_reference"]), flt(row.final_sell_unit_price),
                 )
             else:
-                self._set_benchmark_status(
-                    row,
-                    snap["benchmark_price_list"],
-                    snap["benchmark_prices"],
-                    flt(row.final_sell_unit_price),
-                )
+                self._set_benchmark_status_from_reference(row, 0, flt(row.final_sell_unit_price))
 
             total_expenses += flt(row.expense_total)
             total_final += flt(row.final_sell_total)
@@ -748,7 +744,7 @@ class PricingSheet(Document):
                 scenario_names.add(row.pricing_scenario)
 
         if not scenario_names:
-            frappe.throw(_("Please select at least one Pricing Scenario."))
+            frappe.throw(_("Please select at least one Expenses Policy."))
 
         docs = {}
         missing = []
@@ -759,7 +755,7 @@ class PricingSheet(Document):
             docs[name] = frappe.get_doc("Pricing Scenario", name)
 
         if missing:
-            frappe.throw(_("Missing Pricing Scenario(s): {0}").format(", ".join(sorted(missing))))
+            frappe.throw(_("Missing Expenses Policy record(s): {0}").format(", ".join(sorted(missing))))
 
         return docs
 
@@ -813,6 +809,46 @@ class PricingSheet(Document):
         if buying_price_list:
             return buying_price_list
         return ""
+
+    def _is_restricted_agent_user(self):
+        user = frappe.session.user
+        if not user or user == "Administrator":
+            return False
+
+        roles = set(frappe.get_roles(user=user) or [])
+        return RESTRICTED_AGENT_ROLE in roles and not (roles & PRIVILEGED_PRICING_ROLES)
+
+    def _enforce_agent_pricing_inputs(self):
+        if not self._is_restricted_agent_user():
+            return
+
+        self._set_default_sales_person()
+
+        static_ctx = build_static_context(sales_person=self.sales_person)
+        if static_ctx.get("pricing_mode") == STATIC_MODE:
+            lists = static_ctx.get("selling_price_lists") or []
+            if lists:
+                self.selected_price_list = lists[0]
+            for row in self.lines or []:
+                row.source_buying_price_list = ""
+                row.pricing_scenario = ""
+            return
+
+        dynamic_ctx = build_dynamic_context(sales_person=self.sales_person)
+        if dynamic_ctx.get("pricing_mode") != DYNAMIC_MODE:
+            return
+
+        selected = dynamic_ctx.get("selected") or {}
+        if selected.get("pricing_scenario"):
+            self.pricing_scenario = selected.get("pricing_scenario")
+        if selected.get("customs_policy"):
+            self.customs_policy = selected.get("customs_policy")
+        if selected.get("benchmark_policy"):
+            self.benchmark_policy = selected.get("benchmark_policy")
+
+        for row in self.lines or []:
+            row.source_buying_price_list = ""
+            row.pricing_scenario = ""
 
     def _resolve_sheet_scenario_mapping(self, context):
         rules = [
@@ -905,7 +941,7 @@ class PricingSheet(Document):
         self._assert_agent_dynamic_allowed(
             "pricing_scenario",
             context.get("allowed_pricing_scenarios") or [],
-            _("Agent rule does not allow Pricing Scenario {0} for sales person {1}."),
+            _("Agent rule does not allow Expenses Policy {0} for sales person {1}."),
         )
         self._assert_agent_dynamic_allowed(
             "customs_policy",
@@ -915,7 +951,7 @@ class PricingSheet(Document):
         self._assert_agent_dynamic_allowed(
             "benchmark_policy",
             context.get("allowed_benchmark_policies") or [],
-            _("Agent rule does not allow Pricing Policy {0} for sales person {1}."),
+            _("Agent rule does not allow Margin & Benchmark Policy {0} for sales person {1}."),
         )
 
         allowed_scenarios = context.get("allowed_pricing_scenarios") or []
@@ -924,7 +960,7 @@ class PricingSheet(Document):
                 row_scenario = (row.get("pricing_scenario") or "").strip()
                 if row_scenario and row_scenario not in allowed_scenarios:
                     frappe.throw(
-                        _("Line {0}: Pricing Scenario {1} is not allowed for sales person {2}.").format(
+                        _("Line {0}: Expenses Policy {1} is not allowed for sales person {2}.").format(
                             row.idx,
                             row_scenario,
                             self.sales_person or "-",
@@ -1454,8 +1490,6 @@ class PricingSheet(Document):
         caches = {}
         default_buying_price_list = self._resolve_source_buying_price_list()
         for name, scenario in scenario_docs.items():
-            benchmark_price_list = scenario.benchmark_price_list or "Benchmark Selling"
-
             base_expenses = self._active_expenses(scenario)
             effective_expenses = self._apply_override_rows(name, base_expenses)
             sheet_fixed_total = self._sheet_fixed_total(effective_expenses)
@@ -1470,11 +1504,9 @@ class PricingSheet(Document):
 
             caches[name] = {
                 "buying_price_list": default_buying_price_list,
-                "benchmark_price_list": benchmark_price_list,
                 "buy_prices": get_latest_item_prices(item_codes, default_buying_price_list, buying=True)
                 if default_buying_price_list
                 else {},
-                "benchmark_prices": get_latest_item_prices(item_codes, benchmark_price_list, buying=None),
                 "benchmark_price_map": benchmark_price_map,
                 "benchmark_source_types": benchmark_source_types,
                 "line_expenses": line_expenses,
@@ -1678,7 +1710,7 @@ class PricingSheet(Document):
         if self.pricing_scenario:
             return self.pricing_scenario, "Sheet Default", None
 
-        frappe.throw(_("Please set a default Pricing Scenario or line-level scenario."))
+        frappe.throw(_("Please set a default Expenses Policy or line-level expenses policy."))
 
     def _scenario_from_bundle_rule(self, bundle_name):
         if not bundle_name:
@@ -1728,7 +1760,7 @@ class PricingSheet(Document):
 
     def _get_default_scenario_or_throw(self):
         if not self.pricing_scenario:
-            frappe.throw(_("Please select a Pricing Scenario."))
+            frappe.throw(_("Please select an Expenses Policy."))
         return frappe.get_doc("Pricing Scenario", self.pricing_scenario)
 
     def _hydrate_line_from_item(self, row, item_groups):

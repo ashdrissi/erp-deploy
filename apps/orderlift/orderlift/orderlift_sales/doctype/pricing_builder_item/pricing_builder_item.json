@@ -43,7 +43,7 @@
     {"fieldname": "status_note", "fieldtype": "Small Text", "label": "Status Note", "read_only": 1},
     {"fieldname": "pricing_scenario", "fieldtype": "Link", "label": "Expenses Policy", "options": "Pricing Scenario", "read_only": 1},
     {"fieldname": "customs_policy", "fieldtype": "Link", "label": "Customs Policy", "options": "Pricing Customs Policy", "read_only": 1},
-    {"fieldname": "benchmark_policy", "fieldtype": "Link", "label": "Margin Policy", "options": "Pricing Benchmark Policy", "read_only": 1}
+    {"fieldname": "benchmark_policy", "fieldtype": "Link", "label": "Margin & Benchmark Policy", "options": "Pricing Benchmark Policy", "read_only": 1}
   ],
   "istable": 1,
   "links": [],

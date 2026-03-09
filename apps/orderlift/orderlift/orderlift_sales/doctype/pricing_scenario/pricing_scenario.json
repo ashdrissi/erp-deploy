@@ -37,7 +37,7 @@
     {
       "fieldname": "scenario_name",
       "fieldtype": "Data",
-      "label": "Scenario Name",
+      "label": "Expenses Policy Name",
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1,
@@ -51,10 +51,11 @@
     {
       "fieldname": "benchmark_price_list",
       "fieldtype": "Link",
-      "label": "Benchmark Price List (Legacy)",
+      "label": "Legacy Benchmark Price List",
       "options": "Price List",
       "default": "Benchmark Selling",
-      "description": "Deprecated: Use Benchmark Policy on Margin Policy instead. This field is only used when no benchmark policy is active."
+      "description": "Deprecated legacy field. Benchmark source lists now belong only to Margin & Benchmark Policy.",
+      "hidden": 1
     },
     {
       "fieldname": "section_transport",
@@ -111,12 +112,12 @@
     {
       "fieldname": "section_flow",
       "fieldtype": "Section Break",
-      "label": "Pricing Flow"
+      "label": "Expenses Flow"
     },
     {
       "fieldname": "expense_help_html",
       "fieldtype": "HTML",
-      "label": "Expense Guide"
+      "label": "Expenses Guide"
     },
     {
       "fieldname": "expenses",
@@ -159,14 +160,6 @@
       "share": 1,
       "print": 1,
       "email": 1
-    },
-    {
-      "role": "Orderlift Commercial",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "report": 1,
-      "print": 1
     }
   ],
   "search_fields": "scenario_name",

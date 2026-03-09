@@ -37,7 +37,7 @@
     {
       "fieldname": "benchmark_policy",
       "fieldtype": "Link",
-      "label": "Margin Policy",
+      "label": "Margin & Benchmark Policy",
       "options": "Pricing Benchmark Policy",
       "in_list_view": 1
     },

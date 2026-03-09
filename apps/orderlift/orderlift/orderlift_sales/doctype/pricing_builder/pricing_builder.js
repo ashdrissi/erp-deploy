@@ -14,7 +14,7 @@ frappe.ui.form.on("Pricing Builder", {
 
         frm.page.set_indicator(indicatorLabel(frm), indicatorColor(frm));
         frm.set_intro(
-            __("Use sourcing rules to map buying lists to pricing policies, then calculate and publish a polished static selling list."),
+            __("Use sourcing rules to map buying lists to expenses, customs, and margin & benchmark policies, then calculate and publish a static selling list without runtime tier modifiers."),
             "blue"
         );
     },
@@ -63,7 +63,7 @@ function renderBuilderHeader(frm) {
             <div class="pb-hero-copy">
                 <div class="pb-eyebrow">${__("Static Selling List Builder")}</div>
                 <h2>${name}</h2>
-                <p>${__("Build a clean sell list from buying prices, policy-driven expenses, customs, and margin benchmarks.")}</p>
+                <p>${__("Build a clean base sell list from buying prices, expenses policies, customs, and margin benchmarks before runtime tier adjustments.")}</p>
             </div>
             <div class="pb-hero-stats">
                 <div class="pb-stat-card">

@@ -71,7 +71,7 @@
             "fieldname": "dynamic_help_html",
             "fieldtype": "HTML",
             "label": "Dynamic Help",
-            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>Configure one or more dynamic rows. The engine auto-picks the default row when set, otherwise the lowest priority row. Pricing Scenario, Customs Policy, and Pricing Policy are applied automatically on Pricing Sheet.</p>"
+            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>Configure one or more dynamic rows. Each row maps a buying price list to an expenses policy, customs policy, and margin &amp; benchmark policy. The engine auto-picks the default row when set, otherwise the lowest priority row.</p>"
         },
         {
             "fieldname": "dynamic_pricing_configs",
@@ -91,14 +91,14 @@
         {
             "fieldname": "default_buying_price_list",
             "fieldtype": "Link",
-            "label": "Base Buying Price List",
+            "label": "Buying Price List",
             "options": "Price List",
             "depends_on": "eval:doc.pricing_mode=='Dynamic Calculation Engine'"
         },
         {
             "fieldname": "default_benchmark_policy",
             "fieldtype": "Link",
-            "label": "Pricing Policy",
+            "label": "Margin & Benchmark Policy",
             "options": "Pricing Benchmark Policy"
         },
         {
@@ -108,7 +108,7 @@
         {
             "fieldname": "default_expense_policy",
             "fieldtype": "Link",
-            "label": "Expenses Policy (Pricing Scenario)",
+            "label": "Expenses Policy",
             "options": "Pricing Scenario"
         },
         {
@@ -127,7 +127,7 @@
             "fieldname": "static_help_html",
             "fieldtype": "HTML",
             "label": "Static Help",
-            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>If \"Pick from Published List\" is selected, the agent is restricted to picking final prices from these lists.</p>"
+            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>If static mode is selected, the agent prices from these published selling lists and only runtime tier or territory modifiers are applied on Pricing Sheet.</p>"
         },
         {
             "fieldname": "allocated_price_lists",
@@ -166,12 +166,6 @@
             "share": 1,
             "print": 1,
             "email": 1
-        },
-        {
-            "role": "Orderlift Commercial",
-            "read": 1,
-            "report": 1,
-            "print": 1
         }
     ],
     "search_fields": "sales_person,pricing_mode",

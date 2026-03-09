@@ -21,6 +21,21 @@ function marginSourceBadge(value) {
     return `<span class="indicator-pill ${color}">${__(src || "-")}</span>`;
 }
 
+function isRestrictedAgentUser() {
+    const roles = frappe.user_roles || [];
+    const isCommercial = roles.includes("Orderlift Commercial");
+    const isPrivileged = ["Orderlift Admin", "Sales Manager", "System Manager"].some((role) => roles.includes(role));
+    return isCommercial && !isPrivileged;
+}
+
+function setGridFieldVisibility(grid, fieldnames, hidden) {
+    if (!grid) return;
+    fieldnames.forEach((fieldname) => {
+        grid.update_docfield_property(fieldname, "hidden", hidden ? 1 : 0);
+    });
+    grid.refresh();
+}
+
 function ensurePricingSheetStyles(frm) {
     const linkId = "pricing-sheet-ux-css";
     const version = "v=20260307-02";
@@ -36,6 +51,7 @@ function ensurePricingSheetStyles(frm) {
 }
 
 function renderContextActions(frm) {
+    const restrictedAgent = isRestrictedAgentUser();
     const mount = (fieldname, title, actions) => {
         const field = frm.fields_dict[fieldname];
         if (!field || !field.$wrapper) return;
@@ -79,7 +95,7 @@ function renderContextActions(frm) {
         }
     });
 
-    mount("lines", __("Pricing Sheet Actions"), [
+    const lineActions = [
         {
             label: __("↻ Recalculate"),
             handler: async () => {
@@ -93,46 +109,57 @@ function renderContextActions(frm) {
                 }
             },
         },
-        {
-            label: __("Refresh Base Prices"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("refresh_buy_prices");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
+    ];
+
+    if (!restrictedAgent) {
+        lineActions.push(
+            {
+                label: __("Refresh Base Prices"),
+                handler: async () => {
+                    if (frm.is_dirty()) await frm.save();
+                    await frm.call("refresh_buy_prices");
+                    await frm.reload_doc();
+                    renderProjectionDashboard(frm);
+                    frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
+                },
             },
-        },
-        {
-            label: __("Apply Scenario to Rows"),
-            handler: async () => {
-                const dialog = new frappe.ui.Dialog({
-                    title: __("Apply Scenario"),
-                    fields: [
-                        {
-                            fieldtype: "Link",
-                            fieldname: "pricing_scenario",
-                            label: __("Pricing Scenario"),
-                            options: "Pricing Scenario",
-                            reqd: 1,
+            {
+                label: __("Apply Expenses Policy to Rows"),
+                handler: async () => {
+                    const dialog = new frappe.ui.Dialog({
+                        title: __("Apply Expenses Policy"),
+                        fields: [
+                            {
+                                fieldtype: "Link",
+                                fieldname: "pricing_scenario",
+                                label: __("Expenses Policy"),
+                                options: "Pricing Scenario",
+                                reqd: 1,
+                            },
+                        ],
+                        primary_action_label: __("Apply"),
+                        primary_action: async (values) => {
+                            const selected = frm.fields_dict.lines.grid.get_selected_children() || [];
+                            const targets = selected.length ? selected : frm.doc.lines || [];
+                            targets.forEach((row) => {
+                                frappe.model.set_value(row.doctype, row.name, "pricing_scenario", values.pricing_scenario);
+                            });
+                            dialog.hide();
+                            await frm.save();
+                            renderProjectionDashboard(frm);
                         },
-                    ],
-                    primary_action_label: __("Apply"),
-                    primary_action: async (values) => {
-                        const selected = frm.fields_dict.lines.grid.get_selected_children() || [];
-                        const targets = selected.length ? selected : frm.doc.lines || [];
-                        targets.forEach((row) => {
-                            frappe.model.set_value(row.doctype, row.name, "pricing_scenario", values.pricing_scenario);
-                        });
-                        dialog.hide();
-                        await frm.save();
-                        renderProjectionDashboard(frm);
-                    },
-                });
-                dialog.show();
-            },
-        },
-    ]);
+                    });
+                    dialog.show();
+                },
+            }
+        );
+    }
+
+    mount("lines", __("Pricing Sheet Actions"), lineActions);
+
+    if (restrictedAgent) {
+        return;
+    }
 
     mount("scenario_overrides", __("Scenario Override Actions"), [
 
@@ -221,6 +248,7 @@ function applyFormLayoutClass(frm) {
 function applyModeLayout(frm) {
     const mode = frm.doc.resolved_mode || "";
     const isStatic = mode === "Static";
+    const restrictedAgent = isRestrictedAgentUser();
 
     // Mode indicator badge in page subtitle area
     frm.page.wrapper.find(".ps-mode-badge").remove();
@@ -239,8 +267,36 @@ function applyModeLayout(frm) {
     dynamicFields.forEach(fn => frm.toggle_display(fn, !isStatic));
     staticFields.forEach(fn => frm.toggle_display(fn, isStatic));
 
+    if (restrictedAgent) {
+        [
+            "pricing_scenario", "benchmark_policy", "customs_policy", "selected_price_list",
+            "minimum_margin_percent", "strict_margin_guard", "product_bundle", "scenario_mappings",
+            "heading_bundle_rules", "bundle_scenario_rules", "heading_scenario_overrides", "scenario_overrides",
+            "heading_line_overrides", "line_overrides", "section_runtime", "total_buy", "total_expenses",
+            "applied_customs_policy", "applied_benchmark_policy", "customs_total_applied",
+        ].forEach((fieldname) => frm.toggle_display(fieldname, false));
+    }
+
+    const linesGrid = frm.fields_dict.lines && frm.fields_dict.lines.grid;
+    if (linesGrid) {
+        setGridFieldVisibility(linesGrid, [
+            "source_buying_price_list", "pricing_scenario", "resolved_pricing_scenario", "resolved_scenario_rule",
+            "resolved_margin_rule", "scenario_source", "has_scenario_override", "has_line_override", "buy_price",
+            "buy_price_missing", "buy_price_message", "base_amount", "expense_unit_price", "expense_total",
+            "projected_unit_price", "projected_total_price", "manual_sell_unit_price", "margin_pct",
+            "customs_material", "customs_weight_kg", "customs_rate_per_kg", "customs_rate_percent",
+            "customs_by_kg", "customs_by_percent", "customs_applied", "customs_basis",
+            "transport_allocation_mode", "transport_container_type", "transport_basis_total", "transport_numerator",
+            "transport_allocated", "price_floor_violation", "benchmark_price", "benchmark_delta_abs",
+            "benchmark_delta_pct", "benchmark_status", "benchmark_note", "benchmark_reference",
+            "benchmark_source_count", "benchmark_ratio", "benchmark_method", "resolved_benchmark_rule",
+            "margin_source", "tier_modifier_amount", "zone_modifier_amount", "pricing_breakdown_json",
+            "breakdown_preview", "static_list_price"
+        ], restrictedAgent);
+    }
+
     // Collapse override sections in static mode (not relevant)
-    if (isStatic) {
+    if (isStatic || restrictedAgent) {
         const sectionFieldnames = [
             "heading_bundle_rules",
             "heading_scenario_overrides",
@@ -413,6 +469,7 @@ function renderProjectionDashboard(frm) {
     const totalFinal = frm.doc.total_selling || 0;
     const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
     const warnings = frm.doc.projection_warnings || "";
+    const restrictedAgent = isRestrictedAgentUser();
     const pricingPolicy = frm.doc.applied_benchmark_policy || frm.doc.benchmark_policy || "";
     const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
@@ -436,6 +493,16 @@ function renderProjectionDashboard(frm) {
             const scnOverride = row.has_scenario_override ? `<span class="indicator-pill orange ps-ovr-pill">${__("Edited")}</span>` : "";
             const floor = row.price_floor_violation ? `<span class="indicator-pill red ps-ovr-pill">${__("Floor")}</span>` : "";
             const preview = frappe.utils.escape_html(row.breakdown_preview || __("No expenses"));
+            if (restrictedAgent) {
+                return `
+                    <tr>
+                        <td>${itemCell}</td>
+                        <td style="text-align:right;">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
+                        <td style="text-align:right;"><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
+                        <td style="text-align:right;">${frappe.format(row.final_sell_total || 0, { fieldtype: "Currency" })}</td>
+                    </tr>
+                `;
+            }
             return `
                 <tr>
                     <td>${itemCell}</td>
@@ -453,7 +520,7 @@ function renderProjectionDashboard(frm) {
                 </tr>
             `;
         }).join("") ||
-        `<tr><td colspan="12" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
+        `<tr><td colspan="${restrictedAgent ? 4 : 12}" style="color:#64748b;">${__("No pricing lines yet.")}</td></tr>`;
 
     const impacts = aggregateExpenseImpact(lines)
         .slice(0, 6)
@@ -500,17 +567,17 @@ function renderProjectionDashboard(frm) {
 
         <!-- KPI strip -->
         <div class="ps-kpi-grid ps-kpi-strip">
-            <div class="ps-kpi ps-kpi--base">
+            ${!restrictedAgent ? `<div class="ps-kpi ps-kpi--base">
                 <div class="ps-kpi-label">📦 ${isStatic ? __("Buy Price (Info)") : __("Total Base")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
-            </div>
-            ${!isStatic ? `<div class="ps-kpi ps-kpi--exp">
+            </div>` : ""}
+            ${!isStatic && !restrictedAgent ? `<div class="ps-kpi ps-kpi--exp">
                 <div class="ps-kpi-label">⚙ ${__("Expenses")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
-            </div>` : `<div class="ps-kpi ps-kpi--margin" style="background:#ede9fe;">
+            </div>` : isStatic ? `<div class="ps-kpi ps-kpi--margin" style="background:#ede9fe;">
                 <div class="ps-kpi-label">📋 ${__("Price List")}</div>
                 <div class="ps-kpi-value" style="font-size:13px;color:#4f46e5;">${frappe.utils.escape_html(frm.doc.selected_price_list || "—")}</div>
-            </div>`}
+            </div>` : ""}
             <div class="ps-kpi ps-kpi--final">
                 <div class="ps-kpi-label">💰 ${__("Total Final")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
@@ -529,7 +596,7 @@ function renderProjectionDashboard(frm) {
             <button class="ps-dash-tab" data-tab="lines" data-dash="${dashId}">
                 📋 ${__("Lines")} <span class="ps-preview-count">${lines.length}</span>
             </button>
-            ${!isStatic ? `
+            ${!isStatic && !restrictedAgent ? `
             <button class="ps-dash-tab" data-tab="adjustments" data-dash="${dashId}">
                 🔧 ${__("Adjustments")}
             </button>
@@ -542,15 +609,15 @@ function renderProjectionDashboard(frm) {
         <div class="ps-dash-panel ps-dash-panel--active" data-panel="overview" data-dash="${dashId}">
             <!-- Scenario pills -->
             <div class="ps-chip-row">
-                ${scenarioPills || `<span class="ps-scenario-chip" style="color:#64748b;">${__("No resolved scenario")}</span>`}
+                ${restrictedAgent ? `<span class="ps-scenario-chip" style="color:#64748b;">${__("Pricing configuration applied automatically")}</span>` : (scenarioPills || `<span class="ps-scenario-chip" style="color:#64748b;">${__("No resolved scenario")}</span>`)}
             </div>
             <!-- Policy context -->
             <div class="ps-chip-row">
                 <span class="ps-scenario-chip"><span class="ps-chip-key">👤</span> ${frappe.utils.escape_html(salesPerson || "—")}</span>
                 <span class="ps-scenario-chip"><span class="ps-chip-key">🌍</span> ${frappe.utils.escape_html(geography || "—")}</span>
-                ${pricingPolicy ? `<a href="/app/pricing-benchmark-policy/${encodeURIComponent(pricingPolicy)}"  target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🎯</span> ${frappe.utils.escape_html(pricingPolicy)}</a>` : ""}
-                ${customsPolicy ? `<a href="/app/pricing-customs-policy/${encodeURIComponent(customsPolicy)}"   target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🛃</span> ${frappe.utils.escape_html(customsPolicy)}</a>` : ""}
-                <span class="ps-scenario-chip"><span class="ps-chip-key">💵</span> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>
+                ${!restrictedAgent && pricingPolicy ? `<a href="/app/pricing-benchmark-policy/${encodeURIComponent(pricingPolicy)}"  target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🎯</span> ${frappe.utils.escape_html(pricingPolicy)}</a>` : ""}
+                ${!restrictedAgent && customsPolicy ? `<a href="/app/pricing-customs-policy/${encodeURIComponent(customsPolicy)}"   target="_blank" class="ps-scenario-chip ps-chip-link"><span class="ps-chip-key">🛃</span> ${frappe.utils.escape_html(customsPolicy)}</a>` : ""}
+                ${!restrictedAgent ? `<span class="ps-scenario-chip"><span class="ps-chip-key">💵</span> ${frappe.format(customsTotalApplied, { fieldtype: "Currency" })}</span>` : ""}
             </div>
             <!-- Warnings -->
             ${warningBlock}
@@ -563,7 +630,12 @@ function renderProjectionDashboard(frm) {
                     <thead>
                         <tr>
                             <th>${__("Item")}</th>
-                            <th>${__("Scenario")}</th>
+                            ${restrictedAgent ? `
+                            <th style="text-align:right;">${__("Qty")}</th>
+                            <th style="text-align:right;">${__("Final Unit")}</th>
+                            <th style="text-align:right;">${__("Final Total")}</th>
+                            ` : `
+                            <th>${__("Expenses Policy")}</th>
                             <th style="text-align:right;">${__("Qty")}</th>
                             <th style="text-align:right;">${__("Base")}</th>
                             <th style="text-align:right;">${__("Exp/Unit")}</th>
@@ -574,6 +646,7 @@ function renderProjectionDashboard(frm) {
                             <th>${__("Flags")}</th>
                             <th>${__("Expense Flow")}</th>
                             <th style="text-align:right;">${__("Detail")}</th>
+                            `}
                         </tr>
                     </thead>
                     <tbody>${rowsHtml}</tbody>

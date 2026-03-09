@@ -132,9 +132,9 @@ function buildLayout(state) {
         only_priced_items: makeControl(grid, { fieldname: "only_priced_items", label: __("Only Priced Items"), fieldtype: "Check", default: 1 }),
         default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Qty per Item"), fieldtype: "Float", default: 1 }),
         max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
-        pricing_scenario: makeControl(grid, { fieldname: "pricing_scenario", label: __("Pricing Scenario"), fieldtype: "Link", options: "Pricing Scenario" }),
+        pricing_scenario: makeControl(grid, { fieldname: "pricing_scenario", label: __("Expenses Policy"), fieldtype: "Link", options: "Pricing Scenario" }),
         customs_policy: makeControl(grid, { fieldname: "customs_policy", label: __("Customs Policy"), fieldtype: "Link", options: "Pricing Customs Policy" }),
-        benchmark_policy: makeControl(grid, { fieldname: "benchmark_policy", label: __("Pricing Policy"), fieldtype: "Link", options: "Pricing Benchmark Policy" }),
+        benchmark_policy: makeControl(grid, { fieldname: "benchmark_policy", label: __("Margin & Benchmark Policy"), fieldtype: "Link", options: "Pricing Benchmark Policy" }),
         static_lists: makeControl(grid, { fieldname: "static_lists", label: __("Static Lists"), fieldtype: "Small Text", description: __("Comma-separated selling lists.") }),
     };
 

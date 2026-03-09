@@ -33,12 +33,12 @@
         {
             "fieldname": "section_identity",
             "fieldtype": "Section Break",
-            "label": "Policy Settings"
+            "label": "Margin & Benchmark Policy Settings"
         },
         {
             "fieldname": "policy_name",
             "fieldtype": "Data",
-            "label": "Policy Name",
+            "label": "Margin Policy Name",
             "reqd": 1,
             "in_list_view": 1,
             "in_standard_filter": 1
@@ -154,7 +154,7 @@
         {
             "fieldname": "section_modifiers",
             "fieldtype": "Section Break",
-            "label": "Dynamic Modifiers (Tier & Zoning)"
+            "label": "Runtime Modifiers (Tier & Territory)"
         },
         {
             "fieldname": "modifiers_help_html",
@@ -211,12 +211,6 @@
             "share": 1,
             "print": 1,
             "email": 1
-        },
-        {
-            "role": "Orderlift Commercial",
-            "read": 1,
-            "report": 1,
-            "print": 1
         }
     ],
     "search_fields": "policy_name,company",

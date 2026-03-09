@@ -86,14 +86,14 @@
   {
    "fieldname": "pricing_scenario",
    "fieldtype": "Link",
-   "label": "Line Scenario",
+    "label": "Line Expenses Policy",
    "options": "Pricing Scenario",
    "in_list_view": 1
   },
   {
    "fieldname": "resolved_pricing_scenario",
    "fieldtype": "Link",
-   "label": "Resolved Scenario",
+    "label": "Resolved Expenses Policy",
    "options": "Pricing Scenario",
    "read_only": 1,
    "in_list_view": 1
@@ -101,7 +101,7 @@
   {
    "fieldname": "resolved_scenario_rule",
    "fieldtype": "Data",
-   "label": "Resolved Scenario Rule",
+    "label": "Resolved Policy Rule",
    "read_only": 1
   },
   {
@@ -113,7 +113,7 @@
   {
    "fieldname": "scenario_source",
    "fieldtype": "Select",
-   "label": "Scenario Source",
+    "label": "Expenses Policy Source",
    "options": "Line\nBundle Rule\nPolicy Rule\nSheet Default",
    "read_only": 1,
    "in_list_view": 1
