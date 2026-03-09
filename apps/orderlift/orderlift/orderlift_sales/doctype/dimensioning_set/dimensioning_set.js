@@ -138,6 +138,9 @@ function renderSelectionRuleBuilder(frm) {
     wrapper.find("[data-edit-block]").on("click", function () {
         openSelectionRuleBlockDialog(frm, $(this).data("ruleGroup"));
     });
+    wrapper.find("[data-toggle-block-active]").on("click", function () {
+        toggleSelectionRuleBlockActive(frm, $(this).data("ruleGroup"));
+    });
     wrapper.find("[data-add-item]").on("click", function () {
         openSelectionRuleItemDialog(frm, null, $(this).data("ruleGroup"));
     });
@@ -181,6 +184,7 @@ function renderSelectionRuleBlock(block) {
                     <div class="ds-rule-meta">${statusChip}</div>
                 </div>
                 <div class="ds-card-actions">
+                    <button class="btn btn-default btn-xs" type="button" data-toggle-block-active data-rule-group="${frappe.utils.escape_html(block.rule_group || "")}">${cint(block.is_active) ? __("Desactiver") : __("Activer")}</button>
                     <button class="btn btn-default btn-xs" type="button" data-edit-block data-rule-group="${frappe.utils.escape_html(block.rule_group || "")}">${__("Modifier la regle")}</button>
                     <button class="btn btn-default btn-xs" type="button" data-add-item data-rule-group="${frappe.utils.escape_html(block.rule_group || "")}">${__("Ajouter un article")}</button>
                     <button class="btn btn-default btn-xs" type="button" data-duplicate-block data-rule-group="${frappe.utils.escape_html(block.rule_group || "")}">${__("Dupliquer le bloc")}</button>
@@ -377,7 +381,7 @@ function persistSelectionRuleBlock(frm, existingBlock, values) {
     targets.forEach((target, index) => {
         target.rule_group = ruleGroup;
         target.rule_label = values.rule_label;
-        target.is_active = existingBlock ? (values.is_active ? 1 : 0) : 0;
+        target.is_active = existingBlock ? (values.is_active ? 1 : 0) : 1;
         target.sequence = cint(target.sequence || ((frm.doc.item_rules || []).length + index) * 10 || 10);
         target.condition_formula = buildConditionFormula(values);
     });
@@ -414,6 +418,21 @@ function duplicateSelectionRuleBlock(frm, ruleGroup) {
         clone.rule_group = newGroup;
         clone.rule_label = `${block.rule_label || __("Regle")} (${__("copie")})`;
         clone.sequence = cint(source.sequence || ((frm.doc.item_rules || []).length + index) * 10);
+    });
+    frm.refresh_field("item_rules");
+    renderDimensioningOverview(frm);
+    renderSelectionRuleBuilder(frm);
+    renderDimensioningPreview(frm, true);
+}
+
+function toggleSelectionRuleBlockActive(frm, ruleGroup) {
+    const block = getSelectionRuleBlocks(frm).find((entry) => entry.rule_group === ruleGroup);
+    if (!block) return;
+    const nextState = cint(block.is_active) ? 0 : 1;
+    (frm.doc.item_rules || []).forEach((row) => {
+        if ((row.rule_group || row.name) === ruleGroup) {
+            row.is_active = nextState;
+        }
     });
     frm.refresh_field("item_rules");
     renderDimensioningOverview(frm);
@@ -500,6 +519,16 @@ function renderDimensioningOverview(frm) {
               .join("")
         : `<span class="ds-empty">${__("Ajoutez des caracteristiques comme nombre de niveaux, nombre de personnes, type de batiment ou largeur de cabine.")}</span>`;
 
+    const fieldTypeGuide = `
+        <div class="ds-type-guide">
+            <div><b>${__("Int")}</b> - ${__("nombre entier, ex: 6 niveaux")}</div>
+            <div><b>${__("Float")}</b> - ${__("nombre decimal, ex: 1.5 m")}</div>
+            <div><b>${__("Data")}</b> - ${__("texte libre")}</div>
+            <div><b>${__("Select")}</b> - ${__("liste de choix, une option par ligne dans le champ Options")}</div>
+            <div><b>${__("Check")}</b> - ${__("oui / non")}</div>
+        </div>
+    `;
+
     const rulePreview = activeRules.length
         ? activeRules
               .slice(0, 4)
@@ -531,6 +560,7 @@ function renderDimensioningOverview(frm) {
                 <div class="ds-section-title">${__("1. Definir les caracteristiques")}</div>
                 <div class="ds-help">${__("Chaque caracteristique represente une information que le commercial remplira sur la fiche tarifaire.")}</div>
                 <div class="ds-chip-row">${fieldChips}</div>
+                ${fieldTypeGuide}
             </div>
             <div class="ds-section">
                 <div class="ds-section-title">${__("2. Definir les regles de selection")}</div>
@@ -799,6 +829,7 @@ function ensureDimensioningSetStyles() {
         .ds-section-title{font-weight:700;color:#102a43;margin-bottom:6px;}\
         .ds-help{color:#64748b;font-size:13px;margin-bottom:10px;}\
         .ds-help-list{display:grid;gap:8px;color:#475569;font-size:13px;}\
+        .ds-type-guide{display:grid;gap:6px;margin-top:12px;padding:12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:12px;}\
         .ds-chip-row{display:flex;flex-wrap:wrap;gap:8px;}\
         .ds-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-size:12px;}\
         .ds-rule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}\

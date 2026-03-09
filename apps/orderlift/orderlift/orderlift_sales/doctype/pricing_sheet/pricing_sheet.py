@@ -58,7 +58,6 @@ class PricingSheet(Document):
         self._apply_agent_dynamic_defaults()
 
         scenario_docs = self._collect_scenarios_or_throw(lines)
-        self._sync_override_rows_for_scenarios(scenario_docs)
 
         customs_policy = self._resolve_customs_policy()
         self.applied_customs_policy = customs_policy.name if customs_policy else ""
@@ -80,11 +79,6 @@ class PricingSheet(Document):
         if not customs_policy:
             warnings.append(_("No active customs policy found; customs costs default to zero."))
         scenario_caches = self._build_scenario_caches(scenario_docs, item_codes, benchmark_policy_doc=benchmark_policy_doc)
-        self._sync_line_override_rows_for_lines(
-            lines,
-            scenario_caches,
-            item_details=item_details,
-        )
 
         total_base = 0.0
         total_expenses = 0.0
@@ -116,11 +110,8 @@ class PricingSheet(Document):
             if not cache:
                 frappe.throw(_("Unable to resolve pricing cache for scenario {0}").format(scenario_name))
 
-            effective_line_expenses, has_line_override = self._apply_line_override_rows(
-                row,
-                scenario_name,
-                cache["line_expenses"],
-            )
+            effective_line_expenses = list(cache["line_expenses"])
+            has_line_override = False
 
             self._set_buy_price_for_row(
                 row,
@@ -494,114 +485,6 @@ class PricingSheet(Document):
         self.calc_runtime_ms = (perf_counter() - started) * 1000
 
     @frappe.whitelist()
-    def load_scenario_overrides(self):
-
-        lines = self.lines or []
-        item_codes = sorted({row.item for row in lines if row.item})
-        item_details = get_item_details_map(item_codes)
-        scenario_docs = self._collect_scenarios_or_throw(lines)
-        self._sync_override_rows_for_scenarios(scenario_docs)
-        self.recalculate()
-        self.save(ignore_permissions=True)
-        return self.name
-
-    @frappe.whitelist()
-    def load_line_overrides(self, line_name=None):
-        lines = self.lines or []
-        item_codes = sorted({row.item for row in lines if row.item})
-        item_details = get_item_details_map(item_codes)
-        scenario_docs = self._collect_scenarios_or_throw(lines)
-        self._sync_override_rows_for_scenarios(scenario_docs)
-        scenario_caches = self._build_scenario_caches(scenario_docs, item_codes)
-        self._sync_line_override_rows_for_lines(
-            lines,
-            scenario_caches,
-            line_name=line_name,
-            item_details=item_details,
-        )
-        self.recalculate()
-        self.save(ignore_permissions=True)
-        return self.name
-
-    @frappe.whitelist()
-    def reset_scenario_overrides(self, scenario=None):
-        if scenario:
-            rows = [row for row in (self.scenario_overrides or []) if row.scenario == scenario]
-        else:
-            rows = list(self.scenario_overrides or [])
-
-        for row in rows:
-            row.override_value = flt(row.base_value)
-            row.is_overridden = 0
-
-        self.recalculate()
-        self.save(ignore_permissions=True)
-        return self.name
-
-    @frappe.whitelist()
-    def reset_line_overrides(self, line_name=None, expense_key=None):
-        rows = list(self.line_overrides or [])
-        for row in rows:
-            if line_name and row.line_name != line_name:
-                continue
-            if expense_key and row.expense_key != expense_key:
-                continue
-            row.line_override_value = flt(row.sheet_override_value)
-            row.is_overridden = 0
-
-        self.recalculate()
-        self.save(ignore_permissions=True)
-        return self.name
-
-    @frappe.whitelist()
-    def prune_stale_scenario_overrides(self):
-        kept = []
-        for row in (self.scenario_overrides or []):
-            if not row.expense_key:
-                continue
-            if cint(row.is_active) == 0 and (row.expense_label or "").startswith("[STALE]"):
-                continue
-            kept.append(row)
-
-        self.set("scenario_overrides", [])
-        for row in kept:
-            self.append("scenario_overrides", row.as_dict())
-
-        self.recalculate()
-        self.save(ignore_permissions=True)
-        return self.name
-
-    @frappe.whitelist()
-    def prune_stale_line_overrides(self):
-        kept = []
-        for row in (self.line_overrides or []):
-            if not row.expense_key or not row.line_name:
-                continue
-            if cint(row.is_active) == 0 and (row.expense_label or "").startswith("[STALE]"):
-                continue
-            kept.append(row)
-
-        self.set("line_overrides", [])
-        for row in kept:
-            self.append("line_overrides", row.as_dict())
-
-        self.recalculate()
-        self.save(ignore_permissions=True)
-        return self.name
-
-    @frappe.whitelist()
-    def queue_recalculate(self):
-        self.check_permission("write")
-        job = frappe.enqueue(
-            method="orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.recalculate_pricing_sheet_job",
-            queue="short",
-            timeout=600,
-            pricing_sheet_name=self.name,
-            user=frappe.session.user,
-        )
-        return {"job_id": getattr(job, "id", None)}
-
-    @frappe.whitelist()
     def get_quotation_preview(self):
         lines = self.lines or []
         detailed_count = len([row for row in lines if cint(row.show_in_detail)])
@@ -663,7 +546,7 @@ class PricingSheet(Document):
         include_components_in_detail=1,
     ):
         self._get_default_scenario_or_throw()
-        bundle_name = product_bundle or self.product_bundle
+        bundle_name = product_bundle or getattr(self, "product_bundle", "")
         if not bundle_name:
             frappe.throw(_("Please select a Product Bundle."))
 
@@ -692,7 +575,7 @@ class PricingSheet(Document):
         item_groups = get_item_groups_map(item_codes)
 
         bundle_group_id = frappe.generate_hash(length=10)
-        default_line_scenario = self._scenario_from_bundle_rule(bundle_name) or self.pricing_scenario
+        default_line_scenario = self.pricing_scenario
 
         if mode in ("Bundle Single", "Both"):
             bundle_item_code = self._get_bundle_parent_item(bundle_name)
@@ -738,7 +621,8 @@ class PricingSheet(Document):
                     },
                 )
 
-        self.product_bundle = bundle_name
+        if hasattr(self, "product_bundle"):
+            self.product_bundle = bundle_name
         self.refresh_buy_prices()
         return self.name
 
@@ -896,10 +780,6 @@ class PricingSheet(Document):
         for row in lines:
             if row.pricing_scenario:
                 scenario_names.add(row.pricing_scenario)
-
-        for rule in (self.bundle_scenario_rules or []):
-            if cint(rule.is_active) and rule.pricing_scenario:
-                scenario_names.add(rule.pricing_scenario)
 
         for row in (self.scenario_mappings or []):
             if cint(row.is_active) and row.pricing_scenario:
@@ -1690,8 +1570,7 @@ class PricingSheet(Document):
         caches = {}
         default_buying_price_list = self._resolve_source_buying_price_list()
         for name, scenario in scenario_docs.items():
-            base_expenses = self._active_expenses(scenario)
-            effective_expenses = self._apply_override_rows(name, base_expenses)
+            effective_expenses = self._active_expenses(scenario)
             sheet_fixed_total = self._sheet_fixed_total(effective_expenses)
             line_expenses = [
                 exp
@@ -1716,192 +1595,9 @@ class PricingSheet(Document):
 
         return caches
 
-    def _sync_override_rows_for_scenarios(self, scenario_docs):
-        existing = {}
-        valid_keys = set()
-        for row in (self.scenario_overrides or []):
-            key = (row.scenario, row.expense_key)
-            existing[key] = row
-
-        for scenario_name, scenario in scenario_docs.items():
-            for expense in self._active_expenses(scenario):
-                expense_key = make_expense_key(expense)
-                key = (scenario_name, expense_key)
-                valid_keys.add(key)
-                row = existing.get(key)
-
-                if not row:
-                    row = self.append(
-                        "scenario_overrides",
-                        {
-                            "scenario": scenario_name,
-                            "expense_key": expense_key,
-                        },
-                    )
-
-                row.expense_label = expense.get("label")
-                row.sequence = cint(expense.get("sequence"))
-                row.type = expense.get("type")
-                row.applies_to = expense.get("applies_to")
-                row.scope = expense.get("scope")
-                row.is_active = cint(expense.get("is_active"))
-                row.base_value = flt(expense.get("value"))
-                if row.override_value is None:
-                    row.override_value = flt(row.base_value)
-                row.is_overridden = 1 if flt(row.override_value) != flt(row.base_value) else 0
-
-        for key, row in existing.items():
-            if key in valid_keys:
-                continue
-            row.is_active = 0
-            row.is_overridden = 0
-            if row.expense_label and not row.expense_label.startswith("[STALE]"):
-                row.expense_label = f"[STALE] {row.expense_label}"
-
-    def _apply_override_rows(self, scenario_name, base_expenses):
-        override_rows = {}
-        for row in (self.scenario_overrides or []):
-            if row.scenario != scenario_name:
-                continue
-            override_rows[row.expense_key] = row
-
-        out = []
-        for expense in base_expenses:
-            key = make_expense_key(expense)
-            row = override_rows.get(key)
-            copied = dict(expense)
-            copied["expense_key"] = key
-            copied["override_source"] = None
-
-            if row:
-                copied["value"] = flt(row.override_value if row.override_value is not None else row.base_value)
-                copied["is_overridden"] = 1 if flt(copied["value"]) != flt(row.base_value) else 0
-                row.is_overridden = copied["is_overridden"]
-                copied["override_source"] = "sheet" if copied["is_overridden"] else None
-            else:
-                copied["is_overridden"] = 0
-
-            out.append(copied)
-
-        return out
-
-    def _sync_line_override_rows_for_lines(self, lines, scenario_caches, line_name=None, item_details=None):
-        existing = {}
-        valid_keys = set()
-        item_details = item_details or {}
-        for row in (self.line_overrides or []):
-            key = (row.line_name, row.scenario, row.expense_key)
-            existing[key] = row
-
-        for line in lines:
-            if line_name and line.name != line_name:
-                continue
-            if not line.item:
-                continue
-
-            line_context = self._build_rule_context(row=line, item_details=item_details)
-            scenario_name, _, _ = self._resolve_line_scenario(
-                line,
-                line_context=line_context,
-            )
-            cache = scenario_caches.get(scenario_name)
-            if not cache:
-                continue
-
-            for expense in cache.get("line_expenses") or []:
-                expense_key = expense.get("expense_key") or make_expense_key(expense)
-                key = (line.name, scenario_name, expense_key)
-                valid_keys.add(key)
-                row = existing.get(key)
-
-                if not row:
-                    row = self.append(
-                        "line_overrides",
-                        {
-                            "line_name": line.name,
-                            "line_idx": cint(line.idx),
-                            "item": line.item,
-                            "scenario": scenario_name,
-                            "expense_key": expense_key,
-                        },
-                    )
-
-                row.line_name = line.name
-                row.line_idx = cint(line.idx)
-                row.item = line.item
-                row.scenario = scenario_name
-                row.expense_key = expense_key
-                row.expense_label = expense.get("label")
-                row.sequence = cint(expense.get("sequence"))
-                row.type = expense.get("type")
-                row.applies_to = expense.get("applies_to")
-                row.scope = expense.get("scope")
-                row.is_active = 1
-                row.base_value = flt(expense.get("base_value", expense.get("value")))
-                row.sheet_override_value = flt(expense.get("value"))
-                if row.line_override_value is None:
-                    row.line_override_value = flt(row.sheet_override_value)
-                row.is_overridden = 1 if flt(row.line_override_value) != flt(row.sheet_override_value) else 0
-
-        for key, row in existing.items():
-            if line_name and key[0] != line_name:
-                continue
-            if key in valid_keys:
-                continue
-            row.is_active = 0
-            row.is_overridden = 0
-            if row.expense_label and not row.expense_label.startswith("[STALE]"):
-                row.expense_label = f"[STALE] {row.expense_label}"
-
-    def _apply_line_override_rows(self, row, scenario_name, sheet_effective_expenses):
-        if not row.name:
-            return sheet_effective_expenses, False
-
-        override_rows = {}
-        for override in (self.line_overrides or []):
-            if cint(override.is_active) != 1:
-                continue
-            if override.line_name != row.name or override.scenario != scenario_name:
-                continue
-            override_rows[override.expense_key] = override
-
-        out = []
-        has_line_override = False
-
-        for expense in sheet_effective_expenses:
-            copied = dict(expense)
-            expense_key = copied.get("expense_key") or make_expense_key(copied)
-            copied["expense_key"] = expense_key
-            copied["base_value"] = flt(copied.get("base_value", copied.get("value")))
-
-            override = override_rows.get(expense_key)
-            if override and (copied.get("scope") or "").title() != "Per Sheet":
-                copied["value"] = flt(
-                    override.line_override_value
-                    if override.line_override_value is not None
-                    else override.sheet_override_value
-                )
-                is_line_overridden = 1 if flt(copied["value"]) != flt(override.sheet_override_value) else 0
-                copied["is_overridden"] = 1 if is_line_overridden else copied.get("is_overridden", 0)
-                copied["override_source"] = "line" if is_line_overridden else copied.get("override_source")
-                override.is_overridden = is_line_overridden
-                has_line_override = has_line_override or bool(is_line_overridden)
-            elif override:
-                override.line_override_value = flt(override.sheet_override_value)
-                override.is_overridden = 0
-
-            out.append(copied)
-
-        return out, has_line_override
-
     def _resolve_line_scenario(self, row, line_context=None):
         if row.pricing_scenario:
             return row.pricing_scenario, "Line", None
-
-        if row.source_bundle:
-            bundle_scenario = self._scenario_from_bundle_rule(row.source_bundle)
-            if bundle_scenario:
-                return bundle_scenario, "Bundle Rule", None
 
         mapping = self._resolve_sheet_scenario_mapping(line_context or self._build_rule_context(row))
         if mapping and mapping.get("pricing_scenario"):
@@ -1911,22 +1607,6 @@ class PricingSheet(Document):
             return self.pricing_scenario, "Sheet Default", None
 
         frappe.throw(_("Please set a default Expenses Policy or line-level expenses policy."))
-
-    def _scenario_from_bundle_rule(self, bundle_name):
-        if not bundle_name:
-            return None
-
-        active_rules = [
-            row
-            for row in (self.bundle_scenario_rules or [])
-            if cint(row.is_active) and row.bundle == bundle_name and row.pricing_scenario
-        ]
-        if not active_rules:
-            return None
-
-        active_rules = sorted(active_rules, key=lambda r: (cint(r.priority), cint(r.idx)))
-        return active_rules[0].pricing_scenario
-
     def _active_expenses(self, scenario):
         as_dicts = [row.as_dict() for row in (scenario.expenses or []) if flt(row.is_active)]
         return sorted(as_dicts, key=lambda x: (cint(x.get("sequence")), cint(x.get("idx"))))

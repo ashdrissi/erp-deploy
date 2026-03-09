@@ -45,18 +45,20 @@
       "options": "Int\nFloat\nData\nSelect\nCheck",
       "default": "Float",
       "reqd": 1,
-      "in_list_view": 1
+      "in_list_view": 1,
+      "description": "Int = nombre entier, Float = nombre decimal, Data = texte libre, Select = liste de choix, Check = oui/non"
     },
     {
       "fieldname": "options",
       "fieldtype": "Small Text",
       "label": "Options",
-      "description": "Une option par ligne pour les listes de choix"
+      "description": "Seulement pour le type Select. Saisissez une option par ligne, par exemple : Standard, Premium, Hotel."
     },
     {
       "fieldname": "default_value",
       "fieldtype": "Data",
-      "label": "Valeur par Defaut"
+      "label": "Valeur par Defaut",
+      "description": "Exemple : 1 pour Int/Float, texte pour Data, une valeur existante pour Select, 1 ou 0 pour Check"
     },
     {
       "fieldname": "is_required",
@@ -68,7 +70,8 @@
     {
       "fieldname": "help_text",
       "fieldtype": "Small Text",
-      "label": "Aide"
+      "label": "Aide",
+      "description": "Texte affiche a l'utilisateur dans la Pricing Sheet pour expliquer quoi saisir"
     }
   ],
   "istable": 1,
