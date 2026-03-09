@@ -1,11 +1,6 @@
 // ─── Pricing Dashboard ────────────────────────────────────────────────────────
-// Premium landing page for the Orderlift Sales / Pricing module.
-// Displays:
-//   • Hero header with greeting & current date
-//   • 6 KPI stat cards (live data from DB)
-//   • Quick-action shortcut buttons (new sheet, simulator, policies…)
-//   • Recent Pricing Sheets table (last 10)
-//   • Alerts panel (sheets without benchmark / margin guardrail warnings)
+// Premium landing page for the Orderlift Pricing module.
+// Uses monochrome SVG icons (Lucide-style) and a clean modern design.
 // ─────────────────────────────────────────────────────────────────────────────
 
 frappe.pages["pricing-dashboard"].on_page_load = function (wrapper) {
@@ -21,13 +16,95 @@ frappe.pages["pricing-dashboard"].on_page_load = function (wrapper) {
     loadDashboardData(page);
 };
 
-// ─── Skeleton layout ─────────────────────────────────────────────────────────
+// ─── SVG icon library (Lucide-style, 20×20 viewport, stroke-based) ───────────
+
+const ICONS = {
+    sheet: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="2" width="14" height="16" rx="2"/>
+        <line x1="7" y1="7" x2="13" y2="7"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="7" y1="13" x2="10" y2="13"/>
+    </svg>`,
+    margin: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3,15 8,9 12,12 17,5"/>
+        <polyline points="13,5 17,5 17,9"/>
+    </svg>`,
+    benchmark: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10" cy="10" r="8"/>
+        <circle cx="10" cy="10" r="3"/>
+        <line x1="10" y1="2" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18"/>
+        <line x1="2" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18" y2="10"/>
+    </svg>`,
+    customs: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="10" cy="10" rx="8" ry="5"/>
+        <line x1="2" y1="10" x2="18" y2="10"/>
+        <ellipse cx="10" cy="10" rx="3.5" ry="5"/>
+    </svg>`,
+    scenario: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="5" cy="5" r="2"/><circle cx="15" cy="5" r="2"/>
+        <circle cx="5" cy="15" r="2"/><circle cx="15" cy="15" r="2"/>
+        <line x1="7" y1="5" x2="13" y2="5"/>
+        <line x1="5" y1="7" x2="5" y2="13"/>
+        <line x1="7" y1="15" x2="13" y2="15"/>
+        <line x1="15" y1="7" x2="15" y2="13"/>
+    </svg>`,
+    alert: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 2L2 17h16L10 2z"/>
+        <line x1="10" y1="9" x2="10" y2="12"/>
+        <circle cx="10" cy="14.5" r="0.6" fill="currentColor"/>
+    </svg>`,
+    plus: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/>
+    </svg>`,
+    simulator: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="16" height="11" rx="2"/>
+        <line x1="7" y1="17" x2="13" y2="17"/>
+        <line x1="10" y1="14" x2="10" y2="17"/>
+        <polyline points="5,11 8,7 11,9 15,4"/>
+    </svg>`,
+    builder: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="6" height="6" rx="1"/>
+        <rect x="12" y="2" width="6" height="6" rx="1"/>
+        <rect x="2" y="12" width="6" height="6" rx="1"/>
+        <rect x="12" y="12" width="6" height="6" rx="1"/>
+    </svg>`,
+    list: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <line x1="3" y1="6" x2="17" y2="6"/>
+        <line x1="3" y1="10" x2="17" y2="10"/>
+        <line x1="3" y1="14" x2="13" y2="14"/>
+    </svg>`,
+    dim: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 2l7 4v8l-7 4-7-4V6z"/>
+        <line x1="10" y1="2" x2="10" y2="18"/>
+        <line x1="3" y1="6" x2="17" y2="14"/>
+        <line x1="17" y1="6" x2="3" y2="14"/>
+    </svg>`,
+    check: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="4,10 8,14 16,6"/>
+    </svg>`,
+    arrow: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="10" x2="16" y2="10"/>
+        <polyline points="11,5 16,10 11,15"/>
+    </svg>`,
+    external: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/>
+        <polyline points="13,3 17,3 17,7"/>
+        <line x1="10" y1="10" x2="17" y2="3"/>
+    </svg>`,
+    clock: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="10" cy="10" r="8"/>
+        <polyline points="10,5 10,10 13,13"/>
+    </svg>`,
+    user: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10" cy="7" r="4"/>
+        <path d="M2 18c0-4 3.6-7 8-7s8 3 8 7"/>
+    </svg>`,
+};
+
+// ─── Skeleton layout ──────────────────────────────────────────────────────────
 
 function renderSkeleton(page) {
     const hour = new Date().getHours();
     const greeting =
         hour < 12 ? __("Good morning") : hour < 18 ? __("Good afternoon") : __("Good evening");
-    const user = frappe.session.user_fullname || frappe.session.user;
     const today = frappe.datetime.str_to_user(frappe.datetime.now_date());
 
     page.main.html(`
@@ -36,73 +113,76 @@ function renderSkeleton(page) {
             <!-- ── Hero ── -->
             <div class="pdb-hero">
                 <div class="pdb-hero-left">
-                    <div class="pdb-hero-greeting">${greeting}, <span class="pdb-hero-name">${frappe.utils.escape_html(user.split("@")[0])}</span> 👋</div>
-                    <div class="pdb-hero-sub">${__("Pricing Hub")} · ${today}</div>
-                    <div class="pdb-hero-tagline">${__("Manage pricing scenarios, sheets, policies and market benchmarks.")}</div>
+                    <div class="pdb-hero-eyebrow">${__("Orderlift · Pricing Hub")}</div>
+                    <div class="pdb-hero-greeting">${greeting}</div>
+                    <div class="pdb-hero-sub">${today}</div>
                 </div>
-                <div class="pdb-hero-badge">
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="32" cy="32" r="32" fill="url(#grad1)"/>
-                        <path d="M20 44 L32 20 L44 44" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                        <path d="M24 36 H40" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-                        <circle cx="32" cy="20" r="3" fill="white"/>
-                        <defs>
-                            <linearGradient id="grad1" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                                <stop stop-color="#6366f1"/>
-                                <stop offset="1" stop-color="#8b5cf6"/>
-                            </linearGradient>
-                        </defs>
-                    </svg>
+                <div class="pdb-hero-right">
+                    <div class="pdb-hero-stat" id="pdb-hero-sheets">
+                        <div class="pdb-hero-stat-val">—</div>
+                        <div class="pdb-hero-stat-label">${__("Pricing Sheets")}</div>
+                    </div>
+                    <div class="pdb-hero-divider"></div>
+                    <div class="pdb-hero-stat" id="pdb-hero-margin">
+                        <div class="pdb-hero-stat-val">—</div>
+                        <div class="pdb-hero-stat-label">${__("Avg Margin")}</div>
+                    </div>
+                    <div class="pdb-hero-divider"></div>
+                    <div class="pdb-hero-stat" id="pdb-hero-alerts">
+                        <div class="pdb-hero-stat-val">—</div>
+                        <div class="pdb-hero-stat-label">${__("Alerts")}</div>
+                    </div>
                 </div>
-            </div>
-
-            <!-- ── KPI cards ── -->
-            <div class="pdb-kpi-grid" id="pdb-kpi-grid">
-                ${kpiSkeleton(6)}
             </div>
 
             <!-- ── Shortcuts ── -->
-            <div class="pdb-section-title">${__("Quick Actions")}</div>
-            <div class="pdb-shortcuts">
-                ${shortcut("➕", __("New Pricing Sheet"), "/app/pricing-sheet/new-pricing-sheet-1", "indigo")}
-                ${shortcut("📊", __("Pricing Simulator"), "/app/pricing-simulator", "violet")}
-                ${shortcut("🏗️", __("Pricing Builder"), "/app/pricing-builder", "sky")}
-                ${shortcut("📋", __("All Pricing Sheets"), "/app/pricing-sheet", "blue")}
-                ${shortcut("🎯", __("Benchmark Policies"), "/app/pricing-benchmark-policy", "emerald")}
-                ${shortcut("🌍", __("Customs Policies"), "/app/pricing-customs-policy", "amber")}
-                ${shortcut("⚙️", __("Pricing Scenarios"), "/app/pricing-scenario", "rose")}
-                ${shortcut("📐", __("Dimensioning Sets"), "/app/dimensioning-set", "teal")}
+            <div class="pdb-shortcuts-grid">
+                ${shortcut("plus", __("New Pricing Sheet"), "/app/pricing-sheet/new-pricing-sheet-1", "primary")}
+                ${shortcut("simulator", __("Pricing Simulator"), "/app/pricing-simulator", "default")}
+                ${shortcut("builder", __("Pricing Builder"), "/app/pricing-builder", "default")}
+                ${shortcut("list", __("All Sheets"), "/app/pricing-sheet", "default")}
+                ${shortcut("benchmark", __("Benchmark Policies"), "/app/pricing-benchmark-policy", "default")}
+                ${shortcut("customs", __("Customs Policies"), "/app/pricing-customs-policy", "default")}
+                ${shortcut("scenario", __("Scenarios"), "/app/pricing-scenario", "default")}
+                ${shortcut("dim", __("Dimensioning Sets"), "/app/dimensioning-set", "default")}
             </div>
 
-            <!-- ── Two-column lower area ── -->
+            <!-- ── KPI strip ── -->
+            <div class="pdb-kpi-grid" id="pdb-kpi-grid">
+                ${Array.from({ length: 6 }, () => `<div class="pdb-kpi pdb-kpi--shimmer"></div>`).join("")}
+            </div>
+
+            <!-- ── Lower grid ── -->
             <div class="pdb-lower">
+
                 <!-- Recent sheets -->
-                <div class="pdb-panel pdb-panel--wide">
-                    <div class="pdb-panel-head">
-                        <div class="pdb-panel-title">
-                            <span class="pdb-panel-icon">📄</span>
+                <div class="pdb-card">
+                    <div class="pdb-card-header">
+                        <div class="pdb-card-title">
+                            <span class="pdb-card-icon">${ICONS.sheet}</span>
                             ${__("Recent Pricing Sheets")}
                         </div>
-                        <a href="/app/pricing-sheet" class="pdb-panel-link">${__("View all")} →</a>
+                        <a href="/app/pricing-sheet" class="pdb-view-all">${__("View all")} ${ICONS.arrow}</a>
                     </div>
                     <div id="pdb-recent-table" class="pdb-table-wrap">
-                        <div class="pdb-shimmer-table"></div>
+                        <div class="pdb-shimmer-block" style="height:220px;margin:16px;border-radius:8px;"></div>
                     </div>
                 </div>
 
-                <!-- Alerts panel -->
-                <div class="pdb-panel pdb-panel--narrow">
-                    <div class="pdb-panel-head">
-                        <div class="pdb-panel-title">
-                            <span class="pdb-panel-icon">⚠️</span>
-                            ${__("Alerts & Insights")}
+                <!-- Alerts -->
+                <div class="pdb-card">
+                    <div class="pdb-card-header">
+                        <div class="pdb-card-title">
+                            <span class="pdb-card-icon">${ICONS.alert}</span>
+                            ${__("Configuration Alerts")}
                         </div>
                     </div>
                     <div id="pdb-alerts" class="pdb-alerts-wrap">
-                        <div class="pdb-shimmer-list"></div>
+                        <div class="pdb-shimmer-block" style="height:160px;margin:16px;border-radius:8px;"></div>
                     </div>
                 </div>
-            </div>
+
+            </div><!-- /.pdb-lower -->
 
         </div><!-- /.pdb-wrapper -->
     `);
@@ -110,7 +190,8 @@ function renderSkeleton(page) {
     // Wire shortcut clicks
     page.main.find(".pdb-shortcut").on("click", function () {
         const url = $(this).data("url");
-        if (url) frappe.set_route(url.replace("/app/", "").split("/"));
+        if (!url) return;
+        frappe.set_route(url.replace(/^\/app\//, "").split("/"));
     });
 }
 
@@ -122,11 +203,12 @@ async function loadDashboardData(page) {
             method: "orderlift.orderlift_sales.page.pricing_dashboard.pricing_dashboard.get_dashboard_data",
         });
         const data = res.message || {};
+        renderHeroStats(page, data.kpis || {});
         renderKpis(page, data.kpis || {});
         renderRecentSheets(page, data.recent_sheets || []);
         renderAlerts(page, data.alerts || []);
     } catch (e) {
-        // Fallback: render KPIs as zero, show empty states gracefully
+        renderHeroStats(page, {});
         renderKpis(page, {});
         renderRecentSheets(page, []);
         renderAlerts(page, []);
@@ -134,120 +216,105 @@ async function loadDashboardData(page) {
     }
 }
 
-// ─── KPI cards ───────────────────────────────────────────────────────────────
+// ─── Hero stats ───────────────────────────────────────────────────────────────
 
-function kpiSkeleton(n) {
-    return Array.from({ length: n }, () =>
-        `<div class="pdb-kpi pdb-kpi--shimmer">
-            <div class="pdb-shimmer pdb-shimmer--label"></div>
-            <div class="pdb-shimmer pdb-shimmer--value"></div>
-            <div class="pdb-shimmer pdb-shimmer--sub"></div>
-        </div>`
-    ).join("");
-}
-
-function renderKpis(page, kpis) {
-    const grid = page.main.find("#pdb-kpi-grid");
-    grid.html(`
-        ${kpiCard({
-        icon: "📄",
-        label: __("Total Pricing Sheets"),
-        value: kpis.total_sheets ?? "—",
-        sub: __("{0} this month", [kpis.sheets_this_month ?? 0]),
-        color: "indigo",
-        trend: kpis.sheets_trend,
-    })}
-        ${kpiCard({
-        icon: "💰",
-        label: __("Avg Margin"),
-        value: kpis.avg_margin_pct != null ? `${Number(kpis.avg_margin_pct).toFixed(1)}%` : "—",
-        sub: __("across all active sheets"),
-        color: kpis.avg_margin_pct >= 20 ? "emerald" : kpis.avg_margin_pct >= 10 ? "amber" : "rose",
-        trend: null,
-    })}
-        ${kpiCard({
-        icon: "🎯",
-        label: __("Benchmark Policies"),
-        value: kpis.total_benchmark_policies ?? "—",
-        sub: __("{0} active sources", [kpis.benchmark_sources ?? 0]),
-        color: "violet",
-        trend: null,
-    })}
-        ${kpiCard({
-        icon: "🌍",
-        label: __("Customs Policies"),
-        value: kpis.total_customs_policies ?? "—",
-        sub: __("{0} rules configured", [kpis.customs_rules ?? 0]),
-        color: "amber",
-        trend: null,
-    })}
-        ${kpiCard({
-        icon: "⚙️",
-        label: __("Pricing Scenarios"),
-        value: kpis.total_scenarios ?? "—",
-        sub: __("{0} expense chains", [kpis.total_scenario_expenses ?? 0]),
-        color: "sky",
-        trend: null,
-    })}
-        ${kpiCard({
-        icon: "⚠️",
-        label: __("Sheets with Alerts"),
-        value: kpis.sheets_with_alerts ?? "—",
-        sub: __("missing benchmark or guardrail"),
-        color: kpis.sheets_with_alerts > 0 ? "rose" : "emerald",
-        trend: null,
-    })}
-    `);
-
-    // Animate in
-    grid.find(".pdb-kpi").each(function (i) {
-        const $el = $(this);
-        setTimeout(() => $el.addClass("pdb-kpi--visible"), i * 80);
-    });
-
-    // Click KPI cards to navigate
-    grid.find(".pdb-kpi[data-url]").on("click", function () {
-        const url = $(this).data("url");
-        if (url) frappe.set_route(url.replace("/app/", "").split("/"));
-    });
-}
-
-function kpiCard({ icon, label, value, sub, color, trend }) {
-    const trendHtml = trend != null
-        ? `<span class="pdb-kpi-trend pdb-kpi-trend--${trend >= 0 ? "up" : "down"}">${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend)}%</span>`
-        : "";
-    return `
-        <div class="pdb-kpi pdb-kpi--${color}">
-            <div class="pdb-kpi-top">
-                <span class="pdb-kpi-icon">${icon}</span>
-                ${trendHtml}
-            </div>
-            <div class="pdb-kpi-value">${value}</div>
-            <div class="pdb-kpi-label">${label}</div>
-            <div class="pdb-kpi-sub">${sub}</div>
-        </div>`;
+function renderHeroStats(page, kpis) {
+    page.main.find("#pdb-hero-sheets .pdb-hero-stat-val").text(kpis.total_sheets ?? "—");
+    page.main.find("#pdb-hero-margin .pdb-hero-stat-val").text(
+        kpis.avg_margin_pct != null ? `${Number(kpis.avg_margin_pct).toFixed(1)}%` : "—"
+    );
+    const alertCount = kpis.sheets_with_alerts ?? "—";
+    const alertEl = page.main.find("#pdb-hero-alerts .pdb-hero-stat-val");
+    alertEl.text(alertCount);
+    if (alertCount > 0) alertEl.addClass("pdb-stat-warn");
 }
 
 // ─── Shortcut buttons ─────────────────────────────────────────────────────────
 
-function shortcut(icon, label, url, color) {
+function shortcut(iconKey, label, url, variant) {
     return `
-        <div class="pdb-shortcut pdb-shortcut--${color}" data-url="${frappe.utils.escape_html(url)}" title="${frappe.utils.escape_html(label)}">
-            <div class="pdb-shortcut-icon">${icon}</div>
-            <div class="pdb-shortcut-label">${frappe.utils.escape_html(label)}</div>
+        <div class="pdb-shortcut pdb-shortcut--${variant}" data-url="${frappe.utils.escape_html(url)}">
+            <span class="pdb-shortcut-icon">${ICONS[iconKey] || ""}</span>
+            <span class="pdb-shortcut-label">${frappe.utils.escape_html(label)}</span>
         </div>`;
 }
 
-// ─── Recent Sheets table ─────────────────────────────────────────────────────
+// ─── KPI cards ────────────────────────────────────────────────────────────────
+
+function renderKpis(page, kpis) {
+    const defs = [
+        {
+            icon: "sheet",
+            label: __("Total Sheets"),
+            value: kpis.total_sheets ?? "—",
+            sub: __("{0} this month", [kpis.sheets_this_month ?? 0]),
+        },
+        {
+            icon: "margin",
+            label: __("Avg Margin"),
+            value: kpis.avg_margin_pct != null ? `${Number(kpis.avg_margin_pct).toFixed(1)}%` : "—",
+            sub: __("across all sheets"),
+            highlight: kpis.avg_margin_pct < 10 ? "warn" : null,
+        },
+        {
+            icon: "benchmark",
+            label: __("Benchmark Policies"),
+            value: kpis.total_benchmark_policies ?? "—",
+            sub: __("{0} sources", [kpis.benchmark_sources ?? 0]),
+        },
+        {
+            icon: "customs",
+            label: __("Customs Policies"),
+            value: kpis.total_customs_policies ?? "—",
+            sub: __("{0} rules", [kpis.customs_rules ?? 0]),
+        },
+        {
+            icon: "scenario",
+            label: __("Pricing Scenarios"),
+            value: kpis.total_scenarios ?? "—",
+            sub: __("{0} expense entries", [kpis.total_scenario_expenses ?? 0]),
+        },
+        {
+            icon: "alert",
+            label: __("Configuration Alerts"),
+            value: kpis.sheets_with_alerts ?? "—",
+            sub: __("sheets need attention"),
+            highlight: (kpis.sheets_with_alerts ?? 0) > 0 ? "warn" : "ok",
+        },
+    ];
+
+    const grid = page.main.find("#pdb-kpi-grid");
+    grid.html(defs.map((d, i) => `
+        <div class="pdb-kpi pdb-kpi--${d.highlight || "default"}" style="animation-delay:${i * 60}ms">
+            <div class="pdb-kpi-header">
+                <span class="pdb-kpi-icon">${ICONS[d.icon] || ""}</span>
+            </div>
+            <div class="pdb-kpi-value">${d.value}</div>
+            <div class="pdb-kpi-label">${d.label}</div>
+            <div class="pdb-kpi-sub">${d.sub}</div>
+        </div>
+    `).join(""));
+
+    // Staggered fade-in
+    grid.find(".pdb-kpi").each(function (i) {
+        const $el = $(this);
+        setTimeout(() => $el.addClass("pdb-kpi--in"), i * 60);
+    });
+}
+
+// ─── Recent Sheets table ──────────────────────────────────────────────────────
 
 function renderRecentSheets(page, rows) {
     const el = page.main.find("#pdb-recent-table");
     if (!rows.length) {
-        el.html(`<div class="pdb-empty">
-            <div class="pdb-empty-icon">📄</div>
-            <div>${__("No pricing sheets yet.")}</div>
-            <a href="/app/pricing-sheet/new-pricing-sheet-1" class="btn btn-primary btn-sm pdb-mt">${__("Create First Sheet")}</a>
-        </div>`);
+        el.html(`
+            <div class="pdb-empty">
+                <span class="pdb-empty-icon">${ICONS.sheet}</span>
+                <p>${__("No pricing sheets yet.")}</p>
+                <button class="btn btn-primary btn-sm" onclick="frappe.set_route('pricing-sheet','new-pricing-sheet-1')">
+                    ${__("Create First Sheet")}
+                </button>
+            </div>`);
         return;
     }
 
@@ -258,30 +325,43 @@ function renderRecentSheets(page, rows) {
                     <th>${__("Sheet")}</th>
                     <th>${__("Customer")}</th>
                     <th>${__("Scenario")}</th>
-                    <th>${__("Total HT")}</th>
+                    <th class="pdb-right">${__("Total HT")}</th>
                     <th>${__("Modified")}</th>
-                    <th>${__("By")}</th>
                 </tr>
             </thead>
             <tbody>
                 ${rows.map(r => `
-                    <tr class="pdb-row" data-href="/app/pricing-sheet/${encodeURIComponent(r.name)}">
-                        <td><a class="pdb-tlink" href="/app/pricing-sheet/${encodeURIComponent(r.name)}">${frappe.utils.escape_html(r.sheet_name || r.name)}</a></td>
-                        <td>${frappe.utils.escape_html(r.customer || "—")}</td>
-                        <td>${r.pricing_scenario ? `<span class="pdb-pill">${frappe.utils.escape_html(r.pricing_scenario)}</span>` : "<span class='pdb-muted'>—</span>"}</td>
-                        <td class="pdb-num">${r.total_selling != null ? frappe.format(r.total_selling, { fieldtype: "Currency" }) : "<span class='pdb-muted'>—</span>"}</td>
-                        <td class="pdb-muted pdb-nowrap">${frappe.datetime.prettyDate(r.modified)}</td>
-                        <td class="pdb-muted pdb-nowrap">${frappe.utils.escape_html((r.modified_by || "").split("@")[0])}</td>
+                    <tr class="pdb-row" data-route="pricing-sheet/${encodeURIComponent(r.name)}">
+                        <td>
+                            <a class="pdb-tlink" href="/app/pricing-sheet/${encodeURIComponent(r.name)}">
+                                ${frappe.utils.escape_html(r.sheet_name || r.name)}
+                            </a>
+                        </td>
+                        <td class="pdb-muted">${frappe.utils.escape_html(r.customer || "—")}</td>
+                        <td>${r.pricing_scenario
+            ? `<span class="pdb-tag">${frappe.utils.escape_html(r.pricing_scenario)}</span>`
+            : `<span class="pdb-muted">—</span>`}
+                        </td>
+                        <td class="pdb-right pdb-mono">
+                            ${r.total_selling != null
+            ? frappe.format(r.total_selling, { fieldtype: "Currency" })
+            : `<span class="pdb-muted">—</span>`}
+                        </td>
+                        <td class="pdb-muted pdb-nowrap">
+                            <span class="pdb-meta-row">
+                                <span class="pdb-meta-icon">${ICONS.clock}</span>
+                                ${frappe.datetime.prettyDate(r.modified)}
+                            </span>
+                        </td>
                     </tr>
                 `).join("")}
             </tbody>
         </table>
     `);
 
-    // Row click navigation
     el.find(".pdb-row").on("click", function (e) {
         if ($(e.target).is("a")) return;
-        frappe.set_route("pricing-sheet", $(this).data("href").split("/").pop());
+        frappe.set_route($(this).data("route").split("/"));
     });
 }
 
@@ -290,22 +370,27 @@ function renderRecentSheets(page, rows) {
 function renderAlerts(page, alerts) {
     const el = page.main.find("#pdb-alerts");
     if (!alerts.length) {
-        el.html(`<div class="pdb-alert pdb-alert--ok">
-            <span class="pdb-alert-icon">✅</span>
-            <div>
-                <div class="pdb-alert-title">${__("All clear!")}</div>
-                <div class="pdb-alert-desc">${__("No configuration issues detected.")}</div>
-            </div>
-        </div>`);
+        el.html(`
+            <div class="pdb-alert-item pdb-alert-item--ok">
+                <span class="pdb-alert-ico">${ICONS.check}</span>
+                <div>
+                    <div class="pdb-alert-title">${__("All clear")}</div>
+                    <div class="pdb-alert-body">${__("No configuration issues detected.")}</div>
+                </div>
+            </div>`);
         return;
     }
     el.html(alerts.map(a => `
-        <div class="pdb-alert pdb-alert--${a.level || "warn"}">
-            <span class="pdb-alert-icon">${a.level === "error" ? "🔴" : "⚠️"}</span>
-            <div>
+        <div class="pdb-alert-item pdb-alert-item--${a.level || "warn"}">
+            <span class="pdb-alert-ico">${ICONS.alert}</span>
+            <div class="pdb-alert-content">
                 <div class="pdb-alert-title">${frappe.utils.escape_html(a.title)}</div>
-                <div class="pdb-alert-desc">${frappe.utils.escape_html(a.message)}</div>
-                ${a.link ? `<a class="pdb-alert-link" href="${frappe.utils.escape_html(a.link)}">${__("Fix →")}</a>` : ""}
+                <div class="pdb-alert-body">${frappe.utils.escape_html(a.message)}</div>
+                ${a.link
+            ? `<a class="pdb-alert-link" href="${frappe.utils.escape_html(a.link)}">
+                           ${__("Review")} <span class="pdb-alert-arrow">${ICONS.arrow}</span>
+                       </a>`
+            : ""}
             </div>
         </div>
     `).join(""));
@@ -315,251 +400,245 @@ function renderAlerts(page, alerts) {
 
 function injectDashboardStyles() {
     if (document.getElementById("pdb-styles")) return;
-    const style = document.createElement("style");
-    style.id = "pdb-styles";
-    style.textContent = `
-/* ── Root ── */
-.pdb-root { background: var(--bg-color, #f8f9fa); min-height: 100vh; }
-.pdb-wrapper { max-width: 1400px; margin: 0 auto; padding: 24px 28px 60px; }
+    const s = document.createElement("style");
+    s.id = "pdb-styles";
+    s.textContent = `
+/* ── Root & wrapper ── */
+.pdb-root { background: var(--bg-color, #f4f6f9); min-height: 100vh; }
+.pdb-wrapper { max-width: 1380px; margin: 0 auto; padding: 28px 32px 72px; }
 
 /* ── Hero ── */
 .pdb-hero {
-    display: flex; align-items: center; justify-content: space-between;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
-    border-radius: 20px; padding: 36px 44px;
-    margin-bottom: 28px; position: relative; overflow: hidden;
-    box-shadow: 0 8px 40px rgba(99,102,241,0.35);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e8ecf0);
+    border-radius: 16px;
+    padding: 28px 36px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+    position: relative; overflow: hidden;
 }
 .pdb-hero::before {
-    content: ""; position: absolute; top: -60px; right: -60px;
-    width: 260px; height: 260px; border-radius: 50%;
-    background: rgba(255,255,255,0.07);
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(99,102,241,0.04) 0%, transparent 60%);
+    pointer-events: none;
 }
-.pdb-hero-greeting { font-size: 26px; font-weight: 700; color: #fff; line-height: 1.2; }
-.pdb-hero-name { color: #e0e7ff; }
-.pdb-hero-sub { font-size: 13px; color: rgba(255,255,255,0.7); margin-top: 4px; font-weight: 500; letter-spacing: 0.5px; }
-.pdb-hero-tagline { font-size: 14px; color: rgba(255,255,255,0.85); margin-top: 12px; max-width: 420px; line-height: 1.6; }
-.pdb-hero-badge { flex-shrink: 0; }
-.pdb-hero-badge svg { width: 80px; height: 80px; filter: drop-shadow(0 8px 20px rgba(0,0,0,0.25)); }
+.pdb-hero-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: #6366f1; margin-bottom: 6px;
+}
+.pdb-hero-greeting {
+    font-size: 26px; font-weight: 700; color: var(--heading-color, #1a1f2e); line-height: 1.2;
+}
+.pdb-hero-sub { font-size: 13px; color: var(--text-muted, #8c95a6); margin-top: 4px; }
 
-/* ── KPI grid ── */
-.pdb-kpi-grid {
+.pdb-hero-right { display: flex; align-items: center; gap: 0; }
+.pdb-hero-stat { text-align: center; padding: 0 36px; }
+.pdb-hero-stat-val { font-size: 30px; font-weight: 800; color: var(--heading-color, #1a1f2e); line-height: 1; }
+.pdb-hero-stat-val.pdb-stat-warn { color: #e11d48; }
+.pdb-hero-stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted, #8c95a6); margin-top: 5px; }
+.pdb-hero-divider { width: 1px; height: 40px; background: var(--border-color, #e8ecf0); }
+
+/* ── Shortcuts grid ── */
+.pdb-shortcuts-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-    gap: 16px;
-    margin-bottom: 32px;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
 }
+@media (max-width: 1100px) { .pdb-shortcuts-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 640px)  { .pdb-shortcuts-grid { grid-template-columns: repeat(2, 1fr); } }
 
-.pdb-kpi {
-    background: var(--card-bg, #fff);
-    border-radius: 16px;
-    padding: 22px 22px 18px;
-    position: relative; overflow: hidden;
-    cursor: default;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    border: 1px solid rgba(0,0,0,0.06);
-    opacity: 0; transform: translateY(14px);
-    transition: opacity 0.35s, transform 0.35s, box-shadow 0.2s;
-}
-.pdb-kpi--visible { opacity: 1; transform: translateY(0); }
-.pdb-kpi:hover { box-shadow: 0 8px 28px rgba(0,0,0,0.12); transform: translateY(-2px); }
-
-.pdb-kpi::after {
-    content: ""; position: absolute; top: 0; left: 0;
-    width: 4px; height: 100%; border-radius: 16px 0 0 16px;
-}
-.pdb-kpi--indigo::after { background: #6366f1; }
-.pdb-kpi--violet::after { background: #8b5cf6; }
-.pdb-kpi--emerald::after { background: #10b981; }
-.pdb-kpi--amber::after  { background: #f59e0b; }
-.pdb-kpi--sky::after    { background: #0ea5e9; }
-.pdb-kpi--rose::after   { background: #f43f5e; }
-.pdb-kpi--teal::after   { background: #14b8a6; }
-
-.pdb-kpi-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.pdb-kpi-icon { font-size: 28px; line-height: 1; }
-.pdb-kpi-trend { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
-.pdb-kpi-trend--up   { background: #d1fae5; color: #065f46; }
-.pdb-kpi-trend--down { background: #fee2e2; color: #991b1b; }
-.pdb-kpi-value { font-size: 32px; font-weight: 800; color: var(--heading-color, #1e293b); line-height: 1; margin-bottom: 6px; }
-.pdb-kpi-label { font-size: 12px; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.pdb-kpi-sub { font-size: 12px; color: var(--text-muted, #94a3b8); }
-
-/* Shimmer skeleton */
-.pdb-kpi--shimmer { opacity: 1; transform: none; cursor: default; }
-.pdb-kpi--shimmer::after { display: none; }
-.pdb-shimmer {
-    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 37%, #f0f0f0 63%);
-    background-size: 400% 100%;
-    animation: pdb-shimmer 1.4s infinite;
-    border-radius: 6px;
-}
-.pdb-shimmer--label { height: 12px; width: 70%; margin-bottom: 10px; }
-.pdb-shimmer--value { height: 32px; width: 50%; margin-bottom: 8px; }
-.pdb-shimmer--sub   { height: 10px; width: 85%; }
-@keyframes pdb-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-
-/* ── Section title ── */
-.pdb-section-title {
-    font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
-    text-transform: uppercase; color: var(--text-muted, #64748b);
-    margin-bottom: 14px; padding-left: 2px;
-}
-
-/* ── Shortcut buttons ── */
-.pdb-shortcuts {
-    display: flex; flex-wrap: wrap; gap: 12px;
-    margin-bottom: 36px;
-}
 .pdb-shortcut {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
     background: var(--card-bg, #fff);
-    border: 1px solid rgba(0,0,0,0.07);
+    border: 1px solid var(--border-color, #e8ecf0);
     border-radius: 12px;
-    padding: 12px 18px;
+    padding: 16px 12px;
     cursor: pointer;
-    font-size: 14px; font-weight: 600;
-    color: var(--text-color, #334155);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-    transition: all 0.15s;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
     user-select: none;
 }
 .pdb-shortcut:hover {
+    border-color: #6366f1; box-shadow: 0 4px 16px rgba(99,102,241,0.15);
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
 }
-.pdb-shortcut-icon { font-size: 20px; line-height: 1; }
-.pdb-shortcut--indigo:hover { background: #eef2ff; border-color: #6366f1; color: #4338ca; }
-.pdb-shortcut--violet:hover { background: #f5f3ff; border-color: #8b5cf6; color: #6d28d9; }
-.pdb-shortcut--sky:hover    { background: #f0f9ff; border-color: #0ea5e9; color: #0284c7; }
-.pdb-shortcut--blue:hover   { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }
-.pdb-shortcut--emerald:hover{ background: #f0fdf4; border-color: #10b981; color: #065f46; }
-.pdb-shortcut--amber:hover  { background: #fffbeb; border-color: #f59e0b; color: #92400e; }
-.pdb-shortcut--rose:hover   { background: #fff1f2; border-color: #f43f5e; color: #9f1239; }
-.pdb-shortcut--teal:hover   { background: #f0fdfa; border-color: #14b8a6; color: #0f766e; }
+.pdb-shortcut--primary {
+    background: #6366f1; border-color: #6366f1; color: #fff;
+}
+.pdb-shortcut--primary .pdb-shortcut-icon svg { stroke: #fff; }
+.pdb-shortcut--primary .pdb-shortcut-label { color: #fff; }
+.pdb-shortcut--primary:hover { background: #4f46e5; border-color: #4f46e5; box-shadow: 0 4px 20px rgba(99,102,241,0.4); }
+
+.pdb-shortcut-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+.pdb-shortcut-icon svg { width: 22px; height: 22px; stroke: var(--text-muted, #64748b); }
+.pdb-shortcut:hover .pdb-shortcut-icon svg { stroke: #6366f1; }
+.pdb-shortcut--primary:hover .pdb-shortcut-icon svg { stroke: #fff; }
+
+.pdb-shortcut-label {
+    font-size: 11.5px; font-weight: 600; text-align: center; line-height: 1.3;
+    color: var(--text-color, #334155);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+/* ── KPI strip ── */
+.pdb-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+@media (max-width: 1100px) { .pdb-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .pdb-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.pdb-kpi {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e8ecf0);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+    opacity: 0; transform: translateY(10px);
+    transition: opacity 0.3s, transform 0.3s, box-shadow 0.15s;
+}
+.pdb-kpi--in { opacity: 1; transform: translateY(0); }
+.pdb-kpi:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+
+.pdb-kpi--shimmer { opacity: 1; transform: none; }
+.pdb-kpi--warn { border-color: #fca5a5; background: #fff5f5; }
+.pdb-kpi--ok   { border-color: #86efac; }
+
+.pdb-kpi-header { margin-bottom: 10px; }
+.pdb-kpi-icon { display: inline-flex; width: 32px; height: 32px; border-radius: 8px; background: #f1f5f9; align-items: center; justify-content: center; }
+.pdb-kpi-icon svg { width: 16px; height: 16px; stroke: #6366f1; }
+.pdb-kpi--warn .pdb-kpi-icon { background: #fee2e2; }
+.pdb-kpi--warn .pdb-kpi-icon svg { stroke: #dc2626; }
+
+.pdb-kpi-value { font-size: 28px; font-weight: 800; color: var(--heading-color, #1a1f2e); line-height: 1; margin-bottom: 4px; }
+.pdb-kpi--warn .pdb-kpi-value { color: #dc2626; }
+.pdb-kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #64748b); margin-bottom: 3px; }
+.pdb-kpi-sub   { font-size: 11.5px; color: var(--text-muted, #94a3b8); }
+
+/* Shimmer */
+.pdb-kpi--shimmer {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e8ecf2 37%, #f1f5f9 63%);
+    background-size: 400% 100%;
+    animation: pdb-shimmer 1.4s infinite;
+    min-height: 110px;
+}
+.pdb-shimmer-block {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e8ecf2 37%, #f1f5f9 63%);
+    background-size: 400% 100%;
+    animation: pdb-shimmer 1.4s infinite;
+}
+@keyframes pdb-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
 /* ── Lower two-column ── */
-.pdb-lower {
-    display: grid;
-    grid-template-columns: 1fr 340px;
-    gap: 20px;
-    align-items: start;
-}
+.pdb-lower { display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
 @media (max-width: 960px) { .pdb-lower { grid-template-columns: 1fr; } }
 
-/* ── Panel ── */
-.pdb-panel {
+/* ── Card ── */
+.pdb-card {
     background: var(--card-bg, #fff);
-    border-radius: 16px;
-    border: 1px solid rgba(0,0,0,0.07);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border: 1px solid var(--border-color, #e8ecf0);
+    border-radius: 14px;
     overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
-.pdb-panel-head {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 16px 20px;
+.pdb-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px;
     border-bottom: 1px solid var(--border-color, #f1f5f9);
 }
-.pdb-panel-title {
+.pdb-card-title {
     display: flex; align-items: center; gap: 8px;
-    font-size: 14px; font-weight: 700; color: var(--heading-color, #1e293b);
+    font-size: 13px; font-weight: 700; color: var(--heading-color, #1a1f2e);
 }
-.pdb-panel-icon { font-size: 18px; }
-.pdb-panel-link { font-size: 12px; font-weight: 600; color: #6366f1; text-decoration: none; }
-.pdb-panel-link:hover { text-decoration: underline; }
+.pdb-card-icon { display: inline-flex; align-items: center; }
+.pdb-card-icon svg { width: 15px; height: 15px; stroke: #6366f1; }
+
+.pdb-view-all {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; font-weight: 600; color: #6366f1; text-decoration: none;
+    transition: gap 0.15s;
+}
+.pdb-view-all:hover { gap: 7px; }
+.pdb-view-all svg { width: 13px; height: 13px; stroke: #6366f1; }
 
 /* ── Table ── */
 .pdb-table-wrap { overflow-x: auto; }
-.pdb-table {
-    width: 100%; border-collapse: collapse;
-    font-size: 13px;
-}
-.pdb-table thead tr {
-    background: var(--subtle-bg, #f8fafc);
-}
+.pdb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pdb-table thead tr { background: var(--subtle-bg, #f8fafc); }
 .pdb-table th {
-    text-align: left; padding: 10px 14px;
-    font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.5px;
+    text-align: left; padding: 9px 16px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
     color: var(--text-muted, #64748b);
-    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    border-bottom: 1px solid var(--border-color, #e8ecf0);
     white-space: nowrap;
 }
 .pdb-table td {
-    padding: 11px 14px;
+    padding: 11px 16px;
     border-bottom: 1px solid var(--border-color, #f1f5f9);
     color: var(--text-color, #334155);
-    vertical-align: middle;
 }
-.pdb-row { cursor: pointer; transition: background 0.12s; }
-.pdb-row:hover td { background: var(--hover-bg, #f8faff); }
-.pdb-tlink { color: #6366f1; font-weight: 600; text-decoration: none; }
-.pdb-tlink:hover { text-decoration: underline; }
-.pdb-pill {
-    display: inline-block;
-    background: #eef2ff; color: #4338ca;
-    border-radius: 999px; font-size: 11px; font-weight: 600;
-    padding: 2px 10px; white-space: nowrap;
-}
-.pdb-muted { color: var(--text-muted, #94a3b8); }
-.pdb-nowrap { white-space: nowrap; }
-.pdb-num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.pdb-table tbody tr:last-child td { border-bottom: none; }
+.pdb-row { cursor: pointer; transition: background 0.1s; }
+.pdb-row:hover td { background: #fafbff; }
 
-.pdb-shimmer-table {
-    height: 220px; margin: 16px;
-    background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 37%, #f0f0f0 63%);
-    background-size: 400% 100%;
-    animation: pdb-shimmer 1.4s infinite;
-    border-radius: 10px;
+.pdb-tlink { font-weight: 600; color: #6366f1; text-decoration: none; }
+.pdb-tlink:hover { text-decoration: underline; }
+.pdb-tag {
+    display: inline-block; padding: 2px 9px;
+    background: #f1f5f9; border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; color: #475569;
 }
-.pdb-shimmer-list {
-    height: 180px; margin: 16px;
-    background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 37%, #f0f0f0 63%);
-    background-size: 400% 100%;
-    animation: pdb-shimmer 1.4s infinite;
-    border-radius: 10px;
-}
+.pdb-muted  { color: var(--text-muted, #94a3b8); }
+.pdb-nowrap { white-space: nowrap; }
+.pdb-right  { text-align: right; }
+.pdb-mono   { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.pdb-meta-row { display: inline-flex; align-items: center; gap: 4px; }
+.pdb-meta-row svg { width: 12px; height: 12px; stroke: var(--text-muted, #94a3b8); flex-shrink: 0; }
 
 /* ── Alerts ── */
 .pdb-alerts-wrap { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.pdb-alert {
-    display: flex; gap: 12px; align-items: flex-start;
-    padding: 14px 16px; border-radius: 12px;
-    font-size: 13px;
+.pdb-alert-item {
+    display: flex; gap: 12px; padding: 14px 16px;
+    border-radius: 10px; border: 1px solid;
 }
-.pdb-alert--warn  { background: #fffbeb; border: 1px solid #fde68a; }
-.pdb-alert--error { background: #fff1f2; border: 1px solid #fecdd3; }
-.pdb-alert--ok    { background: #f0fdf4; border: 1px solid #bbf7d0; }
-.pdb-alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
-.pdb-alert-title { font-weight: 700; color: var(--heading-color, #1e293b); margin-bottom: 3px; }
-.pdb-alert-desc  { color: var(--text-muted, #64748b); font-size: 12px; line-height: 1.5; }
+.pdb-alert-item--warn  { background: #fffbeb; border-color: #fde68a; }
+.pdb-alert-item--error { background: #fff1f2; border-color: #fecdd3; }
+.pdb-alert-item--ok    { background: #f0fdf4; border-color: #bbf7d0; }
+
+.pdb-alert-ico { flex-shrink: 0; display: inline-flex; margin-top: 1px; }
+.pdb-alert--warn  .pdb-alert-ico svg, .pdb-alert-item--warn  .pdb-alert-ico svg { width: 16px; height: 16px; stroke: #d97706; }
+.pdb-alert-item--error .pdb-alert-ico svg { width: 16px; height: 16px; stroke: #dc2626; }
+.pdb-alert-item--ok    .pdb-alert-ico svg { width: 16px; height: 16px; stroke: #16a34a; }
+
+.pdb-alert-title { font-size: 13px; font-weight: 700; color: var(--heading-color, #1a1f2e); margin-bottom: 3px; }
+.pdb-alert-body  { font-size: 12px; color: var(--text-muted, #64748b); line-height: 1.5; }
 .pdb-alert-link  {
-    display: inline-block; margin-top: 6px;
-    font-size: 12px; font-weight: 600; color: #6366f1;
-    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-top: 8px; font-size: 12px; font-weight: 600; color: #6366f1; text-decoration: none;
 }
 .pdb-alert-link:hover { text-decoration: underline; }
+.pdb-alert-arrow svg { width: 12px; height: 12px; stroke: #6366f1; }
 
 /* ── Empty state ── */
 .pdb-empty {
-    text-align: center; padding: 48px 24px;
-    color: var(--text-muted, #94a3b8); font-size: 13px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 48px 24px; text-align: center;
+    color: var(--text-muted, #94a3b8); font-size: 13px; gap: 10px;
 }
-.pdb-empty-icon { font-size: 42px; margin-bottom: 12px; }
-.pdb-mt { margin-top: 16px; }
+.pdb-empty-icon { display: inline-flex; }
+.pdb-empty-icon svg { width: 36px; height: 36px; stroke: #cbd5e1; }
 
-/* ── Dark mode support ── */
-[data-theme-mode="dark"] .pdb-hero { box-shadow: 0 8px 40px rgba(99,102,241,0.5); }
-[data-theme-mode="dark"] .pdb-kpi,
-[data-theme-mode="dark"] .pdb-shortcut,
-[data-theme-mode="dark"] .pdb-panel { background: var(--card-bg); border-color: var(--border-color); }
-[data-theme-mode="dark"] .pdb-shimmer,
-[data-theme-mode="dark"] .pdb-shimmer-table,
-[data-theme-mode="dark"] .pdb-shimmer-list {
-    background: linear-gradient(90deg, #2a2a3e 25%, #313150 37%, #2a2a3e 63%);
-    background-size: 400% 100%;
-    animation: pdb-shimmer 1.4s infinite;
+/* ── Dark mode ── */
+[data-theme-mode="dark"] .pdb-kpi--shimmer,
+[data-theme-mode="dark"] .pdb-shimmer-block {
+    background: linear-gradient(90deg, #22263a 25%, #2a2f48 37%, #22263a 63%);
+    background-size: 400% 100%; animation: pdb-shimmer 1.4s infinite;
 }
+[data-theme-mode="dark"] .pdb-row:hover td { background: rgba(99,102,241,0.06); }
+[data-theme-mode="dark"] .pdb-tag { background: #2a2f48; color: #94a3b8; }
     `;
-    document.head.appendChild(style);
+    document.head.appendChild(s);
 }
