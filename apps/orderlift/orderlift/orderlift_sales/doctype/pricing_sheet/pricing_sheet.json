@@ -122,6 +122,10 @@
    "in_standard_filter": 1
   },
   {
+   "fieldname": "column_break_strategy_left",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "benchmark_policy",
    "fieldtype": "Link",
    "label": "Margin & Benchmark Policy",
@@ -129,11 +133,19 @@
    "in_standard_filter": 1
   },
   {
+   "fieldname": "section_strategy_row_two",
+   "fieldtype": "Section Break"
+  },
+  {
    "fieldname": "customs_policy",
    "fieldtype": "Link",
    "label": "Customs Policy",
    "options": "Pricing Customs Policy",
    "in_standard_filter": 1
+  },
+  {
+   "fieldname": "column_break_strategy_right",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "product_bundle",

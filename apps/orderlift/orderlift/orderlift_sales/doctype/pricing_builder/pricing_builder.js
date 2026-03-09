@@ -24,13 +24,9 @@ frappe.ui.form.on("Pricing Builder", {
     selling_price_list_name(frm) {
         renderBuilderHeader(frm);
     },
-    item_group(frm) {
-        renderBuilderHeader(frm);
-    },
 });
 
 function setupQueries(frm) {
-    frm.set_query("item_group", () => ({ filters: {} }));
     frm.set_query("buying_price_list", "sourcing_rules", () => ({ filters: { buying: 1 } }));
     frm.set_query("pricing_scenario", "sourcing_rules", () => ({ filters: {} }));
     frm.set_query("customs_policy", "sourcing_rules", () => ({ filters: { is_active: 1 } }));
@@ -54,7 +50,6 @@ function setupGridDisplay(frm) {
 function renderBuilderHeader(frm) {
     const name = frappe.utils.escape_html(frm.doc.builder_name || frm.doc.name || __("New Pricing Builder"));
     const priceList = frappe.utils.escape_html(frm.doc.selling_price_list_name || __("Not set yet"));
-    const itemGroup = frappe.utils.escape_html(frm.doc.item_group || __("All Item Groups"));
     const qty = frappe.format(frm.doc.default_qty || 1, { fieldtype: "Float" });
     const maxItems = cint(frm.doc.max_items || 0) > 0 ? frappe.utils.escape_html(String(frm.doc.max_items)) : __("All");
 
@@ -64,23 +59,19 @@ function renderBuilderHeader(frm) {
                 <div class="pb-eyebrow">${__("Static Selling List Builder")}</div>
                 <h2>${name}</h2>
                 <p>${__("Build a clean base sell list from buying prices, expenses policies, customs, and margin benchmarks before runtime tier adjustments.")}</p>
-            </div>
-            <div class="pb-hero-stats">
-                <div class="pb-stat-card">
+                <div class="pb-hero-stats">
+                    <div class="pb-stat-card">
                     <span>${__("Selling List")}</span>
                     <strong>${priceList}</strong>
-                </div>
-                <div class="pb-stat-card">
-                    <span>${__("Item Group")}</span>
-                    <strong>${itemGroup}</strong>
-                </div>
-                <div class="pb-stat-card">
+                    </div>
+                    <div class="pb-stat-card">
                     <span>${__("Qty / Item")}</span>
                     <strong>${qty}</strong>
-                </div>
-                <div class="pb-stat-card">
+                    </div>
+                    <div class="pb-stat-card">
                     <span>${__("Max Items")}</span>
                     <strong>${maxItems}</strong>
+                    </div>
                 </div>
             </div>
         </div>
@@ -197,11 +188,11 @@ frappe.ui.form.on("Pricing Builder Item", {
 function ensureBuilderStyles() {
     if (document.getElementById("pricing-builder-form-styles")) return;
     $("<style id='pricing-builder-form-styles'>\
-        .pb-hero{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#f7f4ec 0%,#e8f1ef 100%);border:1px solid #d7e4df;margin-bottom:8px;}\
+        .pb-hero{display:block;padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#f7f4ec 0%,#e8f1ef 100%);border:1px solid #d7e4df;margin-bottom:8px;}\
         .pb-eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7280;margin-bottom:8px;}\
         .pb-hero h2{margin:0 0 8px;font-size:26px;line-height:1.1;color:#14213d;}\
         .pb-hero p{margin:0;color:#475569;max-width:52ch;}\
-        .pb-hero-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;}\
+        .pb-hero-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;}\
         .pb-stat-card{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.7);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.65);box-shadow:0 8px 24px rgba(20,33,61,.06);}\
         .pb-stat-card span{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin-bottom:6px;}\
         .pb-stat-card strong{display:block;font-size:15px;color:#0f172a;word-break:break-word;}\
@@ -225,6 +216,6 @@ function ensureBuilderStyles() {
         .pb-results-grid .grid-body .data-row:nth-child(odd){background:#fcfcfd;}\
         .pb-results-grid .grid-body .data-row:hover{background:#f8fafc;}\
         .pb-results-grid .grid-static-col{font-weight:600;}\
-        @media (max-width:900px){.pb-hero{grid-template-columns:1fr;}.pb-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.pb-hero h2{font-size:22px;}}\
+        @media (max-width:900px){.pb-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.pb-hero-stats{grid-template-columns:1fr;}.pb-hero h2{font-size:22px;}}\
     </style>").appendTo(document.head);
 }
