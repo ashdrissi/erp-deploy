@@ -9,16 +9,19 @@
     "set_name",
     "is_active",
     "description",
+    "configurator_overview_html",
     "heading_inputs",
     "input_fields",
     "heading_rules",
-    "item_rules"
+    "rule_builder_html",
+    "item_rules",
+    "preview_panel_html"
   ],
   "fields": [
     {
       "fieldname": "set_name",
       "fieldtype": "Data",
-      "label": "Set Name",
+      "label": "Nom du Set",
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1
@@ -36,28 +39,43 @@
       "label": "Description"
     },
     {
+      "fieldname": "configurator_overview_html",
+      "fieldtype": "HTML",
+      "label": "Vue d'Ensemble"
+    },
+    {
       "fieldname": "heading_inputs",
       "fieldtype": "Heading",
-      "label": "Dimensioning Inputs"
+      "label": "Caracteristiques"
     },
     {
       "fieldname": "input_fields",
       "fieldtype": "Table",
-      "label": "Input Fields",
+      "label": "Caracteristiques",
       "options": "Dimensioning Set Field",
       "reqd": 1
     },
     {
       "fieldname": "heading_rules",
       "fieldtype": "Heading",
-      "label": "Item Rules"
+      "label": "Regles de selection"
+    },
+    {
+      "fieldname": "rule_builder_html",
+      "fieldtype": "HTML",
+      "label": "Rule Builder"
     },
     {
       "fieldname": "item_rules",
       "fieldtype": "Table",
-      "label": "Item Rules",
+      "label": "Articles generes",
       "options": "Dimensioning Set Item Rule",
       "reqd": 1
+    },
+    {
+      "fieldname": "preview_panel_html",
+      "fieldtype": "HTML",
+      "label": "Apercu"
     }
   ],
   "is_submittable": 0,

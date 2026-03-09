@@ -79,22 +79,6 @@ function renderContextActions(frm) {
         field.$wrapper.before($bar);
     };
 
-    // Override count badges on collapsed section labels
-    const badgeSections = [
-        { field: "scenario_overrides", rows: frm.doc.scenario_overrides || [] },
-        { field: "line_overrides", rows: frm.doc.line_overrides || [] },
-        { field: "bundle_scenario_rules", rows: frm.doc.bundle_scenario_rules || [] },
-    ];
-    badgeSections.forEach(({ field, rows }) => {
-        const f = frm.fields_dict[field];
-        if (!f) return;
-        const $head = f.$wrapper.closest(".form-section").find(".section-head");
-        $head.find(".ps-override-badge").remove();
-        if (rows.length > 0) {
-            $head.append(`<span class="ps-override-badge">${rows.length}</span>`);
-        }
-    });
-
     const lineActions = [
         {
             label: __("↻ Recalculate"),
@@ -116,77 +100,6 @@ function renderContextActions(frm) {
     ];
 
     mount("lines", __("Pricing Sheet Actions"), lineActions);
-
-    if (restrictedAgent) {
-        return;
-    }
-
-    mount("scenario_overrides", __("Scenario Override Actions"), [
-
-        {
-            label: __("Load Scenario Values"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("load_scenario_overrides");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Scenario values loaded"), indicator: "green" });
-            },
-        },
-        {
-            label: __("Reset Scenario Overrides"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("reset_scenario_overrides");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Scenario overrides reset"), indicator: "green" });
-            },
-        },
-        {
-            label: __("Prune Stale Overrides"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("prune_stale_scenario_overrides");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Stale overrides pruned"), indicator: "green" });
-            },
-        },
-    ]);
-
-    mount("line_overrides", __("Line Override Actions"), [
-        {
-            label: __("Load Line Overrides"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("load_line_overrides");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Line overrides loaded"), indicator: "green" });
-            },
-        },
-        {
-            label: __("Reset Line Overrides"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("reset_line_overrides");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Line overrides reset"), indicator: "green" });
-            },
-        },
-        {
-            label: __("Prune Stale Line Overrides"),
-            handler: async () => {
-                if (frm.is_dirty()) await frm.save();
-                await frm.call("prune_stale_line_overrides");
-                await frm.reload_doc();
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Stale line overrides pruned"), indicator: "green" });
-            },
-        },
-    ]);
 }
 
 function openAddFromBundleDialog(frm) {
@@ -199,7 +112,6 @@ function openAddFromBundleDialog(frm) {
                 fieldtype: "Link",
                 options: "Product Bundle",
                 reqd: 1,
-                default: frm.doc.product_bundle,
             },
             { label: __("Multiplier"), fieldname: "multiplier", fieldtype: "Float", default: 1 },
             {
@@ -315,14 +227,44 @@ function collectDimensioningValues($root, setConfig) {
     return values;
 }
 
+function ensureDimensioningToolStyles() {
+    if (document.getElementById("pricing-sheet-dimensioning-styles")) return;
+    const style = document.createElement("style");
+    style.id = "pricing-sheet-dimensioning-styles";
+    style.textContent = `
+        .od-shell{display:grid;gap:12px;padding:16px;border:1px solid #dbe4ea;border-radius:18px;background:linear-gradient(135deg,#fff8ef 0%,#f6fbf9 100%)}
+        .od-hero{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}
+        .od-eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:6px}
+        .od-title{font-size:22px;font-weight:700;line-height:1.05;color:#102a43}
+        .od-copy{margin-top:6px;font-size:13px;color:#486581;max-width:56ch}
+        .od-actions{display:flex;gap:8px;flex-wrap:wrap}
+        .od-tip-row{display:flex;gap:8px;flex-wrap:wrap}
+        .od-tip{display:inline-flex;padding:5px 10px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-size:12px;font-weight:600}
+        .od-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+        .od-field-card{padding:12px;border-radius:14px;background:rgba(255,255,255,.78);border:1px solid rgba(203,213,225,.9)}
+        .od-field-label{display:block;margin-bottom:6px}
+        .od-field-meta{margin-top:6px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
+        .od-field-help{margin-top:4px}
+        .od-preview{padding:14px;border-radius:14px;background:#fff;border:1px solid #e2e8f0;color:#475569}
+        .od-preview-title{font-weight:700;color:#102a43;margin-bottom:10px}
+        .od-preview-list{display:grid;gap:8px}
+        .od-preview-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
+        .od-preview-rule{font-size:12px;color:#64748b;margin-top:2px}
+        .od-preview-qty{font-size:16px;font-weight:700;color:#0f172a}
+        @media (max-width:900px){.od-hero{flex-direction:column}.od-grid{grid-template-columns:1fr}}
+    `;
+    document.head.appendChild(style);
+}
+
 async function renderDimensioningTool(frm) {
     const field = frm.get_field("dimensioning_inputs_html");
     if (!field || !field.$wrapper) {
         return;
     }
+    ensureDimensioningToolStyles();
 
     if (!frm.doc.dimensioning_set) {
-        field.$wrapper.html(`<div class="text-muted small">${__("Select a dimensioning set to configure sizing inputs.")}</div>`);
+        field.$wrapper.html(`<div class="text-muted small">${__("Selectionnez un set de dimensionnement pour afficher les caracteristiques a renseigner.")}</div>`);
         return;
     }
 
@@ -332,7 +274,7 @@ async function renderDimensioningTool(frm) {
     });
     const setConfig = (response.message || {}).set;
     if (!setConfig) {
-        field.$wrapper.html(`<div class="text-danger small">${__("Unable to load the selected dimensioning set.")}</div>`);
+        field.$wrapper.html(`<div class="text-danger small">${__("Impossible de charger le set de dimensionnement selectionne.")}</div>`);
         return;
     }
 
@@ -357,28 +299,35 @@ async function renderDimensioningTool(frm) {
             control = `<input type="${inputType}" step="${step}" class="form-control" data-dimensioning-key="${cfg.field_key}" value="${frappe.utils.escape_html(String(value ?? ""))}">`;
         }
         return `
-            <div class="section-control" style="margin-bottom:12px;">
-                <label class="control-label" style="margin-bottom:4px;">${frappe.utils.escape_html(cfg.label || cfg.field_key)}${cfg.is_required ? " *" : ""}</label>
+            <div class="od-field-card">
+                <label class="control-label od-field-label">${frappe.utils.escape_html(cfg.label || cfg.field_key)}${cfg.is_required ? " *" : ""}</label>
                 ${control}
-                ${cfg.help_text ? `<div class="small text-muted" style="margin-top:4px;">${frappe.utils.escape_html(cfg.help_text)}</div>` : ""}
+                ${cfg.help_text ? `<div class="small text-muted od-field-help">${frappe.utils.escape_html(cfg.help_text)}</div>` : ""}
             </div>
         `;
     }).join("");
 
     field.$wrapper.html(`
-        <div class="border rounded" style="padding:16px;background:#f8fafc;">
-            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;">
+        <div class="od-shell">
+            <div class="od-hero">
                 <div>
-                    <div class="small text-muted">${__("Outil de dimensionnement")}</div>
-                    <div style="font-weight:600;">${frappe.utils.escape_html(setConfig.set_name || setConfig.name)}</div>
+                    <div class="od-eyebrow">${__("Outil de dimensionnement")}</div>
+                    <div class="od-title">${frappe.utils.escape_html(setConfig.set_name || setConfig.name)}</div>
+                    <div class="od-copy">${frappe.utils.escape_html(setConfig.description || __("Renseignez les caracteristiques du projet, previsualisez les articles generes, puis ajoutez-les a la fiche tarifaire."))}</div>
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button class="btn btn-default btn-sm" type="button" data-dimensioning-reset>${__("Reset")}</button>
-                    <button class="btn btn-primary btn-sm" type="button" data-dimensioning-add>${__("Add Items")}</button>
+                <div class="od-actions">
+                    <button class="btn btn-default btn-sm" type="button" data-dimensioning-preview>${__("Apercu des articles")}</button>
+                    <button class="btn btn-default btn-sm" type="button" data-dimensioning-reset>${__("Reinitialiser")}</button>
+                    <button class="btn btn-primary btn-sm" type="button" data-dimensioning-add>${__("Ajouter les articles")}</button>
                 </div>
             </div>
-            ${setConfig.description ? `<div class="small text-muted" style="margin-bottom:12px;">${frappe.utils.escape_html(setConfig.description)}</div>` : ""}
-            <div>${rowsHtml || `<div class="text-muted small">${__("No input fields configured for this set.")}</div>`}</div>
+            <div class="od-tip-row">
+                <span class="od-tip">${__("1. Renseigner les caracteristiques")}</span>
+                <span class="od-tip">${__("2. Previsualiser les articles")}</span>
+                <span class="od-tip">${__("3. Ajouter les lignes")}</span>
+            </div>
+            <div class="od-grid">${rowsHtml || `<div class="text-muted small">${__("Aucune caracteristique n'est configuree dans ce set.")}</div>`}</div>
+            <div class="od-preview" data-dimensioning-preview-box>${__("Cliquez sur Apercu des articles pour voir ce qui sera genere avant insertion.")}</div>
         </div>
     `);
 
@@ -390,6 +339,12 @@ async function renderDimensioningTool(frm) {
     $root.find("[data-dimensioning-reset]").on("click", async () => {
         frm.doc.dimensioning_inputs_json = JSON.stringify(normalizeDimensioningValues(setConfig, {}));
         await renderDimensioningTool(frm);
+    });
+
+    $root.find("[data-dimensioning-preview]").on("click", async () => {
+        const currentValues = collectDimensioningValues($root, setConfig);
+        frm.doc.dimensioning_inputs_json = JSON.stringify(currentValues);
+        await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues);
     });
 
     $root.find("[data-dimensioning-add]").on("click", async () => {
@@ -405,8 +360,45 @@ async function renderDimensioningTool(frm) {
         await frm.reload_doc();
         renderProjectionDashboard(frm);
         await renderDimensioningTool(frm);
-        frappe.show_alert({ message: __("Dimensioning items added"), indicator: "green" });
+        frappe.show_alert({ message: __("Articles de dimensionnement ajoutes"), indicator: "green" });
     });
+}
+
+async function renderDimensioningPreviewBox($root, setName, currentValues) {
+    const box = $root.find("[data-dimensioning-preview-box]");
+    if (!box.length) return;
+    box.html(`<span class="text-muted">${__("Preparation de l'apercu...")}</span>`);
+
+    try {
+        const response = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.preview_dimensioning_set",
+            args: {
+                set_name: setName,
+                input_values_json: JSON.stringify(currentValues || {}),
+            },
+        });
+        const items = (response.message || {}).items || [];
+        if (!items.length) {
+            box.html(`<span class="text-muted">${__("Aucun article ne correspond aux caracteristiques saisies.")}</span>`);
+            return;
+        }
+        box.html(`
+            <div class="od-preview-title">${__("Apercu des articles generes")}</div>
+            <div class="od-preview-list">
+                ${items.map((row) => `
+                    <div class="od-preview-row">
+                        <div>
+                            <strong>${frappe.utils.escape_html(row.item || "-")}</strong>
+                            <div class="od-preview-rule">${frappe.utils.escape_html(row.rule_label || __("Regle automatique"))}</div>
+                        </div>
+                        <div class="od-preview-qty">${frappe.format(row.qty || 0, { fieldtype: "Float" })}</div>
+                    </div>
+                `).join("")}
+            </div>
+        `);
+    } catch (e) {
+        box.html(`<span class="text-danger">${__("L'apercu a echoue. Verifiez le set selectionne et les caracteristiques renseignees.")}</span>`);
+    }
 }
 
 function applyFormLayoutClass(frm) {
@@ -439,8 +431,7 @@ function applyModeLayout(frm) {
 
     // Dynamic-only fields — visible only in dynamic mode
     const dynamicFields = ["benchmark_policy", "customs_policy",
-        "pricing_scenario", "minimum_margin_percent", "strict_margin_guard",
-        "product_bundle"];
+        "pricing_scenario", "minimum_margin_percent", "strict_margin_guard"];
     // Static-only fields
     const staticFields = ["selected_price_list"];
 
@@ -450,9 +441,8 @@ function applyModeLayout(frm) {
     if (restrictedAgent) {
         [
             "pricing_scenario", "benchmark_policy", "customs_policy", "selected_price_list",
-            "minimum_margin_percent", "strict_margin_guard", "product_bundle", "scenario_mappings",
-            "heading_bundle_rules", "bundle_scenario_rules", "heading_scenario_overrides", "scenario_overrides",
-            "heading_line_overrides", "line_overrides", "section_runtime", "total_buy", "total_expenses",
+            "minimum_margin_percent", "strict_margin_guard", "scenario_mappings",
+            "section_runtime", "total_buy", "total_expenses",
             "applied_customs_policy", "applied_benchmark_policy", "customs_total_applied",
         ].forEach((fieldname) => frm.toggle_display(fieldname, false));
     }
@@ -478,9 +468,6 @@ function applyModeLayout(frm) {
     // Collapse override sections in static mode (not relevant)
     if (isStatic || restrictedAgent) {
         const sectionFieldnames = [
-            "heading_bundle_rules",
-            "heading_scenario_overrides",
-            "heading_line_overrides",
             "section_runtime",
         ];
         const sections = (frm.layout && frm.layout.sections) || [];
@@ -504,9 +491,6 @@ function applyDashboardSectionClass(frm) {
 
 function collapseAdvancedSections(frm) {
     const sectionFieldnames = [
-        "heading_bundle_rules",
-        "heading_scenario_overrides",
-        "heading_line_overrides",
         "section_runtime",
     ];
 
@@ -1172,36 +1156,6 @@ frappe.ui.form.on("Pricing Sheet Item", {
                 renderProjectionDashboard(frm);
             },
         });
-    },
-});
-
-frappe.ui.form.on("Pricing Sheet Scenario Override", {
-    override_value(frm) {
-        renderProjectionDashboard(frm);
-    },
-    scenario_overrides_remove(frm) {
-        renderProjectionDashboard(frm);
-    },
-});
-
-frappe.ui.form.on("Pricing Sheet Line Override", {
-    line_override_value(frm) {
-        renderProjectionDashboard(frm);
-    },
-    line_overrides_remove(frm) {
-        renderProjectionDashboard(frm);
-    },
-});
-
-frappe.ui.form.on("Pricing Sheet Bundle Scenario", {
-    bundle(frm) {
-        renderProjectionDashboard(frm);
-    },
-    pricing_scenario(frm) {
-        renderProjectionDashboard(frm);
-    },
-    bundle_scenario_rules_remove(frm) {
-        renderProjectionDashboard(frm);
     },
 });
 

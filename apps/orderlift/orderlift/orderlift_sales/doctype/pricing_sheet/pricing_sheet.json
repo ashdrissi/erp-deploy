@@ -16,10 +16,9 @@
   "tier",
   "geography_territory",
   "section_strategy",
-  "pricing_scenario",
+   "pricing_scenario",
    "benchmark_policy",
    "customs_policy",
-   "product_bundle",
    "selected_price_list",
    "section_dimensioning",
    "dimensioning_set",
@@ -148,12 +147,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "product_bundle",
-   "fieldtype": "Link",
-   "label": "Default Product Bundle",
-   "options": "Product Bundle"
-  },
-  {
    "fieldname": "section_dimensioning",
    "fieldtype": "Section Break",
    "label": "Outil de dimensionnement"
@@ -185,11 +178,6 @@
    "fieldtype": "Table",
    "label": "Policy Mappings",
    "options": "Pricing Sheet Scenario Mapping"
-  },
-  {
-   "fieldname": "column_break_strategy",
-   "fieldtype": "Column Break",
-   "hidden": 1
   },
   {
    "fieldname": "resolved_mode",
@@ -297,51 +285,9 @@
    "read_only": 1
   },
   {
-   "fieldname": "heading_bundle_rules",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Bundle Scenario Rules",
-   "collapsible": 1
-  },
-  {
-   "fieldname": "bundle_scenario_rules",
-   "fieldtype": "Table",
-   "label": "Bundle Scenario Rules",
-   "hidden": 1,
-   "options": "Pricing Sheet Bundle Scenario"
-  },
-  {
    "fieldname": "projection_dashboard",
    "fieldtype": "HTML",
    "label": "Projection Dashboard"
-  },
-  {
-   "fieldname": "heading_scenario_overrides",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Scenario Overrides",
-   "collapsible": 1
-  },
-  {
-   "fieldname": "scenario_overrides",
-   "fieldtype": "Table",
-   "label": "Scenario Overrides",
-   "hidden": 1,
-   "options": "Pricing Sheet Scenario Override"
-  },
-  {
-   "fieldname": "heading_line_overrides",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Line Overrides",
-   "collapsible": 1
-  },
-  {
-   "fieldname": "line_overrides",
-   "fieldtype": "Table",
-   "label": "Line Overrides",
-   "hidden": 1,
-   "options": "Pricing Sheet Line Override"
   },
   {
    "fieldname": "heading_lines",

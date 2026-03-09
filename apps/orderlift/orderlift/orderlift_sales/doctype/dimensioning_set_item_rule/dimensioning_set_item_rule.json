@@ -8,6 +8,7 @@
   "field_order": [
     "sequence",
     "is_active",
+    "rule_group",
     "rule_label",
     "condition_formula",
     "item",
@@ -31,17 +32,24 @@
       "in_list_view": 1
     },
     {
+      "fieldname": "rule_group",
+      "fieldtype": "Data",
+      "label": "Groupe de Regle",
+      "hidden": 1,
+      "read_only": 1
+    },
+    {
       "fieldname": "rule_label",
       "fieldtype": "Data",
-      "label": "Rule Label",
+      "label": "Libelle de Regle",
       "reqd": 1,
       "in_list_view": 1
     },
     {
       "fieldname": "condition_formula",
       "fieldtype": "Data",
-      "label": "Condition Formula",
-      "description": "Optional. Example: floors > 2 and building_type == 'Hotel'"
+      "label": "Condition Avancee",
+      "description": "Optionnel. Laisser vide pour toujours ajouter l'article quand la formule de quantite donne une valeur > 0."
     },
     {
       "fieldname": "item",
@@ -54,20 +62,20 @@
     {
       "fieldname": "qty_formula",
       "fieldtype": "Data",
-      "label": "Qty Formula",
+      "label": "Formule de Quantite",
       "reqd": 1,
       "in_list_view": 1,
-      "description": "Example: 3 * floors + 1"
+      "description": "Exemple : 3 * niveaux + 1"
     },
     {
       "fieldname": "display_group",
       "fieldtype": "Data",
-      "label": "Display Group"
+      "label": "Groupe d'Affichage"
     },
     {
       "fieldname": "show_in_detail",
       "fieldtype": "Check",
-      "label": "Show In Detail",
+      "label": "Afficher en Detail",
       "default": "1"
     }
   ],

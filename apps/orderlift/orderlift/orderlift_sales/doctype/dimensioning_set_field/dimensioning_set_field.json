@@ -26,22 +26,22 @@
     {
       "fieldname": "field_key",
       "fieldtype": "Data",
-      "label": "Field Key",
+      "label": "Code Interne",
       "reqd": 1,
       "in_list_view": 1,
-      "description": "Formula variable key, e.g. floors_count"
+      "description": "Genere automatiquement a partir du libelle. Utilise seulement dans les formules avancees."
     },
     {
       "fieldname": "label",
       "fieldtype": "Data",
-      "label": "Label",
+      "label": "Caracteristique",
       "reqd": 1,
       "in_list_view": 1
     },
     {
       "fieldname": "field_type",
       "fieldtype": "Select",
-      "label": "Field Type",
+      "label": "Type de Caracteristique",
       "options": "Int\nFloat\nData\nSelect\nCheck",
       "default": "Float",
       "reqd": 1,
@@ -51,24 +51,24 @@
       "fieldname": "options",
       "fieldtype": "Small Text",
       "label": "Options",
-      "description": "One option per line for Select fields"
+      "description": "Une option par ligne pour les listes de choix"
     },
     {
       "fieldname": "default_value",
       "fieldtype": "Data",
-      "label": "Default Value"
+      "label": "Valeur par Defaut"
     },
     {
       "fieldname": "is_required",
       "fieldtype": "Check",
-      "label": "Required",
+      "label": "Obligatoire",
       "default": "0",
       "in_list_view": 1
     },
     {
       "fieldname": "help_text",
       "fieldtype": "Small Text",
-      "label": "Help Text"
+      "label": "Aide"
     }
   ],
   "istable": 1,
