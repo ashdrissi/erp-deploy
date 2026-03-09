@@ -15,6 +15,7 @@
     "heading_rules",
     "rule_builder_html",
     "item_rules",
+    "preview_test_values_json",
     "preview_panel_html"
   ],
   "fields": [
@@ -71,6 +72,12 @@
       "label": "Articles generes",
       "options": "Dimensioning Set Item Rule",
       "reqd": 1
+    },
+    {
+      "fieldname": "preview_test_values_json",
+      "fieldtype": "Long Text",
+      "label": "Preview Test Values JSON",
+      "hidden": 1
     },
     {
       "fieldname": "preview_panel_html",

@@ -550,6 +550,21 @@ function renderDimensioningOverview(frm) {
     `);
 }
 
+function parsePreviewTestValues(frm) {
+    try {
+        const parsed = JSON.parse(frm.doc.preview_test_values_json || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function normalizePreviewValues(frm) {
+    const saved = parsePreviewTestValues(frm);
+    const base = buildPreviewSampleValues(frm);
+    return { ...base, ...saved };
+}
+
 async function renderDimensioningPreview(frm, force = false) {
     const wrapper = frm.get_field("preview_panel_html")?.$wrapper;
     if (!wrapper) return;
@@ -560,7 +575,8 @@ async function renderDimensioningPreview(frm, force = false) {
         return;
     }
 
-    const sampleValues = buildPreviewSampleValues(frm);
+    const sampleValues = normalizePreviewValues(frm);
+    frm.doc.preview_test_values_json = JSON.stringify(sampleValues);
     if (!force && !(frm.doc.item_rules || []).length) {
         wrapper.html(`<div class="ds-preview-empty">${__("Ajoutez une ou plusieurs regles de selection pour previsualiser les articles generes.")}</div>`);
         return;
@@ -579,13 +595,7 @@ async function renderDimensioningPreview(frm, force = false) {
         const message = response.message || {};
         const items = message.items || [];
         const values = message.values || sampleValues;
-        const sampleHtml = Object.entries(values)
-            .map(([key, value]) => {
-                const field = (frm.doc.input_fields || []).find((row) => row.field_key === key);
-                const label = field?.label || key;
-                return `<span class="ds-chip"><b>${frappe.utils.escape_html(label)}</b> = ${frappe.utils.escape_html(String(value))}</span>`;
-            })
-            .join("");
+        const sampleHtml = renderPreviewTestInputs(frm, values);
         const rows = items.length
             ? items
                   .map(
@@ -604,8 +614,8 @@ async function renderDimensioningPreview(frm, force = false) {
         wrapper.html(`
             <div class="ds-section">
                 <div class="ds-section-title">${__("3. Apercu des articles generes")}</div>
-                <div class="ds-help">${__("Cet apercu utilise des valeurs d'essai pour verifier les regles avant utilisation sur la Pricing Sheet.")}</div>
-                <div class="ds-chip-row">${sampleHtml}</div>
+                <div class="ds-help">${__("Modifiez les valeurs de test ci-dessous pour verifier immediatement les articles qui seront generes.")}</div>
+                <div class="ds-preview-inputs">${sampleHtml}</div>
                 <div class="ds-preview-table-wrap">
                     <table class="ds-preview-table">
                         <thead>
@@ -621,9 +631,54 @@ async function renderDimensioningPreview(frm, force = false) {
                 </div>
             </div>
         `);
+        bindPreviewTestInputs(frm, sampleValues);
     } catch (e) {
         wrapper.html(`<div class="ds-preview-error">${__("L'apercu a echoue. Verifiez les caracteristiques et les formules des regles.")}</div>`);
     }
+}
+
+function renderPreviewTestInputs(frm, values) {
+    return (frm.doc.input_fields || []).map((row) => {
+        if (!row.field_key) return "";
+        const type = (row.field_type || "Float").toLowerCase();
+        const value = values[row.field_key];
+        let control = "";
+        if (type === "select") {
+            const options = (row.options || "").split("\n").map((opt) => opt.trim()).filter(Boolean)
+                .map((opt) => `<option value="${frappe.utils.escape_html(opt)}" ${String(value ?? "") === opt ? "selected" : ""}>${frappe.utils.escape_html(opt)}</option>`)
+                .join("");
+            control = `<select class="form-control" data-preview-key="${row.field_key}">${options}</select>`;
+        } else if (type === "check") {
+            control = `<label class="checkbox"><input type="checkbox" data-preview-key="${row.field_key}" ${value ? "checked" : ""}> <span>${__("Oui")}</span></label>`;
+        } else {
+            const inputType = type === "int" || type === "float" ? "number" : "text";
+            const step = type === "int" ? "1" : "any";
+            control = `<input type="${inputType}" step="${step}" class="form-control" data-preview-key="${row.field_key}" value="${frappe.utils.escape_html(String(value ?? ""))}">`;
+        }
+        return `
+            <div class="ds-preview-input-card">
+                <label class="control-label">${frappe.utils.escape_html(row.label || row.field_key)}</label>
+                ${control}
+            </div>
+        `;
+    }).join("");
+}
+
+function bindPreviewTestInputs(frm, currentValues) {
+    const wrapper = frm.get_field("preview_panel_html")?.$wrapper;
+    if (!wrapper) return;
+    wrapper.find("[data-preview-key]").on("change input", () => {
+        const values = { ...(currentValues || {}) };
+        wrapper.find("[data-preview-key]").each(function () {
+            const key = $(this).data("previewKey");
+            const row = (frm.doc.input_fields || []).find((entry) => entry.field_key === key);
+            const type = (row?.field_type || "Float").toLowerCase();
+            if (type === "check") values[key] = $(this).is(":checked");
+            else values[key] = $(this).val();
+        });
+        frm.doc.preview_test_values_json = JSON.stringify(values);
+        renderDimensioningPreview(frm, true);
+    });
 }
 
 function autoFillCharacteristicKey(cdt, cdn, row) {

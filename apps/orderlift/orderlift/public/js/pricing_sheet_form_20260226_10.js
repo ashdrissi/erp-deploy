@@ -333,7 +333,9 @@ async function renderDimensioningTool(frm) {
 
     const $root = field.$wrapper;
     $root.find("[data-dimensioning-key]").on("change input", () => {
-        frm.doc.dimensioning_inputs_json = JSON.stringify(collectDimensioningValues($root, setConfig));
+        const currentValues = collectDimensioningValues($root, setConfig);
+        frm.doc.dimensioning_inputs_json = JSON.stringify(currentValues);
+        renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues);
     });
 
     $root.find("[data-dimensioning-reset]").on("click", async () => {
@@ -362,6 +364,8 @@ async function renderDimensioningTool(frm) {
         await renderDimensioningTool(frm);
         frappe.show_alert({ message: __("Articles de dimensionnement ajoutes"), indicator: "green" });
     });
+
+    await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, values);
 }
 
 async function renderDimensioningPreviewBox($root, setName, currentValues) {

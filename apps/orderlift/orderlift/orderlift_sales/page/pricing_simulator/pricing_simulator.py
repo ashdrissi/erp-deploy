@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder import _load_builder_items, _normalize_rules
 from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules import (
     DYNAMIC_MODE,
     build_dynamic_context,
@@ -47,6 +48,7 @@ def get_simulation_defaults(sales_person=None, mode="Auto"):
         "resolved_mode": resolved_mode,
         "agent_mode": agent_mode,
         "dynamic": {
+            "buying_price_list": selected.get("buying_price_list") or "",
             "pricing_scenario": selected.get("pricing_scenario") or "",
             "customs_policy": selected.get("customs_policy") or "",
             "benchmark_policy": selected.get("benchmark_policy") or "",
@@ -92,11 +94,27 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
     defaults = build_dynamic_context(agent_doc=agent_doc) if agent_doc else {}
     selected = defaults.get("selected") or {}
 
-    doc.pricing_scenario = (data.get("pricing_scenario") or selected.get("pricing_scenario") or "").strip()
-    doc.customs_policy = (data.get("customs_policy") or selected.get("customs_policy") or "").strip()
-    doc.benchmark_policy = (data.get("benchmark_policy") or selected.get("benchmark_policy") or "").strip()
+    sourcing_rules = _resolve_dynamic_sourcing_rules(data, selected)
+    first_rule = sourcing_rules[0] if sourcing_rules else {}
+
+    doc.pricing_scenario = (data.get("pricing_scenario") or first_rule.get("pricing_scenario") or selected.get("pricing_scenario") or "").strip()
+    doc.customs_policy = (data.get("customs_policy") or first_rule.get("customs_policy") or selected.get("customs_policy") or "").strip()
+    doc.benchmark_policy = (data.get("benchmark_policy") or first_rule.get("benchmark_policy") or selected.get("benchmark_policy") or "").strip()
     doc.geography_territory = (data.get("geography_territory") or "").strip()
     doc.minimum_margin_percent = flt(data.get("minimum_margin_percent") or 0)
+    doc.set("scenario_mappings", [])
+    for idx, rule in enumerate(sourcing_rules, start=1):
+        doc.append(
+            "scenario_mappings",
+            {
+                "source_buying_price_list": rule.get("source_buying_price_list") or "",
+                "pricing_scenario": rule.get("pricing_scenario") or "",
+                "customs_policy": rule.get("customs_policy") or "",
+                "benchmark_policy": rule.get("benchmark_policy") or "",
+                "priority": cint(rule.get("priority") or (idx * 10)),
+                "is_active": 1 if cint(rule.get("is_active") or 0) else 0,
+            },
+        )
 
     doc.set("lines", [])
     for row in items:
@@ -106,6 +124,7 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
                 "item": row.get("item"),
                 "qty": flt(row.get("qty") or 0),
                 "source_bundle": row.get("source_bundle") or "",
+                "source_buying_price_list": row.get("source_buying_price_list") or row.get("buying_list") or "",
             },
         )
 
@@ -118,6 +137,8 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
         row = {
             "item": line.item,
             "qty": flt(line.qty),
+            "material": getattr(line, "customs_material", "") or "",
+            "source_buying_price_list": getattr(line, "source_buying_price_list", "") or "",
             "buy_price": flt(line.buy_price),
             "base_amount": flt(line.base_amount),
             "final_sell_unit_price": flt(line.final_sell_unit_price),
@@ -204,6 +225,7 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
         out_row = {
             "item": code,
             "qty": qty,
+            "material": frappe.db.get_value("Item", code, "custom_material") or "",
             "selected_price_list": selected.get("price_list") or "",
             "selected_price": flt(selected.get("rate")),
             "line_total": flt(selected.get("rate")) * qty,
@@ -264,8 +286,25 @@ def _resolve_items_for_simulation(data):
     if not use_all:
         return _normalize_items(data.get("items") or []), []
 
+    mode = _resolve_mode((data.get("mode") or "Auto").strip(), "")
     item_group = (data.get("item_group") or "").strip()
     max_items = cint(data.get("max_items") or 0)
+    item_search = (data.get("item_search") or "").strip()
+    material = (data.get("material") or "").strip()
+
+    if mode == "Dynamic":
+        rules = _normalize_rules(data.get("sourcing_rules") or [])
+        active_buying_lists = [row.get("source_buying_price_list") for row in rules if cint(row.get("is_active") or 0) and row.get("source_buying_price_list")]
+        if active_buying_lists:
+            items, warnings = _load_builder_items(active_buying_lists, item_group=item_group, max_items=max_items)
+            return _apply_simulation_item_filters(items, qty_default, item_search=item_search, material=material), warnings
+
+    if mode == "Static":
+        selling_lists = [str(x).strip() for x in (data.get("selling_price_lists") or []) if str(x).strip()]
+        if selling_lists:
+            items, warnings = _load_static_items(selling_lists, item_group=item_group, max_items=max_items)
+            return _apply_simulation_item_filters(items, qty_default, item_search=item_search, material=material), warnings
+
     if max_items < 0:
         max_items = 0
 
@@ -309,6 +348,130 @@ def _resolve_items_for_simulation(data):
     else:
         warnings.append(_("Auto-loaded {0} enabled item(s) for simulation.").format(len(out)))
     return out, warnings
+
+
+def _apply_simulation_item_filters(items, qty_default, item_search="", material=""):
+    out = []
+    query = (item_search or "").strip().lower()
+    material_filter = (material or "").strip().lower()
+    if not items:
+        return out
+
+    item_codes = [row.get("item") for row in items if row.get("item")]
+    details_map = {}
+    if item_codes:
+        details_map = {
+            row.get("name"): row
+            for row in frappe.get_all("Item", filters={"name": ["in", item_codes]}, fields=["name", "item_name", "item_group", "custom_material"], limit_page_length=0)
+        }
+
+    for row in items:
+        code = row.get("item") or ""
+        details = details_map.get(code) or {}
+        haystack = " ".join([
+            code,
+            details.get("item_name") or "",
+            details.get("item_group") or "",
+            details.get("custom_material") or "",
+        ]).lower()
+        if query and query not in haystack:
+            continue
+        if material_filter and material_filter != (details.get("custom_material") or "").lower():
+            continue
+        out.append(
+            {
+                **row,
+                "qty": flt(row.get("qty") or qty_default or 1) or 1,
+                "source_buying_price_list": row.get("source_buying_price_list") or row.get("buying_list") or "",
+            }
+        )
+    return out
+
+
+def _load_static_items(selling_lists, item_group=None, max_items=0):
+    if not selling_lists:
+        return [], []
+    rows = _get_latest_price_rows(selling_lists, buying=0)
+    if not rows:
+        return [], [_("No selling prices found in the selected selling price lists.")]
+
+    grouped = {}
+    priority = {name: idx for idx, name in enumerate(selling_lists)}
+    for row in rows:
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+        candidate = {"item": item_code, "selected_price_list": row.get("price_list") or "", "selected_price": flt(row.get("price_list_rate") or 0)}
+        bucket = grouped.get(item_code)
+        if not bucket or priority.get(candidate["selected_price_list"], 9999) < priority.get(bucket["selected_price_list"], 9999):
+            grouped[item_code] = candidate
+
+    filters = {"name": ["in", list(grouped.keys())], "disabled": 0}
+    warnings = []
+    if item_group and item_group != "All Item Groups":
+        if _is_item_group_node(item_group):
+            descendants = _descendant_leaf_item_groups(item_group)
+            if descendants:
+                filters["item_group"] = ["in", descendants]
+            else:
+                warnings.append(_("Selected Item Group has no leaf item groups."))
+        else:
+            filters["item_group"] = item_group
+
+    item_rows = frappe.get_all("Item", filters=filters, fields=["name"], order_by="name asc", limit_page_length=max_items if max_items > 0 else 0)
+    items = [{"item": row.get("name"), "qty": 1, "source_bundle": ""} for row in item_rows if row.get("name")]
+    if not items:
+        warnings.append(_("No items matched the selected selling price lists and filters."))
+    return items, warnings
+
+
+def _get_latest_price_rows(price_lists, buying=0):
+    conditions = ["ip.price_list in %(price_lists)s"]
+    params = {"price_lists": tuple(price_lists), "today": frappe.utils.nowdate()}
+    if frappe.db.has_column("Item Price", "enabled"):
+        conditions.append("ip.enabled = 1")
+    if frappe.db.has_column("Item Price", "buying"):
+        conditions.append("ip.buying = %(buying)s")
+        params["buying"] = cint(buying)
+    if frappe.db.has_column("Item Price", "selling") and not buying:
+        conditions.append("ip.selling = 1")
+    if frappe.db.has_column("Item Price", "valid_from"):
+        conditions.append("(ip.valid_from IS NULL OR ip.valid_from <= %(today)s)")
+    if frappe.db.has_column("Item Price", "valid_upto"):
+        conditions.append("(ip.valid_upto IS NULL OR ip.valid_upto >= %(today)s)")
+    order_by = "ip.price_list ASC, ip.item_code ASC, ip.modified DESC"
+    if frappe.db.has_column("Item Price", "valid_from"):
+        order_by = "ip.price_list ASC, ip.item_code ASC, ip.valid_from DESC, ip.modified DESC"
+    return frappe.db.sql(
+        f"""
+        select ip.item_code, ip.price_list, ip.price_list_rate
+        from `tabItem Price` ip
+        where {' and '.join(conditions)}
+        order by {order_by}
+        """,
+        params,
+        as_dict=True,
+    )
+
+
+def _resolve_dynamic_sourcing_rules(data, selected):
+    rows = data.get("sourcing_rules") or []
+    rules = _normalize_rules(rows)
+    rules = [row for row in rules if cint(row.get("is_active") or 0) and row.get("source_buying_price_list")]
+    if rules:
+        return rules
+    buying_list = (data.get("buying_price_list") or selected.get("buying_price_list") or "").strip()
+    if not buying_list:
+        return []
+    return _normalize_rules(
+        [{
+            "buying_price_list": buying_list,
+            "pricing_scenario": data.get("pricing_scenario") or selected.get("pricing_scenario") or "",
+            "customs_policy": data.get("customs_policy") or selected.get("customs_policy") or "",
+            "benchmark_policy": data.get("benchmark_policy") or selected.get("benchmark_policy") or "",
+            "is_active": 1,
+        }]
+    )
 
 
 def _resolve_mode(requested_mode, agent_mode):

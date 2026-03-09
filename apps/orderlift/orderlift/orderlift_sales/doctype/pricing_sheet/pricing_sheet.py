@@ -977,7 +977,7 @@ class PricingSheet(Document):
         if not user or user == "Administrator":
             return False
 
-        roles = set(frappe.get_roles(user=user) or [])
+        roles = set(frappe.get_roles(user) or [])
         return RESTRICTED_AGENT_ROLE in roles and not (roles & PRIVILEGED_PRICING_ROLES)
 
     def _enforce_agent_pricing_inputs(self):

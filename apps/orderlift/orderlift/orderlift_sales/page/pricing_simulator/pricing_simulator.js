@@ -39,6 +39,8 @@ frappe.pages["pricing-simulator"].on_page_load = function (wrapper) {
         lastMode: null,
         lastSummary: null,
         viewMode: "Compare (Dynamic vs Static)",
+        dynamicSources: [],
+        staticLists: [],
     };
 
     buildLayout(state);
@@ -76,6 +78,10 @@ function buildLayout(state) {
                 </div>
                 <div class="psim-collapse-body" style="${savedOpen ? "" : "display:none"}">
                     <div class="psim-grid"></div>
+                    <div class="psim-source-grid">
+                        <div class="psim-source-card" data-role="dynamic-sources"></div>
+                        <div class="psim-source-card" data-role="static-sources"></div>
+                    </div>
                     <div class="psim-hint" data-role="auto-hint"></div>
                 </div>
             </div>
@@ -129,14 +135,18 @@ function buildLayout(state) {
         customer: makeControl(grid, { fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" }),
         sales_person: makeControl(grid, { fieldname: "sales_person", label: __("Sales Person"), fieldtype: "Link", options: "Sales Person" }),
         item_group: makeControl(grid, { fieldname: "item_group", label: __("Item Group"), fieldtype: "Link", options: "Item Group" }),
+        item_search: makeControl(grid, { fieldname: "item_search", label: __("Item Search"), fieldtype: "Data" }),
+        material: makeControl(grid, { fieldname: "material", label: __("Material"), fieldtype: "Data" }),
         only_priced_items: makeControl(grid, { fieldname: "only_priced_items", label: __("Only Priced Items"), fieldtype: "Check", default: 1 }),
         default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Qty per Item"), fieldtype: "Float", default: 1 }),
         max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
         pricing_scenario: makeControl(grid, { fieldname: "pricing_scenario", label: __("Expenses Policy"), fieldtype: "Link", options: "Pricing Scenario" }),
         customs_policy: makeControl(grid, { fieldname: "customs_policy", label: __("Customs Policy"), fieldtype: "Link", options: "Pricing Customs Policy" }),
         benchmark_policy: makeControl(grid, { fieldname: "benchmark_policy", label: __("Margin & Benchmark Policy"), fieldtype: "Link", options: "Pricing Benchmark Policy" }),
-        static_lists: makeControl(grid, { fieldname: "static_lists", label: __("Static Lists"), fieldtype: "Small Text", description: __("Comma-separated selling lists.") }),
     };
+    state.dynamicSourcesWrap = controlsWrap.find('[data-role="dynamic-sources"]');
+    state.staticSourcesWrap = controlsWrap.find('[data-role="static-sources"]');
+    renderSourceConfigurators(state);
 
     // ── Bindings ──
     controlsWrap.find('[data-role="filter-toggle"]').on("click", () => toggleFilters(state));
@@ -199,6 +209,8 @@ function collapseFilters(state) {
 function persistFilters(state) {
     const vals = {};
     Object.entries(state.controls).forEach(([k, c]) => { vals[k] = c.get_value(); });
+    vals.dynamic_sources = state.dynamicSources;
+    vals.static_lists = state.staticLists;
     localStorage.setItem(LS_KEY, JSON.stringify(vals));
     updateFilterSummary(state, vals);
 }
@@ -207,9 +219,12 @@ function restoreFilters(state) {
     try {
         const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
         Object.entries(saved).forEach(([k, v]) => {
-            if (state.controls[k] && v !== null && v !== undefined && v !== "")
+            if (k === "dynamic_sources") state.dynamicSources = Array.isArray(v) ? v : [];
+            else if (k === "static_lists") state.staticLists = Array.isArray(v) ? v : [];
+            else if (state.controls[k] && v !== null && v !== undefined && v !== "")
                 state.controls[k].set_value(v);
         });
+        renderSourceConfigurators(state);
         updateFilterSummary(state, saved);
     } catch (_) { }
 }
@@ -221,6 +236,9 @@ function clearFilters(state) {
         if (df?.default !== undefined) state.controls[k].set_value(df.default);
     });
     localStorage.removeItem(LS_KEY);
+    state.dynamicSources = [];
+    state.staticLists = [];
+    renderSourceConfigurators(state);
     state.filterSummary.text("");
 }
 
@@ -246,15 +264,22 @@ async function loadDefaults(state, forceToast) {
     const data = resp.message || {};
 
     if (data.dynamic) {
-        if (!state.controls.pricing_scenario.get_value()) state.controls.pricing_scenario.set_value(data.dynamic.pricing_scenario || "");
-        if (!state.controls.customs_policy.get_value()) state.controls.customs_policy.set_value(data.dynamic.customs_policy || "");
-        if (!state.controls.benchmark_policy.get_value()) state.controls.benchmark_policy.set_value(data.dynamic.benchmark_policy || "");
+        if (!state.dynamicSources.length && data.dynamic.buying_price_list) {
+            state.dynamicSources = [{
+                buying_price_list: data.dynamic.buying_price_list || "",
+                pricing_scenario: data.dynamic.pricing_scenario || "",
+                customs_policy: data.dynamic.customs_policy || "",
+                benchmark_policy: data.dynamic.benchmark_policy || "",
+                is_active: 1,
+            }];
+        }
     }
-    if (data.static && !state.controls.static_lists.get_value())
-        state.controls.static_lists.set_value((data.static.selling_price_lists || []).join(", "));
+    if (data.static && !state.staticLists.length)
+        state.staticLists = (data.static.selling_price_lists || []).slice();
 
     state.enabledItemCount = Number(data.enabled_item_count || 0);
     renderAutoHint(state);
+    renderSourceConfigurators(state);
     state.defaultsApplied = true;
 
     if (forceToast)
@@ -270,14 +295,107 @@ function collectPayload(state) {
         pricing_scenario: state.controls.pricing_scenario.get_value() || "",
         customs_policy: state.controls.customs_policy.get_value() || "",
         benchmark_policy: state.controls.benchmark_policy.get_value() || "",
-        selling_price_lists: parseList(state.controls.static_lists.get_value()),
+        selling_price_lists: state.staticLists.slice(),
+        sourcing_rules: state.dynamicSources.slice(),
         use_all_enabled_items: 1,
         item_group: state.controls.item_group.get_value() || "",
+        item_search: state.controls.item_search.get_value() || "",
+        material: state.controls.material.get_value() || "",
         default_qty: state.controls.default_qty.get_value() || 1,
         max_items: state.controls.max_items.get_value() || 0,
         only_priced_items: Number(state.controls.only_priced_items.get_value() || 0),
         items: [],
     };
+}
+
+function renderSourceConfigurators(state) {
+    renderDynamicSources(state);
+    renderStaticSources(state);
+}
+
+function renderDynamicSources(state) {
+    const wrap = state.dynamicSourcesWrap;
+    if (!wrap?.length) return;
+    const rows = state.dynamicSources.length ? state.dynamicSources.map((row, idx) => `
+        <div class="psim-source-row">
+            <input class="form-control" data-dyn-field="buying_price_list" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.buying_price_list || "")}" placeholder="${__("Buying List")}">
+            <input class="form-control" data-dyn-field="pricing_scenario" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.pricing_scenario || "")}" placeholder="${__("Expenses Policy")}">
+            <input class="form-control" data-dyn-field="customs_policy" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.customs_policy || "")}" placeholder="${__("Customs Policy")}">
+            <input class="form-control" data-dyn-field="benchmark_policy" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.benchmark_policy || "")}" placeholder="${__("Margin & Benchmark Policy")}">
+            <label class="checkbox psim-source-check"><input type="checkbox" data-dyn-active="${idx}" ${row.is_active ? "checked" : ""}> ${__("Active")}</label>
+            <button class="btn btn-default btn-xs" data-remove-dyn="${idx}">${__("Remove")}</button>
+        </div>
+    `).join("") : `<div class="psim-source-empty">${__("No dynamic sourcing rows yet.")}</div>`;
+    wrap.html(`
+        <div class="psim-source-head">
+            <div>
+                <div class="psim-source-title">${__("Dynamic Sources")}</div>
+                <div class="psim-source-help">${__("Map buying price lists to expenses, customs, and margin policies like the builder.")}</div>
+            </div>
+            <button class="btn btn-default btn-xs" data-add-dyn>${__("Add Row")}</button>
+        </div>
+        <div class="psim-source-list">${rows}</div>
+    `);
+    wrap.find('[data-add-dyn]').on('click', () => {
+        state.dynamicSources.push({ buying_price_list: "", pricing_scenario: "", customs_policy: "", benchmark_policy: "", is_active: 1 });
+        renderDynamicSources(state);
+        persistFilters(state);
+    });
+    wrap.find('[data-remove-dyn]').on('click', function () {
+        state.dynamicSources.splice(Number($(this).data('removeDyn')), 1);
+        renderDynamicSources(state);
+        persistFilters(state);
+        queueRun(state);
+    });
+    wrap.find('[data-dyn-field]').on('change input', function () {
+        const idx = Number($(this).data('dynIdx'));
+        const field = $(this).data('dynField');
+        state.dynamicSources[idx][field] = $(this).val();
+        persistFilters(state);
+        queueRun(state);
+    });
+    wrap.find('[data-dyn-active]').on('change', function () {
+        const idx = Number($(this).data('dynActive'));
+        state.dynamicSources[idx].is_active = $(this).is(':checked') ? 1 : 0;
+        persistFilters(state);
+        queueRun(state);
+    });
+}
+
+function renderStaticSources(state) {
+    const wrap = state.staticSourcesWrap;
+    if (!wrap?.length) return;
+    const tags = state.staticLists.length ? state.staticLists.map((value, idx) => `
+        <span class="psim-list-chip">${frappe.utils.escape_html(value)} <button data-remove-static="${idx}">×</button></span>
+    `).join('') : `<div class="psim-source-empty">${__("No static selling lists selected.")}</div>`;
+    wrap.html(`
+        <div class="psim-source-head">
+            <div>
+                <div class="psim-source-title">${__("Static Selling Lists")}</div>
+                <div class="psim-source-help">${__("Choose one or more selling lists to simulate static pricing with the same item filters.")}</div>
+            </div>
+        </div>
+        <div class="psim-static-add">
+            <input class="form-control" data-static-input placeholder="${__("Add selling price list and press Enter")}">
+        </div>
+        <div class="psim-chip-row">${tags}</div>
+    `);
+    wrap.find('[data-static-input]').on('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const value = ($(this).val() || '').trim();
+        if (!value || state.staticLists.includes(value)) return;
+        state.staticLists.push(value);
+        renderStaticSources(state);
+        persistFilters(state);
+        queueRun(state);
+    });
+    wrap.find('[data-remove-static]').on('click', function () {
+        state.staticLists.splice(Number($(this).data('removeStatic')), 1);
+        renderStaticSources(state);
+        persistFilters(state);
+        queueRun(state);
+    });
 }
 
 function parseList(value) {
@@ -510,8 +628,8 @@ function renderResults(state, data) {
             ${metricCard(__("Global Margin"), `${Number(summary.global_margin_pct || 0).toFixed(1)}%`, "green")}`;
 
     const thead = mode === "Static"
-        ? `<tr>${thSort("item", __("Item"))}${thSort("qty", __("Qty"))}${thSort("list", __("List"))}${thSort("price", __("Price"))}${thSort("total", __("Total"))}${thSort("opts", __("Options"))}</tr>`
-        : `<tr>${thSort("item", __("Item"))}${thSort("qty", __("Qty"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("benchmark_ratio", __("Ratio"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("applied_benchmark_policy", __("Policy"))}${thSort("margin_source", __("Source"))}</tr>`;
+        ? `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("qty", __("Qty"))}${thSort("list", __("List"))}${thSort("price", __("Price"))}${thSort("total", __("Total"))}${thSort("opts", __("Options"))}</tr>`
+        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("qty", __("Qty"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("applied_benchmark_policy", __("Policy"))}</tr>`;
 
     state.outputWrap.html(`
             <div class="psim-metrics">${cards}</div>
@@ -557,15 +675,16 @@ function renderSingleRows(state) {
 
     // Totals for dynamic
     if (mode !== "Static") {
-        const totBuy = rows.reduce((s, r) => s + Number(r.buy_price || 0) * Number(r.qty || 0), 0);
-        const totSell = rows.reduce((s, r) => s + Number(r.final_sell_unit_price || 0) * Number(r.qty || 0), 0);
-        const avgMargin = rows.length ? rows.reduce((s, r) => s + Number(r.margin_pct || 0), 0) / rows.length : 0;
-        tfoot.html(`<tr class="psim-tfoot-row">
+         const totBuy = rows.reduce((s, r) => s + Number(r.buy_price || 0) * Number(r.qty || 0), 0);
+         const totSell = rows.reduce((s, r) => s + Number(r.final_sell_unit_price || 0) * Number(r.qty || 0), 0);
+         const avgMargin = rows.length ? rows.reduce((s, r) => s + Number(r.margin_pct || 0), 0) / rows.length : 0;
+         tfoot.html(`<tr class="psim-tfoot-row">
                 <td><strong>${__("Totals")}</strong></td>
                 <td></td>
                 <td></td>
+                <td></td>
                 <td><strong>${frappe.format(totBuy, { fieldtype: "Currency" })}</strong></td>
-                <td colspan="2"></td>
+                <td></td>
                 <td><strong>${frappe.format(totSell, { fieldtype: "Currency" })}</strong></td>
                 <td>${marginBadge(avgMargin)}</td>
                 <td></td>
@@ -574,7 +693,7 @@ function renderSingleRows(state) {
         const totSell = rows.reduce((s, r) => s + Number(r.line_total || 0), 0);
         tfoot.html(`<tr class="psim-tfoot-row">
                 <td><strong>${__("Totals")}</strong></td>
-                <td colspan="3"></td>
+                <td colspan="4"></td>
                 <td><strong>${frappe.format(totSell, { fieldtype: "Currency" })}</strong></td>
                 <td></td>
             </tr>`);
@@ -633,21 +752,22 @@ function dynamicRow(row, q) {
     const ruleTitle = rule ? ` title="Rule: ${frappe.utils.escape_html(rule)}"` : "";
     return `<tr>
             <td>${docLink("Item", row.item || "", row.item, q)}</td>
+            <td>${frappe.utils.escape_html(row.material || "—")}</td>
+            <td>${frappe.utils.escape_html(row.source_buying_price_list || "—")}</td>
             <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
             <td>${docLink("Pricing Scenario", row.resolved_pricing_scenario, row.resolved_pricing_scenario, null)}</td>
             <td>${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
             <td>${row.benchmark_reference ? frappe.format(row.benchmark_reference, { fieldtype: "Currency" }) : "—"}</td>
-            <td>${row.benchmark_ratio ? Number(row.benchmark_ratio).toFixed(3) : "—"}</td>
             <td><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
             <td>${marginBadge(row.margin_pct)}</td>
             <td${ruleTitle}>${docLink("Pricing Benchmark Policy", policy, policy, null)}</td>
-            <td><span class="psim-src">${frappe.utils.escape_html(row.margin_source || "—")}</span></td>
         </tr>`;
 }
 
 function staticRow(row, q) {
     return `<tr>
             <td>${docLink("Item", row.item || "", row.item, q)}</td>
+            <td>${frappe.utils.escape_html(row.material || "—")}</td>
             <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
             <td>${row.selected_price_list
             ? `<a href="/app/item-price?price_list=${encodeURIComponent(row.selected_price_list)}" class="psim-link" target="_blank" title="View Item Prices for ${frappe.utils.escape_html(row.selected_price_list)}">${frappe.utils.escape_html(row.selected_price_list)}</a>`
@@ -747,18 +867,17 @@ function exportCsv(state) {
             r.dynFinal >= r.staPrice ? "Dynamic" : "Static",
         ];
     } else if (state.lastMode === "Static") {
-        headers = ["Item", "Qty", "List", "Price", "Line Total", "Options"];
-        rowsFn = (r) => [r.item, r.qty, r.selected_price_list, r.selected_price, r.line_total, r.option_count];
+        headers = ["Item", "Material", "Qty", "List", "Price", "Line Total", "Options"];
+        rowsFn = (r) => [r.item, r.material || "", r.qty, r.selected_price_list, r.selected_price, r.line_total, r.option_count];
     } else {
-        headers = ["Item", "Qty", "Scenario", "Buy", "Bench Ref", "Ratio", "Final", "Margin %", "Source"];
+        headers = ["Item", "Material", "Buying List", "Qty", "Scenario", "Buy", "Bench Ref", "Final", "Margin %", "Policy"];
         rowsFn = (r) => [
-            r.item, r.qty,
+            r.item, r.material || "", r.source_buying_price_list || "", r.qty,
             r.resolved_pricing_scenario,
             r.buy_price, r.benchmark_reference,
-            r.benchmark_ratio ? Number(r.benchmark_ratio).toFixed(3) : "",
             r.final_sell_unit_price,
             Number(r.margin_pct || 0).toFixed(2),
-            r.margin_source,
+            r.applied_benchmark_policy || "",
         ];
     }
 
@@ -857,6 +976,19 @@ function injectStyles() {
             /* Filter grid — 4 columns compact */
             .psim-collapse-body { margin-top: 10px; }
             .psim-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 12px; }
+            .psim-source-grid { display:grid; grid-template-columns:1.35fr 1fr; gap:12px; margin-top:12px; }
+            .psim-source-card { border:1px solid #e2e8f0; border-radius:10px; padding:12px; background:#f8fafc; }
+            .psim-source-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:10px; }
+            .psim-source-title { font-size:12px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:.05em; }
+            .psim-source-help { font-size:11px; color:#64748b; margin-top:4px; }
+            .psim-source-list { display:grid; gap:8px; }
+            .psim-source-row { display:grid; grid-template-columns:1.1fr 1fr 1fr 1fr auto auto; gap:8px; align-items:center; }
+            .psim-source-empty { color:#94a3b8; font-size:12px; padding:10px; border:1px dashed #cbd5e1; border-radius:8px; background:#fff; }
+            .psim-source-check { margin:0; white-space:nowrap; font-size:11px; color:#475569; }
+            .psim-static-add { margin-bottom:10px; }
+            .psim-chip-row { display:flex; flex-wrap:wrap; gap:8px; }
+            .psim-list-chip { display:inline-flex; align-items:center; gap:6px; background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:600; }
+            .psim-list-chip button { border:none; background:none; color:inherit; cursor:pointer; font-size:14px; line-height:1; padding:0; }
             .psim-field .control-label { font-size: 11px !important; margin-bottom: 2px !important; color: #475569; }
             .psim-field .form-control   { height: 28px !important; font-size: 12px !important; padding: 2px 8px !important; }
             .psim-field .link-btn       { line-height: 28px !important; }
@@ -970,8 +1102,8 @@ function injectStyles() {
             .psim-muted { color: #94a3b8; text-align: center; padding: 0 !important; }
 
             /* Responsive */
-            @media (max-width: 1100px) { .psim-grid { grid-template-columns: repeat(3, 1fr); } }
-            @media (max-width: 800px)  { .psim-grid { grid-template-columns: repeat(2, 1fr); } }
+            @media (max-width: 1100px) { .psim-grid { grid-template-columns: repeat(3, 1fr); } .psim-source-grid{grid-template-columns:1fr;} .psim-source-row{grid-template-columns:repeat(2,minmax(0,1fr));} }
+            @media (max-width: 800px)  { .psim-grid { grid-template-columns: repeat(2, 1fr); } .psim-source-row{grid-template-columns:1fr;} }
             @media (max-width: 500px)  { .psim-grid { grid-template-columns: 1fr; } .psim-search { width: 130px !important; } .psim-kbd-hint { display: none; } }
         `;
     document.head.appendChild(style);
