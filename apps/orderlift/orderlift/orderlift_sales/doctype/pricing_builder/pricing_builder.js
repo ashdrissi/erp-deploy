@@ -23,6 +23,18 @@ frappe.ui.form.on("Pricing Builder", {
     },
     selling_price_list_name(frm) {
         renderBuilderHeader(frm);
+        scheduleAutoRecalculate(frm);
+    },
+    item_group(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    default_qty(frm) {
+        renderBuilderHeader(frm);
+        scheduleAutoRecalculate(frm);
+    },
+    max_items(frm) {
+        renderBuilderHeader(frm);
+        scheduleAutoRecalculate(frm);
     },
 });
 
@@ -138,14 +150,20 @@ function indicatorColor(frm) {
 }
 
 async function calculateBuilder(frm) {
+    if (frm.__pricing_builder_running) return;
+    frm.__pricing_builder_running = true;
     await frm.save();
-    await frappe.call({
-        method: "orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder.calculate_builder_doc",
-        args: { name: frm.doc.name },
-        freeze: true,
-        freeze_message: __("Calculating builder prices..."),
-    });
-    await frm.reload_doc();
+    try {
+        await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder.calculate_builder_doc",
+            args: { name: frm.doc.name },
+            freeze: true,
+            freeze_message: __("Calculating builder prices..."),
+        });
+        await frm.reload_doc();
+    } finally {
+        frm.__pricing_builder_running = false;
+    }
 }
 
 async function publishBuilder(frm, selectedOnly) {
@@ -175,6 +193,15 @@ async function publishBuilder(frm, selectedOnly) {
     await frm.reload_doc();
 }
 
+function scheduleAutoRecalculate(frm) {
+    if (frm.is_new() || frm.__pricing_builder_running) return;
+    clearTimeout(frm.__pricing_builder_auto_timer);
+    frm.__pricing_builder_auto_timer = setTimeout(() => {
+        if (frm.__pricing_builder_running) return;
+        calculateBuilder(frm);
+    }, 450);
+}
+
 frappe.ui.form.on("Pricing Builder Item", {
     override_selling_price(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -182,6 +209,30 @@ frappe.ui.form.on("Pricing Builder Item", {
         const buyPrice = flt(row.base_buy_price || 0);
         const marginPct = buyPrice > 0 ? ((effectivePrice - buyPrice) / buyPrice) * 100 : 0;
         frappe.model.set_value(cdt, cdn, "final_margin_pct", marginPct);
+    },
+});
+
+frappe.ui.form.on("Pricing Builder Sourcing Rule", {
+    buying_price_list(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    pricing_scenario(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    customs_policy(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    benchmark_policy(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    is_active(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    sourcing_rules_add(frm) {
+        scheduleAutoRecalculate(frm);
+    },
+    sourcing_rules_remove(frm) {
+        scheduleAutoRecalculate(frm);
     },
 });
 
