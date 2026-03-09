@@ -1,0 +1,104 @@
+{
+  "actions": [],
+  "autoname": "format:DSET-{#####}",
+  "creation": "2026-03-09 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "set_name",
+    "is_active",
+    "description",
+    "heading_inputs",
+    "input_fields",
+    "heading_rules",
+    "item_rules"
+  ],
+  "fields": [
+    {
+      "fieldname": "set_name",
+      "fieldtype": "Data",
+      "label": "Set Name",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    },
+    {
+      "fieldname": "heading_inputs",
+      "fieldtype": "Heading",
+      "label": "Dimensioning Inputs"
+    },
+    {
+      "fieldname": "input_fields",
+      "fieldtype": "Table",
+      "label": "Input Fields",
+      "options": "Dimensioning Set Field",
+      "reqd": 1
+    },
+    {
+      "fieldname": "heading_rules",
+      "fieldtype": "Heading",
+      "label": "Item Rules"
+    },
+    {
+      "fieldname": "item_rules",
+      "fieldtype": "Table",
+      "label": "Item Rules",
+      "options": "Dimensioning Set Item Rule",
+      "reqd": 1
+    }
+  ],
+  "is_submittable": 0,
+  "links": [],
+  "modified": "2026-03-09 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Dimensioning Set",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "set_name",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "set_name",
+  "track_changes": 1
+}

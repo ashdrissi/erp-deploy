@@ -109,51 +109,11 @@ function renderContextActions(frm) {
                 }
             },
         },
+        {
+            label: __("Add from Bundle"),
+            handler: async () => openAddFromBundleDialog(frm),
+        },
     ];
-
-    if (!restrictedAgent) {
-        lineActions.push(
-            {
-                label: __("Refresh Base Prices"),
-                handler: async () => {
-                    if (frm.is_dirty()) await frm.save();
-                    await frm.call("refresh_buy_prices");
-                    await frm.reload_doc();
-                    renderProjectionDashboard(frm);
-                    frappe.show_alert({ message: __("Base prices refreshed"), indicator: "green" });
-                },
-            },
-            {
-                label: __("Apply Expenses Policy to Rows"),
-                handler: async () => {
-                    const dialog = new frappe.ui.Dialog({
-                        title: __("Apply Expenses Policy"),
-                        fields: [
-                            {
-                                fieldtype: "Link",
-                                fieldname: "pricing_scenario",
-                                label: __("Expenses Policy"),
-                                options: "Pricing Scenario",
-                                reqd: 1,
-                            },
-                        ],
-                        primary_action_label: __("Apply"),
-                        primary_action: async (values) => {
-                            const selected = frm.fields_dict.lines.grid.get_selected_children() || [];
-                            const targets = selected.length ? selected : frm.doc.lines || [];
-                            targets.forEach((row) => {
-                                frappe.model.set_value(row.doctype, row.name, "pricing_scenario", values.pricing_scenario);
-                            });
-                            dialog.hide();
-                            await frm.save();
-                            renderProjectionDashboard(frm);
-                        },
-                    });
-                    dialog.show();
-                },
-            }
-        );
-    }
 
     mount("lines", __("Pricing Sheet Actions"), lineActions);
 
@@ -229,6 +189,226 @@ function renderContextActions(frm) {
     ]);
 }
 
+function openAddFromBundleDialog(frm) {
+    const dialog = new frappe.ui.Dialog({
+        title: __("Add from Bundle"),
+        fields: [
+            {
+                label: __("Product Bundle"),
+                fieldname: "product_bundle",
+                fieldtype: "Link",
+                options: "Product Bundle",
+                reqd: 1,
+                default: frm.doc.product_bundle,
+            },
+            { label: __("Multiplier"), fieldname: "multiplier", fieldtype: "Float", default: 1 },
+            {
+                label: __("Replace Existing Lines"),
+                fieldname: "replace_existing_lines",
+                fieldtype: "Check",
+                default: 0,
+            },
+            {
+                label: __("Default Show In Detail"),
+                fieldname: "default_show_in_detail",
+                fieldtype: "Check",
+                default: 1,
+            },
+            {
+                label: __("Default Display Group Source"),
+                fieldname: "default_display_group_source",
+                fieldtype: "Select",
+                options: "Bundle Name\nItem Group",
+                default: "Item Group",
+            },
+            {
+                label: __("Line Mode"),
+                fieldname: "line_mode",
+                fieldtype: "Select",
+                options: "Exploded\nBundle Single\nBoth",
+                default: "Exploded",
+            },
+            {
+                label: __("Include Summary In Detail"),
+                fieldname: "include_summary_in_detail",
+                fieldtype: "Check",
+                default: 1,
+            },
+            {
+                label: __("Include Components In Detail"),
+                fieldname: "include_components_in_detail",
+                fieldtype: "Check",
+                default: 1,
+            },
+        ],
+        primary_action_label: __("Add"),
+        primary_action: async (values) => {
+            const bothMode = values.line_mode === "Both";
+            const summaryInDetail = Number(values.include_summary_in_detail || 0) === 1;
+            const componentsInDetail = Number(values.include_components_in_detail || 0) === 1;
+
+            if (bothMode && summaryInDetail && componentsInDetail) {
+                const confirmed = await new Promise((resolve) => {
+                    frappe.confirm(
+                        __("Both mode with both detail flags enabled will include summary and components in detailed quotation. Continue?"),
+                        () => resolve(true),
+                        () => resolve(false)
+                    );
+                });
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            if (frm.is_dirty()) {
+                await frm.save();
+            }
+            await frm.call("add_from_bundle", values);
+            dialog.hide();
+            await frm.reload_doc();
+            renderProjectionDashboard(frm);
+            frappe.show_alert({ message: __("Bundle items imported"), indicator: "green" });
+        },
+    });
+    dialog.show();
+}
+
+function parseDimensioningValues(frm) {
+    try {
+        const parsed = JSON.parse(frm.doc.dimensioning_inputs_json || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function normalizeDimensioningValues(setConfig, currentValues) {
+    const values = { ...(currentValues || {}) };
+    (setConfig.fields || []).forEach((field) => {
+        if (values[field.field_key] !== undefined) {
+            return;
+        }
+        if ((field.field_type || "").toLowerCase() === "check") {
+            values[field.field_key] = [1, true, "1", "true", "yes", "on"].includes(field.default_value);
+            return;
+        }
+        values[field.field_key] = field.default_value ?? "";
+    });
+    return values;
+}
+
+function collectDimensioningValues($root, setConfig) {
+    const values = {};
+    (setConfig.fields || []).forEach((field) => {
+        const key = field.field_key;
+        const input = $root.find(`[data-dimensioning-key="${key}"]`);
+        const type = (field.field_type || "Float").toLowerCase();
+        if (!input.length) {
+            return;
+        }
+        if (type === "check") {
+            values[key] = input.is(":checked");
+            return;
+        }
+        values[key] = input.val();
+    });
+    return values;
+}
+
+async function renderDimensioningTool(frm) {
+    const field = frm.get_field("dimensioning_inputs_html");
+    if (!field || !field.$wrapper) {
+        return;
+    }
+
+    if (!frm.doc.dimensioning_set) {
+        field.$wrapper.html(`<div class="text-muted small">${__("Select a dimensioning set to configure sizing inputs.")}</div>`);
+        return;
+    }
+
+    const response = await frappe.call({
+        method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_dimensioning_set_payload",
+        args: { set_name: frm.doc.dimensioning_set },
+    });
+    const setConfig = (response.message || {}).set;
+    if (!setConfig) {
+        field.$wrapper.html(`<div class="text-danger small">${__("Unable to load the selected dimensioning set.")}</div>`);
+        return;
+    }
+
+    const values = normalizeDimensioningValues(setConfig, parseDimensioningValues(frm));
+    frm.doc.dimensioning_inputs_json = JSON.stringify(values);
+
+    const rowsHtml = (setConfig.fields || []).map((cfg) => {
+        const type = (cfg.field_type || "Float").toLowerCase();
+        const value = values[cfg.field_key];
+        let control = "";
+        if (type === "select") {
+            const options = (cfg.options || []).map((opt) => {
+                const selected = String(value || "") === String(opt) ? "selected" : "";
+                return `<option value="${frappe.utils.escape_html(opt)}" ${selected}>${frappe.utils.escape_html(opt)}</option>`;
+            }).join("");
+            control = `<select class="form-control" data-dimensioning-key="${cfg.field_key}">${options}</select>`;
+        } else if (type === "check") {
+            control = `<label class="checkbox" style="margin:8px 0 0;"><input type="checkbox" data-dimensioning-key="${cfg.field_key}" ${value ? "checked" : ""}> <span>${__("Enabled")}</span></label>`;
+        } else {
+            const inputType = type === "int" || type === "float" ? "number" : "text";
+            const step = type === "int" ? "1" : "any";
+            control = `<input type="${inputType}" step="${step}" class="form-control" data-dimensioning-key="${cfg.field_key}" value="${frappe.utils.escape_html(String(value ?? ""))}">`;
+        }
+        return `
+            <div class="section-control" style="margin-bottom:12px;">
+                <label class="control-label" style="margin-bottom:4px;">${frappe.utils.escape_html(cfg.label || cfg.field_key)}${cfg.is_required ? " *" : ""}</label>
+                ${control}
+                ${cfg.help_text ? `<div class="small text-muted" style="margin-top:4px;">${frappe.utils.escape_html(cfg.help_text)}</div>` : ""}
+            </div>
+        `;
+    }).join("");
+
+    field.$wrapper.html(`
+        <div class="border rounded" style="padding:16px;background:#f8fafc;">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;">
+                <div>
+                    <div class="small text-muted">${__("Outil de dimensionnement")}</div>
+                    <div style="font-weight:600;">${frappe.utils.escape_html(setConfig.set_name || setConfig.name)}</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-default btn-sm" type="button" data-dimensioning-reset>${__("Reset")}</button>
+                    <button class="btn btn-primary btn-sm" type="button" data-dimensioning-add>${__("Add Items")}</button>
+                </div>
+            </div>
+            ${setConfig.description ? `<div class="small text-muted" style="margin-bottom:12px;">${frappe.utils.escape_html(setConfig.description)}</div>` : ""}
+            <div>${rowsHtml || `<div class="text-muted small">${__("No input fields configured for this set.")}</div>`}</div>
+        </div>
+    `);
+
+    const $root = field.$wrapper;
+    $root.find("[data-dimensioning-key]").on("change input", () => {
+        frm.doc.dimensioning_inputs_json = JSON.stringify(collectDimensioningValues($root, setConfig));
+    });
+
+    $root.find("[data-dimensioning-reset]").on("click", async () => {
+        frm.doc.dimensioning_inputs_json = JSON.stringify(normalizeDimensioningValues(setConfig, {}));
+        await renderDimensioningTool(frm);
+    });
+
+    $root.find("[data-dimensioning-add]").on("click", async () => {
+        const currentValues = collectDimensioningValues($root, setConfig);
+        frm.doc.dimensioning_inputs_json = JSON.stringify(currentValues);
+        if (frm.is_dirty()) {
+            await frm.save();
+        }
+        await frm.call("add_dimensioning_items", {
+            input_values_json: JSON.stringify(currentValues),
+            replace_existing_generated: 1,
+        });
+        await frm.reload_doc();
+        renderProjectionDashboard(frm);
+        await renderDimensioningTool(frm);
+        frappe.show_alert({ message: __("Dimensioning items added"), indicator: "green" });
+    });
+}
+
 function applyFormLayoutClass(frm) {
     if (!frm || !frm.page || !frm.page.wrapper) return;
 
@@ -283,9 +463,9 @@ function applyModeLayout(frm) {
             "source_buying_price_list", "pricing_scenario", "resolved_pricing_scenario", "resolved_scenario_rule",
             "resolved_margin_rule", "scenario_source", "has_scenario_override", "has_line_override", "buy_price",
             "buy_price_missing", "buy_price_message", "base_amount", "expense_unit_price", "expense_total",
-            "projected_unit_price", "projected_total_price", "manual_sell_unit_price", "margin_pct",
+            "customs_unit_amount", "margin_unit_amount", "margin_total_amount", "projected_unit_price", "projected_total_price", "manual_sell_unit_price", "margin_pct",
             "customs_material", "customs_weight_kg", "customs_rate_per_kg", "customs_rate_percent",
-            "customs_by_kg", "customs_by_percent", "customs_applied", "customs_basis",
+            "customs_by_kg", "customs_by_percent", "customs_applied", "customs_basis", "tier_modifier_total", "zone_modifier_total",
             "transport_allocation_mode", "transport_container_type", "transport_basis_total", "transport_numerator",
             "transport_allocated", "price_floor_violation", "benchmark_price", "benchmark_delta_abs",
             "benchmark_delta_pct", "benchmark_status", "benchmark_note", "benchmark_reference",
@@ -572,14 +752,14 @@ function renderProjectionDashboard(frm) {
                 <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
             </div>` : ""}
             ${!isStatic && !restrictedAgent ? `<div class="ps-kpi ps-kpi--exp">
-                <div class="ps-kpi-label">⚙ ${__("Expenses")}</div>
+                <div class="ps-kpi-label">⚙ ${__("Additions")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
             </div>` : isStatic ? `<div class="ps-kpi ps-kpi--margin" style="background:#ede9fe;">
                 <div class="ps-kpi-label">📋 ${__("Price List")}</div>
                 <div class="ps-kpi-value" style="font-size:13px;color:#4f46e5;">${frappe.utils.escape_html(frm.doc.selected_price_list || "—")}</div>
             </div>` : ""}
             <div class="ps-kpi ps-kpi--final">
-                <div class="ps-kpi-label">💰 ${__("Total Final")}</div>
+                <div class="ps-kpi-label">💰 ${__("Total Final HT")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
             </div>
             <div class="ps-kpi ps-kpi--margin">
@@ -633,7 +813,7 @@ function renderProjectionDashboard(frm) {
                             ${restrictedAgent ? `
                             <th style="text-align:right;">${__("Qty")}</th>
                             <th style="text-align:right;">${__("Final Unit")}</th>
-                            <th style="text-align:right;">${__("Final Total")}</th>
+                            <th style="text-align:right;">${__("Final Total HT")}</th>
                             ` : `
                             <th>${__("Expenses Policy")}</th>
                             <th style="text-align:right;">${__("Qty")}</th>
@@ -714,7 +894,7 @@ async function openQuotationPreview(frm) {
     const data = preview.message || {};
     const details = `
         ${__("Total Base")}: ${frappe.format(data.total_buy || 0, { fieldtype: "Currency" })}<br>
-        ${__("Total Final")}: ${frappe.format(data.total_final || 0, { fieldtype: "Currency" })}<br>
+        ${__("Total Final HT")}: ${frappe.format(data.total_final || 0, { fieldtype: "Currency" })}<br>
         ${__("Customs Total")}: ${frappe.format(data.customs_total || 0, { fieldtype: "Currency" })}<br>
         ${__("Lines")}: ${data.line_count || 0}<br>
         ${__("Detailed Rows")}: ${data.detailed_count || 0}<br>
@@ -826,6 +1006,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
         frm.set_query("item", "lines", queryConfig);
         frm.set_query("source_buying_price_list", "lines", () => ({ filters: { buying: 1 } }));
+        frm.set_query("dimensioning_set", () => ({ filters: { is_active: 1 } }));
         setAgentPolicyQueries(frm, null);
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
         if (frm.fields_dict.lines.grid.get_field("margin_source")) {
@@ -837,115 +1018,6 @@ frappe.ui.form.on("Pricing Sheet", {
         applyFormLayoutClass(frm);
         applyDashboardSectionClass(frm);
         applyModeLayout(frm);
-
-        frm.add_custom_button(__("Recalculate"), async () => {
-            try {
-                await frm.save();
-                frm.refresh_field("lines");
-                renderProjectionDashboard(frm);
-                frappe.show_alert({ message: __("Pricing recalculated"), indicator: "green" });
-            } catch (e) {
-                frappe.msgprint({
-                    title: __("Recalculation Failed"),
-                    message: __("Unable to save and recalculate this Pricing Sheet."),
-                    indicator: "red",
-                });
-            }
-        });
-
-        frm.add_custom_button(__("Queue Recalculate"), async () => {
-            if (frm.is_dirty()) {
-                await frm.save();
-            }
-            const r = await frm.call("queue_recalculate");
-            frappe.show_alert({ message: __("Recalculation queued ({0})", [r.message.job_id || "-"]), indicator: "blue" });
-        });
-
-        frm.add_custom_button(__("Add from Bundle"), () => {
-            const dialog = new frappe.ui.Dialog({
-                title: __("Add from Bundle"),
-                fields: [
-                    {
-                        label: __("Product Bundle"),
-                        fieldname: "product_bundle",
-                        fieldtype: "Link",
-                        options: "Product Bundle",
-                        reqd: 1,
-                        default: frm.doc.product_bundle,
-                    },
-                    { label: __("Multiplier"), fieldname: "multiplier", fieldtype: "Float", default: 1 },
-                    {
-                        label: __("Replace Existing Lines"),
-                        fieldname: "replace_existing_lines",
-                        fieldtype: "Check",
-                        default: 0,
-                    },
-                    {
-                        label: __("Default Show In Detail"),
-                        fieldname: "default_show_in_detail",
-                        fieldtype: "Check",
-                        default: 1,
-                    },
-                    {
-                        label: __("Default Display Group Source"),
-                        fieldname: "default_display_group_source",
-                        fieldtype: "Select",
-                        options: "Bundle Name\nItem Group",
-                        default: "Item Group",
-                    },
-                    {
-                        label: __("Line Mode"),
-                        fieldname: "line_mode",
-                        fieldtype: "Select",
-                        options: "Exploded\nBundle Single\nBoth",
-                        default: "Exploded",
-                    },
-                    {
-                        label: __("Include Summary In Detail"),
-                        fieldname: "include_summary_in_detail",
-                        fieldtype: "Check",
-                        default: 1,
-                    },
-                    {
-                        label: __("Include Components In Detail"),
-                        fieldname: "include_components_in_detail",
-                        fieldtype: "Check",
-                        default: 1,
-                    },
-                ],
-                primary_action_label: __("Add"),
-                primary_action: async (values) => {
-                    const bothMode = values.line_mode === "Both";
-                    const summaryInDetail = Number(values.include_summary_in_detail || 0) === 1;
-                    const componentsInDetail = Number(values.include_components_in_detail || 0) === 1;
-
-                    if (bothMode && summaryInDetail && componentsInDetail) {
-                        const confirmed = await new Promise((resolve) => {
-                            frappe.confirm(
-                                __(
-                                    "Both mode with both detail flags enabled will include summary and components in detailed quotation. Continue?"
-                                ),
-                                () => resolve(true),
-                                () => resolve(false)
-                            );
-                        });
-                        if (!confirmed) {
-                            return;
-                        }
-                    }
-
-                    if (frm.is_dirty()) {
-                        await frm.save();
-                    }
-                    await frm.call("add_from_bundle", values);
-                    dialog.hide();
-                    await frm.reload_doc();
-                    renderProjectionDashboard(frm);
-                    frappe.show_alert({ message: __("Bundle items imported"), indicator: "green" });
-                },
-            });
-            dialog.show();
-        });
 
         if (!frm.is_new()) {
             frm.page.set_primary_action(__("Generate Quotation"), async () => {
@@ -976,6 +1048,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
         renderProjectionDashboard(frm);
         renderContextActions(frm);
+        renderDimensioningTool(frm);
         setTimeout(() => collapseAdvancedSections(frm), 0);
         if (frm.doc.sales_person) {
             frm.events.sales_person(frm);
@@ -1011,6 +1084,11 @@ frappe.ui.form.on("Pricing Sheet", {
 
     benchmark_policy(frm) {
         renderProjectionDashboard(frm);
+    },
+
+    dimensioning_set(frm) {
+        frm.doc.dimensioning_inputs_json = "";
+        renderDimensioningTool(frm);
     },
 
     customs_policy(frm) {

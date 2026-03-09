@@ -17,11 +17,15 @@
   "geography_territory",
   "section_strategy",
   "pricing_scenario",
-  "benchmark_policy",
-  "customs_policy",
-  "product_bundle",
-  "selected_price_list",
-  "strict_margin_guard",
+   "benchmark_policy",
+   "customs_policy",
+   "product_bundle",
+   "selected_price_list",
+   "section_dimensioning",
+   "dimensioning_set",
+   "dimensioning_inputs_json",
+   "dimensioning_inputs_html",
+   "strict_margin_guard",
   "heading_scenario_mappings",
   "scenario_mappings",
   "section_projection",
@@ -136,6 +140,28 @@
    "fieldtype": "Link",
    "label": "Default Product Bundle",
    "options": "Product Bundle"
+  },
+  {
+   "fieldname": "section_dimensioning",
+   "fieldtype": "Section Break",
+   "label": "Outil de dimensionnement"
+  },
+  {
+   "fieldname": "dimensioning_set",
+   "fieldtype": "Link",
+   "label": "Dimensioning Set",
+   "options": "Dimensioning Set"
+  },
+  {
+   "fieldname": "dimensioning_inputs_json",
+   "fieldtype": "Long Text",
+   "label": "Dimensioning Inputs JSON",
+   "hidden": 1
+  },
+  {
+   "fieldname": "dimensioning_inputs_html",
+   "fieldtype": "HTML",
+   "label": "Dimensioning Inputs"
   },
   {
    "fieldname": "heading_scenario_mappings",
@@ -330,13 +356,13 @@
   {
    "fieldname": "total_expenses",
    "fieldtype": "Currency",
-   "label": "Total Expenses",
+    "label": "Total Additions",
    "read_only": 1
   },
   {
    "fieldname": "total_selling",
    "fieldtype": "Currency",
-   "label": "Total Final",
+   "label": "Total Final HT",
    "read_only": 1
   }
  ],

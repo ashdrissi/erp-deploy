@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime, nowdate, getdate, date_diff
 
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
+from orderlift.sales.utils.dimensioning import coerce_dimensioning_value, evaluate_formula
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 from orderlift.sales.utils.pricing_projection import apply_expenses
 from orderlift.sales.utils.benchmark_policy import resolve_benchmark_margin
@@ -186,8 +187,6 @@ class PricingSheet(Document):
             effective_line_expenses, row_tier_mod, row_zone_mod = self._inject_modifier_expenses(
                 effective_line_expenses, row_tier_mod, row_zone_mod
             )
-            row.tier_modifier_amount = row_tier_mod
-            row.zone_modifier_amount = row_zone_mod
 
             pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=effective_line_expenses)
             line_snapshots.append(
@@ -249,10 +248,9 @@ class PricingSheet(Document):
             projected_total = flt(pricing["projected_line"]) + flt(allocated_sheet)
             projected_total += flt(customs_calc.get("applied") or 0)
             projected_unit = projected_total / qty if qty else 0
-            expense_unit = projected_unit - base_unit
-            expense_total = projected_total - base_amount
 
             steps = list(pricing["steps"])
+            component_summary = self._summarize_pricing_components(steps, qty, allocated_sheet)
             if allocated_sheet:
                 steps.append(
                     {
@@ -272,10 +270,17 @@ class PricingSheet(Document):
 
             self._append_customs_step(steps, qty, projected_unit, customs_calc)
 
-            row.expense_unit_price = expense_unit
-            row.expense_total = expense_total
+            row.expense_unit_price = flt(component_summary.get("policy_expense_unit") or 0)
+            row.expense_total = flt(component_summary.get("policy_expense_total") or 0)
             row.projected_unit_price = projected_unit
             row.projected_total_price = projected_total
+            row.customs_unit_amount = flt(customs_calc.get("applied") or 0) / qty if qty else 0
+            row.margin_unit_amount = flt(component_summary.get("margin_unit") or 0)
+            row.margin_total_amount = flt(component_summary.get("margin_total") or 0)
+            row.tier_modifier_amount = flt(component_summary.get("tier_unit") or 0)
+            row.tier_modifier_total = flt(component_summary.get("tier_total") or 0)
+            row.zone_modifier_amount = flt(component_summary.get("zone_unit") or 0)
+            row.zone_modifier_total = flt(component_summary.get("zone_total") or 0)
             row.pricing_breakdown_json = json.dumps(steps)
             row.breakdown_preview = self._build_breakdown_preview(steps)
             row.has_scenario_override = 1 if cache_has_override_steps(steps, source="sheet") else 0
@@ -336,7 +341,7 @@ class PricingSheet(Document):
             else:
                 self._set_benchmark_status_from_reference(row, 0, flt(row.final_sell_unit_price))
 
-            total_expenses += flt(row.expense_total)
+            total_expenses += flt(row.expense_total) + flt(row.customs_applied) + flt(row.margin_total_amount) + flt(row.tier_modifier_total) + flt(row.zone_modifier_total)
             total_final += flt(row.final_sell_total)
             customs_total_applied += flt(row.customs_applied)
 
@@ -422,10 +427,9 @@ class PricingSheet(Document):
 
             row.static_list_price = list_price
             pricing = apply_expenses(base_unit=list_price, qty=qty, expenses=modifier_expenses)
+            component_summary = self._summarize_pricing_components(pricing.get("steps") or [], qty)
             projected_unit = flt(pricing.get("projected_unit") or 0)
             projected_total = flt(pricing.get("projected_line") or 0)
-            expense_unit = projected_unit - flt(list_price)
-            expense_total = projected_total - (flt(list_price) * qty)
             row.is_manual_override = 1 if flt(row.manual_sell_unit_price) > 0 else 0
             row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
             row.final_sell_total = row.final_sell_unit_price * qty
@@ -433,12 +437,17 @@ class PricingSheet(Document):
             buy = flt(row.buy_price)
             row.base_amount = buy * qty
             row.margin_pct = ((row.final_sell_unit_price - buy) / buy * 100) if buy > 0 else 0.0
-            row.expense_total = expense_total
-            row.expense_unit_price = expense_unit
+            row.expense_total = 0.0
+            row.expense_unit_price = 0.0
             row.projected_unit_price = projected_unit
             row.projected_total_price = projected_total
-            row.tier_modifier_amount = flt(tier_mod.get("amount") if tier_mod else 0)
-            row.zone_modifier_amount = flt(zone_mod.get("amount") if zone_mod else 0)
+            row.customs_unit_amount = 0.0
+            row.margin_unit_amount = 0.0
+            row.margin_total_amount = 0.0
+            row.tier_modifier_amount = flt(component_summary.get("tier_unit") or 0)
+            row.tier_modifier_total = flt(component_summary.get("tier_total") or 0)
+            row.zone_modifier_amount = flt(component_summary.get("zone_unit") or 0)
+            row.zone_modifier_total = flt(component_summary.get("zone_total") or 0)
 
             # Clear dynamic-only fields
             row.resolved_pricing_scenario = ""
@@ -446,17 +455,25 @@ class PricingSheet(Document):
             row.benchmark_reference = 0
             row.benchmark_ratio = 0
             row.benchmark_status = "No Benchmark"
-            row.margin_source = "Price List + Modifiers" if flt(expense_total) else "Price List"
+            has_modifiers = flt(row.tier_modifier_total) or flt(row.zone_modifier_total)
+            row.margin_source = "Price List + Modifiers" if has_modifiers else "Price List"
+            row.customs_material = ""
+            row.customs_weight_kg = 0
+            row.customs_rate_per_kg = 0
+            row.customs_rate_percent = 0
+            row.customs_by_kg = 0
+            row.customs_by_percent = 0
             row.customs_applied = 0
+            row.customs_basis = ""
             row.pricing_breakdown_json = json.dumps(pricing.get("steps") or [])
             row.breakdown_preview = self._build_breakdown_preview(pricing.get("steps") or []) or f"List: {price_list}"
             row.price_floor_violation = 0
             row.has_scenario_override = 0
             row.has_line_override = 0
-            row.resolved_benchmark_rule = "Static List Modifiers" if flt(expense_total) else ""
+            row.resolved_benchmark_rule = "Static List Modifiers" if has_modifiers else ""
 
             total_buy += flt(row.base_amount)
-            total_expenses += flt(row.expense_total)
+            total_expenses += flt(row.tier_modifier_total) + flt(row.zone_modifier_total)
             total_final += flt(row.final_sell_total)
 
         if missing:
@@ -724,6 +741,151 @@ class PricingSheet(Document):
         self.product_bundle = bundle_name
         self.refresh_buy_prices()
         return self.name
+
+    @frappe.whitelist()
+    def get_dimensioning_config(self):
+        if not self.dimensioning_set:
+            return {"set": None, "values": {}}
+        set_doc = self._get_dimensioning_set_doc(self.dimensioning_set)
+        return {
+            "set": self._serialize_dimensioning_set(set_doc),
+            "values": self._get_dimensioning_values(),
+        }
+
+    @frappe.whitelist()
+    def add_dimensioning_items(self, input_values_json=None, replace_existing_generated=1):
+        if not self.dimensioning_set:
+            frappe.throw(_("Please select a Dimensioning Set."))
+
+        set_doc = self._get_dimensioning_set_doc(self.dimensioning_set)
+        values = self._coerce_dimensioning_inputs(
+            set_doc,
+            input_values_json=input_values_json,
+        )
+        generated_rows = self._generate_dimensioning_rows(set_doc, values)
+        if not generated_rows:
+            frappe.throw(_("No items were generated from the current dimensioning values."))
+
+        self.dimensioning_inputs_json = json.dumps(values)
+
+        if cint(replace_existing_generated):
+            kept = [
+                row for row in (self.lines or [])
+                if (getattr(row, "dimensioning_set", "") or "") != set_doc.name
+            ]
+            self.set("lines", kept)
+
+        for generated in generated_rows:
+            self.append(
+                "lines",
+                {
+                    "item": generated["item"],
+                    "qty": generated["qty"],
+                    "display_group": generated["display_group"],
+                    "show_in_detail": generated["show_in_detail"],
+                    "dimensioning_set": set_doc.name,
+                    "dimensioning_rule_label": generated["rule_label"],
+                    "pricing_scenario": self.pricing_scenario,
+                    "line_type": "Standard",
+                },
+            )
+
+        self.refresh_buy_prices()
+        return {
+            "name": self.name,
+            "added_count": len(generated_rows),
+            "set_name": set_doc.name,
+        }
+
+    def _get_dimensioning_set_doc(self, set_name):
+        if not frappe.db.exists("Dimensioning Set", set_name):
+            frappe.throw(_("Dimensioning Set {0} does not exist.").format(set_name))
+        doc = frappe.get_doc("Dimensioning Set", set_name)
+        if cint(doc.is_active) != 1:
+            frappe.throw(_("Dimensioning Set {0} is inactive.").format(set_name))
+        return doc
+
+    def _serialize_dimensioning_set(self, set_doc):
+        fields = []
+        for row in sorted(self._safe_rows(set_doc.input_fields), key=lambda d: (cint(d.sequence or 0), cint(d.idx or 0))):
+            fields.append(
+                {
+                    "field_key": row.field_key,
+                    "label": row.label,
+                    "field_type": row.field_type or "Float",
+                    "options": [opt.strip() for opt in (row.options or "").splitlines() if opt.strip()],
+                    "default_value": row.default_value or "",
+                    "is_required": 1 if cint(row.is_required) else 0,
+                    "help_text": row.help_text or "",
+                    "sequence": cint(row.sequence or 0),
+                }
+            )
+        return {
+            "name": set_doc.name,
+            "set_name": set_doc.set_name or set_doc.name,
+            "description": set_doc.description or "",
+            "fields": fields,
+        }
+
+    def _get_dimensioning_values(self):
+        raw = (self.dimensioning_inputs_json or "").strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _coerce_dimensioning_inputs(self, set_doc, input_values_json=None):
+        if input_values_json is None:
+            raw_values = self._get_dimensioning_values()
+        elif isinstance(input_values_json, str):
+            raw_values = json.loads(input_values_json or "{}") if (input_values_json or "").strip() else {}
+        else:
+            raw_values = input_values_json or {}
+
+        values = {}
+        for field in self._safe_rows(set_doc.input_fields):
+            key = field.field_key
+            raw_value = raw_values.get(key, field.default_value)
+            value = coerce_dimensioning_value(field.field_type, raw_value)
+            if cint(field.is_required) and value in (None, "", False):
+                frappe.throw(_("Dimensioning field {0} is required.").format(field.label or key))
+            values[key] = value
+        return values
+
+    def _generate_dimensioning_rows(self, set_doc, values):
+        generated = []
+        for rule in sorted(self._safe_rows(set_doc.item_rules), key=lambda d: (cint(d.sequence or 0), cint(d.idx or 0))):
+            if cint(rule.is_active) != 1:
+                continue
+            try:
+                condition_ok = True
+                if (rule.condition_formula or "").strip():
+                    condition_ok = bool(evaluate_formula(rule.condition_formula, values))
+                if not condition_ok:
+                    continue
+                qty = flt(evaluate_formula(rule.qty_formula, values) or 0)
+            except Exception as exc:
+                frappe.throw(_("Dimensioning rule {0}: {1}").format(rule.rule_label or rule.idx, str(exc)))
+
+            if qty <= 0:
+                continue
+
+            generated.append(
+                {
+                    "item": rule.item,
+                    "qty": qty,
+                    "display_group": (rule.display_group or set_doc.set_name or set_doc.name or "").strip(),
+                    "show_in_detail": 1 if cint(rule.show_in_detail) else 0,
+                    "rule_label": rule.rule_label or rule.item,
+                }
+            )
+        return generated
+
+    def _safe_rows(self, rows):
+        return rows or []
 
     def _collect_scenarios_or_throw(self, lines):
         scenario_names = set()
@@ -1141,6 +1303,44 @@ class PricingSheet(Document):
                 "customs_basis": customs_calc.get("basis") or "",
             }
         )
+
+    def _summarize_pricing_components(self, steps, qty, allocated_sheet=0.0):
+        summary = {
+            "policy_expense_unit": 0.0,
+            "policy_expense_total": 0.0,
+            "margin_unit": 0.0,
+            "margin_total": 0.0,
+            "tier_unit": 0.0,
+            "tier_total": 0.0,
+            "zone_unit": 0.0,
+            "zone_total": 0.0,
+        }
+
+        for step in steps or []:
+            source = (step.get("override_source") or "").strip()
+            delta_unit = flt(step.get("delta_unit") or 0)
+            delta_line = flt(step.get("delta_line") or 0)
+            unit_amount = delta_unit + (delta_line / qty if qty else 0)
+            total_amount = (delta_unit * qty) + delta_line
+
+            if source == "pricing_policy":
+                summary["margin_unit"] += unit_amount
+                summary["margin_total"] += total_amount
+            elif source == "tier_modifier":
+                summary["tier_unit"] += unit_amount
+                summary["tier_total"] += total_amount
+            elif source == "zone_modifier":
+                summary["zone_unit"] += unit_amount
+                summary["zone_total"] += total_amount
+            else:
+                summary["policy_expense_unit"] += unit_amount
+                summary["policy_expense_total"] += total_amount
+
+        if allocated_sheet:
+            summary["policy_expense_total"] += flt(allocated_sheet)
+            summary["policy_expense_unit"] += flt(allocated_sheet) / qty if qty else 0
+
+        return summary
 
     def _inject_margin_expense(self, expenses, margin_rule):
         if not margin_rule:
@@ -2231,3 +2431,12 @@ def get_item_pricing_defaults(item_code, pricing_scenario=None, source_buying_pr
 @frappe.whitelist()
 def get_agent_dynamic_defaults(sales_person=None):
     return build_dynamic_context(sales_person=sales_person)
+
+
+@frappe.whitelist()
+def get_dimensioning_set_payload(set_name):
+    if not set_name:
+        return {"set": None}
+    sheet = frappe.new_doc("Pricing Sheet")
+    set_doc = sheet._get_dimensioning_set_doc(set_name)
+    return {"set": sheet._serialize_dimensioning_set(set_doc)}

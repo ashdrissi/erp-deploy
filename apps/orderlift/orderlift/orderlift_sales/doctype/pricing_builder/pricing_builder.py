@@ -105,9 +105,9 @@ class PricingBuilder(Document):
                 effective_expenses = sheet._inject_benchmark_margin_expense(effective_expenses, benchmark_result)
 
             pricing = apply_expenses(base_unit=base_buy, qty=qty, expenses=effective_expenses)
+            component_summary = sheet._summarize_pricing_components(pricing.get("steps") or [], qty)
             projected_total = flt(pricing.get("projected_line") or 0) + flt(customs_calc.get("applied") or 0)
             projected_unit = projected_total / qty if qty else 0
-            expense_total = projected_total - base_amount
             benchmark_reference = flt((benchmark_result or {}).get("benchmark_reference") or 0)
             published_price = flt(published_map.get(item_code) or 0)
 
@@ -122,10 +122,13 @@ class PricingBuilder(Document):
                 "item": item_code,
                 "item_name": meta.get("item_name") or item_code,
                 "item_group": details.get("item_group") or "",
+                "material": details.get("custom_material") or "",
                 "buying_list": buying_list,
                 "origin": meta.get("origin") or "",
                 "base_buy_price": base_buy,
-                "expenses": expense_total,
+                "expenses": flt(component_summary.get("policy_expense_unit") or 0),
+                "customs_amount": flt(customs_calc.get("applied") or 0) / qty if qty else 0,
+                "margin_amount": flt(component_summary.get("margin_unit") or 0),
                 "avg_benchmark": benchmark_reference,
                 "projected_price": projected_unit,
                 "override_selling_price": 0,
@@ -468,10 +471,13 @@ def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_p
         "item": item_code,
         "item_name": item_name or item_code,
         "item_group": item_group,
+        "material": "",
         "buying_list": buying_list,
         "origin": origin,
         "base_buy_price": base_buy,
         "expenses": 0,
+        "customs_amount": 0,
+        "margin_amount": 0,
         "avg_benchmark": 0,
         "projected_price": 0,
         "override_selling_price": 0,

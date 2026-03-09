@@ -1,0 +1,85 @@
+{
+  "actions": [],
+  "creation": "2026-03-09 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "sequence",
+    "is_active",
+    "rule_label",
+    "condition_formula",
+    "item",
+    "qty_formula",
+    "display_group",
+    "show_in_detail"
+  ],
+  "fields": [
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "default": "10",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "rule_label",
+      "fieldtype": "Data",
+      "label": "Rule Label",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "condition_formula",
+      "fieldtype": "Data",
+      "label": "Condition Formula",
+      "description": "Optional. Example: floors > 2 and building_type == 'Hotel'"
+    },
+    {
+      "fieldname": "item",
+      "fieldtype": "Link",
+      "label": "Item",
+      "options": "Item",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "qty_formula",
+      "fieldtype": "Data",
+      "label": "Qty Formula",
+      "reqd": 1,
+      "in_list_view": 1,
+      "description": "Example: 3 * floors + 1"
+    },
+    {
+      "fieldname": "display_group",
+      "fieldtype": "Data",
+      "label": "Display Group"
+    },
+    {
+      "fieldname": "show_in_detail",
+      "fieldtype": "Check",
+      "label": "Show In Detail",
+      "default": "1"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-03-09 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Dimensioning Set Item Rule",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

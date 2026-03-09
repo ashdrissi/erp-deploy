@@ -15,8 +15,10 @@
   "scenario_source",
   "has_scenario_override",
   "has_line_override",
-  "source_bundle",
-  "line_type",
+   "source_bundle",
+   "dimensioning_set",
+   "dimensioning_rule_label",
+   "line_type",
   "bundle_group_id",
   "qty",
   "buy_price",
@@ -26,8 +28,11 @@
    "show_in_detail",
    "base_amount",
    "expense_unit_price",
-   "expense_total",
-   "projected_unit_price",
+    "expense_total",
+    "customs_unit_amount",
+    "margin_unit_amount",
+    "margin_total_amount",
+    "projected_unit_price",
   "projected_total_price",
   "manual_sell_unit_price",
   "is_manual_override",
@@ -40,8 +45,10 @@
   "customs_rate_percent",
   "customs_by_kg",
   "customs_by_percent",
-  "customs_applied",
-  "customs_basis",
+   "customs_applied",
+   "tier_modifier_total",
+   "zone_modifier_total",
+   "customs_basis",
   "transport_allocation_mode",
   "transport_container_type",
   "transport_basis_total",
@@ -140,6 +147,21 @@
    "read_only": 1
   },
   {
+   "fieldname": "dimensioning_set",
+   "fieldtype": "Link",
+   "label": "Dimensioning Set",
+   "options": "Dimensioning Set",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "dimensioning_rule_label",
+   "fieldtype": "Data",
+   "label": "Dimensioning Rule",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
    "fieldname": "line_type",
    "fieldtype": "Select",
    "label": "Line Type",
@@ -205,16 +227,34 @@
   {
    "fieldname": "expense_unit_price",
    "fieldtype": "Currency",
-   "label": "Expense Unit",
+    "label": "Policy Expenses Unit",
    "read_only": 1,
    "in_list_view": 1
   },
   {
    "fieldname": "expense_total",
    "fieldtype": "Currency",
-   "label": "Expense Total",
-   "read_only": 1,
-   "in_list_view": 1
+    "label": "Policy Expenses Total",
+    "read_only": 1,
+    "in_list_view": 1
+  },
+  {
+   "fieldname": "customs_unit_amount",
+   "fieldtype": "Currency",
+   "label": "Customs Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "margin_unit_amount",
+   "fieldtype": "Currency",
+   "label": "Margin Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "margin_total_amount",
+   "fieldtype": "Currency",
+   "label": "Margin Total",
+   "read_only": 1
   },
   {
    "fieldname": "projected_unit_price",
@@ -226,9 +266,9 @@
   {
    "fieldname": "projected_total_price",
    "fieldtype": "Currency",
-   "label": "Projected Total",
-   "read_only": 1,
-   "in_list_view": 1
+    "label": "Projected Total HT",
+    "read_only": 1,
+    "in_list_view": 1
   },
   {
    "fieldname": "manual_sell_unit_price",
@@ -244,9 +284,9 @@
   {
    "fieldname": "final_sell_unit_price",
    "fieldtype": "Currency",
-   "label": "Final Unit Price",
-   "read_only": 1,
-   "in_list_view": 1
+    "label": "Final Unit Price HT",
+    "read_only": 1,
+    "in_list_view": 1
   },
   {
    "fieldname": "margin_pct",
@@ -257,7 +297,7 @@
   {
    "fieldname": "customs_material",
    "fieldtype": "Data",
-   "label": "Customs Material",
+    "label": "Material",
    "read_only": 1
   },
   {
@@ -293,8 +333,8 @@
   {
    "fieldname": "customs_applied",
    "fieldtype": "Currency",
-   "label": "Customs Applied",
-   "read_only": 1
+    "label": "Customs Total",
+    "read_only": 1
   },
   {
    "fieldname": "customs_basis",
@@ -342,9 +382,9 @@
   {
    "fieldname": "final_sell_total",
    "fieldtype": "Currency",
-   "label": "Final Total",
-   "read_only": 1,
-   "in_list_view": 1
+    "label": "Final Total HT",
+    "read_only": 1,
+    "in_list_view": 1
   },
   {
    "fieldname": "benchmark_price",
@@ -421,16 +461,28 @@
   {
    "fieldname": "tier_modifier_amount",
    "fieldtype": "Currency",
-   "label": "Tier Modifier",
-   "read_only": 1,
-   "description": "Dynamic adjustment applied based on customer tier"
+    "label": "Tier Modifier Unit",
+    "read_only": 1,
+    "description": "Dynamic adjustment applied based on customer tier"
+  },
+  {
+   "fieldname": "tier_modifier_total",
+   "fieldtype": "Currency",
+   "label": "Tier Modifier Total",
+   "read_only": 1
   },
   {
    "fieldname": "zone_modifier_amount",
    "fieldtype": "Currency",
-   "label": "Zone Modifier",
-   "read_only": 1,
-   "description": "Dynamic adjustment applied based on territory/zone"
+    "label": "Territory Modifier Unit",
+    "read_only": 1,
+    "description": "Dynamic adjustment applied based on territory/zone"
+  },
+  {
+   "fieldname": "zone_modifier_total",
+   "fieldtype": "Currency",
+   "label": "Territory Modifier Total",
+   "read_only": 1
   },
   {
    "fieldname": "pricing_breakdown_json",
