@@ -122,9 +122,9 @@ def _get_kpis():
     ninety_days_ago = add_days(nowdate(), -90)
     outgoing = frappe.db.sql(
         """
-        SELECT COALESCE(ABS(SUM(actual_qty_change)), 0)
+        SELECT COALESCE(ABS(SUM(actual_qty)), 0)
         FROM `tabStock Ledger Entry`
-        WHERE actual_qty_change < 0 AND posting_date >= %s AND is_cancelled = 0
+        WHERE actual_qty < 0 AND posting_date >= %s AND is_cancelled = 0
         """,
         ninety_days_ago, as_list=True,
     )
@@ -196,12 +196,12 @@ def _get_rotation_by_category():
         """
         SELECT
             i.item_group,
-            COALESCE(ABS(SUM(sle.actual_qty_change)), 0) as outgoing,
+            COALESCE(ABS(SUM(sle.actual_qty)), 0) as outgoing,
             COALESCE(AVG(b.actual_qty), 1) as avg_stock
         FROM `tabStock Ledger Entry` sle
         JOIN `tabItem` i ON i.name = sle.item_code
         LEFT JOIN `tabBin` b ON b.item_code = sle.item_code
-        WHERE sle.actual_qty_change < 0
+        WHERE sle.actual_qty < 0
           AND sle.posting_date >= %s
           AND sle.is_cancelled = 0
         GROUP BY i.item_group
