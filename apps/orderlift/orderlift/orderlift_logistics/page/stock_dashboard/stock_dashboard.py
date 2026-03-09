@@ -192,20 +192,25 @@ def _get_critical_stock():
 
 def _get_rotation_by_category():
     ninety_days_ago = add_days(nowdate(), -90)
+    # Wrap in a subquery so MySQL can safely reference the 'outgoing' alias
+    # in both HAVING and ORDER BY without a "reference to group function" error.
     rows = frappe.db.sql(
         """
-        SELECT
-            i.item_group,
-            COALESCE(ABS(SUM(sle.actual_qty)), 0) as outgoing,
-            COALESCE(AVG(b.actual_qty), 1) as avg_stock
-        FROM `tabStock Ledger Entry` sle
-        JOIN `tabItem` i ON i.name = sle.item_code
-        LEFT JOIN `tabBin` b ON b.item_code = sle.item_code
-        WHERE sle.actual_qty < 0
-          AND sle.posting_date >= %s
-          AND sle.is_cancelled = 0
-        GROUP BY i.item_group
-        HAVING outgoing > 0
+        SELECT item_group, outgoing, avg_stock
+        FROM (
+            SELECT
+                i.item_group,
+                COALESCE(ABS(SUM(sle.actual_qty)), 0)  AS outgoing,
+                COALESCE(AVG(b.actual_qty), 1)          AS avg_stock
+            FROM `tabStock Ledger Entry` sle
+            JOIN  `tabItem` i  ON i.name = sle.item_code
+            LEFT JOIN `tabBin` b ON b.item_code = sle.item_code
+            WHERE sle.actual_qty < 0
+              AND sle.posting_date >= %s
+              AND sle.is_cancelled = 0
+            GROUP BY i.item_group
+        ) sub
+        WHERE outgoing > 0
         ORDER BY (outgoing / GREATEST(avg_stock, 1)) DESC
         LIMIT 7
         """,
