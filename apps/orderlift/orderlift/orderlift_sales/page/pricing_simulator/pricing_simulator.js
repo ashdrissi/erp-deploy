@@ -41,6 +41,7 @@ frappe.pages["pricing-simulator"].on_page_load = function (wrapper) {
         viewMode: "Compare (Dynamic vs Static)",
         dynamicSources: [],
         staticLists: [],
+        tableFilters: { material: "", source: "" },
     };
 
     buildLayout(state);
@@ -133,16 +134,10 @@ function buildLayout(state) {
     const grid = controlsWrap.find(".psim-grid");
     state.controls = {
         customer: makeControl(grid, { fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" }),
-        sales_person: makeControl(grid, { fieldname: "sales_person", label: __("Sales Person"), fieldtype: "Link", options: "Sales Person" }),
-        item_group: makeControl(grid, { fieldname: "item_group", label: __("Item Group"), fieldtype: "Link", options: "Item Group" }),
-        item_search: makeControl(grid, { fieldname: "item_search", label: __("Item Search"), fieldtype: "Data" }),
-        material: makeControl(grid, { fieldname: "material", label: __("Material"), fieldtype: "Data" }),
+        geography_territory: makeControl(grid, { fieldname: "geography_territory", label: __("Territory"), fieldtype: "Link", options: "Territory" }),
         only_priced_items: makeControl(grid, { fieldname: "only_priced_items", label: __("Only Priced Items"), fieldtype: "Check", default: 1 }),
         default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Qty per Item"), fieldtype: "Float", default: 1 }),
         max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
-        pricing_scenario: makeControl(grid, { fieldname: "pricing_scenario", label: __("Expenses Policy"), fieldtype: "Link", options: "Pricing Scenario" }),
-        customs_policy: makeControl(grid, { fieldname: "customs_policy", label: __("Customs Policy"), fieldtype: "Link", options: "Pricing Customs Policy" }),
-        benchmark_policy: makeControl(grid, { fieldname: "benchmark_policy", label: __("Margin & Benchmark Policy"), fieldtype: "Link", options: "Pricing Benchmark Policy" }),
     };
     state.dynamicSourcesWrap = controlsWrap.find('[data-role="dynamic-sources"]');
     state.staticSourcesWrap = controlsWrap.find('[data-role="static-sources"]');
@@ -166,12 +161,6 @@ function buildLayout(state) {
     Object.values(state.controls).forEach((c) => {
         c.$input?.on("change", () => { persistFilters(state); queueRun(state); });
     });
-    state.controls.sales_person.$input?.on("change", async () => {
-        await loadDefaults(state, false);
-        persistFilters(state);
-        queueRun(state);
-    });
-
     state.searchInput.on("input", () => filterTableRows(state));
 }
 
@@ -254,12 +243,9 @@ function updateFilterSummary(state, vals) {
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 async function loadDefaults(state, forceToast) {
-    const sp = state.controls.sales_person.get_value();
-    if (!sp) return;
-
     const resp = await frappe.call({
         method: "orderlift.orderlift_sales.page.pricing_simulator.pricing_simulator.get_simulation_defaults",
-        args: { sales_person: sp, mode: "Auto" },
+        args: { sales_person: "", mode: "Auto" },
     });
     const data = resp.message || {};
 
@@ -291,16 +277,14 @@ async function loadDefaults(state, forceToast) {
 function collectPayload(state) {
     return {
         customer: state.controls.customer.get_value() || "",
-        sales_person: state.controls.sales_person.get_value() || "",
-        pricing_scenario: state.controls.pricing_scenario.get_value() || "",
-        customs_policy: state.controls.customs_policy.get_value() || "",
-        benchmark_policy: state.controls.benchmark_policy.get_value() || "",
+        sales_person: "",
+        geography_territory: state.controls.geography_territory.get_value() || "",
         selling_price_lists: state.staticLists.slice(),
         sourcing_rules: state.dynamicSources.slice(),
         use_all_enabled_items: 1,
-        item_group: state.controls.item_group.get_value() || "",
-        item_search: state.controls.item_search.get_value() || "",
-        material: state.controls.material.get_value() || "",
+        item_group: "",
+        item_search: "",
+        material: "",
         default_qty: state.controls.default_qty.get_value() || 1,
         max_items: state.controls.max_items.get_value() || 0,
         only_priced_items: Number(state.controls.only_priced_items.get_value() || 0),
@@ -317,11 +301,11 @@ function renderDynamicSources(state) {
     const wrap = state.dynamicSourcesWrap;
     if (!wrap?.length) return;
     const rows = state.dynamicSources.length ? state.dynamicSources.map((row, idx) => `
-        <div class="psim-source-row">
-            <input class="form-control" data-dyn-field="buying_price_list" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.buying_price_list || "")}" placeholder="${__("Buying List")}">
-            <input class="form-control" data-dyn-field="pricing_scenario" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.pricing_scenario || "")}" placeholder="${__("Expenses Policy")}">
-            <input class="form-control" data-dyn-field="customs_policy" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.customs_policy || "")}" placeholder="${__("Customs Policy")}">
-            <input class="form-control" data-dyn-field="benchmark_policy" data-dyn-idx="${idx}" value="${frappe.utils.escape_html(row.benchmark_policy || "")}" placeholder="${__("Margin & Benchmark Policy")}">
+        <div class="psim-source-row psim-source-row--table" data-dyn-row="${idx}">
+            <div class="psim-source-cell" data-dyn-cell="buying_price_list" data-dyn-idx="${idx}"></div>
+            <div class="psim-source-cell" data-dyn-cell="pricing_scenario" data-dyn-idx="${idx}"></div>
+            <div class="psim-source-cell" data-dyn-cell="customs_policy" data-dyn-idx="${idx}"></div>
+            <div class="psim-source-cell" data-dyn-cell="benchmark_policy" data-dyn-idx="${idx}"></div>
             <label class="checkbox psim-source-check"><input type="checkbox" data-dyn-active="${idx}" ${row.is_active ? "checked" : ""}> ${__("Active")}</label>
             <button class="btn btn-default btn-xs" data-remove-dyn="${idx}">${__("Remove")}</button>
         </div>
@@ -334,6 +318,14 @@ function renderDynamicSources(state) {
             </div>
             <button class="btn btn-default btn-xs" data-add-dyn>${__("Add Row")}</button>
         </div>
+        ${state.dynamicSources.length ? `<div class="psim-source-table-head">
+            <span>${__("Buying List")}</span>
+            <span>${__("Expenses Policy")}</span>
+            <span>${__("Customs Policy")}</span>
+            <span>${__("Margin & Benchmark Policy")}</span>
+            <span>${__("Status")}</span>
+            <span>${__("Action")}</span>
+        </div>` : ""}
         <div class="psim-source-list">${rows}</div>
     `);
     wrap.find('[data-add-dyn]').on('click', () => {
@@ -347,18 +339,34 @@ function renderDynamicSources(state) {
         persistFilters(state);
         queueRun(state);
     });
-    wrap.find('[data-dyn-field]').on('change input', function () {
-        const idx = Number($(this).data('dynIdx'));
-        const field = $(this).data('dynField');
-        state.dynamicSources[idx][field] = $(this).val();
-        persistFilters(state);
-        queueRun(state);
-    });
     wrap.find('[data-dyn-active]').on('change', function () {
         const idx = Number($(this).data('dynActive'));
         state.dynamicSources[idx].is_active = $(this).is(':checked') ? 1 : 0;
         persistFilters(state);
         queueRun(state);
+    });
+
+    [
+        { field: "buying_price_list", options: "Price List", label: __("Buying List") },
+        { field: "pricing_scenario", options: "Pricing Scenario", label: __("Expenses Policy") },
+        { field: "customs_policy", options: "Pricing Customs Policy", label: __("Customs Policy") },
+        { field: "benchmark_policy", options: "Pricing Benchmark Policy", label: __("Margin & Benchmark Policy") },
+    ].forEach((cfg) => {
+        wrap.find(`[data-dyn-cell="${cfg.field}"]`).each(function () {
+            const idx = Number($(this).data('dynIdx'));
+            const control = frappe.ui.form.make_control({
+                parent: this,
+                df: { fieldname: cfg.field, label: cfg.label, fieldtype: "Link", options: cfg.options },
+                render_input: true,
+            });
+            control.refresh();
+            control.set_value(state.dynamicSources[idx]?.[cfg.field] || "");
+            control.$input?.on('change', () => {
+                state.dynamicSources[idx][cfg.field] = control.get_value() || "";
+                persistFilters(state);
+                queueRun(state);
+            });
+        });
     });
 }
 
@@ -375,21 +383,26 @@ function renderStaticSources(state) {
                 <div class="psim-source-help">${__("Choose one or more selling lists to simulate static pricing with the same item filters.")}</div>
             </div>
         </div>
-        <div class="psim-static-add">
-            <input class="form-control" data-static-input placeholder="${__("Add selling price list and press Enter")}">
-        </div>
+        <div class="psim-static-add"><div data-static-link></div></div>
         <div class="psim-chip-row">${tags}</div>
     `);
-    wrap.find('[data-static-input]').on('keydown', function (e) {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        const value = ($(this).val() || '').trim();
-        if (!value || state.staticLists.includes(value)) return;
-        state.staticLists.push(value);
-        renderStaticSources(state);
-        persistFilters(state);
-        queueRun(state);
-    });
+    const target = wrap.find('[data-static-link]')[0];
+    if (target) {
+        const control = frappe.ui.form.make_control({
+            parent: target,
+            df: { fieldname: "static_price_list", label: __("Add Selling List"), fieldtype: "Link", options: "Price List" },
+            render_input: true,
+        });
+        control.refresh();
+        control.$input?.on('change', () => {
+            const value = (control.get_value() || "").trim();
+            if (!value || state.staticLists.includes(value)) return;
+            state.staticLists.push(value);
+            renderStaticSources(state);
+            persistFilters(state);
+            queueRun(state);
+        });
+    }
     wrap.find('[data-remove-static]').on('click', function () {
         state.staticLists.splice(Number($(this).data('removeStatic')), 1);
         renderStaticSources(state);
@@ -522,6 +535,7 @@ function renderComparison(state, dynamicData, staticData) {
                 ${metricCard(__("Static Missing"), staticData.summary?.missing_items || 0, "amber")}
             </div>
             ${renderWarnings(warnings)}
+            ${renderResultFilters(state, state.lastRows, "comparison")}
             <div class="psim-table-wrap">
                 <table class="psim-table">
                     <thead>
@@ -551,6 +565,7 @@ function renderComparisonRows(state) {
     const q = (state.searchInput.val() || "").toLowerCase().trim();
     let rows = state.lastRows.slice();
     if (q) rows = rows.filter((r) => r.item.toLowerCase().includes(q));
+    rows = applyResultFilters(state, rows);
 
     if (state.sortCol) {
         rows.sort((a, b) => {
@@ -634,6 +649,7 @@ function renderResults(state, data) {
     state.outputWrap.html(`
             <div class="psim-metrics">${cards}</div>
             ${renderWarnings(warnings)}
+            ${renderResultFilters(state, rows, mode)}
             <div class="psim-table-wrap">
                 <table class="psim-table">
                     <thead>${thead}</thead>
@@ -651,6 +667,7 @@ function renderSingleRows(state) {
     const q = (state.searchInput.val() || "").toLowerCase().trim();
     let rows = state.lastRows.slice();
     if (q) rows = rows.filter((r) => (r.item || "").toLowerCase().includes(q));
+    rows = applyResultFilters(state, rows);
 
     if (state.sortCol) {
         rows.sort((a, b) => {
@@ -705,6 +722,54 @@ function renderSingleRows(state) {
 function filterTableRows(state) {
     if (state.lastMode === "comparison") renderComparisonRows(state);
     else if (state.lastMode) renderSingleRows(state);
+}
+
+function renderResultFilters(state, rows, mode) {
+    const materials = [...new Set((rows || []).map((r) => r.material || r.d?.material || r.s?.material).filter(Boolean))].sort();
+    const sources = mode === "Static"
+        ? [...new Set((rows || []).map((r) => r.selected_price_list).filter(Boolean))].sort()
+        : mode === "comparison"
+            ? [...new Set((rows || []).map((r) => r.d?.source_buying_price_list || r.s?.selected_price_list).filter(Boolean))].sort()
+            : [...new Set((rows || []).map((r) => r.source_buying_price_list || r.applied_benchmark_policy).filter(Boolean))].sort();
+    const current = state.tableFilters || { material: "", source: "" };
+    setTimeout(() => bindResultFilters(state), 0);
+    return `
+        <div class="psim-result-filters">
+            <div class="psim-result-filter-copy">${__("Table Filters")}</div>
+            <div class="psim-result-filter-controls">
+                <select class="form-control" data-result-filter="material">
+                    <option value="">${__("All Materials")}</option>
+                    ${materials.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${current.material === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
+                </select>
+                <select class="form-control" data-result-filter="source">
+                    <option value="">${mode === "Static" ? __("All Selling Lists") : __("All Sources")}</option>
+                    ${sources.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${current.source === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
+                </select>
+                <button class="btn btn-default btn-sm" data-clear-result-filters>${__("Clear")}</button>
+            </div>
+        </div>
+    `;
+}
+
+function bindResultFilters(state) {
+    state.outputWrap.find('[data-result-filter]').off('change').on('change', function () {
+        state.tableFilters[$(this).data('resultFilter')] = $(this).val() || "";
+        filterTableRows(state);
+    });
+    state.outputWrap.find('[data-clear-result-filters]').off('click').on('click', function () {
+        state.tableFilters = { material: "", source: "" };
+        filterTableRows(state);
+    });
+}
+
+function applyResultFilters(state, rows) {
+    const material = (state.tableFilters?.material || "").toLowerCase();
+    const source = (state.tableFilters?.source || "").toLowerCase();
+    return (rows || []).filter((row) => {
+        const rowMaterial = (row.material || row.d?.material || row.s?.material || "").toLowerCase();
+        const rowSource = (row.source_buying_price_list || row.selected_price_list || row.applied_benchmark_policy || row.d?.source_buying_price_list || row.s?.selected_price_list || "").toLowerCase();
+        return (!material || rowMaterial === material) && (!source || rowSource === source);
+    });
 }
 
 // ── Sort helpers ──
@@ -982,13 +1047,19 @@ function injectStyles() {
             .psim-source-title { font-size:12px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:.05em; }
             .psim-source-help { font-size:11px; color:#64748b; margin-top:4px; }
             .psim-source-list { display:grid; gap:8px; }
+            .psim-source-table-head { display:grid; grid-template-columns:1.1fr 1fr 1fr 1fr auto auto; gap:8px; margin-bottom:8px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; font-weight:700; }
             .psim-source-row { display:grid; grid-template-columns:1.1fr 1fr 1fr 1fr auto auto; gap:8px; align-items:center; }
+            .psim-source-row--table { padding:10px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; }
+            .psim-source-cell .form-group { margin-bottom:0; }
             .psim-source-empty { color:#94a3b8; font-size:12px; padding:10px; border:1px dashed #cbd5e1; border-radius:8px; background:#fff; }
             .psim-source-check { margin:0; white-space:nowrap; font-size:11px; color:#475569; }
             .psim-static-add { margin-bottom:10px; }
             .psim-chip-row { display:flex; flex-wrap:wrap; gap:8px; }
             .psim-list-chip { display:inline-flex; align-items:center; gap:6px; background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:600; }
             .psim-list-chip button { border:none; background:none; color:inherit; cursor:pointer; font-size:14px; line-height:1; padding:0; }
+            .psim-result-filters { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px 12px; margin:0 0 10px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; }
+            .psim-result-filter-copy { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; font-weight:700; }
+            .psim-result-filter-controls { display:grid; grid-template-columns:minmax(170px,.8fr) minmax(170px,.8fr) auto; gap:8px; align-items:center; }
             .psim-field .control-label { font-size: 11px !important; margin-bottom: 2px !important; color: #475569; }
             .psim-field .form-control   { height: 28px !important; font-size: 12px !important; padding: 2px 8px !important; }
             .psim-field .link-btn       { line-height: 28px !important; }
@@ -1102,8 +1173,8 @@ function injectStyles() {
             .psim-muted { color: #94a3b8; text-align: center; padding: 0 !important; }
 
             /* Responsive */
-            @media (max-width: 1100px) { .psim-grid { grid-template-columns: repeat(3, 1fr); } .psim-source-grid{grid-template-columns:1fr;} .psim-source-row{grid-template-columns:repeat(2,minmax(0,1fr));} }
-            @media (max-width: 800px)  { .psim-grid { grid-template-columns: repeat(2, 1fr); } .psim-source-row{grid-template-columns:1fr;} }
+            @media (max-width: 1100px) { .psim-grid { grid-template-columns: repeat(3, 1fr); } .psim-source-grid{grid-template-columns:1fr;} .psim-source-table-head,.psim-source-row{grid-template-columns:repeat(2,minmax(0,1fr));} .psim-result-filters{display:grid;} .psim-result-filter-controls{grid-template-columns:1fr 1fr auto;} }
+            @media (max-width: 800px)  { .psim-grid { grid-template-columns: repeat(2, 1fr); } .psim-source-table-head,.psim-source-row,.psim-result-filter-controls{grid-template-columns:1fr;} }
             @media (max-width: 500px)  { .psim-grid { grid-template-columns: 1fr; } .psim-search { width: 130px !important; } .psim-kbd-hint { display: none; } }
         `;
     document.head.appendChild(style);

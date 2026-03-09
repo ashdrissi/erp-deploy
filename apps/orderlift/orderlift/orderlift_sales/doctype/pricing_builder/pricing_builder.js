@@ -3,6 +3,7 @@ frappe.ui.form.on("Pricing Builder", {
         ensureBuilderStyles();
         setupQueries(frm);
         setupGridDisplay(frm);
+        renderBuilderItemFilters(frm);
         renderBuilderHeader(frm);
         renderSummaryPanel(frm);
         renderWarningsPanel(frm);
@@ -57,6 +58,86 @@ function setupGridDisplay(frm) {
     if (itemsGrid) {
         itemsGrid.wrapper.addClass("pb-native-grid pb-results-grid");
     }
+}
+
+function renderBuilderItemFilters(frm) {
+    const itemsGrid = frm.get_field("builder_items")?.grid;
+    if (!itemsGrid?.wrapper) return;
+
+    const rows = frm.doc.builder_items || [];
+    const materialOptions = [...new Set(rows.map((row) => (row.material || "").trim()).filter(Boolean))].sort();
+    const statusOptions = [...new Set(rows.map((row) => (row.status || "").trim()).filter(Boolean))].sort();
+    const state = frm.__builderFilterState || { search: "", material: "", status: "" };
+    frm.__builderFilterState = state;
+
+    itemsGrid.wrapper.find(".pb-filterbar").remove();
+    const html = $(`
+        <div class="pb-filterbar">
+            <div class="pb-filterbar-copy">
+                <div class="pb-filter-title">${__("Filter Builder Items")}</div>
+                <div class="pb-filter-help">${__("Search loaded items and narrow the results table without recalculating the builder.")}</div>
+            </div>
+            <div class="pb-filter-controls">
+                <input class="form-control pb-filter-search" placeholder="${__("Search item, name, group, buying list...")}" value="${frappe.utils.escape_html(state.search || "")}">
+                <select class="form-control pb-filter-material">
+                    <option value="">${__("All Materials")}</option>
+                    ${materialOptions.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${state.material === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
+                </select>
+                <select class="form-control pb-filter-status">
+                    <option value="">${__("All Statuses")}</option>
+                    ${statusOptions.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${state.status === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
+                </select>
+                <button class="btn btn-default btn-sm pb-filter-clear">${__("Clear")}</button>
+            </div>
+        </div>
+    `);
+    itemsGrid.wrapper.prepend(html);
+
+    html.find(".pb-filter-search").on("input", function () {
+        frm.__builderFilterState.search = ($(this).val() || "").trim();
+        applyBuilderItemFilters(frm);
+    });
+    html.find(".pb-filter-material").on("change", function () {
+        frm.__builderFilterState.material = $(this).val() || "";
+        applyBuilderItemFilters(frm);
+    });
+    html.find(".pb-filter-status").on("change", function () {
+        frm.__builderFilterState.status = $(this).val() || "";
+        applyBuilderItemFilters(frm);
+    });
+    html.find(".pb-filter-clear").on("click", function () {
+        frm.__builderFilterState = { search: "", material: "", status: "" };
+        renderBuilderItemFilters(frm);
+        applyBuilderItemFilters(frm);
+    });
+
+    applyBuilderItemFilters(frm);
+}
+
+function applyBuilderItemFilters(frm) {
+    const itemsGrid = frm.get_field("builder_items")?.grid;
+    if (!itemsGrid) return;
+    const state = frm.__builderFilterState || {};
+    const search = (state.search || "").toLowerCase();
+    const material = (state.material || "").toLowerCase();
+    const status = (state.status || "").toLowerCase();
+
+    (itemsGrid.grid_rows || []).forEach((gridRow) => {
+        const row = gridRow.doc || {};
+        const haystack = [
+            row.item,
+            row.item_name,
+            row.item_group,
+            row.material,
+            row.buying_list,
+            row.status,
+            row.pricing_scenario,
+        ].filter(Boolean).join(" ").toLowerCase();
+        const show = (!search || haystack.includes(search))
+            && (!material || (row.material || "").toLowerCase() === material)
+            && (!status || (row.status || "").toLowerCase() === status);
+        $(gridRow.wrapper).toggle(show);
+    });
 }
 
 function renderBuilderHeader(frm) {
@@ -209,6 +290,7 @@ frappe.ui.form.on("Pricing Builder Item", {
         const buyPrice = flt(row.base_buy_price || 0);
         const marginPct = buyPrice > 0 ? ((effectivePrice - buyPrice) / buyPrice) * 100 : 0;
         frappe.model.set_value(cdt, cdn, "final_margin_pct", marginPct);
+        setTimeout(() => renderBuilderItemFilters(frm), 0);
     },
 });
 
@@ -233,6 +315,12 @@ frappe.ui.form.on("Pricing Builder Sourcing Rule", {
     },
     sourcing_rules_remove(frm) {
         scheduleAutoRecalculate(frm);
+    },
+    builder_items_add(frm) {
+        setTimeout(() => renderBuilderItemFilters(frm), 0);
+    },
+    builder_items_remove(frm) {
+        setTimeout(() => renderBuilderItemFilters(frm), 0);
     },
 });
 
@@ -261,12 +349,16 @@ function ensureBuilderStyles() {
         .pb-warning-title{font-weight:700;margin-bottom:8px;}\
         .pb-warning-box ul{margin:0;padding-left:18px;}\
         .pb-warning-box li+li{margin-top:6px;}\
+        .pb-filterbar{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:12px 14px;margin:0 0 10px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fafc;}\
+        .pb-filter-title{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#0f172a;margin-bottom:4px;}\
+        .pb-filter-help{font-size:12px;color:#64748b;max-width:42ch;}\
+        .pb-filter-controls{display:grid;grid-template-columns:minmax(240px,1.5fr) minmax(160px,.8fr) minmax(160px,.8fr) auto;gap:8px;align-items:center;}\
         .pb-native-grid .grid-heading-row{background:#f8fafc;border-bottom:1px solid #e2e8f0;}\
         .pb-native-grid .grid-heading-row .grid-row{font-weight:700;color:#475569;}\
         .pb-native-grid .grid-body .rows{border-radius:12px;overflow:hidden;}\
         .pb-results-grid .grid-body .data-row:nth-child(odd){background:#fcfcfd;}\
         .pb-results-grid .grid-body .data-row:hover{background:#f8fafc;}\
         .pb-results-grid .grid-static-col{font-weight:600;}\
-        @media (max-width:900px){.pb-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.pb-hero-stats{grid-template-columns:1fr;}.pb-hero h2{font-size:22px;}}\
+        @media (max-width:900px){.pb-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.pb-hero-stats{grid-template-columns:1fr;}.pb-filterbar{display:grid;}.pb-filter-controls{grid-template-columns:1fr;}.pb-hero h2{font-size:22px;}}\
     </style>").appendTo(document.head);
 }
