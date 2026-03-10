@@ -3,6 +3,7 @@ Home Page — cross-module Control Tower backend.
 Same pattern as stock_dashboard.py and pricing_dashboard.py.
 """
 import frappe
+from frappe import _
 from frappe.utils import flt, nowdate, add_days, get_first_day, get_last_day, formatdate
 
 
@@ -12,6 +13,7 @@ def get_dashboard_data():
         "user":             _get_user_info(),
         "kpis":             _get_global_kpis(),
         "pricing_summary":  _get_pricing_summary(),
+        "pricing_recent":   _get_recent_pricing_items(),
         "stock_summary":    _get_stock_summary(),
         "sales_summary":    _get_sales_summary(),
         "alerts":           _get_global_alerts(),
@@ -66,12 +68,52 @@ def _get_pricing_summary():
     result = {}
     for key, dt in [
         ("total_sheets",       "Pricing Sheet"),
+        ("builders",           "Pricing Builder"),
         ("benchmark_policies", "Pricing Benchmark Policy"),
         ("customs_policies",   "Pricing Customs Policy"),
         ("scenarios",          "Pricing Scenario"),
     ]:
-        result[key] = frappe.db.count(dt) if frappe.db.table_exists(f"tab{dt}") else 0
+        result[key] = _safe_count(dt)
     return result
+
+
+def _get_recent_pricing_items():
+    items = []
+
+    if _doctype_exists("Pricing Sheet"):
+        for row in frappe.get_all(
+            "Pricing Sheet",
+            fields=["name", "sheet_name", "modified"],
+            order_by="modified desc",
+            limit_page_length=3,
+        ):
+            items.append(
+                {
+                    "label": row.get("sheet_name") or row.name,
+                    "meta": _("Pricing Sheet"),
+                    "link": f"/app/pricing-sheet/{row.name}",
+                    "modified": row.get("modified"),
+                }
+            )
+
+    if _doctype_exists("Pricing Scenario"):
+        for row in frappe.get_all(
+            "Pricing Scenario",
+            fields=["name", "scenario_name", "modified"],
+            order_by="modified desc",
+            limit_page_length=3,
+        ):
+            items.append(
+                {
+                    "label": row.get("scenario_name") or row.name,
+                    "meta": _("Pricing Scenario"),
+                    "link": f"/app/pricing-scenario/{row.name}",
+                    "modified": row.get("modified"),
+                }
+            )
+
+    items.sort(key=lambda x: x.get("modified") or "", reverse=True)
+    return items[:6]
 
 
 def _get_stock_summary():
@@ -147,3 +189,16 @@ def _get_recent_activity():
         activity.append({"icon": "transfer", "title": r.name, "sub": r.stock_entry_type, "value": "", "date": str(r.posting_date), "link": f"/app/stock-entry/{r.name}"})
     activity.sort(key=lambda x: x.get("date", ""), reverse=True)
     return activity[:8]
+
+
+def _doctype_exists(doctype):
+    return bool(frappe.db.exists("DocType", doctype))
+
+
+def _safe_count(doctype):
+    if not _doctype_exists(doctype):
+        return 0
+    try:
+        return int(frappe.db.count(doctype) or 0)
+    except Exception:
+        return 0

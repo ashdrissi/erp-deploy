@@ -144,7 +144,7 @@ async function loadData(page) {
         });
         const d = res.message || {};
         renderHero(page, d.user || {}, d.kpis || {});
-        renderKpis(page, d.kpis || {});
+        renderKpis(page, d.kpis || {}, d.sales_summary || {});
         renderModuleSummaries(page, d);
         renderAlerts(page, d.alerts || []);
         renderActions(page, d.pending_actions || []);
@@ -170,9 +170,10 @@ function renderHero(page, user, kpis) {
 	`);
 }
 
-function renderKpis(page, k) {
+function renderKpis(page, k, sales) {
     const defs = [
-        { ico: "sales", label: __("Orders / Month"), val: k.orders_month ?? 0, badge: null },
+        { ico: "pricing", label: __("Pricing Sheets / Mo"), val: k.pricing_sheets_month ?? 0, badge: null },
+        { ico: "sales", label: __("Orders / Month"), val: sales.orders_month ?? 0, badge: null },
         { ico: "invoice", label: __("Open Quotations"), val: k.open_quotes ?? 0, badge: null },
         { ico: "stock", label: __("Stock Units"), val: (k.total_stock || 0).toLocaleString(), badge: null },
         { ico: "alert", label: __("Stockouts"), val: k.stockouts ?? 0, badge: (k.stockouts || 0) > 0 ? "error" : null },
@@ -193,16 +194,12 @@ function renderKpis(page, k) {
 
 function renderModuleSummaries(page, d) {
     const p = d.pricing_summary || {};
+    const recentPricing = d.pricing_recent || [];
     const s = d.stock_summary || {};
     const sl = d.sales_summary || {};
     const k = d.kpis || {};
 
-    page.main.find("#hp-pricing-body").html(statRow([
-        [p.total_sheets ?? "—", __("Sheets")],
-        [p.benchmark_policies ?? "—", __("Benchmark")],
-        [p.customs_policies ?? "—", __("Customs")],
-        [p.scenarios ?? "—", __("Scenarios")],
-    ]));
+    page.main.find("#hp-pricing-body").html(renderPricingSummary(p, recentPricing));
     page.main.find("#hp-stock-body").html(statRow([
         [s.warehouses ?? "—", __("Warehouses")],
         [(k.total_stock || 0).toLocaleString(), __("Units")],
@@ -215,6 +212,30 @@ function renderModuleSummaries(page, d) {
         [sl.invoices_overdue ?? "—", __("Overdue"), (sl.invoices_overdue || 0) > 0 ? "error" : null],
         [sl.deliveries_pending ?? "—", __("Deliveries"), (sl.deliveries_pending || 0) > 0 ? "warn" : null],
     ]));
+}
+
+function renderPricingSummary(pricing, recentItems) {
+    const stats = statRow([
+        [pricing.total_sheets ?? "—", __("Sheets")],
+        [pricing.builders ?? "—", __("Builders")],
+        [pricing.benchmark_policies ?? "—", __("Benchmark")],
+        [pricing.customs_policies ?? "—", __("Customs")],
+        [pricing.scenarios ?? "—", __("Scenarios")],
+    ]);
+
+    if (!recentItems.length) {
+        return `${stats}<div class="hp-inline-empty">${__("No recent pricing documents yet.")}</div>`;
+    }
+
+    return `${stats}
+        <div class="hp-mini-list">
+            ${recentItems.map((item) => `
+                <a class="hp-mini-row" href="${frappe.utils.escape_html(item.link || "#")}">
+                    <span class="hp-mini-label">${frappe.utils.escape_html(item.label || "")}</span>
+                    <span class="hp-mini-meta">${frappe.utils.escape_html(item.meta || "")}</span>
+                </a>
+            `).join("")}
+        </div>`;
 }
 
 function statRow(items) {
@@ -375,10 +396,22 @@ function injectStyles() {
 .hp-mc-link:hover { background: #f1f5f9; }
 .hp-mc-link svg { width: 13px; height: 13px; stroke: #6366f1; }
 .hp-mc-body  { flex: 1; }
-.hp-stats    { display: grid; grid-template-columns: repeat(4,1fr); padding: 12px 14px; gap: 0; }
+.hp-stats    { display: grid; grid-template-columns: repeat(5,1fr); padding: 12px 14px; gap: 0; }
+@media(max-width:1200px) { .hp-stats { grid-template-columns: repeat(3,1fr); } }
+@media(max-width:600px) { .hp-stats { grid-template-columns: repeat(2,1fr); } }
 .hp-stat     { text-align: center; padding: 8px 0; }
 .hp-stat-val { font-size: 20px; font-weight: 800; color: var(--heading-color,#1a1f2e); line-height: 1; margin-bottom: 3px; }
 .hp-stat-lbl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted,#94a3b8); }
+.hp-inline-empty { padding: 0 14px 14px; font-size: 11px; color: var(--text-muted,#94a3b8); }
+.hp-mini-list { padding: 0 12px 12px; display: grid; gap: 8px; }
+.hp-mini-row {
+	display: flex; justify-content: space-between; align-items: center; gap: 12px;
+	padding: 10px 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #eef2f7;
+	text-decoration: none; transition: border-color .15s, transform .15s, background .15s;
+}
+.hp-mini-row:hover { border-color: var(--c,#6366f1); background: #fff; transform: translateY(-1px); }
+.hp-mini-label { font-size: 11.5px; font-weight: 700; color: var(--heading-color,#1a1f2e); }
+.hp-mini-meta { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted,#94a3b8); white-space: nowrap; }
 .hp-mc-btns  { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-color,#f1f5f9); }
 .hp-mc-btn {
 	flex: 1; padding: 7px 8px; border-radius: 7px; font-size: 11px; font-weight: 600;
