@@ -1,0 +1,18 @@
+{
+    "creation": "2026-03-10 16:45:00.000000",
+    "docstatus": 0,
+    "doctype": "Page",
+    "modified": "2026-03-10 16:45:00.000000",
+    "module": "Orderlift",
+    "name": "main-dashboard",
+    "owner": "Administrator",
+    "page_name": "main-dashboard",
+    "roles": [
+        {
+            "role": "System Manager"
+        }
+    ],
+    "script": "frappe.pages['main-dashboard'].on_page_load = function(wrapper) {\n\tvar page = frappe.ui.make_app_page({\n\t\tparent: wrapper,\n\t\ttitle: 'Control Tower',\n\t\tsingle_column: true\n\t});\n}",
+    "standard": "Yes",
+    "title": "Main Dashboard"
+}
