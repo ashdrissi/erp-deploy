@@ -4,62 +4,62 @@
 //   Bottom: Live Alerts · Pending Actions · Recent Activity
 // ─────────────────────────────────────────────────────────────────────────────
 
-frappe.pages["main-dashboard"].on_page_load = function (wrapper) {
-	const page = frappe.ui.make_app_page({
-		parent: wrapper,
-		title: __("Home"),
-		single_column: true,
-	});
-	page.main.addClass("hdb-root");
-	injectStyles();
-	renderSkeleton(page);
-	loadData(page);
+frappe.pages["orderlift-home"].on_page_load = function (wrapper) {
+    const page = frappe.ui.make_app_page({
+        parent: wrapper,
+        title: __("Home"),
+        single_column: true,
+    });
+    page.main.addClass("hdb-root");
+    injectStyles();
+    renderSkeleton(page);
+    loadData(page);
 
-	page.add_action_item(__("Refresh"), () => {
-		loadData(page);
-		frappe.show_alert({ message: __("Refreshed"), indicator: "green" });
-	});
+    page.add_action_item(__("Refresh"), () => {
+        loadData(page);
+        frappe.show_alert({ message: __("Refreshed"), indicator: "green" });
+    });
 };
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 const IC = {
-	pricing: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="15" x2="15" y2="5"/><circle cx="7" cy="7" r="2"/><circle cx="13" cy="13" r="2"/></svg>`,
-	stock: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 4L10 2 3 4v8l7 4 7-4V4z"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="3" y1="7" x2="17" y2="7"/></svg>`,
-	sales: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8l8-5 8 5v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8z"/><polyline points="8,19 8,12 12,12 12,19"/></svg>`,
-	crm: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M16 17a7 7 0 0 0-14 0"/><circle cx="16" cy="14" r="3"/><line x1="16" y1="12" x2="16" y2="16"/><line x1="14" y1="14" x2="18" y2="14"/></svg>`,
-	logistics: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="7" width="14" height="9" rx="1"/><path d="M15 10h2l2 3v3h-4V10z"/><circle cx="5" cy="18" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>`,
-	sav: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l.3-.3a2 2 0 0 0-2.8-2.8l-.5.1z"/><path d="M6 14l-4 4"/><path d="M14 6l-8 8 1.5 1.5L16 7.5 14 6z"/></svg>`,
-	finance: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="2" y1="8" x2="18" y2="8"/><line x1="6" y1="13" x2="10" y2="13"/></svg>`,
-	hr: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="4"/><path d="M3 18a7 7 0 0 1 14 0"/></svg>`,
-	alert: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L2 17h16L10 2z"/><line x1="10" y1="9" x2="10" y2="12"/><circle cx="10" cy="14.5" r=".7" fill="currentColor" stroke="none"/></svg>`,
-	check: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,10 8,14 16,6"/></svg>`,
-	arrow: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11,5 16,10 11,15"/></svg>`,
-	clock: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="8"/><polyline points="10,5 10,10 13,13"/></svg>`,
-	order: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="17" y2="6"/><polyline points="9,11 10,13 13,10"/></svg>`,
-	transfer: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="16" y2="7"/><polyline points="11,3 16,7 11,11"/><line x1="16" y1="13" x2="4" y2="13"/><polyline points="9,9 4,13 9,17"/></svg>`,
-	invoice: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v14l4-2 2 2 2-2 4 2V4a2 2 0 0 0-2-2z"/><line x1="9" y1="9" x2="14" y2="9"/><line x1="9" y1="13" x2="14" y2="13"/></svg>`,
-	ticket: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 0-4h16a2 2 0 0 1 0 4"/><rect x="2" y="7" width="16" height="11" rx="1"/><line x1="7" y1="12" x2="13" y2="12"/></svg>`,
-	settings: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4"/></svg>`,
+    pricing: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="15" x2="15" y2="5"/><circle cx="7" cy="7" r="2"/><circle cx="13" cy="13" r="2"/></svg>`,
+    stock: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 4L10 2 3 4v8l7 4 7-4V4z"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="3" y1="7" x2="17" y2="7"/></svg>`,
+    sales: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8l8-5 8 5v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8z"/><polyline points="8,19 8,12 12,12 12,19"/></svg>`,
+    crm: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M16 17a7 7 0 0 0-14 0"/><circle cx="16" cy="14" r="3"/><line x1="16" y1="12" x2="16" y2="16"/><line x1="14" y1="14" x2="18" y2="14"/></svg>`,
+    logistics: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="7" width="14" height="9" rx="1"/><path d="M15 10h2l2 3v3h-4V10z"/><circle cx="5" cy="18" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>`,
+    sav: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l.3-.3a2 2 0 0 0-2.8-2.8l-.5.1z"/><path d="M6 14l-4 4"/><path d="M14 6l-8 8 1.5 1.5L16 7.5 14 6z"/></svg>`,
+    finance: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="2" y1="8" x2="18" y2="8"/><line x1="6" y1="13" x2="10" y2="13"/></svg>`,
+    hr: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="4"/><path d="M3 18a7 7 0 0 1 14 0"/></svg>`,
+    alert: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L2 17h16L10 2z"/><line x1="10" y1="9" x2="10" y2="12"/><circle cx="10" cy="14.5" r=".7" fill="currentColor" stroke="none"/></svg>`,
+    check: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,10 8,14 16,6"/></svg>`,
+    arrow: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11,5 16,10 11,15"/></svg>`,
+    clock: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="8"/><polyline points="10,5 10,10 13,13"/></svg>`,
+    order: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="17" y2="6"/><polyline points="9,11 10,13 13,10"/></svg>`,
+    transfer: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="16" y2="7"/><polyline points="11,3 16,7 11,11"/><line x1="16" y1="13" x2="4" y2="13"/><polyline points="9,9 4,13 9,17"/></svg>`,
+    invoice: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v14l4-2 2 2 2-2 4 2V4a2 2 0 0 0-2-2z"/><line x1="9" y1="9" x2="14" y2="9"/><line x1="9" y1="13" x2="14" y2="13"/></svg>`,
+    ticket: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 0-4h16a2 2 0 0 1 0 4"/><rect x="2" y="7" width="16" height="11" rx="1"/><line x1="7" y1="12" x2="13" y2="12"/></svg>`,
+    settings: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4"/></svg>`,
 };
 
 // ─── Module gateway definitions ───────────────────────────────────────────────
 
 const GATEWAYS = [
-	{ icon: "pricing", label: __("Pricing & Sales"), desc: __("Price sheets, policies, simulator"), url: "pricing-dashboard", color: "#6366f1" },
-	{ icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory, transfers, reorder queue"), url: "stock-dashboard", color: "#10b981" },
-	{ icon: "logistics", label: __("Logistics"), desc: __("Suppliers, purchase orders, delivery"), url: "buying/purchase-order", color: "#f59e0b" },
-	{ icon: "crm", label: __("CRM"), desc: __("Customers, pipeline, campaigns"), url: "crm/crm-lead", color: "#3b82f6" },
-	{ icon: "sav", label: __("SAV / Field Service"), desc: __("Tickets, interventions, SLA"), url: "support/issue", color: "#ec4899" },
-	{ icon: "finance", label: __("Finance"), desc: __("Invoices, payments, P&L"), url: "accounts/sales-invoice", color: "#8b5cf6" },
-	{ icon: "hr", label: __("HR"), desc: __("Employees, leave, payroll"), url: "hr/employee", color: "#06b6d4" },
-	{ icon: "settings", label: __("Settings"), desc: __("Users, roles, company config"), url: "setup/company", color: "#64748b" },
+    { icon: "pricing", label: __("Pricing & Sales"), desc: __("Price sheets, policies, simulator"), url: "pricing-dashboard", color: "#6366f1" },
+    { icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory, transfers, reorder queue"), url: "stock-dashboard", color: "#10b981" },
+    { icon: "logistics", label: __("Logistics"), desc: __("Suppliers, purchase orders, delivery"), url: "buying/purchase-order", color: "#f59e0b" },
+    { icon: "crm", label: __("CRM"), desc: __("Customers, pipeline, campaigns"), url: "crm/crm-lead", color: "#3b82f6" },
+    { icon: "sav", label: __("SAV / Field Service"), desc: __("Tickets, interventions, SLA"), url: "support/issue", color: "#ec4899" },
+    { icon: "finance", label: __("Finance"), desc: __("Invoices, payments, P&L"), url: "accounts/sales-invoice", color: "#8b5cf6" },
+    { icon: "hr", label: __("HR"), desc: __("Employees, leave, payroll"), url: "hr/employee", color: "#06b6d4" },
+    { icon: "settings", label: __("Settings"), desc: __("Users, roles, company config"), url: "setup/company", color: "#64748b" },
 ];
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function renderSkeleton(page) {
-	page.main.html(`
+    page.main.html(`
         <div class="hdb-wrap">
 
             <!-- Hero -->
@@ -189,18 +189,18 @@ function renderSkeleton(page) {
         </div>
     `);
 
-	// Wire gateways
-	page.main.find(".hdb-gateway").on("click", function () {
-		const url = $(this).data("url");
-		frappe.set_route(url.split("/"));
-	});
-	page.main.find(".hdb-mc-btn").on("click", function () {
-		frappe.set_route($(this).data("url").split("/"));
-	});
+    // Wire gateways
+    page.main.find(".hdb-gateway").on("click", function () {
+        const url = $(this).data("url");
+        frappe.set_route(url.split("/"));
+    });
+    page.main.find(".hdb-mc-btn").on("click", function () {
+        frappe.set_route($(this).data("url").split("/"));
+    });
 }
 
 function gatewayCard(g) {
-	return `
+    return `
         <div class="hdb-gateway" data-url="${g.url}" style="--gw-color:${g.color}">
             <span class="hdb-gw-ico">${IC[g.icon]}</span>
             <div class="hdb-gw-label">${frappe.utils.escape_html(g.label)}</div>
@@ -209,41 +209,41 @@ function gatewayCard(g) {
 }
 
 function mcBtn(label, url, variant) {
-	return `<button class="hdb-mc-btn hdb-mc-btn--${variant}" data-url="${url}">${frappe.utils.escape_html(label)}</button>`;
+    return `<button class="hdb-mc-btn hdb-mc-btn--${variant}" data-url="${url}">${frappe.utils.escape_html(label)}</button>`;
 }
 
 // ─── Data loading ─────────────────────────────────────────────────────────────
 
 async function loadData(page) {
-	try {
-		const res = await frappe.call({
-			method: "orderlift.orderlift.page.main_dashboard.main_dashboard.get_dashboard_data",
-		});
-		const d = res.message || {};
-		renderHero(page, d.user || {}, d.kpis || {});
-		renderKpis(page, d.kpis || {});
-		renderPricingSummary(page, d.pricing_summary || {});
-		renderStockSummary(page, d.stock_summary || {}, d.kpis || {});
-		renderSalesSummary(page, d.sales_summary || {}, d.kpis || {});
-		renderAlerts(page, d.alerts || []);
-		renderPendingActions(page, d.pending_actions || []);
-		renderActivity(page, d.recent_activity || []);
-	} catch (e) {
-		console.error("Home Dashboard: data load failed", e);
-	}
+    try {
+        const res = await frappe.call({
+            method: "orderlift.orderlift.page.orderlift_home.orderlift_home.get_dashboard_data",
+        });
+        const d = res.message || {};
+        renderHero(page, d.user || {}, d.kpis || {});
+        renderKpis(page, d.kpis || {});
+        renderPricingSummary(page, d.pricing_summary || {});
+        renderStockSummary(page, d.stock_summary || {}, d.kpis || {});
+        renderSalesSummary(page, d.sales_summary || {}, d.kpis || {});
+        renderAlerts(page, d.alerts || []);
+        renderPendingActions(page, d.pending_actions || []);
+        renderActivity(page, d.recent_activity || []);
+    } catch (e) {
+        console.error("Home Dashboard: data load failed", e);
+    }
 }
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────
 
 function renderHero(page, user, kpis) {
-	const hour = new Date().getHours();
-	const greeting = hour < 12 ? __("Good morning") : hour < 18 ? __("Good afternoon") : __("Good evening");
-	const name = (user.full_name || "").split(" ")[0];
-	page.main.find("#hdb-greeting").text(`${greeting}, ${name} 👋`);
-	page.main.find("#hdb-date").text(user.today || "");
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? __("Good morning") : hour < 18 ? __("Good afternoon") : __("Good evening");
+    const name = (user.full_name || "").split(" ")[0];
+    page.main.find("#hdb-greeting").text(`${greeting}, ${name} 👋`);
+    page.main.find("#hdb-date").text(user.today || "");
 
-	const salesFmt = kpis.sales_month > 0 ? `${(kpis.sales_month / 1000).toFixed(1)}k` : "—";
-	page.main.find("#hdb-hero-stats").html(`
+    const salesFmt = kpis.sales_month > 0 ? `${(kpis.sales_month / 1000).toFixed(1)}k` : "—";
+    page.main.find("#hdb-hero-stats").html(`
         <div class="hdb-hero-stat">
             <div class="hdb-hero-val">${salesFmt}</div>
             <div class="hdb-hero-lbl">${__("Sales / Month")}</div>
@@ -262,18 +262,18 @@ function renderHero(page, user, kpis) {
 // ─── KPI strip ────────────────────────────────────────────────────────────────
 
 function renderKpis(page, k) {
-	const defs = [
-		{ icon: "sales", label: __("Orders / Month"), value: k.pricing_sheets_month ?? 0, badge: null },
-		{ icon: "invoice", label: __("Open Quotations"), value: k.open_quotes ?? 0, badge: null },
-		{ icon: "stock", label: __("Total Stock Units"), value: (k.total_stock || 0).toLocaleString(), badge: null },
-		{ icon: "alert", label: __("Stockouts"), value: k.stockouts ?? 0, badge: (k.stockouts || 0) > 0 ? "error" : null },
-		{ icon: "transfer", label: __("Pending Transfers"), value: k.pending_transfers ?? 0, badge: (k.pending_transfers || 0) > 0 ? "warn" : null },
-		{ icon: "pricing", label: __("Pricing Sheets / Mo"), value: k.pricing_sheets_month ?? 0, badge: null },
-		{ icon: "ticket", label: __("Open SAV Tickets"), value: k.open_tickets ?? 0, badge: (k.open_tickets || 0) > 0 ? "info" : null },
-	];
+    const defs = [
+        { icon: "sales", label: __("Orders / Month"), value: k.pricing_sheets_month ?? 0, badge: null },
+        { icon: "invoice", label: __("Open Quotations"), value: k.open_quotes ?? 0, badge: null },
+        { icon: "stock", label: __("Total Stock Units"), value: (k.total_stock || 0).toLocaleString(), badge: null },
+        { icon: "alert", label: __("Stockouts"), value: k.stockouts ?? 0, badge: (k.stockouts || 0) > 0 ? "error" : null },
+        { icon: "transfer", label: __("Pending Transfers"), value: k.pending_transfers ?? 0, badge: (k.pending_transfers || 0) > 0 ? "warn" : null },
+        { icon: "pricing", label: __("Pricing Sheets / Mo"), value: k.pricing_sheets_month ?? 0, badge: null },
+        { icon: "ticket", label: __("Open SAV Tickets"), value: k.open_tickets ?? 0, badge: (k.open_tickets || 0) > 0 ? "info" : null },
+    ];
 
-	const strip = page.main.find("#hdb-kpi-strip");
-	strip.html(defs.map((d, i) => `
+    const strip = page.main.find("#hdb-kpi-strip");
+    strip.html(defs.map((d, i) => `
         <div class="hdb-kpi" style="animation-delay:${i * 60}ms">
             <div class="hdb-kpi-top">
                 <span class="hdb-kpi-ico">${IC[d.icon]}</span>
@@ -283,15 +283,15 @@ function renderKpis(page, k) {
             <div class="hdb-kpi-lbl">${d.label}</div>
         </div>
     `).join(""));
-	setTimeout(() => strip.find(".hdb-kpi").each(function (i) {
-		setTimeout(() => $(this).addClass("hdb-kpi--in"), i * 60);
-	}), 50);
+    setTimeout(() => strip.find(".hdb-kpi").each(function (i) {
+        setTimeout(() => $(this).addClass("hdb-kpi--in"), i * 60);
+    }), 50);
 }
 
 // ─── Module summaries ─────────────────────────────────────────────────────────
 
 function renderPricingSummary(page, p) {
-	page.main.find("#hdb-pricing-body").html(`
+    page.main.find("#hdb-pricing-body").html(`
         <div class="hdb-stat-row">
             ${mStat(p.total_sheets ?? "—", __("Total Sheets"))}
             ${mStat(p.benchmark_policies ?? "—", __("Benchmark Policies"))}
@@ -302,7 +302,7 @@ function renderPricingSummary(page, p) {
 }
 
 function renderStockSummary(page, s, k) {
-	page.main.find("#hdb-stock-body").html(`
+    page.main.find("#hdb-stock-body").html(`
         <div class="hdb-stat-row">
             ${mStat(s.warehouses ?? "—", __("Warehouses"))}
             ${mStat((k.total_stock || 0).toLocaleString(), __("Units in Stock"))}
@@ -313,7 +313,7 @@ function renderStockSummary(page, s, k) {
 }
 
 function renderSalesSummary(page, s, k) {
-	page.main.find("#hdb-sales-body").html(`
+    page.main.find("#hdb-sales-body").html(`
         <div class="hdb-stat-row">
             ${mStat(s.orders_month ?? "—", __("Orders / Month"))}
             ${mStat(k.open_quotes ?? "—", __("Open Quotes"))}
@@ -324,8 +324,8 @@ function renderSalesSummary(page, s, k) {
 }
 
 function mStat(val, label, badge) {
-	const cls = badge === "error" ? "hdb-val-red" : badge === "warn" ? "hdb-val-amber" : "";
-	return `<div class="hdb-mstat">
+    const cls = badge === "error" ? "hdb-val-red" : badge === "warn" ? "hdb-val-amber" : "";
+    return `<div class="hdb-mstat">
         <div class="hdb-mstat-val ${cls}">${val}</div>
         <div class="hdb-mstat-lbl">${label}</div>
     </div>`;
@@ -334,16 +334,16 @@ function mStat(val, label, badge) {
 // ─── Alerts ───────────────────────────────────────────────────────────────────
 
 function renderAlerts(page, alerts) {
-	const badge = page.main.find("#hdb-alert-count");
-	badge.text(alerts.length ? `${alerts.length} ${__("active")}` : "");
-	badge.toggleClass("hdb-badge-live--red", alerts.length > 0);
+    const badge = page.main.find("#hdb-alert-count");
+    badge.text(alerts.length ? `${alerts.length} ${__("active")}` : "");
+    badge.toggleClass("hdb-badge-live--red", alerts.length > 0);
 
-	const el = page.main.find("#hdb-alerts");
-	if (!alerts.length) {
-		el.html(`<div class="hdb-empty">${IC.check}<p>${__("No active alerts.")}</p></div>`);
-		return;
-	}
-	el.html(`<div class="hdb-alert-list">${alerts.map(a => `
+    const el = page.main.find("#hdb-alerts");
+    if (!alerts.length) {
+        el.html(`<div class="hdb-empty">${IC.check}<p>${__("No active alerts.")}</p></div>`);
+        return;
+    }
+    el.html(`<div class="hdb-alert-list">${alerts.map(a => `
         <div class="hdb-alert hdb-alert--${a.level}">
             <span class="hdb-alert-ico">${IC[a.icon] || IC.alert}</span>
             <div class="hdb-alert-body">
@@ -358,12 +358,12 @@ function renderAlerts(page, alerts) {
 // ─── Pending actions ──────────────────────────────────────────────────────────
 
 function renderPendingActions(page, actions) {
-	const el = page.main.find("#hdb-actions");
-	if (!actions.length) {
-		el.html(`<div class="hdb-empty">${IC.check}<p>${__("All clear!")}</p></div>`);
-		return;
-	}
-	el.html(`<div class="hdb-action-list">${actions.map(a => `
+    const el = page.main.find("#hdb-actions");
+    if (!actions.length) {
+        el.html(`<div class="hdb-empty">${IC.check}<p>${__("All clear!")}</p></div>`);
+        return;
+    }
+    el.html(`<div class="hdb-action-list">${actions.map(a => `
         <div class="hdb-action-row">
             <div class="hdb-action-info">
                 <div class="hdb-action-title">${frappe.utils.escape_html(a.title)}</div>
@@ -379,12 +379,12 @@ function renderPendingActions(page, actions) {
 // ─── Recent activity ──────────────────────────────────────────────────────────
 
 function renderActivity(page, items) {
-	const el = page.main.find("#hdb-activity");
-	if (!items.length) {
-		el.html(`<div class="hdb-empty">${IC.clock}<p>${__("No recent activity.")}</p></div>`);
-		return;
-	}
-	el.html(`<div class="hdb-act-list">${items.map(a => `
+    const el = page.main.find("#hdb-activity");
+    if (!items.length) {
+        el.html(`<div class="hdb-empty">${IC.clock}<p>${__("No recent activity.")}</p></div>`);
+        return;
+    }
+    el.html(`<div class="hdb-act-list">${items.map(a => `
         <div class="hdb-act-row">
             <span class="hdb-act-ico">${IC[a.icon] || IC.order}</span>
             <div class="hdb-act-info">
@@ -402,10 +402,10 @@ function renderActivity(page, items) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 function injectStyles() {
-	if (document.getElementById("hdb-styles")) return;
-	const s = document.createElement("style");
-	s.id = "hdb-styles";
-	s.textContent = `
+    if (document.getElementById("hdb-styles")) return;
+    const s = document.createElement("style");
+    s.id = "hdb-styles";
+    s.textContent = `
 /* ── Root ── */
 .hdb-root { background: var(--bg-color, #f4f6f9); }
 .hdb-wrap { max-width: 1440px; margin: 0 auto; padding: 20px 28px 60px; display: flex; flex-direction: column; gap: 16px; }
@@ -649,5 +649,5 @@ function injectStyles() {
 [data-theme-mode="dark"] .hdb-alert--warn  { background: rgba(245,158,11,.08); border-color: rgba(245,158,11,.25); }
 [data-theme-mode="dark"] .hdb-alert--info  { background: rgba(59,130,246,.08); border-color: rgba(59,130,246,.25); }
     `;
-	document.head.appendChild(s);
+    document.head.appendChild(s);
 }
