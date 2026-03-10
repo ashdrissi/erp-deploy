@@ -192,41 +192,59 @@ def _get_critical_stock():
 
 def _get_rotation_by_category():
     ninety_days_ago = add_days(nowdate(), -90)
-    # Wrap in a subquery so MySQL can safely reference the 'outgoing' alias
-    # in both HAVING and ORDER BY without a "reference to group function" error.
-    rows = frappe.db.sql(
+
+    # Two simple queries + Python-side sort to avoid MariaDB aggregate alias errors.
+    # Query 1: total outgoing qty per item group in the last 90 days
+    outgoing_rows = frappe.db.sql(
         """
-        SELECT item_group, outgoing, avg_stock
-        FROM (
-            SELECT
-                i.item_group,
-                COALESCE(ABS(SUM(sle.actual_qty)), 0)  AS outgoing,
-                COALESCE(AVG(b.actual_qty), 1)          AS avg_stock
-            FROM `tabStock Ledger Entry` sle
-            JOIN  `tabItem` i  ON i.name = sle.item_code
-            LEFT JOIN `tabBin` b ON b.item_code = sle.item_code
-            WHERE sle.actual_qty < 0
-              AND sle.posting_date >= %s
-              AND sle.is_cancelled = 0
-            GROUP BY i.item_group
-        ) sub
-        WHERE outgoing > 0
-        ORDER BY (outgoing / GREATEST(avg_stock, 1)) DESC
-        LIMIT 7
+        SELECT i.item_group, ABS(SUM(sle.actual_qty)) AS total_out
+        FROM `tabStock Ledger Entry` sle
+        JOIN `tabItem` i ON i.name = sle.item_code
+        WHERE sle.actual_qty < 0
+          AND sle.posting_date >= %s
+          AND sle.is_cancelled = 0
+        GROUP BY i.item_group
         """,
         ninety_days_ago, as_dict=True,
     )
 
+    if not outgoing_rows:
+        return []
+
+    outgoing_map = {r.item_group: flt(r.total_out) for r in outgoing_rows if flt(r.total_out) > 0}
+    if not outgoing_map:
+        return []
+
+    groups = list(outgoing_map.keys())
+    placeholders = ", ".join(["%s"] * len(groups))
+
+    # Query 2: average actual stock per item group from Bin
+    avg_rows = frappe.db.sql(
+        f"""
+        SELECT i.item_group, AVG(b.actual_qty) AS avg_qty
+        FROM `tabBin` b
+        JOIN `tabItem` i ON i.name = b.item_code
+        WHERE i.item_group IN ({placeholders})
+          AND b.actual_qty > 0
+        GROUP BY i.item_group
+        """,
+        groups, as_dict=True,
+    )
+    avg_map = {r.item_group: max(flt(r.avg_qty), 1) for r in avg_rows}
+
+    # Compute rotation in Python, sort descending
     result = []
-    for r in rows:
-        rotation = round(flt(r.outgoing) / max(flt(r.avg_stock), 1) * (365 / 90), 1)
+    for group, out in outgoing_map.items():
+        avg_stock = avg_map.get(group, 1)
+        rotation = round(out / avg_stock * (365 / 90), 1)
         result.append({
-            "category": r.item_group,
+            "category": group,
             "rotation": rotation,
             "speed": "fast" if rotation > 6 else "normal" if rotation > 3 else "slow" if rotation > 1 else "dead",
         })
 
-    return result
+    result.sort(key=lambda x: x["rotation"], reverse=True)
+    return result[:7]
 
 
 # ── Live alerts ────────────────────────────────────────────────────────────────
