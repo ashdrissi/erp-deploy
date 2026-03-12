@@ -318,6 +318,7 @@ function syncSourceDoc(state) {
     };
     state.simFrm = {
         doc: state.simDoc,
+        docname: state.simDoc.name,
         fields_dict: {},
         script_manager: { trigger() {}, make() {} },
         cur_grid: null,
@@ -378,26 +379,30 @@ function renderStaticSourceGrid(state) {
 
 function mountNativeGrid(state, parent, df) {
     if (!parent) return;
-    const control = frappe.ui.form.make_control({
-        parent,
-        df: {
-            fieldname: df.fieldname,
-            fieldtype: 'Table',
-            label: df.label,
-            options: df.options,
-            cannot_add_rows: false,
-            in_place_edit: true,
-        },
-        frm: state.simFrm,
-        render_input: true,
+    const docfield = {
+        fieldname: df.fieldname,
+        fieldtype: 'Table',
+        label: df.label,
+        options: df.options,
+        cannot_add_rows: false,
+        in_place_edit: true,
+    };
+    frappe.model.with_doctype(df.options, () => {
+        $(parent).empty();
+        const grid = new frappe.ui.form.Grid({
+            frm: state.simFrm,
+            df: docfield,
+            parent: $(parent),
+        });
+        grid.make();
+        grid.refresh();
+        state.simFrm.fields_dict[df.fieldname] = { grid, refresh: () => grid.refresh() };
+        bindNativeGridChanges(state, grid);
     });
-    control.refresh();
-    state.simFrm.fields_dict[df.fieldname] = control;
-    bindNativeGridChanges(state, control);
 }
 
 function bindNativeGridChanges(state, control) {
-    const wrapper = $(control.wrapper || control.$wrapper || []);
+    const wrapper = $(control.wrapper || control.$wrapper || control.parent || []);
     if (!wrapper.length) return;
     wrapper.off('.psimgrid');
     wrapper.on('change.psimgrid input.psimgrid click.psimgrid', () => {
