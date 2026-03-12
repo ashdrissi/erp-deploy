@@ -166,10 +166,8 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
         "pricing_mode": "Dynamic",
         "rows": rows,
         "summary": {
-            "total_buy": flt(doc.total_buy),
-            "total_expenses": flt(doc.total_expenses),
-            "total_selling": flt(doc.total_selling),
-            "gross_margin": flt(doc.total_selling) - flt(doc.total_buy),
+            "item_count": len(rows),
+            "policy_count": len([x for x in sourcing_rules if x.get("source_buying_price_list")]),
             "global_margin_pct": _compute_global_margin_pct(doc),
         },
         "resolved": {
@@ -237,7 +235,6 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
             continue
         rows.append(out_row)
 
-    total = sum(flt(x.get("line_total")) for x in rows)
     warnings = []
     if missing:
         warnings.append(_("{0} item(s) have no static price in selected lists.").format(missing))
@@ -249,9 +246,9 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
         "pricing_mode": "Static",
         "rows": rows,
         "summary": {
-            "total_selling": total,
             "priced_items": len(rows) - missing,
             "missing_items": missing,
+            "selling_lists_count": len(requested_lists),
         },
         "resolved": {"selling_price_lists": requested_lists},
         "warnings": warnings,

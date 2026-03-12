@@ -39,8 +39,8 @@ frappe.pages["pricing-simulator"].on_page_load = function (wrapper) {
         lastMode: null,
         lastSummary: null,
         viewMode: "Compare (Dynamic vs Static)",
-        dynamicSources: [],
-        staticLists: [],
+        dynamicSources: [{ buying_price_list: "", pricing_scenario: "", customs_policy: "", benchmark_policy: "", is_active: 1 }],
+        staticLists: [""],
         tableFilters: { material: "", source: "" },
     };
 
@@ -136,7 +136,6 @@ function buildLayout(state) {
         customer: makeControl(grid, { fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" }),
         geography_territory: makeControl(grid, { fieldname: "geography_territory", label: __("Territory"), fieldtype: "Link", options: "Territory" }),
         only_priced_items: makeControl(grid, { fieldname: "only_priced_items", label: __("Only Priced Items"), fieldtype: "Check", default: 1 }),
-        default_qty: makeControl(grid, { fieldname: "default_qty", label: __("Qty per Item"), fieldtype: "Float", default: 1 }),
         max_items: makeControl(grid, { fieldname: "max_items", label: __("Max Items"), fieldtype: "Int", default: 100 }),
     };
     state.dynamicSourcesWrap = controlsWrap.find('[data-role="dynamic-sources"]');
@@ -198,6 +197,7 @@ function collapseFilters(state) {
 function persistFilters(state) {
     const vals = {};
     Object.entries(state.controls).forEach(([k, c]) => { vals[k] = c.get_value(); });
+    syncSourceStateFromDoc(state);
     vals.dynamic_sources = state.dynamicSources;
     vals.static_lists = state.staticLists;
     localStorage.setItem(LS_KEY, JSON.stringify(vals));
@@ -220,7 +220,7 @@ function restoreFilters(state) {
 
 function clearFilters(state) {
     Object.values(state.controls).forEach((c) => c.set_value(""));
-    ["default_qty", "max_items", "only_priced_items"].forEach((k) => {
+    ["max_items", "only_priced_items"].forEach((k) => {
         const df = state.controls[k]?.df;
         if (df?.default !== undefined) state.controls[k].set_value(df.default);
     });
@@ -285,7 +285,7 @@ function collectPayload(state) {
         item_group: "",
         item_search: "",
         material: "",
-        default_qty: state.controls.default_qty.get_value() || 1,
+        default_qty: 1,
         max_items: state.controls.max_items.get_value() || 0,
         only_priced_items: Number(state.controls.only_priced_items.get_value() || 0),
         items: [],
@@ -293,89 +293,73 @@ function collectPayload(state) {
 }
 
 function renderSourceConfigurators(state) {
-    renderDynamicSources(state);
-    renderStaticSources(state);
+    syncSourceDoc(state);
+    renderDynamicSourceGrid(state);
+    renderStaticSourceGrid(state);
 }
 
-function renderDynamicSources(state) {
+function syncSourceDoc(state) {
+    state.simDoc = {
+        doctype: "Pricing Simulator UI",
+        name: "Pricing Simulator UI",
+        dynamic_sources: (state.dynamicSources || []).map((row) => ({
+            doctype: "Pricing Builder Sourcing Rule",
+            buying_price_list: row.buying_price_list || row.source_buying_price_list || "",
+            pricing_scenario: row.pricing_scenario || "",
+            customs_policy: row.customs_policy || "",
+            benchmark_policy: row.benchmark_policy || "",
+            is_active: row.is_active ? 1 : 0,
+        })),
+        static_sources: (state.staticLists || []).map((value) => ({
+            doctype: "Pricing Simulator Static Source",
+            selling_price_list: value || "",
+            is_active: 1,
+        })),
+    };
+    state.simFrm = {
+        doc: state.simDoc,
+        fields_dict: {},
+        script_manager: { trigger() {}, make() {} },
+        cur_grid: null,
+        get_field(fieldname) { return this.fields_dict[fieldname]; },
+        refresh_field(fieldname) { this.fields_dict[fieldname]?.refresh?.(); },
+    };
+}
+
+function syncSourceStateFromDoc(state) {
+    if (!state.simDoc) return;
+    state.dynamicSources = (state.simDoc.dynamic_sources || []).map((row) => ({
+        buying_price_list: row.buying_price_list || row.source_buying_price_list || "",
+        pricing_scenario: row.pricing_scenario || "",
+        customs_policy: row.customs_policy || "",
+        benchmark_policy: row.benchmark_policy || "",
+        is_active: row.is_active ? 1 : 0,
+    })).filter((row) => row.buying_price_list || row.pricing_scenario || row.customs_policy || row.benchmark_policy || row.is_active);
+    state.staticLists = (state.simDoc.static_sources || []).map((row) => row.selling_price_list || "").filter(Boolean);
+}
+
+function renderDynamicSourceGrid(state) {
     const wrap = state.dynamicSourcesWrap;
     if (!wrap?.length) return;
-    const rows = state.dynamicSources.length ? state.dynamicSources.map((row, idx) => `
-        <div class="psim-source-row psim-source-row--table" data-dyn-row="${idx}">
-            <div class="psim-source-cell" data-dyn-cell="buying_price_list" data-dyn-idx="${idx}"></div>
-            <div class="psim-source-cell" data-dyn-cell="pricing_scenario" data-dyn-idx="${idx}"></div>
-            <div class="psim-source-cell" data-dyn-cell="customs_policy" data-dyn-idx="${idx}"></div>
-            <div class="psim-source-cell" data-dyn-cell="benchmark_policy" data-dyn-idx="${idx}"></div>
-            <label class="checkbox psim-source-check"><input type="checkbox" data-dyn-active="${idx}" ${row.is_active ? "checked" : ""}> ${__("Active")}</label>
-            <button class="btn btn-default btn-xs" data-remove-dyn="${idx}">${__("Remove")}</button>
-        </div>
-    `).join("") : `<div class="psim-source-empty">${__("No dynamic sourcing rows yet.")}</div>`;
     wrap.html(`
         <div class="psim-source-head">
             <div>
                 <div class="psim-source-title">${__("Dynamic Sources")}</div>
                 <div class="psim-source-help">${__("Map buying price lists to expenses, customs, and margin policies like the builder.")}</div>
             </div>
-            <button class="btn btn-default btn-xs" data-add-dyn>${__("Add Row")}</button>
         </div>
-        ${state.dynamicSources.length ? `<div class="psim-source-table-head">
-            <span>${__("Buying List")}</span>
-            <span>${__("Expenses Policy")}</span>
-            <span>${__("Customs Policy")}</span>
-            <span>${__("Margin & Benchmark Policy")}</span>
-            <span>${__("Status")}</span>
-            <span>${__("Action")}</span>
-        </div>` : ""}
-        <div class="psim-source-list">${rows}</div>
+        <div class="psim-native-grid" data-native-grid="dynamic"></div>
     `);
-    wrap.find('[data-add-dyn]').on('click', () => {
-        state.dynamicSources.push({ buying_price_list: "", pricing_scenario: "", customs_policy: "", benchmark_policy: "", is_active: 1 });
-        renderDynamicSources(state);
-        persistFilters(state);
-    });
-    wrap.find('[data-remove-dyn]').on('click', function () {
-        state.dynamicSources.splice(Number($(this).data('removeDyn')), 1);
-        renderDynamicSources(state);
-        persistFilters(state);
-        queueRun(state);
-    });
-    wrap.find('[data-dyn-active]').on('change', function () {
-        const idx = Number($(this).data('dynActive'));
-        state.dynamicSources[idx].is_active = $(this).is(':checked') ? 1 : 0;
-        persistFilters(state);
-        queueRun(state);
-    });
-
-    [
-        { field: "buying_price_list", options: "Price List", label: __("Buying List") },
-        { field: "pricing_scenario", options: "Pricing Scenario", label: __("Expenses Policy") },
-        { field: "customs_policy", options: "Pricing Customs Policy", label: __("Customs Policy") },
-        { field: "benchmark_policy", options: "Pricing Benchmark Policy", label: __("Margin & Benchmark Policy") },
-    ].forEach((cfg) => {
-        wrap.find(`[data-dyn-cell="${cfg.field}"]`).each(function () {
-            const idx = Number($(this).data('dynIdx'));
-            const control = frappe.ui.form.make_control({
-                parent: this,
-                df: { fieldname: cfg.field, label: cfg.label, fieldtype: "Link", options: cfg.options },
-                render_input: true,
-            });
-            control.refresh();
-            control.set_value(state.dynamicSources[idx]?.[cfg.field] || "");
-            control.$input?.on('change', () => {
-                state.dynamicSources[idx][cfg.field] = control.get_value() || "";
-                persistFilters(state);
-                queueRun(state);
-            });
-        });
+    mountNativeGrid(state, wrap.find('[data-native-grid="dynamic"]')[0], {
+        fieldname: 'dynamic_sources',
+        label: __('Dynamic Sources'),
+        options: 'Pricing Builder Sourcing Rule'
     });
 }
 
-function renderStaticSources(state) {
+function renderStaticSourceGrid(state) {
     const wrap = state.staticSourcesWrap;
     if (!wrap?.length) return;
-    const tags = state.staticLists.length ? state.staticLists.map((value, idx) => `
-        <span class="psim-list-chip">${frappe.utils.escape_html(value)} <button data-remove-static="${idx}">×</button></span>
-    `).join('') : `<div class="psim-source-empty">${__("No static selling lists selected.")}</div>`;
     wrap.html(`
         <div class="psim-source-head">
             <div>
@@ -383,31 +367,45 @@ function renderStaticSources(state) {
                 <div class="psim-source-help">${__("Choose one or more selling lists to simulate static pricing with the same item filters.")}</div>
             </div>
         </div>
-        <div class="psim-static-add"><div data-static-link></div></div>
-        <div class="psim-chip-row">${tags}</div>
+        <div class="psim-native-grid" data-native-grid="static"></div>
     `);
-    const target = wrap.find('[data-static-link]')[0];
-    if (target) {
-        const control = frappe.ui.form.make_control({
-            parent: target,
-            df: { fieldname: "static_price_list", label: __("Add Selling List"), fieldtype: "Link", options: "Price List" },
-            render_input: true,
-        });
-        control.refresh();
-        control.$input?.on('change', () => {
-            const value = (control.get_value() || "").trim();
-            if (!value || state.staticLists.includes(value)) return;
-            state.staticLists.push(value);
-            renderStaticSources(state);
+    mountNativeGrid(state, wrap.find('[data-native-grid="static"]')[0], {
+        fieldname: 'static_sources',
+        label: __('Static Selling Lists'),
+        options: 'Pricing Simulator Static Source'
+    });
+}
+
+function mountNativeGrid(state, parent, df) {
+    if (!parent) return;
+    const control = frappe.ui.form.make_control({
+        parent,
+        df: {
+            fieldname: df.fieldname,
+            fieldtype: 'Table',
+            label: df.label,
+            options: df.options,
+            cannot_add_rows: false,
+            in_place_edit: true,
+        },
+        frm: state.simFrm,
+        render_input: true,
+    });
+    control.refresh();
+    state.simFrm.fields_dict[df.fieldname] = control;
+    bindNativeGridChanges(state, control);
+}
+
+function bindNativeGridChanges(state, control) {
+    const wrapper = $(control.wrapper || control.$wrapper || []);
+    if (!wrapper.length) return;
+    wrapper.off('.psimgrid');
+    wrapper.on('change.psimgrid input.psimgrid click.psimgrid', () => {
+        setTimeout(() => {
+            syncSourceStateFromDoc(state);
             persistFilters(state);
             queueRun(state);
-        });
-    }
-    wrap.find('[data-remove-static]').on('click', function () {
-        state.staticLists.splice(Number($(this).data('removeStatic')), 1);
-        renderStaticSources(state);
-        persistFilters(state);
-        queueRun(state);
+        }, 0);
     });
 }
 
@@ -529,8 +527,7 @@ function renderComparison(state, dynamicData, staticData) {
 
     state.outputWrap.html(`
             <div class="psim-metrics">
-                ${metricCard(__("Dynamic Total"), frappe.format(dynamicData.summary?.total_selling || 0, { fieldtype: "Currency" }), "blue")}
-                ${metricCard(__("Static Total"), frappe.format(staticData.summary?.total_selling || 0, { fieldtype: "Currency" }), "indigo")}
+                ${metricCard(__("Compared Items"), state.lastRows.length || 0, "blue")}
                 ${metricCard(__("Avg Dyn Margin"), `${Number(dynamicData.summary?.global_margin_pct || 0).toFixed(1)}%`, "green")}
                 ${metricCard(__("Static Missing"), staticData.summary?.missing_items || 0, "amber")}
             </div>
@@ -541,14 +538,16 @@ function renderComparison(state, dynamicData, staticData) {
                     <thead>
                         <tr>
                             ${thSort("item", __("Item"))}
-                            ${thSort("qty", __("Qty"))}
+                            ${thSort("material", __("Material"))}
+                            ${thSort("source", __("Buying List"))}
                             ${thSort("scenario", __("Scenario"))}
                             ${thSort("buy", __("Dyn Buy"))}
+                            ${thSort("customs", __("Dyn Customs"))}
+                            ${thSort("tier", __("Tier Mod"))}
+                            ${thSort("territory", __("Territory Mod"))}
                             ${thSort("dynFinal", __("Dyn Final"))}
-                            ${thSort("margin", __("Dyn Margin"))}
+                            ${thSort("staticList", __("Static List"))}
                             ${thSort("staPrice", __("Static Price"))}
-                            ${thSort("delta", __("Δ Dyn−Stat"))}
-                            ${thSort("winner", __("Winner"))}
                         </tr>
                     </thead>
                     <tbody id="psim-tbody"></tbody>
@@ -579,43 +578,35 @@ function renderComparisonRows(state) {
     const tfoot = state.outputWrap.find("#psim-tfoot");
 
     if (!rows.length) {
-        tbody.html(`<tr><td colspan="9" class="psim-muted">${emptyRow()}</td></tr>`);
+        tbody.html(`<tr><td colspan="11" class="psim-muted">${emptyRow()}</td></tr>`);
         tfoot.html("");
         state.rowCount.text("");
         return;
     }
 
     tbody.html(rows.map(({ item, d, s, dynFinal, staPrice }) => {
-        const delta = dynFinal - staPrice;
-        const deltaClass = delta >= 0 ? "psim-delta-pos" : "psim-delta-neg";
         return `<tr>
                 <td>${docLink("Item", item, item, q)}</td>
-                <td>${frappe.format(d.qty || s.qty || 0, { fieldtype: "Float" })}</td>
+                <td>${frappe.utils.escape_html(d.material || s.material || "—")}</td>
+                <td>${frappe.utils.escape_html(d.source_buying_price_list || "—")}</td>
                 <td><span class="psim-pill">${frappe.utils.escape_html(d.resolved_pricing_scenario || "—")}</span></td>
                 <td>${frappe.format(d.buy_price || 0, { fieldtype: "Currency" })}</td>
+                <td>${frappe.format(d.customs_applied || 0, { fieldtype: "Currency" })}</td>
+                <td>${frappe.format(d.tier_modifier_amount || 0, { fieldtype: "Currency" })}</td>
+                <td>${frappe.format(d.zone_modifier_amount || 0, { fieldtype: "Currency" })}</td>
                 <td><strong>${frappe.format(dynFinal, { fieldtype: "Currency" })}</strong></td>
-                <td>${marginBadge(d.margin_pct || 0)}</td>
+                <td>${frappe.utils.escape_html(s.selected_price_list || "—")}</td>
                 <td>${frappe.format(staPrice, { fieldtype: "Currency" })}</td>
-                <td class="${deltaClass}">${delta >= 0 ? "+" : ""}${frappe.format(Math.abs(delta), { fieldtype: "Currency" })}</td>
-                <td class="${deltaClass} psim-winner">${delta >= 0 ? "▲ Dyn" : "▼ Stat"}</td>
             </tr>`;
     }).join(""));
 
-    // Totals footer
-    const totDyn = rows.reduce((s, r) => s + r.dynFinal * (Number(r.d?.qty) || 0), 0);
-    const totStat = rows.reduce((s, r) => s + r.staPrice * (Number(r.s?.qty || r.d?.qty) || 0), 0);
-    const totDelta = totDyn - totStat;
     const avgMargin = rows.length
         ? rows.reduce((s, r) => s + Number(r.d?.margin_pct || 0), 0) / rows.length
         : 0;
-    const deltaClass = totDelta >= 0 ? "psim-delta-pos" : "psim-delta-neg";
     tfoot.html(`<tr class="psim-tfoot-row">
             <td><strong>${__("Totals")}</strong></td>
-            <td colspan="3"></td>
-            <td><strong>${frappe.format(totDyn, { fieldtype: "Currency" })}</strong></td>
+            <td colspan="8"></td>
             <td>${marginBadge(avgMargin)}</td>
-            <td><strong>${frappe.format(totStat, { fieldtype: "Currency" })}</strong></td>
-            <td class="${deltaClass}"><strong>${totDelta >= 0 ? "+" : ""}${frappe.format(Math.abs(totDelta), { fieldtype: "Currency" })}</strong></td>
             <td></td>
         </tr>`);
 
@@ -636,15 +627,14 @@ function renderResults(state, data) {
     const cards = mode === "Static"
         ? `${metricCard(__("Priced"), summary.priced_items || 0, "green")}
             ${metricCard(__("Missing"), summary.missing_items || 0, "amber")}
-            ${metricCard(__("Total Selling"), frappe.format(summary.total_selling || 0, { fieldtype: "Currency" }), "blue")}`
-        : `${metricCard(__("Total Buy"), frappe.format(summary.total_buy || 0, { fieldtype: "Currency" }), "indigo")}
-            ${metricCard(__("Total Expenses"), frappe.format(summary.total_expenses || 0, { fieldtype: "Currency" }), "amber")}
-            ${metricCard(__("Total Selling"), frappe.format(summary.total_selling || 0, { fieldtype: "Currency" }), "blue")}
+            ${metricCard(__("Loaded Lists"), (summary.selling_lists_count || 0), "blue")}`
+        : `${metricCard(__("Simulated Items"), rows.length || 0, "indigo")}
+            ${metricCard(__("Policies"), summary.policy_count || 0, "amber")}
             ${metricCard(__("Global Margin"), `${Number(summary.global_margin_pct || 0).toFixed(1)}%`, "green")}`;
 
     const thead = mode === "Static"
-        ? `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("qty", __("Qty"))}${thSort("list", __("List"))}${thSort("price", __("Price"))}${thSort("total", __("Total"))}${thSort("opts", __("Options"))}</tr>`
-        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("qty", __("Qty"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("applied_benchmark_policy", __("Policy"))}</tr>`;
+        ? `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("selected_price_list", __("List"))}${thSort("selected_price", __("Price"))}${thSort("option_count", __("Options"))}</tr>`
+        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("customs_applied", __("Customs"))}${thSort("tier_modifier_amount", __("Tier Mod"))}${thSort("zone_modifier_amount", __("Territory Mod"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("applied_benchmark_policy", __("Policy"))}</tr>`;
 
     state.outputWrap.html(`
             <div class="psim-metrics">${cards}</div>
@@ -682,7 +672,8 @@ function renderSingleRows(state) {
     const mode = state.lastMode;
 
     if (!rows.length) {
-        tbody.html(`<tr><td colspan="9" class="psim-muted">${emptyRow(__("No items match your search."))}</td></tr>`);
+        const colspan = mode === "Static" ? 5 : 12;
+        tbody.html(`<tr><td colspan="${colspan}" class="psim-muted">${emptyRow(__("No items match your search."))}</td></tr>`);
         tfoot.html("");
         state.rowCount.text("");
         return;
@@ -690,30 +681,16 @@ function renderSingleRows(state) {
 
     tbody.html(rows.map((row) => mode === "Static" ? staticRow(row, q) : dynamicRow(row, q)).join(""));
 
-    // Totals for dynamic
     if (mode !== "Static") {
-         const totBuy = rows.reduce((s, r) => s + Number(r.buy_price || 0) * Number(r.qty || 0), 0);
-         const totSell = rows.reduce((s, r) => s + Number(r.final_sell_unit_price || 0) * Number(r.qty || 0), 0);
          const avgMargin = rows.length ? rows.reduce((s, r) => s + Number(r.margin_pct || 0), 0) / rows.length : 0;
          tfoot.html(`<tr class="psim-tfoot-row">
-                <td><strong>${__("Totals")}</strong></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td><strong>${frappe.format(totBuy, { fieldtype: "Currency" })}</strong></td>
-                <td></td>
-                <td><strong>${frappe.format(totSell, { fieldtype: "Currency" })}</strong></td>
+                <td><strong>${__("Average")}</strong></td>
+                <td colspan="9"></td>
                 <td>${marginBadge(avgMargin)}</td>
                 <td></td>
             </tr>`);
     } else {
-        const totSell = rows.reduce((s, r) => s + Number(r.line_total || 0), 0);
-        tfoot.html(`<tr class="psim-tfoot-row">
-                <td><strong>${__("Totals")}</strong></td>
-                <td colspan="4"></td>
-                <td><strong>${frappe.format(totSell, { fieldtype: "Currency" })}</strong></td>
-                <td></td>
-            </tr>`);
+        tfoot.html("");
     }
 
     state.rowCount.text(`${rows.length} ${__("items")}`);
@@ -790,13 +767,17 @@ function bindSortHeaders(state) {
 
 function compSortVal(row, col) {
     const m = {
-        item: row.item, qty: Number(row.d?.qty || row.s?.qty || 0),
+        item: row.item,
+        material: row.d?.material || row.s?.material || "",
+        source: row.d?.source_buying_price_list || "",
         dynFinal: row.dynFinal, staPrice: row.staPrice,
-        delta: row.dynFinal - row.staPrice,
         margin: Number(row.d?.margin_pct || 0),
         scenario: row.d?.resolved_pricing_scenario || "",
         buy: Number(row.d?.buy_price || 0),
-        winner: row.dynFinal >= row.staPrice ? 1 : 0,
+        customs: Number(row.d?.customs_applied || 0),
+        tier: Number(row.d?.tier_modifier_amount || 0),
+        territory: Number(row.d?.zone_modifier_amount || 0),
+        staticList: row.s?.selected_price_list || "",
     };
     return m[col] ?? "";
 }
@@ -819,9 +800,11 @@ function dynamicRow(row, q) {
             <td>${docLink("Item", row.item || "", row.item, q)}</td>
             <td>${frappe.utils.escape_html(row.material || "—")}</td>
             <td>${frappe.utils.escape_html(row.source_buying_price_list || "—")}</td>
-            <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
             <td>${docLink("Pricing Scenario", row.resolved_pricing_scenario, row.resolved_pricing_scenario, null)}</td>
             <td>${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
+            <td>${frappe.format(row.customs_applied || 0, { fieldtype: "Currency" })}</td>
+            <td>${frappe.format(row.tier_modifier_amount || 0, { fieldtype: "Currency" })}</td>
+            <td>${frappe.format(row.zone_modifier_amount || 0, { fieldtype: "Currency" })}</td>
             <td>${row.benchmark_reference ? frappe.format(row.benchmark_reference, { fieldtype: "Currency" }) : "—"}</td>
             <td><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
             <td>${marginBadge(row.margin_pct)}</td>
@@ -833,12 +816,10 @@ function staticRow(row, q) {
     return `<tr>
             <td>${docLink("Item", row.item || "", row.item, q)}</td>
             <td>${frappe.utils.escape_html(row.material || "—")}</td>
-            <td>${frappe.format(row.qty || 0, { fieldtype: "Float" })}</td>
             <td>${row.selected_price_list
             ? `<a href="/app/item-price?price_list=${encodeURIComponent(row.selected_price_list)}" class="psim-link" target="_blank" title="View Item Prices for ${frappe.utils.escape_html(row.selected_price_list)}">${frappe.utils.escape_html(row.selected_price_list)}</a>`
             : "—"}</td>
             <td>${frappe.format(row.selected_price || 0, { fieldtype: "Currency" })}</td>
-            <td><strong>${frappe.format(row.line_total || 0, { fieldtype: "Currency" })}</strong></td>
             <td>${row.option_count || 0}</td>
         </tr>`;
 }
@@ -932,14 +913,14 @@ function exportCsv(state) {
             r.dynFinal >= r.staPrice ? "Dynamic" : "Static",
         ];
     } else if (state.lastMode === "Static") {
-        headers = ["Item", "Material", "Qty", "List", "Price", "Line Total", "Options"];
-        rowsFn = (r) => [r.item, r.material || "", r.qty, r.selected_price_list, r.selected_price, r.line_total, r.option_count];
+        headers = ["Item", "Material", "List", "Price", "Options"];
+        rowsFn = (r) => [r.item, r.material || "", r.selected_price_list, r.selected_price, r.option_count];
     } else {
-        headers = ["Item", "Material", "Buying List", "Qty", "Scenario", "Buy", "Bench Ref", "Final", "Margin %", "Policy"];
+        headers = ["Item", "Material", "Buying List", "Scenario", "Buy", "Customs", "Tier Mod", "Territory Mod", "Bench Ref", "Final", "Margin %", "Policy"];
         rowsFn = (r) => [
-            r.item, r.material || "", r.source_buying_price_list || "", r.qty,
+            r.item, r.material || "", r.source_buying_price_list || "",
             r.resolved_pricing_scenario,
-            r.buy_price, r.benchmark_reference,
+            r.buy_price, r.customs_applied, r.tier_modifier_amount, r.zone_modifier_amount, r.benchmark_reference,
             r.final_sell_unit_price,
             Number(r.margin_pct || 0).toFixed(2),
             r.applied_benchmark_policy || "",
@@ -1047,16 +1028,15 @@ function injectStyles() {
             .psim-source-title { font-size:12px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:.05em; }
             .psim-source-help { font-size:11px; color:#64748b; margin-top:4px; }
             .psim-source-list { display:grid; gap:8px; }
-            .psim-source-table-head { display:grid; grid-template-columns:1.1fr 1fr 1fr 1fr auto auto; gap:8px; margin-bottom:8px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; font-weight:700; }
-            .psim-source-row { display:grid; grid-template-columns:1.1fr 1fr 1fr 1fr auto auto; gap:8px; align-items:center; }
-            .psim-source-row--table { padding:10px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; }
+            .psim-source-table-wrap { border:1px solid #e2e8f0; border-radius:10px; overflow:auto; background:#fff; }
+            .psim-source-table { width:100%; border-collapse:collapse; font-size:12px; }
+            .psim-source-table th, .psim-source-table td { border-bottom:1px solid #f1f5f9; padding:8px; vertical-align:top; }
+            .psim-source-table th { background:#f8fafc; color:#64748b; text-transform:uppercase; letter-spacing:.05em; font-size:10px; }
             .psim-source-cell .form-group { margin-bottom:0; }
+            .psim-static-cell .form-group { margin-bottom:0; }
             .psim-source-empty { color:#94a3b8; font-size:12px; padding:10px; border:1px dashed #cbd5e1; border-radius:8px; background:#fff; }
             .psim-source-check { margin:0; white-space:nowrap; font-size:11px; color:#475569; }
             .psim-static-add { margin-bottom:10px; }
-            .psim-chip-row { display:flex; flex-wrap:wrap; gap:8px; }
-            .psim-list-chip { display:inline-flex; align-items:center; gap:6px; background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:600; }
-            .psim-list-chip button { border:none; background:none; color:inherit; cursor:pointer; font-size:14px; line-height:1; padding:0; }
             .psim-result-filters { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px 12px; margin:0 0 10px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; }
             .psim-result-filter-copy { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; font-weight:700; }
             .psim-result-filter-controls { display:grid; grid-template-columns:minmax(170px,.8fr) minmax(170px,.8fr) auto; gap:8px; align-items:center; }
@@ -1173,8 +1153,8 @@ function injectStyles() {
             .psim-muted { color: #94a3b8; text-align: center; padding: 0 !important; }
 
             /* Responsive */
-            @media (max-width: 1100px) { .psim-grid { grid-template-columns: repeat(3, 1fr); } .psim-source-grid{grid-template-columns:1fr;} .psim-source-table-head,.psim-source-row{grid-template-columns:repeat(2,minmax(0,1fr));} .psim-result-filters{display:grid;} .psim-result-filter-controls{grid-template-columns:1fr 1fr auto;} }
-            @media (max-width: 800px)  { .psim-grid { grid-template-columns: repeat(2, 1fr); } .psim-source-table-head,.psim-source-row,.psim-result-filter-controls{grid-template-columns:1fr;} }
+            @media (max-width: 1100px) { .psim-grid { grid-template-columns: repeat(3, 1fr); } .psim-source-grid{grid-template-columns:1fr;} .psim-result-filters{display:grid;} .psim-result-filter-controls{grid-template-columns:1fr 1fr auto;} }
+            @media (max-width: 800px)  { .psim-grid { grid-template-columns: repeat(2, 1fr); } .psim-result-filter-controls{grid-template-columns:1fr;} }
             @media (max-width: 500px)  { .psim-grid { grid-template-columns: 1fr; } .psim-search { width: 130px !important; } .psim-kbd-hint { display: none; } }
         `;
     document.head.appendChild(style);
