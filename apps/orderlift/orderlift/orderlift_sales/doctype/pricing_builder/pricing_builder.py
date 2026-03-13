@@ -242,14 +242,15 @@ def publish_builder_doc(name, selected_only=0):
 def _normalize_rules(rows):
     out = []
     for idx, row in enumerate(rows or [], start=1):
+        get = row.get if isinstance(row, dict) else lambda key, default=None: getattr(row, key, default)
         out.append({
-            "source_buying_price_list": (getattr(row, "buying_price_list", "") or "").strip(),
-            "pricing_scenario": (getattr(row, "pricing_scenario", "") or "").strip(),
-            "customs_policy": (getattr(row, "customs_policy", "") or "").strip(),
-            "benchmark_policy": (getattr(row, "benchmark_policy", "") or "").strip(),
+            "source_buying_price_list": (get("buying_price_list", "") or get("source_buying_price_list", "") or "").strip(),
+            "pricing_scenario": (get("pricing_scenario", "") or "").strip(),
+            "customs_policy": (get("customs_policy", "") or "").strip(),
+            "benchmark_policy": (get("benchmark_policy", "") or "").strip(),
             "priority": 10,
             "sequence": idx,
-            "is_active": 1 if cint(getattr(row, "is_active", 1)) else 0,
+            "is_active": 1 if cint(get("is_active", 1)) else 0,
             "idx": idx,
         })
     return out

@@ -99,7 +99,7 @@ function renderWorkbenchResults(frm, payload) {
         wrap.html(`
             <div class="pswb-metrics">
                 ${metricCard(__("Compared Items"), 0)}
-                ${metricCard(__("Avg Dyn Margin"), "0.0%")}
+                ${metricCard(__("Dynamic Sources"), (frm.doc.dynamic_sources || []).filter((row) => row.is_active).length)}
                 ${metricCard(__("Static Missing"), 0)}
             </div>
             <div class="pswb-empty">${__("Configure source tables above. Results will refresh automatically when values change.")}</div>
@@ -142,7 +142,7 @@ function renderWorkbenchComparison(dynamicData, staticData) {
     return `
         <div class="pswb-metrics">
             ${metricCard(__("Compared Items"), keys.length)}
-            ${metricCard(__("Avg Dyn Margin"), `${Number(dynamicData.summary?.global_margin_pct || 0).toFixed(1)}%`)}
+            ${metricCard(__("Dynamic Sources"), dynamicData.summary?.policy_count || 0)}
             ${metricCard(__("Static Missing"), staticData.summary?.missing_items || 0)}
         </div>
         ${renderWorkbenchWarnings([...(dynamicData.warnings || []).map((w) => `[Dynamic] ${w}`), ...(staticData.warnings || []).map((w) => `[Static] ${w}`)])}
