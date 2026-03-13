@@ -47,8 +47,12 @@ function setupWorkbenchQueries(frm) {
 }
 
 async function loadWorkbenchDefaults(frm) {
-    if (frm.is_new()) await frm.save();
-    const response = await frm.call("load_defaults");
+    const response = await frappe.call({
+        method: "orderlift.orderlift_sales.page.pricing_simulator.pricing_simulator.get_simulation_defaults",
+        args: { sales_person: "", mode: "Auto" },
+        freeze: true,
+        freeze_message: __("Loading simulator defaults..."),
+    });
     const data = response.message || {};
     if (data.dynamic && !(frm.doc.dynamic_sources || []).length && data.dynamic.buying_price_list) {
         frm.add_child("dynamic_sources", {
@@ -66,22 +70,27 @@ async function loadWorkbenchDefaults(frm) {
     }
     frm.refresh_field("dynamic_sources");
     frm.refresh_field("static_sources");
-    await frm.save();
     await runWorkbenchSimulation(frm);
 }
 
 async function runWorkbenchSimulation(frm) {
-    if (frm.is_new()) return;
     if (frm.__sim_running) return;
     frm.__sim_running = true;
     try {
-        await frm.save();
-        const response = await frm.call("run_simulation");
-        renderWorkbenchResults(frm, response.message || {});
-    } catch (e) {
-        renderWorkbenchResults(frm, {
-            warnings: [e?.message || __("Simulation failed.")],
+        const response = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.pricing_simulator_workbench.pricing_simulator_workbench.run_simulation_preview",
+            args: {
+                payload: JSON.stringify(collectWorkbenchPayload(frm)),
+                view_mode: frm.doc.view_mode || "Compare",
+            },
         });
+        frm.__lastSimulationPayload = response.message || {};
+        renderWorkbenchResults(frm, frm.__lastSimulationPayload);
+    } catch (e) {
+        frm.__lastSimulationPayload = {
+            warnings: [e?.message || __("Simulation failed.")],
+        };
+        renderWorkbenchResults(frm, frm.__lastSimulationPayload);
     } finally {
         frm.__sim_running = false;
     }
@@ -111,9 +120,11 @@ function renderWorkbenchResults(frm, payload) {
     }
     if (payload.view_mode === "Compare") {
         wrap.html(renderWorkbenchComparison(payload.dynamic || {}, payload.static || {}));
+        bindColumnControls(frm, "Compare");
         return;
     }
     wrap.html(renderWorkbenchSingle(payload));
+    bindColumnControls(frm, payload.pricing_mode || payload.mode || "Dynamic");
 }
 
 function renderWorkbenchComparison(dynamicData, staticData) {
@@ -139,6 +150,13 @@ function renderWorkbenchComparison(dynamicData, staticData) {
             </tr>
         `;
     }).join("");
+    const columns = getVisibleColumns("Compare");
+    const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
+    const rowHtml = keys.map((item) => {
+        const d = dynRows[item] || {};
+        const s = staRows[item] || {};
+        return `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, { item, d, s, compare: true })}</td>`).join("")}</tr>`;
+    }).join("");
     return `
         <div class="pswb-metrics">
             ${metricCard(__("Compared Items"), keys.length)}
@@ -146,24 +164,17 @@ function renderWorkbenchComparison(dynamicData, staticData) {
             ${metricCard(__("Static Missing"), staticData.summary?.missing_items || 0)}
         </div>
         ${renderWorkbenchWarnings([...(dynamicData.warnings || []).map((w) => `[Dynamic] ${w}`), ...(staticData.warnings || []).map((w) => `[Static] ${w}`)])}
-        <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>
-            <th>${__("Item")}</th><th>${__("Material")}</th><th>${__("Buying List")}</th><th>${__("Scenario")}</th><th>${__("Dyn Buy")}</th><th>${__("Dyn Customs")}</th><th>${__("Tier Mod")}</th><th>${__("Territory Mod")}</th><th>${__("Dyn Final")}</th><th>${__("Static List")}</th><th>${__("Static Price")}</th>
-        </tr></thead><tbody>${rows || `<tr><td colspan="11">${__("No comparable items.")}</td></tr>`}</tbody></table></div>
+        ${renderColumnConfigurator("Compare")}
+        <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>${headers}</tr></thead><tbody>${rowHtml || `<tr><td colspan="${columns.length}">${__("No comparable items.")}</td></tr>`}</tbody></table></div>
     `;
 }
 
 function renderWorkbenchSingle(data) {
     const mode = data.pricing_mode || data.mode || "Dynamic";
     if (mode === "Static") {
-        const rows = (data.rows || []).map((row) => `
-            <tr>
-                <td>${linkToDoc("Item", row.item)}</td>
-                <td>${escapeHtml(row.material || "-")}</td>
-                <td>${escapeHtml(row.selected_price_list || "-")}</td>
-                <td><strong>${fmtCurrency(row.selected_price)}</strong></td>
-                <td>${row.option_count || 0}</td>
-            </tr>
-        `).join("");
+        const columns = getVisibleColumns("Static");
+        const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
+        const rows = (data.rows || []).map((row) => `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, row)}</td>`).join("")}</tr>`).join("");
         return `
             <div class="pswb-metrics">
                 ${metricCard(__("Priced"), data.summary?.priced_items || 0)}
@@ -171,26 +182,14 @@ function renderWorkbenchSingle(data) {
                 ${metricCard(__("Loaded Lists"), data.summary?.selling_lists_count || 0)}
             </div>
             ${renderWorkbenchWarnings(data.warnings || [])}
-            <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr><th>${__("Item")}</th><th>${__("Material")}</th><th>${__("List")}</th><th>${__("Price")}</th><th>${__("Options")}</th></tr></thead><tbody>${rows || `<tr><td colspan="5">${__("No static rows.")}</td></tr>`}</tbody></table></div>
+            ${renderColumnConfigurator("Static")}
+            <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>${headers}</tr></thead><tbody>${rows || `<tr><td colspan="${columns.length}">${__("No static rows.")}</td></tr>`}</tbody></table></div>
         `;
     }
 
-    const rows = (data.rows || []).map((row) => `
-        <tr>
-            <td>${linkToDoc("Item", row.item)}</td>
-            <td>${escapeHtml(row.material || "-")}</td>
-            <td>${escapeHtml(row.source_buying_price_list || "-")}</td>
-            <td>${escapeHtml(row.resolved_pricing_scenario || "-")}</td>
-            <td>${fmtCurrency(row.buy_price)}</td>
-            <td>${fmtCurrency(row.customs_applied)}</td>
-            <td>${fmtCurrency(row.tier_modifier_amount)}</td>
-            <td>${fmtCurrency(row.zone_modifier_amount)}</td>
-            <td>${fmtCurrency(row.benchmark_reference)}</td>
-            <td><strong>${fmtCurrency(row.final_sell_unit_price)}</strong></td>
-            <td>${Number(row.margin_pct || 0).toFixed(1)}%</td>
-            <td>${escapeHtml(row.applied_benchmark_policy || "-")}</td>
-        </tr>
-    `).join("");
+    const columns = getVisibleColumns("Dynamic");
+    const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
+    const rows = (data.rows || []).map((row) => `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, row)}</td>`).join("")}</tr>`).join("");
     return `
         <div class="pswb-metrics">
             ${metricCard(__("Simulated Items"), data.summary?.item_count || (data.rows || []).length)}
@@ -198,8 +197,134 @@ function renderWorkbenchSingle(data) {
             ${metricCard(__("Global Margin"), `${Number(data.summary?.global_margin_pct || 0).toFixed(1)}%`)}
         </div>
         ${renderWorkbenchWarnings(data.warnings || [])}
-        <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr><th>${__("Item")}</th><th>${__("Material")}</th><th>${__("Buying List")}</th><th>${__("Scenario")}</th><th>${__("Buy")}</th><th>${__("Customs")}</th><th>${__("Tier Mod")}</th><th>${__("Territory Mod")}</th><th>${__("Bench Ref")}</th><th>${__("Final")}</th><th>${__("Margin")}</th><th>${__("Policy")}</th></tr></thead><tbody>${rows || `<tr><td colspan="12">${__("No dynamic rows.")}</td></tr>`}</tbody></table></div>
+        ${renderColumnConfigurator("Dynamic")}
+        <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>${headers}</tr></thead><tbody>${rows || `<tr><td colspan="${columns.length}">${__("No dynamic rows.")}</td></tr>`}</tbody></table></div>
     `;
+}
+
+function collectWorkbenchPayload(frm) {
+    return {
+        customer: (frm.doc.customer || "").trim(),
+        sales_person: "",
+        geography_territory: (frm.doc.geography_territory || "").trim(),
+        selling_price_lists: (frm.doc.static_sources || [])
+            .filter((row) => (row.selling_price_list || "").trim() && cint(row.is_active))
+            .map((row) => row.selling_price_list),
+        sourcing_rules: (frm.doc.dynamic_sources || [])
+            .filter((row) => (row.buying_price_list || "").trim() && cint(row.is_active))
+            .map((row) => ({
+                buying_price_list: row.buying_price_list,
+                pricing_scenario: row.pricing_scenario,
+                customs_policy: row.customs_policy,
+                benchmark_policy: row.benchmark_policy,
+                is_active: row.is_active,
+            })),
+        use_all_enabled_items: 1,
+        default_qty: 1,
+        max_items: cint(frm.doc.max_items || 0),
+        only_priced_items: cint(frm.doc.only_priced_items || 0),
+        items: [],
+    };
+}
+
+const DEFAULT_COLUMNS = {
+    Compare: ["item", "material", "buying_list", "scenario", "dyn_buy", "dyn_customs", "dyn_final", "static_list", "static_price"],
+    Dynamic: ["item", "material", "buying_list", "scenario", "buy", "customs", "tier_mod", "territory_mod", "final", "policy"],
+    Static: ["item", "material", "static_list", "static_price", "options"],
+};
+
+const COLUMN_DEFS = {
+    Compare: [
+        { key: "item", label: __("Item") },
+        { key: "material", label: __("Material") },
+        { key: "buying_list", label: __("Buying List") },
+        { key: "scenario", label: __("Scenario") },
+        { key: "dyn_buy", label: __("Dyn Buy") },
+        { key: "dyn_customs", label: __("Dyn Customs") },
+        { key: "dyn_tier_mod", label: __("Tier Mod") },
+        { key: "dyn_territory_mod", label: __("Territory Mod") },
+        { key: "dyn_final", label: __("Dyn Final") },
+        { key: "static_list", label: __("Static List") },
+        { key: "static_price", label: __("Static Price") },
+    ],
+    Dynamic: [
+        { key: "item", label: __("Item") },
+        { key: "material", label: __("Material") },
+        { key: "buying_list", label: __("Buying List") },
+        { key: "scenario", label: __("Scenario") },
+        { key: "buy", label: __("Buy") },
+        { key: "customs", label: __("Customs") },
+        { key: "tier_mod", label: __("Tier Mod") },
+        { key: "territory_mod", label: __("Territory Mod") },
+        { key: "bench_ref", label: __("Bench Ref") },
+        { key: "final", label: __("Final") },
+        { key: "margin", label: __("Margin") },
+        { key: "policy", label: __("Policy") },
+    ],
+    Static: [
+        { key: "item", label: __("Item") },
+        { key: "material", label: __("Material") },
+        { key: "static_list", label: __("List") },
+        { key: "static_price", label: __("Price") },
+        { key: "options", label: __("Options") },
+    ],
+};
+
+function getVisibleColumns(mode) {
+    const current = window.__pswbColumns || {};
+    const keys = current[mode] || DEFAULT_COLUMNS[mode] || [];
+    return (COLUMN_DEFS[mode] || []).filter((col) => keys.includes(col.key));
+}
+
+function renderColumnConfigurator(mode) {
+    const defs = COLUMN_DEFS[mode] || [];
+    const selected = new Set((window.__pswbColumns || {})[mode] || DEFAULT_COLUMNS[mode] || []);
+    return `
+        <details class="pswb-columns">
+            <summary>${__("Columns")}</summary>
+            <div class="pswb-column-grid">
+                ${defs.map((col) => `<label class="pswb-column-option"><input type="checkbox" data-col-mode="${mode}" data-col-key="${col.key}" ${selected.has(col.key) ? "checked" : ""}> <span>${escapeHtml(col.label)}</span></label>`).join("")}
+            </div>
+        </details>
+    `;
+}
+
+function bindColumnControls(frm, mode) {
+    const wrap = frm.get_field("results_html")?.$wrapper;
+    if (!wrap) return;
+    wrap.find("[data-col-key]").off("change").on("change", function () {
+        const targetMode = $(this).data("colMode");
+        const key = $(this).data("colKey");
+        const current = { ...(window.__pswbColumns || {}) };
+        const set = new Set(current[targetMode] || DEFAULT_COLUMNS[targetMode] || []);
+        if ($(this).is(":checked")) set.add(key);
+        else set.delete(key);
+        current[targetMode] = Array.from(set);
+        window.__pswbColumns = current;
+        renderWorkbenchResults(frm, frm.__lastSimulationPayload || {});
+    });
+    frm.__lastRenderedMode = mode;
+}
+
+function renderColumnValue(key, row) {
+    const d = row.d || row;
+    const s = row.s || {};
+    if (key === "item") return linkToDoc("Item", row.item || d.item);
+    if (key === "material") return escapeHtml(d.material || s.material || "-");
+    if (key === "buying_list") return escapeHtml(d.source_buying_price_list || "-");
+    if (key === "scenario") return escapeHtml(d.resolved_pricing_scenario || "-");
+    if (key === "dyn_buy" || key === "buy") return fmtCurrency(d.buy_price);
+    if (key === "dyn_customs" || key === "customs") return fmtCurrency(d.customs_applied);
+    if (key === "dyn_tier_mod" || key === "tier_mod") return fmtCurrency(d.tier_modifier_amount);
+    if (key === "dyn_territory_mod" || key === "territory_mod") return fmtCurrency(d.zone_modifier_amount);
+    if (key === "dyn_final" || key === "final") return `<strong>${fmtCurrency(d.final_sell_unit_price)}</strong>`;
+    if (key === "static_list") return escapeHtml(s.selected_price_list || row.selected_price_list || "-");
+    if (key === "static_price") return `<strong>${fmtCurrency(s.selected_price || row.selected_price)}</strong>`;
+    if (key === "bench_ref") return fmtCurrency(d.benchmark_reference);
+    if (key === "margin") return `${Number(d.margin_pct || 0).toFixed(1)}%`;
+    if (key === "policy") return escapeHtml(d.applied_benchmark_policy || "-");
+    if (key === "options") return row.option_count || 0;
+    return "-";
 }
 
 function renderWorkbenchWarnings(warnings) {
@@ -235,11 +360,15 @@ function ensureWorkbenchStyles() {
         .pswb-metric{padding:12px 14px;border-radius:12px;background:#fff;border:1px solid #e2e8f0}
         .pswb-metric span{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin-bottom:6px}
         .pswb-metric strong{font-size:20px;color:#0f172a}
+        .pswb-columns{margin:0 0 10px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
+        .pswb-columns summary{cursor:pointer;font-size:12px;font-weight:700;color:#0f172a}
+        .pswb-column-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+        .pswb-column-option{display:flex;gap:8px;align-items:center;font-size:12px;color:#475569}
         .pswb-table-wrap{overflow:auto;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
         .pswb-table{width:100%;border-collapse:collapse;font-size:12px}
         .pswb-table th,.pswb-table td{padding:8px;border-bottom:1px solid #f1f5f9;white-space:nowrap}
         .pswb-table th{background:#f8fafc;color:#64748b;text-transform:uppercase;letter-spacing:.05em;font-size:10px}
-        @media (max-width:900px){.pswb-metrics{grid-template-columns:1fr}}
+        @media (max-width:900px){.pswb-metrics,.pswb-column-grid{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
 }
