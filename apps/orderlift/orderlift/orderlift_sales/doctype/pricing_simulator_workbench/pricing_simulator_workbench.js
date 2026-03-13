@@ -10,29 +10,32 @@ frappe.ui.form.on("Pricing Simulator Workbench", {
         frm.clear_custom_buttons();
         frm.add_custom_button(__("Load Defaults"), () => loadWorkbenchDefaults(frm), __("Simulator"));
         frm.add_custom_button(__("Run Simulation"), () => runWorkbenchSimulation(frm), __("Simulator"));
+
+        renderWorkbenchResults(frm, {});
+        scheduleWorkbenchSimulation(frm);
     },
-    view_mode(frm) { runWorkbenchSimulation(frm); },
-    customer(frm) { runWorkbenchSimulation(frm); },
-    geography_territory(frm) { runWorkbenchSimulation(frm); },
-    only_priced_items(frm) { runWorkbenchSimulation(frm); },
-    max_items(frm) { runWorkbenchSimulation(frm); },
+    view_mode(frm) { scheduleWorkbenchSimulation(frm); },
+    customer(frm) { scheduleWorkbenchSimulation(frm); },
+    geography_territory(frm) { scheduleWorkbenchSimulation(frm); },
+    only_priced_items(frm) { scheduleWorkbenchSimulation(frm); },
+    max_items(frm) { scheduleWorkbenchSimulation(frm); },
 });
 
 frappe.ui.form.on("Pricing Builder Sourcing Rule", {
-    buying_price_list(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    pricing_scenario(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    customs_policy(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    benchmark_policy(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    is_active(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    dynamic_sources_add(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    dynamic_sources_remove(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
+    buying_price_list(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    pricing_scenario(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    customs_policy(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    benchmark_policy(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    is_active(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    dynamic_sources_add(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    dynamic_sources_remove(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
 });
 
 frappe.ui.form.on("Pricing Simulator Static Source", {
-    selling_price_list(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    is_active(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    static_sources_add(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
-    static_sources_remove(frm) { if (frm.doctype === "Pricing Simulator Workbench") runWorkbenchSimulation(frm); },
+    selling_price_list(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    is_active(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    static_sources_add(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
+    static_sources_remove(frm) { if (frm.doctype === "Pricing Simulator Workbench") scheduleWorkbenchSimulation(frm); },
 });
 
 function setupWorkbenchQueries(frm) {
@@ -75,16 +78,35 @@ async function runWorkbenchSimulation(frm) {
         await frm.save();
         const response = await frm.call("run_simulation");
         renderWorkbenchResults(frm, response.message || {});
+    } catch (e) {
+        renderWorkbenchResults(frm, {
+            warnings: [e?.message || __("Simulation failed.")],
+        });
     } finally {
         frm.__sim_running = false;
     }
+}
+
+function scheduleWorkbenchSimulation(frm) {
+    clearTimeout(frm.__sim_timer);
+    frm.__sim_timer = setTimeout(() => runWorkbenchSimulation(frm), 350);
 }
 
 function renderWorkbenchResults(frm, payload) {
     const wrap = frm.get_field("results_html")?.$wrapper;
     if (!wrap) return;
     if (!payload || !Object.keys(payload).length) {
-        wrap.html(`<div class="pswb-empty">${__("Run the simulator to visualize dynamic and static unit prices.")}</div>`);
+        wrap.html(`
+            <div class="pswb-metrics">
+                ${metricCard(__("Compared Items"), 0)}
+                ${metricCard(__("Avg Dyn Margin"), "0.0%")}
+                ${metricCard(__("Static Missing"), 0)}
+            </div>
+            <div class="pswb-empty">${__("Configure source tables above. Results will refresh automatically when values change.")}</div>
+            <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>
+                <th>${__("Item")}</th><th>${__("Material")}</th><th>${__("Buying List")}</th><th>${__("Scenario")}</th><th>${__("Dyn Buy")}</th><th>${__("Dyn Customs")}</th><th>${__("Tier Mod")}</th><th>${__("Territory Mod")}</th><th>${__("Dyn Final")}</th><th>${__("Static List")}</th><th>${__("Static Price")}</th>
+            </tr></thead><tbody><tr><td colspan="11">${__("No simulation results yet.")}</td></tr></tbody></table></div>
+        `);
         return;
     }
     if (payload.view_mode === "Compare") {

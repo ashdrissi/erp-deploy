@@ -23,6 +23,7 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
 MISSING_BUY_PRICE_MSG = "No buying price in {price_list}"
 PRIVILEGED_PRICING_ROLES = {"Orderlift Admin", "Sales Manager", "System Manager"}
 RESTRICTED_AGENT_ROLE = "Orderlift Commercial"
+NO_EXPENSES_SCENARIO = "__NO_EXPENSES_POLICY__"
 
 
 class PricingSheet(Document):
@@ -784,6 +785,20 @@ class PricingSheet(Document):
         for row in (self.scenario_mappings or []):
             if cint(row.is_active) and row.pricing_scenario:
                 scenario_names.add(row.pricing_scenario)
+
+        if not scenario_names and getattr(self, "allow_empty_expenses_policy", 0):
+            return {
+                NO_EXPENSES_SCENARIO: frappe._dict(
+                    name=NO_EXPENSES_SCENARIO,
+                    expenses=[],
+                    transport_is_active=0,
+                    transport_allocation_mode="",
+                    transport_container_type="",
+                    transport_container_price=0,
+                    transport_total_kg=0,
+                    transport_total_m3=0,
+                )
+            }
 
         if not scenario_names:
             frappe.throw(_("Please select at least one Expenses Policy."))
@@ -1605,6 +1620,9 @@ class PricingSheet(Document):
 
         if self.pricing_scenario:
             return self.pricing_scenario, "Sheet Default", None
+
+        if getattr(self, "allow_empty_expenses_policy", 0):
+            return NO_EXPENSES_SCENARIO, "Simulator Fallback", None
 
         frappe.throw(_("Please set a default Expenses Policy or line-level expenses policy."))
     def _active_expenses(self, scenario):

@@ -87,6 +87,7 @@ def run_pricing_simulation(payload=None):
 
 def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
     doc = frappe.new_doc("Pricing Sheet")
+    doc.allow_empty_expenses_policy = 1
 
     doc.customer = (data.get("customer") or "").strip()
     doc.sales_person = (data.get("sales_person") or "").strip()
@@ -96,6 +97,12 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
 
     sourcing_rules = _resolve_dynamic_sourcing_rules(data, selected)
     first_rule = sourcing_rules[0] if sourcing_rules else {}
+    warnings = []
+
+    if not ((data.get("pricing_scenario") or "").strip() or (first_rule.get("pricing_scenario") or "").strip() or (selected.get("pricing_scenario") or "").strip()):
+        warnings.append(_("No Expenses Policy selected. Dynamic simulation continues with zero policy expenses."))
+    elif any((rule.get("source_buying_price_list") or "").strip() and not (rule.get("pricing_scenario") or "").strip() for rule in sourcing_rules):
+        warnings.append(_("Some dynamic source rows have no Expenses Policy. Matching items use zero policy expenses."))
 
     doc.pricing_scenario = (data.get("pricing_scenario") or first_rule.get("pricing_scenario") or selected.get("pricing_scenario") or "").strip()
     doc.customs_policy = (data.get("customs_policy") or first_rule.get("customs_policy") or selected.get("customs_policy") or "").strip()
@@ -175,7 +182,7 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "customs_policy": doc.customs_policy or "",
             "benchmark_policy": doc.benchmark_policy or "",
         },
-        "warnings": _split_warnings(doc.projection_warnings)
+        "warnings": warnings + _split_warnings(doc.projection_warnings)
         + ([_("Filtered out {0} unpriced dynamic item(s)." ).format(filtered_out)] if filtered_out else []),
     }
 
