@@ -18,7 +18,9 @@
 const LS_KEY = "psim_filters_v3";
 const LS_OPEN = "psim_filters_open";
 
-frappe.pages["pricing-simulator"].on_page_load = function (wrapper) {
+frappe.pages["pricing-simulator"].on_page_load = function () {
+    frappe.set_route("List", "Pricing Simulator Workbench");
+    return;
     const page = frappe.ui.make_app_page({
         parent: wrapper,
         title: __("Pricing Simulator"),
