@@ -2,6 +2,7 @@ frappe.ui.form.on("Pricing Simulator Workbench", {
     refresh(frm) {
         ensureWorkbenchStyles();
         setupWorkbenchQueries(frm);
+        loadColumnPrefs();
         frm.set_intro(
             __("Use native source grids to compare dynamic and static unit prices for the same customer and territory context."),
             "blue"
@@ -120,15 +121,15 @@ function renderWorkbenchResults(frm, payload) {
         return;
     }
     if (payload.view_mode === "Compare") {
-        wrap.html(renderWorkbenchComparison(payload.dynamic || {}, payload.static || {}));
+        wrap.html(renderWorkbenchComparison(frm, payload.dynamic || {}, payload.static || {}));
         bindColumnControls(frm, "Compare");
         return;
     }
-    wrap.html(renderWorkbenchSingle(payload));
+    wrap.html(renderWorkbenchSingle(frm, payload));
     bindColumnControls(frm, payload.pricing_mode || payload.mode || "Dynamic");
 }
 
-function renderWorkbenchComparison(dynamicData, staticData) {
+function renderWorkbenchComparison(frm, dynamicData, staticData) {
     const dynRows = Object.fromEntries((dynamicData.rows || []).map((r) => [r.item, r]));
     const staRows = Object.fromEntries((staticData.rows || []).map((r) => [r.item, r]));
     const keys = [...new Set([...(dynamicData.rows || []).map((x) => x.item), ...(staticData.rows || []).map((x) => x.item)])];
@@ -159,7 +160,7 @@ function renderWorkbenchComparison(dynamicData, staticData) {
         return `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, { item, d, s, compare: true })}</td>`).join("")}</tr>`;
     }).join("");
     return `
-        ${renderContextBarFromPayload(dynamicData, staticData, "Compare")}
+        ${renderContextBarFromPayload(dynamicData, staticData, "Compare", frm)}
         <div class="pswb-metrics">
             ${metricCard(__("Compared Items"), keys.length)}
             ${metricCard(__("Dynamic Sources"), dynamicData.summary?.policy_count || 0)}
@@ -171,14 +172,14 @@ function renderWorkbenchComparison(dynamicData, staticData) {
     `;
 }
 
-function renderWorkbenchSingle(data) {
+function renderWorkbenchSingle(frm, data) {
     const mode = data.pricing_mode || data.mode || "Dynamic";
     if (mode === "Static") {
         const columns = getVisibleColumns("Static");
         const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
         const rows = (data.rows || []).map((row) => `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, row)}</td>`).join("")}</tr>`).join("");
         return `
-            ${renderContextBarFromPayload(null, data, "Static")}
+            ${renderContextBarFromPayload(null, data, "Static", frm)}
             <div class="pswb-metrics">
                 ${metricCard(__("Priced"), data.summary?.priced_items || 0)}
                 ${metricCard(__("Missing"), data.summary?.missing_items || 0)}
@@ -194,7 +195,7 @@ function renderWorkbenchSingle(data) {
     const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
     const rows = (data.rows || []).map((row) => `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, row)}</td>`).join("")}</tr>`).join("");
     return `
-        ${renderContextBarFromPayload(data, null, "Dynamic")}
+        ${renderContextBarFromPayload(data, null, "Dynamic", frm)}
         <div class="pswb-metrics">
             ${metricCard(__("Simulated Items"), data.summary?.item_count || (data.rows || []).length)}
             ${metricCard(__("Policies"), data.summary?.policy_count || 0)}
@@ -291,6 +292,23 @@ function getVisibleColumns(mode) {
     return (COLUMN_DEFS[mode] || []).filter((col) => keys.includes(col.key));
 }
 
+function loadColumnPrefs() {
+    if (window.__pswbColumnPrefsLoaded) return;
+    window.__pswbColumnPrefsLoaded = true;
+    try {
+        window.__pswbColumns = JSON.parse(localStorage.getItem("pswb_columns") || "{}") || {};
+        window.__pswbColumnsOpen = JSON.parse(localStorage.getItem("pswb_columns_open") || "{}") || {};
+    } catch (e) {
+        window.__pswbColumns = {};
+        window.__pswbColumnsOpen = {};
+    }
+}
+
+function saveColumnPrefs() {
+    localStorage.setItem("pswb_columns", JSON.stringify(window.__pswbColumns || {}));
+    localStorage.setItem("pswb_columns_open", JSON.stringify(window.__pswbColumnsOpen || {}));
+}
+
 function renderColumnConfigurator(mode) {
     const defs = COLUMN_DEFS[mode] || [];
     const selected = new Set((window.__pswbColumns || {})[mode] || DEFAULT_COLUMNS[mode] || []);
@@ -311,6 +329,7 @@ function bindColumnControls(frm, mode) {
     wrap.find("[data-col-details]").off("toggle").on("toggle", function () {
         const modeKey = $(this).data("colDetails");
         window.__pswbColumnsOpen = { ...(window.__pswbColumnsOpen || {}), [modeKey]: this.open };
+        saveColumnPrefs();
     });
     wrap.find("[data-col-key]").off("change").on("change", function () {
         const targetMode = $(this).data("colMode");
@@ -322,9 +341,12 @@ function bindColumnControls(frm, mode) {
         current[targetMode] = Array.from(set);
         window.__pswbColumns = current;
         window.__pswbColumnsOpen = { ...(window.__pswbColumnsOpen || {}), [targetMode]: true };
+        saveColumnPrefs();
         renderWorkbenchResults(frm, frm.__lastSimulationPayload || {});
     });
-    wrap.find("[data-col-move]").off("click").on("click", function () {
+    wrap.find("[data-col-move]").off("click").on("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
         const targetMode = $(this).data("colMode");
         const key = $(this).data("colKey");
         const direction = $(this).data("colMove");
@@ -338,6 +360,7 @@ function bindColumnControls(frm, mode) {
         current[targetMode] = list;
         window.__pswbColumns = current;
         window.__pswbColumnsOpen = { ...(window.__pswbColumnsOpen || {}), [targetMode]: true };
+        saveColumnPrefs();
         renderWorkbenchResults(frm, frm.__lastSimulationPayload || {});
     });
     frm.__lastRenderedMode = mode;
