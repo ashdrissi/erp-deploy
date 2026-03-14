@@ -289,7 +289,8 @@ const COLUMN_DEFS = {
 function getVisibleColumns(mode) {
     const current = window.__pswbColumns || {};
     const keys = current[mode] || DEFAULT_COLUMNS[mode] || [];
-    return (COLUMN_DEFS[mode] || []).filter((col) => keys.includes(col.key));
+    const defsByKey = Object.fromEntries((COLUMN_DEFS[mode] || []).map((col) => [col.key, col]));
+    return keys.map((key) => defsByKey[key]).filter(Boolean);
 }
 
 function loadColumnPrefs() {
