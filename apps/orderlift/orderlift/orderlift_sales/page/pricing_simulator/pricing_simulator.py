@@ -210,6 +210,11 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
         frappe.throw(_("Static simulation requires at least one selling price list (from agent or manual override)."))
 
     item_codes = [x.get("item") for x in items]
+    reference_buy_prices = {}
+    buy_lists = [row.get("source_buying_price_list") for row in _normalize_rules(data.get("sourcing_rules") or []) if cint(row.get("is_active") or 0) and row.get("source_buying_price_list")]
+    if buy_lists:
+        first_buy = buy_lists[0]
+        reference_buy_prices = get_latest_item_prices(item_codes, first_buy, buying=True) or {}
     price_maps = {
         pl: get_latest_item_prices(item_codes, pl, buying=False)
         for pl in requested_lists
@@ -236,12 +241,14 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
             "item": code,
             "qty": qty,
             "material": frappe.db.get_value("Item", code, "custom_material") or "",
+            "reference_buy_price": flt(reference_buy_prices.get(code) or 0),
             "selected_price_list": selected.get("price_list") or "",
             "selected_price": flt(selected.get("rate")),
             "line_total": flt(selected.get("rate")) * qty,
             "options": options,
             "option_count": len(options),
         }
+        out_row["static_margin_pct"] = ((out_row["selected_price"] - out_row["reference_buy_price"]) / out_row["reference_buy_price"] * 100) if out_row["reference_buy_price"] > 0 else 0
         if only_priced and flt(out_row.get("selected_price")) <= 0:
             filtered_out += 1
             continue

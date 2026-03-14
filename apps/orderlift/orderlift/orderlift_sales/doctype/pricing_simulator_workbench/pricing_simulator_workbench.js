@@ -106,6 +106,7 @@ function renderWorkbenchResults(frm, payload) {
     if (!wrap) return;
     if (!payload || !Object.keys(payload).length) {
         wrap.html(`
+            ${renderContextBar(frm)}
             <div class="pswb-metrics">
                 ${metricCard(__("Compared Items"), 0)}
                 ${metricCard(__("Dynamic Sources"), (frm.doc.dynamic_sources || []).filter((row) => row.is_active).length)}
@@ -158,6 +159,7 @@ function renderWorkbenchComparison(dynamicData, staticData) {
         return `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, { item, d, s, compare: true })}</td>`).join("")}</tr>`;
     }).join("");
     return `
+        ${renderContextBarFromPayload(dynamicData, staticData, "Compare")}
         <div class="pswb-metrics">
             ${metricCard(__("Compared Items"), keys.length)}
             ${metricCard(__("Dynamic Sources"), dynamicData.summary?.policy_count || 0)}
@@ -176,6 +178,7 @@ function renderWorkbenchSingle(data) {
         const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
         const rows = (data.rows || []).map((row) => `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, row)}</td>`).join("")}</tr>`).join("");
         return `
+            ${renderContextBarFromPayload(null, data, "Static")}
             <div class="pswb-metrics">
                 ${metricCard(__("Priced"), data.summary?.priced_items || 0)}
                 ${metricCard(__("Missing"), data.summary?.missing_items || 0)}
@@ -191,6 +194,7 @@ function renderWorkbenchSingle(data) {
     const headers = columns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("");
     const rows = (data.rows || []).map((row) => `<tr>${columns.map((col) => `<td>${renderColumnValue(col.key, row)}</td>`).join("")}</tr>`).join("");
     return `
+        ${renderContextBarFromPayload(data, null, "Dynamic")}
         <div class="pswb-metrics">
             ${metricCard(__("Simulated Items"), data.summary?.item_count || (data.rows || []).length)}
             ${metricCard(__("Policies"), data.summary?.policy_count || 0)}
@@ -228,9 +232,9 @@ function collectWorkbenchPayload(frm) {
 }
 
 const DEFAULT_COLUMNS = {
-    Compare: ["item", "buying_list", "expenses_policy", "dyn_buy", "expenses", "benchmark_price", "dyn_customs", "dyn_tier_mod", "dyn_territory_mod", "dyn_final", "static_list", "static_price"],
+    Compare: ["item", "material", "buying_list", "expenses_policy", "dyn_buy", "expenses", "benchmark_price", "dyn_customs", "dyn_tier_mod", "dyn_territory_mod", "dyn_margin", "dyn_final", "static_list", "static_price", "static_margin"],
     Dynamic: ["item", "material", "buying_list", "expenses_policy", "customs_policy", "benchmark_policy", "buy", "expenses", "benchmark_price", "customs", "tier_mod", "territory_mod", "margin_unit", "final", "margin"],
-    Static: ["item", "material", "static_list", "static_price", "options"],
+    Static: ["item", "material", "static_list", "reference_buy", "static_price", "static_margin", "options"],
 };
 
 const COLUMN_DEFS = {
@@ -247,9 +251,11 @@ const COLUMN_DEFS = {
         { key: "dyn_tier_mod", label: __("Tier Mod") },
         { key: "dyn_territory_mod", label: __("Territory Mod") },
         { key: "benchmark_price", label: __("Benchmark Price") },
+        { key: "dyn_margin", label: __("Dyn Margin") },
         { key: "dyn_final", label: __("Dyn Final") },
         { key: "static_list", label: __("Static List") },
         { key: "static_price", label: __("Static Price") },
+        { key: "static_margin", label: __("Static Margin") },
     ],
     Dynamic: [
         { key: "item", label: __("Item") },
@@ -272,7 +278,9 @@ const COLUMN_DEFS = {
         { key: "item", label: __("Item") },
         { key: "material", label: __("Material") },
         { key: "static_list", label: __("List") },
+        { key: "reference_buy", label: __("Reference Buy") },
         { key: "static_price", label: __("Price") },
+        { key: "static_margin", label: __("Margin") },
         { key: "options", label: __("Options") },
     ],
 };
@@ -286,11 +294,12 @@ function getVisibleColumns(mode) {
 function renderColumnConfigurator(mode) {
     const defs = COLUMN_DEFS[mode] || [];
     const selected = new Set((window.__pswbColumns || {})[mode] || DEFAULT_COLUMNS[mode] || []);
+    const isOpen = !!((window.__pswbColumnsOpen || {})[mode]);
     return `
-        <details class="pswb-columns">
+        <details class="pswb-columns" ${isOpen ? "open" : ""} data-col-details="${mode}">
             <summary>${__("Columns")}</summary>
             <div class="pswb-column-grid">
-                ${defs.map((col) => `<label class="pswb-column-option"><input type="checkbox" data-col-mode="${mode}" data-col-key="${col.key}" ${selected.has(col.key) ? "checked" : ""}> <span>${escapeHtml(col.label)}</span></label>`).join("")}
+                ${defs.map((col) => `<div class="pswb-column-option"><label><input type="checkbox" data-col-mode="${mode}" data-col-key="${col.key}" ${selected.has(col.key) ? "checked" : ""}> <span>${escapeHtml(col.label)}</span></label><span class="pswb-column-order"><button type="button" data-col-move="up" data-col-mode="${mode}" data-col-key="${col.key}">↑</button><button type="button" data-col-move="down" data-col-mode="${mode}" data-col-key="${col.key}">↓</button></span></div>`).join("")}
             </div>
         </details>
     `;
@@ -299,6 +308,10 @@ function renderColumnConfigurator(mode) {
 function bindColumnControls(frm, mode) {
     const wrap = frm.get_field("results_html")?.$wrapper;
     if (!wrap) return;
+    wrap.find("[data-col-details]").off("toggle").on("toggle", function () {
+        const modeKey = $(this).data("colDetails");
+        window.__pswbColumnsOpen = { ...(window.__pswbColumnsOpen || {}), [modeKey]: this.open };
+    });
     wrap.find("[data-col-key]").off("change").on("change", function () {
         const targetMode = $(this).data("colMode");
         const key = $(this).data("colKey");
@@ -308,6 +321,23 @@ function bindColumnControls(frm, mode) {
         else set.delete(key);
         current[targetMode] = Array.from(set);
         window.__pswbColumns = current;
+        window.__pswbColumnsOpen = { ...(window.__pswbColumnsOpen || {}), [targetMode]: true };
+        renderWorkbenchResults(frm, frm.__lastSimulationPayload || {});
+    });
+    wrap.find("[data-col-move]").off("click").on("click", function () {
+        const targetMode = $(this).data("colMode");
+        const key = $(this).data("colKey");
+        const direction = $(this).data("colMove");
+        const current = { ...(window.__pswbColumns || {}) };
+        const list = [...(current[targetMode] || DEFAULT_COLUMNS[targetMode] || [])];
+        const idx = list.indexOf(key);
+        if (idx === -1) return;
+        const swap = direction === "up" ? idx - 1 : idx + 1;
+        if (swap < 0 || swap >= list.length) return;
+        [list[idx], list[swap]] = [list[swap], list[idx]];
+        current[targetMode] = list;
+        window.__pswbColumns = current;
+        window.__pswbColumnsOpen = { ...(window.__pswbColumnsOpen || {}), [targetMode]: true };
         renderWorkbenchResults(frm, frm.__lastSimulationPayload || {});
     });
     frm.__lastRenderedMode = mode;
@@ -327,14 +357,38 @@ function renderColumnValue(key, row) {
     if (key === "dyn_customs" || key === "customs") return fmtCurrency(d.customs_applied);
     if (key === "dyn_tier_mod" || key === "tier_mod") return fmtCurrency(d.tier_modifier_amount);
     if (key === "dyn_territory_mod" || key === "territory_mod") return fmtCurrency(d.zone_modifier_amount);
+    if (key === "dyn_margin") return `${Number(d.margin_pct || 0).toFixed(1)}%`;
     if (key === "dyn_final" || key === "final") return `<strong>${fmtCurrency(d.final_sell_unit_price)}</strong>`;
     if (key === "static_list") return escapeHtml(s.selected_price_list || row.selected_price_list || "-");
     if (key === "static_price") return `<strong>${fmtCurrency(s.selected_price || row.selected_price)}</strong>`;
+    if (key === "reference_buy") return fmtCurrency(row.reference_buy_price);
+    if (key === "static_margin") return `${Number((s.static_margin_pct ?? row.static_margin_pct) || 0).toFixed(1)}%`;
     if (key === "bench_ref" || key === "benchmark_price") return fmtCurrency(d.benchmark_reference);
     if (key === "margin_unit") return fmtCurrency(d.margin_unit_amount);
     if (key === "margin") return `${Number(d.margin_pct || 0).toFixed(1)}%`;
     if (key === "options") return row.option_count || 0;
     return "-";
+}
+
+function renderContextBar(frm) {
+    return renderContextBarFromPayload(null, null, frm.doc.view_mode || "Compare", frm);
+}
+
+function renderContextBarFromPayload(dynamicData, staticData, mode, frm = null) {
+    const sourceDoc = frm?.doc || null;
+    const customer = sourceDoc?.customer || "-";
+    const territory = sourceDoc?.geography_territory || "-";
+    const dynamicSources = sourceDoc ? (sourceDoc.dynamic_sources || []).filter((row) => row.is_active).map((row) => row.buying_price_list).filter(Boolean) : [];
+    const staticLists = sourceDoc ? (sourceDoc.static_sources || []).filter((row) => row.is_active).map((row) => row.selling_price_list).filter(Boolean) : [];
+    return `
+        <div class="pswb-context">
+            <div class="pswb-context-chip"><span>${__("Mode")}</span><strong>${escapeHtml(mode || "Compare")}</strong></div>
+            <div class="pswb-context-chip"><span>${__("Customer")}</span><strong>${escapeHtml(customer)}</strong></div>
+            <div class="pswb-context-chip"><span>${__("Territory")}</span><strong>${escapeHtml(territory)}</strong></div>
+            <div class="pswb-context-chip"><span>${__("Dynamic Sources")}</span><strong>${escapeHtml(dynamicSources.join(", ") || "-")}</strong></div>
+            <div class="pswb-context-chip"><span>${__("Static Lists")}</span><strong>${escapeHtml(staticLists.join(", ") || "-")}</strong></div>
+        </div>
+    `;
 }
 
 function renderWorkbenchWarnings(warnings) {
@@ -367,18 +421,25 @@ function ensureWorkbenchStyles() {
         .pswb-empty,.pswb-clean,.pswb-warn{padding:12px 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;margin-bottom:10px}
         .pswb-warn{background:#fff7ed;border-color:#fdba74;color:#9a3412}
         .pswb-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}
+        .pswb-context{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:10px}
+        .pswb-context-chip{padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
+        .pswb-context-chip span{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin-bottom:4px}
+        .pswb-context-chip strong{font-size:13px;color:#0f172a}
         .pswb-metric{padding:12px 14px;border-radius:12px;background:#fff;border:1px solid #e2e8f0}
         .pswb-metric span{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin-bottom:6px}
         .pswb-metric strong{font-size:20px;color:#0f172a}
         .pswb-columns{margin:0 0 10px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
         .pswb-columns summary{cursor:pointer;font-size:12px;font-weight:700;color:#0f172a}
         .pswb-column-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
-        .pswb-column-option{display:flex;gap:8px;align-items:center;font-size:12px;color:#475569}
+        .pswb-column-option{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:#475569;padding:6px 8px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0}
+        .pswb-column-option label{display:flex;gap:8px;align-items:center;margin:0;flex:1}
+        .pswb-column-order{display:flex;gap:4px}
+        .pswb-column-order button{border:1px solid #d1d5db;background:#fff;border-radius:6px;padding:0 6px;cursor:pointer}
         .pswb-table-wrap{overflow:auto;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
         .pswb-table{width:100%;border-collapse:collapse;font-size:12px}
         .pswb-table th,.pswb-table td{padding:8px;border-bottom:1px solid #f1f5f9;white-space:nowrap}
         .pswb-table th{background:#f8fafc;color:#64748b;text-transform:uppercase;letter-spacing:.05em;font-size:10px}
-        @media (max-width:900px){.pswb-metrics,.pswb-column-grid{grid-template-columns:1fr}}
+        @media (max-width:900px){.pswb-metrics,.pswb-column-grid,.pswb-context{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
 }
