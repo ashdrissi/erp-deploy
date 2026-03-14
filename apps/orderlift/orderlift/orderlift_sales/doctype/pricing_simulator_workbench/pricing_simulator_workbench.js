@@ -113,8 +113,8 @@ function renderWorkbenchResults(frm, payload) {
             </div>
             <div class="pswb-empty">${__("Configure source tables above. Results will refresh automatically when values change.")}</div>
             <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>
-                <th>${__("Item")}</th><th>${__("Material")}</th><th>${__("Buying List")}</th><th>${__("Scenario")}</th><th>${__("Dyn Buy")}</th><th>${__("Dyn Customs")}</th><th>${__("Tier Mod")}</th><th>${__("Territory Mod")}</th><th>${__("Dyn Final")}</th><th>${__("Static List")}</th><th>${__("Static Price")}</th>
-            </tr></thead><tbody><tr><td colspan="11">${__("No simulation results yet.")}</td></tr></tbody></table></div>
+                <th>${__("Item")}</th><th>${__("Buying List")}</th><th>${__("Expenses Policy")}</th><th>${__("Dyn Buy")}</th><th>${__("Dyn Expenses")}</th><th>${__("Benchmark Price")}</th><th>${__("Dyn Customs")}</th><th>${__("Tier Mod")}</th><th>${__("Territory Mod")}</th><th>${__("Dyn Final")}</th><th>${__("Static List")}</th><th>${__("Static Price")}</th>
+            </tr></thead><tbody><tr><td colspan="12">${__("No simulation results yet.")}</td></tr></tbody></table></div>
         `);
         return;
     }
@@ -228,8 +228,8 @@ function collectWorkbenchPayload(frm) {
 }
 
 const DEFAULT_COLUMNS = {
-    Compare: ["item", "material", "buying_list", "scenario", "dyn_buy", "dyn_customs", "dyn_final", "static_list", "static_price"],
-    Dynamic: ["item", "material", "buying_list", "scenario", "buy", "customs", "tier_mod", "territory_mod", "final", "policy"],
+    Compare: ["item", "buying_list", "expenses_policy", "dyn_buy", "expenses", "benchmark_price", "dyn_customs", "dyn_tier_mod", "dyn_territory_mod", "dyn_final", "static_list", "static_price"],
+    Dynamic: ["item", "material", "buying_list", "expenses_policy", "customs_policy", "benchmark_policy", "buy", "expenses", "benchmark_price", "customs", "tier_mod", "territory_mod", "margin_unit", "final", "margin"],
     Static: ["item", "material", "static_list", "static_price", "options"],
 };
 
@@ -238,11 +238,15 @@ const COLUMN_DEFS = {
         { key: "item", label: __("Item") },
         { key: "material", label: __("Material") },
         { key: "buying_list", label: __("Buying List") },
-        { key: "scenario", label: __("Scenario") },
+        { key: "expenses_policy", label: __("Expenses Policy") },
+        { key: "customs_policy", label: __("Customs Policy") },
+        { key: "benchmark_policy", label: __("Margin & Benchmark Policy") },
         { key: "dyn_buy", label: __("Dyn Buy") },
+        { key: "expenses", label: __("Dyn Expenses") },
         { key: "dyn_customs", label: __("Dyn Customs") },
         { key: "dyn_tier_mod", label: __("Tier Mod") },
         { key: "dyn_territory_mod", label: __("Territory Mod") },
+        { key: "benchmark_price", label: __("Benchmark Price") },
         { key: "dyn_final", label: __("Dyn Final") },
         { key: "static_list", label: __("Static List") },
         { key: "static_price", label: __("Static Price") },
@@ -251,15 +255,18 @@ const COLUMN_DEFS = {
         { key: "item", label: __("Item") },
         { key: "material", label: __("Material") },
         { key: "buying_list", label: __("Buying List") },
-        { key: "scenario", label: __("Scenario") },
+        { key: "expenses_policy", label: __("Expenses Policy") },
+        { key: "customs_policy", label: __("Customs Policy") },
+        { key: "benchmark_policy", label: __("Margin & Benchmark Policy") },
         { key: "buy", label: __("Buy") },
+        { key: "expenses", label: __("Expenses") },
         { key: "customs", label: __("Customs") },
         { key: "tier_mod", label: __("Tier Mod") },
         { key: "territory_mod", label: __("Territory Mod") },
-        { key: "bench_ref", label: __("Bench Ref") },
+        { key: "benchmark_price", label: __("Benchmark Price") },
+        { key: "margin_unit", label: __("Margin Unit") },
         { key: "final", label: __("Final") },
         { key: "margin", label: __("Margin") },
-        { key: "policy", label: __("Policy") },
     ],
     Static: [
         { key: "item", label: __("Item") },
@@ -312,17 +319,20 @@ function renderColumnValue(key, row) {
     if (key === "item") return linkToDoc("Item", row.item || d.item);
     if (key === "material") return escapeHtml(d.material || s.material || "-");
     if (key === "buying_list") return escapeHtml(d.source_buying_price_list || "-");
-    if (key === "scenario") return escapeHtml(d.resolved_pricing_scenario || "-");
+    if (key === "scenario" || key === "expenses_policy") return escapeHtml(d.expenses_policy || d.resolved_pricing_scenario || "-");
+    if (key === "customs_policy") return escapeHtml(d.customs_policy || "-");
+    if (key === "benchmark_policy") return escapeHtml(d.benchmark_policy || d.applied_benchmark_policy || "-");
     if (key === "dyn_buy" || key === "buy") return fmtCurrency(d.buy_price);
+    if (key === "expenses") return fmtCurrency(d.expense_unit_price);
     if (key === "dyn_customs" || key === "customs") return fmtCurrency(d.customs_applied);
     if (key === "dyn_tier_mod" || key === "tier_mod") return fmtCurrency(d.tier_modifier_amount);
     if (key === "dyn_territory_mod" || key === "territory_mod") return fmtCurrency(d.zone_modifier_amount);
     if (key === "dyn_final" || key === "final") return `<strong>${fmtCurrency(d.final_sell_unit_price)}</strong>`;
     if (key === "static_list") return escapeHtml(s.selected_price_list || row.selected_price_list || "-");
     if (key === "static_price") return `<strong>${fmtCurrency(s.selected_price || row.selected_price)}</strong>`;
-    if (key === "bench_ref") return fmtCurrency(d.benchmark_reference);
+    if (key === "bench_ref" || key === "benchmark_price") return fmtCurrency(d.benchmark_reference);
+    if (key === "margin_unit") return fmtCurrency(d.margin_unit_amount);
     if (key === "margin") return `${Number(d.margin_pct || 0).toFixed(1)}%`;
-    if (key === "policy") return escapeHtml(d.applied_benchmark_policy || "-");
     if (key === "options") return row.option_count || 0;
     return "-";
 }
