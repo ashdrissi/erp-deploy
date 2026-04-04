@@ -48,11 +48,11 @@ const IC = {
 const GATEWAYS = [
     { icon: "pricing", label: __("Pricing & Sales"), desc: __("Price sheets, policies, simulator"), url: "pricing-dashboard", color: "#6366f1" },
     { icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory, transfers, reorder queue"), url: "stock-dashboard", color: "#10b981" },
-    { icon: "logistics", label: __("Logistics"), desc: __("Suppliers, purchase orders, delivery"), url: "buying/purchase-order", color: "#f59e0b" },
-    { icon: "crm", label: __("CRM"), desc: __("Customers, pipeline, campaigns"), url: "crm/crm-lead", color: "#3b82f6" },
-    { icon: "sav", label: __("SAV / Field Service"), desc: __("Tickets, interventions, SLA"), url: "support/issue", color: "#ec4899" },
-    { icon: "finance", label: __("Finance"), desc: __("Invoices, payments, P&L"), url: "accounts/sales-invoice", color: "#8b5cf6" },
-    { icon: "hr", label: __("HR"), desc: __("Employees, leave, payroll"), url: "hr/employee", color: "#06b6d4" },
+    { icon: "logistics", label: __("Logistics"), desc: __("Suppliers, purchase orders, delivery"), url: "logistics-dashboard", color: "#f59e0b" },
+    { icon: "crm", label: __("CRM"), desc: __("Customers, pipeline, campaigns"), url: "crm-dashboard", color: "#3b82f6" },
+    { icon: "sav", label: __("SAV / Field Service"), desc: __("Tickets, interventions, SLA"), url: "sav-dashboard", color: "#ec4899" },
+    { icon: "finance", label: __("Finance"), desc: __("Invoices, payments, P&L"), url: "finance-dashboard", color: "#8b5cf6" },
+    { icon: "hr", label: __("HR"), desc: __("Employees, leave, payroll"), url: "hr-dashboard", color: "#06b6d4" },
     { icon: "settings", label: __("Settings"), desc: __("Users, roles, company config"), url: "setup/company", color: "#64748b" },
 ];
 
