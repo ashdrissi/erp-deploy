@@ -17,6 +17,9 @@
 - `docker-compose.dev.yml`: development stack with bind-mounted apps for fast iteration.
 - `scripts/dev.sh`: quick helper for rebuild, migrate, restart, shell, and logs.
 - `scripts/create-site.sh`: site bootstrap, app install, asset build, and cache clear logic.
+- `scripts/prepare_erpnext_imports.py`: generates ERPNext import CSVs from the pricing workbooks under `docs/data/`.
+- `apps/orderlift/orderlift/scripts/import_generated_catalog.py`: imports generated catalog CSVs into ERPNext in master-data order.
+- `apps/orderlift/orderlift/scripts/setup_workbook_pricing_policies.py`: seeds workbook-derived customs, scenario, and passive benchmark policy records and can verify parity against imported price lists.
 - `apps/orderlift`: main business logic app; Python-heavy with `unittest` coverage.
 - `apps/custom_desk_theme`: small Frappe desk theme app with vanilla JS assets.
 - `apps/infintrix_theme`: Frappe theme app with Ruff, pre-commit, and a React/Vite sidebar package.
@@ -33,6 +36,9 @@
 - For Frappe app changes, prefer `docker exec <app-container> bash -lc "cd /home/frappe/frappe-bench && ..."`.
 - For frontend work in `infintrix_theme/public/js/sidebar_menu`, run Node commands from that package directory.
 - Use `./scripts/dev.sh` for common local workflows when it matches the task.
+- For pricing workbook import prep, use `python3 scripts/prepare_erpnext_imports.py --dry-run` to verify counts, then rerun without `--dry-run` to write CSVs under `docs/data/generated`.
+- To load the generated catalog into the live site, copy `docs/data/generated` into the app container and run `bench --site <site> execute orderlift.scripts.import_generated_catalog.run --kwargs '{"import_dir": "/tmp/orderlift-import"}'`.
+- To seed workbook-derived pricing policy records, run `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.run` and verify with `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.verify`.
 
 ## Build Commands
 - Dev stack: `docker compose -f docker-compose.dev.yml up -d`

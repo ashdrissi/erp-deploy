@@ -1,0 +1,5 @@
+price_list,currency,selling,buying,enabled,source_sheet,source_column
+Turkey Source Cost,USD,0,1,1,Pricing Turkey,PRICE IN TURKEY (without kdv) + LOCAL TRANSP 'USD'
+Morocco Min,MAD,1,0,1,Pricing sheet clean,Prix a proposer ss stock (min)
+Morocco Normal,MAD,1,0,1,Pricing sheet clean,Prix a proposer (normal)
+Morocco With Stock,MAD,1,0,1,Pricing sheet clean,Prix a proposer avec stock

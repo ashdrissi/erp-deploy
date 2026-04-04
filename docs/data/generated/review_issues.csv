@@ -1,0 +1,40 @@
+ref,description,source_sheet,issue,recommended_action
+IT.1-17-ARCADE,SET ARCADE TYPE L VVVF 2V,Pricing sheet clean,Source ref `IT.1-17` duplicated in workbook,Use generated unique code
+IT.1-18-ARCADE,SET ARCADE TYPE L GEARLESS,Pricing sheet clean,Source ref `IT.1-18` duplicated in workbook,Use generated unique code
+IT.32,"CABLE GEARLESS (6,5mm)",Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.33,CABLE REGULATEUR (6mm),Pricing sheet clean,Source UOM `0` overridden,M
+IT.37,"SERRE CABLE DIAM 6,5mm *",Pricing sheet clean,Source UOM `0` overridden,Pc
+IT.82,MOTEUR PRIMO 2V MAX4 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.83,MOTEUR PRIMO 2V MAX6 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.84,MOTEUR PRIMO 2V MAX8 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.85,MOTEUR PRIMO 2V MAX10 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.97,MOTEUR PRIMO GEARLESS MAX4 MAX6 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.98,MOTEUR PRIMO VVVF MAX6 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.99,MOTEUR PRIMO VVVF MAX4 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.100,MOTEUR PRIMO VVVF MAX8 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.101,MOTEUR PRIMO VVVF MAX10 + CHASSIS,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.102,MOTEUR MONTANARI 2V MAX4,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.103,MOTEUR MONTANARI 2V MAX6,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.104,MOTEUR MONTANARI 2V MAX8,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.105,MOTEUR MONTANARI 2V MAX10,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.106,MOTEUR MONTANARI VVVF MAX4,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.107,MOTEUR MONTANARI VVVF MAX6,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.108,MOTEUR MONTANARI VVVF MAX8,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.109,MOTEUR MONTANARI VVVF MAX10,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.110,MOTEUR MONTANARI GEARLESS MAX4,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.111,MOTEUR MONTANARI GEARLESS MAX6,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.112,MOTEUR MONTANARI GEARLESS MAX8,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.113,MOTEUR MONTANARI GEARLESS MAX10,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.114,MOTEUR GEM 2V MAX4,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.115,MOTEUR GEM 2V MAX6,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.116,MOTEUR GEM 2V MAX8,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.117,MOTEUR GEM 2V MAX10,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.118,MOTEUR GEM VVVF MAX4,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.119,MOTEUR GEM VVVF MAX6,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.120,MOTEUR GEM VVVF MAX8,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.121,MOTEUR GEM VVVF MAX10,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.122,MOTEUR GEM GEARLESS MAX4,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.123,MOTEUR GEM GEARLESS MAX6,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.124,MOTEUR GEM GEARLESS MAX8,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.125,MOTEUR GEM GEARLESS MAX10,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item
+IT.132,ECHELLE,Pricing Turkey,Material is blank or unmapped in source workbook,Review customs applicability for this item

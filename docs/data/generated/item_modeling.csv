@@ -1,0 +1,173 @@
+item_code,item_name,item_group,stock_uom,suggested_model,rationale,source_ref,source_row
+IT.1,SET CABINE STANDARD INOX 1200/1100 + ARCADES & ACCESSOIRES GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1,11
+IT.1-1,CABINE INOX 1000/900 STANDARD,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-1,12
+IT.1-2,CABINE INOX 1000/900 PERSONALISÉE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-2,13
+IT.1-3,CABINE INOX 1100/1000 STANDARD,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-3,14
+IT.1-4,CABINE INOX 1100/1000 PERSONALISÉE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-4,15
+IT.1-5,CABINE INOX 1200/1100 STANDARD,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-5,16
+IT.1-6,CABINE INOX 1200/1100 PERSONALISÉE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-6,17
+IT.1-13,CABINE INOX 1400/1300 STANDARD,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-13,18
+IT.1-14,CABINE INOX 1400/1300 PERSONALISÉE,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-14,19
+IT.1-17,CABINE  1000/900 PANORAMIQUE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-17,20
+IT.1-18,CABINE  1100/1000 PANORAMIQUE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-18,21
+IT.1-19,CABINE  1200/1100 PANORAMIQUE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-19,22
+IT.1-20,CABINE INOX 1300/1200 STANDARD,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-20,23
+IT.1-21,CABINE INOX 1300/1200 PERSONALISÉE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-21,24
+IT.1-22,CABINE  1300/1200 PANORAMIQUE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-22,25
+IT.1-23,CABINE  1400/1300 PANORAMIQUE,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.1-23,26
+IT.1-7,ARCADE CABINE 1000/900 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-7,27
+IT.1-8,ARCADE CABINE 1000/900 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-8,28
+IT.1-9,ARCADE CABINE 1100/1000 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-9,29
+IT.1-10,ARCADE CABINE 1100/1000 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-10,30
+IT.1-11,ARCADE CABINE 1200/1100 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-11,31
+IT.1-12,ARCADE CABINE 1200/1100 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-12,32
+IT.1-15,ARCADE CABINE 1400/1300 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-15,33
+IT.1-16,ARCADE CABINE 1400/1300 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-16,34
+IT.1-17-ARCADE,SET ARCADE TYPE L VVVF 2V,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-17,35
+IT.1-18-ARCADE,SET ARCADE TYPE L GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-18,36
+IT.2,PORTE PALIERE AUTOMATIQUE INOX ATERYA 70/80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.2,45
+IT.3,PORTE PALIERE AUTOMATIQUE EPOXY ATERYA 70/80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.3,46
+IT.4,OPERATEUR INOX ATERYA 70/80,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.4,47
+IT.5,SEMI AUTOMATIC PORTE EPOXY 70/80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.5,48
+IT.6,SEMI AUTOMATIC PORTE INOX 70/80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.6,49
+IT.7,SERRURE (DOOR LOCK),Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.7,50
+IT.8,CAME DC 220V / 60V,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.8,51
+IT.9,DICTATOR,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.9,52
+IT.10,"MOTEUR AKİŞ VOLPİ GEARLESS 3,9KW MAX4 MAX6 240*5*6,5MM 1,0M/S VVVF +ENCODEUR",Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.10,53
+IT.11,"MOTEUR AKİŞ VOLPİ GEARLESS 4,9KW MAX8 MAX10 240*7*6,5MM 1,0M/S VVVF +ENCODEUR",Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.11,54
+IT.12,MOTEUR AKİŞ 2V MAX4 MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.12,55
+IT.13,MOTEUR AKİŞ 2V MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.13,56
+IT.14,CLASSIC BRACKET 60X60 (PATE),Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.14,57
+IT.15,CLASSIC BRACKET 60X80  (PATE),Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.15,58
+IT.16,CROMPO 50,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.16,59
+IT.17,CROMPO 70,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.17,60
+IT.18,SET BRACKET U,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.18,61
+IT.19,CROMPO 90,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.19,62
+IT.20,SET BRACKET TYPE L,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.20,63
+IT.21,BOULON 8/30,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.21,64
+IT.22,BOULON 12/25,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.22,65
+IT.23,BOULON 12/40,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.23,66
+IT.24,BOULON 14/70,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.24,67
+IT.25,CHEVEILLE 12/100,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.25,68
+IT.26,GUIDE RAIL 50,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.26,69
+IT.27,GUIDE RAIL 70,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.27,70
+IT.28,SET RAIL : 50 + 70,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.28,71
+IT.29,GUIDE RAIL 90,Rails & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.29,72
+IT.30,GARNITURE COULISSEAU 50,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.30,73
+IT.31,CABLE TRACTION (10mm),Cables & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.31,74
+IT.32,"CABLE GEARLESS (6,5mm)",Cables & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.32,75
+IT.33,CABLE REGULATEUR (6mm),Cables & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.33,76
+IT.34,TIRANDS 10MM,Cables & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.34,77
+IT.35,"TIRANDS 6,5MM",Cables & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.35,78
+IT.36,SERRE CABLE DIAM 10mm *,Cables & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.36,79
+IT.37,"SERRE CABLE DIAM 6,5mm *",Cables & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.37,80
+IT.38,SERRE CABLE DIAM 6mm *,Cables & Accessoires,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.38,81
+IT.39,GOSE 96 CM (50 KG),Gose,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.39,82
+IT.40,COLLECTEUR D'HUILE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.40,83
+IT.41,BOITE DE LUBRIFICATION,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.41,84
+IT.42,COULISSEAUX CABIN,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.42,85
+IT.43,COULISSEAUX CONTRE-POIDS,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.43,86
+IT.44,GARNITURE COULISSEAU 70,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.44,87
+IT.45,POULIE RENVOI 5*10 GEARBOX,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.45,88
+IT.46,"BUFFER  CABIN/C,P / LES BOUDINS  SET COMPLET",Autres,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.46,89
+IT.47,"CABLE 0,75MM",Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.47,90
+IT.48,CABLE 4MM,Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.48,91
+IT.49,CÂBLE NUMÉRIQUE DT/13,Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.49,92
+IT.50,"TTR CABLE 3*0,75MM",Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.50,93
+IT.51,"CABLE SOUPLE 24
+36 -> 75 DH / 24 ->  55 À 60 DH",Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.51,94
+IT.52,SUPPORT CABLE SOUPLE TYPE RECTANGLE,Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.52,95
+IT.53,WIRE DUCT GOULLOTTE 40X40,Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.53,96
+IT.54,TUBE SPIRALÉ 14MM,Cables Electriques & Accessoires,M,plain_item,Keep as a normal Item for phase 1 import.,IT.54,97
+IT.55,BOUTONS DE CABINE D’ASCENSEUR 2M,Boutons,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.55,98
+IT.56,BOUTONS DE CABINE D’ASCENSEUR 1M,Boutons,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.56,99
+IT.57,BOUTON PALIER AVEC AFFICHEUR,Boutons,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.57,100
+IT.58,BOUTON PALIER,Boutons,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.58,101
+IT.59,INDICATEURS D’ATTERISSAGE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.59,102
+IT.60,BOÎTE D'ALARME,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.60,103
+IT.61,BOUTON DE SECOURS,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.61,104
+IT.62,ROLLER SWITCH,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.62,105
+IT.63,LIMIT SWITCH,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.63,106
+IT.64,PHOTOCELLULE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.64,107
+IT.65,OPERATEUR CARTE ARKEL KM-10,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.65,108
+IT.66,OPERATEUR CARTE KM-10 COPY,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.66,109
+IT.67,"REGULATEUR DE VITESSE VVVF 1,0M/S",Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.67,110
+IT.68,"REGULATEUR DE VITESSE 2V  1,0M/S-0,8M/S",Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.68,111
+IT.69,ARMOIRE VVVF EEM MONARCH + BOITE INSPECTION + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.69,112
+IT.70,ARMOIRE VVVF EEM MONARCH + BOITE INSPECTION + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.70,113
+IT.71,ARMOIRE 2V EEM + BOITE INSPECTION + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.71,114
+IT.72,ARMOIRE 2V EEM + BOITE INSPECTION + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.72,115
+IT.73,UPS,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.73,116
+IT.74,CHASSIS MOTEUR STANDARD VVVF 2V AVEC CYLINBLOC,Moteur,SET,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.74,117
+IT.75,CHASSIS MOTEUR GEARLESS,Moteur,SET,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.75,118
+IT.76,ARMOIRE GEARLESS EEM + BOITE INSPECTION + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.76,119
+IT.77,ARMOIRE GEARLESS EEM + BOITE INSPECTION + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.77,120
+IT.78,OPERATEUR 60CM ATERYA,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.78,121
+IT.79,CABINE 90*62CM,Cabine & Arcade,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.79,122
+IT.80,CALIBTEURS FIN DE COURSE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.80,123
+IT.81,GOSE 76CM - 31KG,Gose,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.81,124
+IT.82,MOTEUR PRIMO 2V MAX4 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.82,125
+IT.83,MOTEUR PRIMO 2V MAX6 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.83,126
+IT.84,MOTEUR PRIMO 2V MAX8 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.84,127
+IT.85,MOTEUR PRIMO 2V MAX10 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.85,128
+IT.86,PORTES CABINE / OPERATEUR *DEAS* INOX 70/80,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.86,129
+IT.87,PORTES PALIERE AUTOMATIQUE INOX *DEAS* 70/80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.87,130
+IT.88,PORTES PALIERE AUTOMATIQUE PEINTURE EPOXY *DEAS* 70/80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.88,131
+IT.89,PORTE PALIERE AUTOMATIQUE INOX FERMATOR 70,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.89,132
+IT.90,PORTE PALIERE AUTOMATIQUE EPOXY FERMATOR 70,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.90,133
+IT.91,OPERATEUR INOX FERMATOR 70,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.91,134
+IT.92,"AKİŞ ZF60 4KW MAX4 400*4*10 1M/S 51M TRAVEL D, GEARBOX VVVF MAX4",Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.92,135
+IT.93,"AKİŞ VOLPİ VF2 5,5KW MAX6 MAX8 480*5*10 33M TRAVEL D, GEARBOX VVVF",Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.93,136
+IT.94,"AKİŞ VOLPİ VF2 7,5KW MAX10 480*5*10 33M TRAVEL D, GEARBOX VVVF",Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.94,137
+IT.95,ADRIVE  ARL 300 VVVF + REVİZION BOX + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.95,138
+IT.96,ADRIVE  ARL 300 VVVF + REVİZION BOX + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.96,139
+IT.97,MOTEUR PRIMO GEARLESS MAX4 MAX6 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.97,140
+IT.98,MOTEUR PRIMO VVVF MAX6 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.98,141
+IT.99,MOTEUR PRIMO VVVF MAX4 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.99,142
+IT.100,MOTEUR PRIMO VVVF MAX8 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.100,143
+IT.101,MOTEUR PRIMO VVVF MAX10 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.101,144
+IT.102,MOTEUR MONTANARI 2V MAX4,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.102,145
+IT.103,MOTEUR MONTANARI 2V MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.103,146
+IT.104,MOTEUR MONTANARI 2V MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.104,147
+IT.105,MOTEUR MONTANARI 2V MAX10,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.105,148
+IT.106,MOTEUR MONTANARI VVVF MAX4,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.106,149
+IT.107,MOTEUR MONTANARI VVVF MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.107,150
+IT.108,MOTEUR MONTANARI VVVF MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.108,151
+IT.109,MOTEUR MONTANARI VVVF MAX10,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.109,152
+IT.110,MOTEUR MONTANARI GEARLESS MAX4,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.110,153
+IT.111,MOTEUR MONTANARI GEARLESS MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.111,154
+IT.112,MOTEUR MONTANARI GEARLESS MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.112,155
+IT.113,MOTEUR MONTANARI GEARLESS MAX10,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.113,156
+IT.114,MOTEUR GEM 2V MAX4,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.114,157
+IT.115,MOTEUR GEM 2V MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.115,158
+IT.116,MOTEUR GEM 2V MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.116,159
+IT.117,MOTEUR GEM 2V MAX10,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.117,160
+IT.118,MOTEUR GEM VVVF MAX4,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.118,161
+IT.119,MOTEUR GEM VVVF MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.119,162
+IT.120,MOTEUR GEM VVVF MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.120,163
+IT.121,MOTEUR GEM VVVF MAX10,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.121,164
+IT.122,MOTEUR GEM GEARLESS MAX4,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.122,165
+IT.123,MOTEUR GEM GEARLESS MAX6,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.123,166
+IT.124,MOTEUR GEM GEARLESS MAX8,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.124,167
+IT.125,MOTEUR GEM GEARLESS MAX10,Moteur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.125,168
+IT.126,MONOSTABLE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.126,169
+IT.127,BISTABLE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.127,170
+IT.128,ECLAIRAGE DE GAINE,Autres,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.128,171
+IT.129,PORTE PALIERE AUTOMATIQUE INOX FERMATOR 80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.129,172
+IT.130,PORTE PALIERE AUTOMATIQUE EPOXY FERMATOR 80,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.130,173
+IT.131,OPERATEUR INOX FERMATOR 80,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.131,174
+IT.132,ECHELLE,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.132,175
+IT.133,PORTE PALIERE AUTOMATIQUE INOX ATERYA 90,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.133,176
+IT.134,PORTE PALIERE AUTOMATIQUE EPOXY ATERYA 90,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.134,177
+IT.135,OPERATEUR INOX ATERYA 90,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.135,178
+IT.136,DOOR AUTOMATIQUE PANORAMIQUE ATERYA 70/80/90,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.136,179
+IT.137,OPERATEUR PANORAMIQUE ATERYA 70/80/90,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.137,180
+IT.138,CARTE OPERATEUR,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.138,181
+IT.139,PORTE PALIERE AUTOMATIQUE INOX FERMATOR 90,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.139,182
+IT.140,PORTE PALIERE AUTOMATIQUE EPOXY FERMATOR 90,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.140,183
+IT.141,OPERATEUR INOX FERMATOR 90,Operateur,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.141,184
+IT.142,PARACHUTE PROGRESSIF,Autres,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.142,185
+IT.143,BOUTON DE CABINE TACTILE,Boutons,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.143,217
+IT.144,BOUTON PALIERE TACTILE,Boutons,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.144,218
+IT.145,PORTE CABINE BUS,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.145,219
+IT.146,LEAR POMPE,Porte,Pc,plain_item,Keep as a normal Item for phase 1 import.,IT.146,220

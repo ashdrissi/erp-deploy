@@ -1,0 +1,12 @@
+item_group,item_group_name,parent_item_group,source_component,review_note
+ARMOIRE,Armoire,All Item Groups,ARMOIRE,
+AUTRES,Autres,All Item Groups,AUTRES,
+BOUTONS,Boutons,All Item Groups,BOUTONS,
+CABINE_ARCADE,Cabine & Arcade,All Item Groups,CABINE & ARCADE,
+CABLES_ACCESSOIRES,Cables & Accessoires,All Item Groups,CABLES & ACCESSOIRES,
+CABLES_ELECTRIQUES_ACCESSOIRES,Cables Electriques & Accessoires,All Item Groups,CABLES ELECTRIQUES & ACCESSOIRES,
+GOSE,Gose,All Item Groups,GOSE,Confirm whether GOSE stays as its own family
+MOTEUR,Moteur,All Item Groups,MOTEUR,
+OPERATEUR,Operateur,All Item Groups,OPÉRATEUR,
+PORTE,Porte,All Item Groups,PORTE,
+RAILS_ACCESSOIRES,Rails & Accessoires,All Item Groups,RAILS & ACCESSOIRES,

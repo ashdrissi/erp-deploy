@@ -1,0 +1,24 @@
+item_code,image_filename,source_workbook,source_sheet,source_row,source_image,match_basis
+IT.55,IT.55.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,49,image5.jpeg,exact_name:Boutons De Cabine D’Ascenseur 2m
+IT.64,IT.64.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,58,image8.jpeg,exact_name:Photocellule
+IT.62,IT.62.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,56,image9.png,exact_name:ROLLER SWITCH 
+IT.54,IT.54.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,48,image11.jpeg,exact_name:Tube spiralé 14mm
+IT.53,IT.53.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,47,image12.jpeg,exact_name:WIRE DUCT GOULLOTTE 40X40
+IT.49,IT.49.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,43,image15.jpeg,exact_name:câble numérique DT/13
+IT.47,IT.47.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,41,image17.jpeg,exact_name:cable 0.75mm
+IT.60,IT.60.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,54,image18.jpeg,exact_name:BOÎTE D'ALARME
+IT.63,IT.63.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,57,image19.jpeg,exact_name:LIMIT SWITCH
+IT.73,IT.73.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,65,image21.jpeg,exact_name:UPS
+IT.27,IT.27.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,28,image26.png,exact_name:GUIDE RAIL 70
+IT.26,IT.26.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,27,image28.png,exact_name:GUIDE RAIL 50
+IT.25,IT.25.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,26,image29.png,exact_name:CHEVEILLE 12/100
+IT.21,IT.21.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,23,image30.jpeg,exact_name:BOULON 8/30
+IT.17,IT.17.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,22,image31.png,exact_name:CROMPO 70
+IT.9,IT.9.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,14,image35.png,exact_name:DICTATOR
+IT.7,IT.7.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,12,image38.png,exact_name:SERRURE (DOOR LOCK)
+IT.8,IT.8.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,13,image40.png,exact_name:CAME DC 220V / 60V
+IT.41,IT.41.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,36,image43.jpeg,exact_name:BOITE DE LUBRIFICATION
+IT.42,IT.42.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,37,image44.jpeg,exact_name:coulisseaux CABIN
+IT.56,IT.56.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,50,image46.png,exact_name:Boutons De Cabine D’Ascenseur 1m
+IT.57,IT.57.png,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Morocco Prices,51,image47.png,exact_name:Bouton palier avec afficheur
+IT.1-11,IT.1-11.jpeg,PRICING ORDER LIFT TURKEY - MOROCCO _v07.02.2026 (2).xlsx,Pricing Turkey,23,image49.jpeg,direct_ref:IT.1-11

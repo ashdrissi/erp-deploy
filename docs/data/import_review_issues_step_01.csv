@@ -1,0 +1,7 @@
+ref,description,source_sheet,issue,recommended_action
+IT.33,CABLE REGULATEUR (6mm),Pricing sheet clean,Invalid UOM value `0`,Confirm correct UOM before import
+IT.37,SERRE CABLE DIAM 6.5mm *,Pricing sheet clean,Invalid UOM value `0`,Confirm correct UOM before import
+IT.39,GOSE 96 CM (50 KG),Pricing sheet clean,Component family `GOSE` needs category confirmation,Keep as separate item group unless business says merge
+IT.81,GOSE 76CM - 31KG,Pricing sheet clean,Component family `GOSE` needs category confirmation,Keep as separate item group unless business says merge
+IT.1-17,CABINE 1000/900 PANORAMIQUE and SET ARCADE TYPE L VVVF 2V,Pricing sheet clean,Duplicate item code used by two different products,Split into unique item codes before import
+IT.1-18,CABINE 1100/1000 PANORAMIQUE and SET ARCADE TYPE L GEARLESS,Pricing sheet clean,Duplicate item code used by two different products,Split into unique item codes before import

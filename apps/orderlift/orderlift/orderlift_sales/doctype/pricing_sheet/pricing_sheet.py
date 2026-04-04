@@ -1794,6 +1794,7 @@ class PricingSheet(Document):
         quotation.company = self._resolve_company_for_quotation()
         quotation.quotation_to = "Customer"
         quotation.party_name = self.customer
+        self._apply_quotation_price_list(quotation)
         if frappe.db.has_column("Quotation", "source_pricing_sheet"):
             quotation.source_pricing_sheet = self.name
 
@@ -1808,6 +1809,28 @@ class PricingSheet(Document):
 
         quotation.insert()
         return quotation.name
+
+    def _apply_quotation_price_list(self, quotation):
+        price_list = self._resolve_quotation_selling_price_list()
+        if not price_list:
+            return
+        if not frappe.db.exists("Price List", price_list):
+            return
+
+        quotation.selling_price_list = price_list
+        quotation.price_list_currency = frappe.db.get_value("Price List", price_list, "currency") or ""
+
+    def _resolve_quotation_selling_price_list(self):
+        price_list = (self.selected_price_list or "").strip()
+        if price_list:
+            return price_list
+
+        static_ctx = build_static_context(sales_person=self.sales_person)
+        if static_ctx.get("pricing_mode") == STATIC_MODE:
+            lists = static_ctx.get("selling_price_lists") or []
+            return (lists[0] or "").strip() if lists else ""
+
+        return ""
 
     def _append_detailed_quotation_items(self, quotation):
         geo = self._resolve_geography_context()

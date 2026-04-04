@@ -24,6 +24,23 @@ def format_currency_fr(amount, currency="MAD"):
         return f"0,00 {currency}"
 
 
+def get_company_info(company_name):
+    """
+    Return a dict of company contact fields for use in print format headers.
+    Returns empty strings for any missing fields so templates stay clean.
+    """
+    fields = ["phone_no", "email", "website", "tax_id", "default_currency", "country"]
+    data = frappe.db.get_value("Company", company_name, fields, as_dict=True) or {}
+    return {
+        "phone": data.get("phone_no") or "",
+        "email": data.get("email") or "",
+        "website": data.get("website") or "",
+        "tax_id": data.get("tax_id") or "",
+        "currency": data.get("default_currency") or "MAD",
+        "country": data.get("country") or "",
+    }
+
+
 def get_company_address(company_name):
     """
     Return the primary address of a company as a formatted string.

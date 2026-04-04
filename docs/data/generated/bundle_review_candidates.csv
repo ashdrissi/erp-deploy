@@ -1,0 +1,39 @@
+item_code,item_name,item_group,stock_uom,suggested_model,rationale,source_ref,source_row
+IT.1,SET CABINE STANDARD INOX 1200/1100 + ARCADES & ACCESSOIRES GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1,11
+IT.1-13,CABINE INOX 1400/1300 STANDARD,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-13,18
+IT.1-14,CABINE INOX 1400/1300 PERSONALISÉE,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-14,19
+IT.1-7,ARCADE CABINE 1000/900 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-7,27
+IT.1-8,ARCADE CABINE 1000/900 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-8,28
+IT.1-9,ARCADE CABINE 1100/1000 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-9,29
+IT.1-10,ARCADE CABINE 1100/1000 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-10,30
+IT.1-11,ARCADE CABINE 1200/1100 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-11,31
+IT.1-12,ARCADE CABINE 1200/1100 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-12,32
+IT.1-15,ARCADE CABINE 1400/1300 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARBOX,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-15,33
+IT.1-16,ARCADE CABINE 1400/1300 + ARCADE CONTRE-POIDS + TIRANDS + COULISSEAUX GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-16,34
+IT.1-17-ARCADE,SET ARCADE TYPE L VVVF 2V,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-17,35
+IT.1-18-ARCADE,SET ARCADE TYPE L GEARLESS,Cabine & Arcade,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.1-18,36
+IT.18,SET BRACKET U,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.18,61
+IT.20,SET BRACKET TYPE L,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.20,63
+IT.28,SET RAIL : 50 + 70,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.28,71
+IT.30,GARNITURE COULISSEAU 50,Rails & Accessoires,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.30,73
+IT.46,"BUFFER  CABIN/C,P / LES BOUDINS  SET COMPLET",Autres,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.46,89
+IT.69,ARMOIRE VVVF EEM MONARCH + BOITE INSPECTION + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.69,112
+IT.70,ARMOIRE VVVF EEM MONARCH + BOITE INSPECTION + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.70,113
+IT.71,ARMOIRE 2V EEM + BOITE INSPECTION + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.71,114
+IT.72,ARMOIRE 2V EEM + BOITE INSPECTION + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.72,115
+IT.74,CHASSIS MOTEUR STANDARD VVVF 2V AVEC CYLINBLOC,Moteur,SET,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.74,117
+IT.75,CHASSIS MOTEUR GEARLESS,Moteur,SET,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.75,118
+IT.76,ARMOIRE GEARLESS EEM + BOITE INSPECTION + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.76,119
+IT.77,ARMOIRE GEARLESS EEM + BOITE INSPECTION + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.77,120
+IT.82,MOTEUR PRIMO 2V MAX4 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.82,125
+IT.83,MOTEUR PRIMO 2V MAX6 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.83,126
+IT.84,MOTEUR PRIMO 2V MAX8 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.84,127
+IT.85,MOTEUR PRIMO 2V MAX10 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.85,128
+IT.95,ADRIVE  ARL 300 VVVF + REVİZION BOX + ALARM MAX4 MAX6 MAX8,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.95,138
+IT.96,ADRIVE  ARL 300 VVVF + REVİZION BOX + ALARM MAX10,Armoire,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.96,139
+IT.97,MOTEUR PRIMO GEARLESS MAX4 MAX6 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.97,140
+IT.98,MOTEUR PRIMO VVVF MAX6 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.98,141
+IT.99,MOTEUR PRIMO VVVF MAX4 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.99,142
+IT.100,MOTEUR PRIMO VVVF MAX8 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.100,143
+IT.101,MOTEUR PRIMO VVVF MAX10 + CHASSIS,Moteur,Pc,bom_review_candidate,Motor/chassis combination may be better modeled later as an assembly or BOM-backed sellable item.,IT.101,144
+IT.128,ECLAIRAGE DE GAINE,Autres,SET,bundle_candidate,Description/UOM suggests a commercial grouped offer that may later become a Product Bundle.,IT.128,171

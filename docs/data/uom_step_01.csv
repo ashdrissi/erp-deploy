@@ -1,0 +1,4 @@
+uom,enabled,source_value,note
+Pc,1,Pc,Keep as source UOM unless business wants ERP standardization
+SET,1,SET,
+M,1,M,Represents linear meter

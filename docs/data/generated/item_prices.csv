@@ -1,0 +1,661 @@
+item_code,price_list,currency,price_list_rate,selling,buying,uom,source_sheet,source_row,source_ref
+IT.1,Morocco Min,MAD,25001.244500000001,1,0,SET,Pricing sheet clean,11,IT.1
+IT.1,Morocco Normal,MAD,25736.244500000001,1,0,SET,Pricing sheet clean,11,IT.1
+IT.1,Morocco With Stock,MAD,28924.699000000001,1,0,SET,Pricing sheet clean,11,IT.1
+IT.1-1,Morocco Min,MAD,15332.112471666667,1,0,Pc,Pricing sheet clean,12,IT.1-1
+IT.1-1,Morocco Normal,MAD,15797.612471666667,1,0,Pc,Pricing sheet clean,12,IT.1-1
+IT.1-1,Morocco With Stock,MAD,17814.457943333335,1,0,Pc,Pricing sheet clean,12,IT.1-1
+IT.1-2,Morocco Min,MAD,18622.266879999999,1,0,Pc,Pricing sheet clean,13,IT.1-2
+IT.1-2,Morocco Normal,MAD,19210.266879999999,1,0,Pc,Pricing sheet clean,13,IT.1-2
+IT.1-2,Morocco With Stock,MAD,21759.301759999998,1,0,Pc,Pricing sheet clean,13,IT.1-2
+IT.1-3,Morocco Min,MAD,16253.295200799999,1,0,Pc,Pricing sheet clean,14,IT.1-3
+IT.1-3,Morocco Normal,MAD,16753.095200799999,1,0,Pc,Pricing sheet clean,14,IT.1-3
+IT.1-3,Morocco With Stock,MAD,18918.8932016,1,0,Pc,Pricing sheet clean,14,IT.1-3
+IT.1-4,Morocco Min,MAD,20201.754204800003,1,0,Pc,Pricing sheet clean,15,IT.1-4
+IT.1-4,Morocco Normal,MAD,20848.554204800002,1,0,Pc,Pricing sheet clean,15,IT.1-4
+IT.1-4,Morocco With Stock,MAD,23653.2532096,1,0,Pc,Pricing sheet clean,15,IT.1-4
+IT.1-5,Morocco Min,MAD,17174.524989533333,1,0,Pc,Pricing sheet clean,16,IT.1-5
+IT.1-5,Morocco Normal,MAD,17708.624989533331,1,0,Pc,Pricing sheet clean,16,IT.1-5
+IT.1-5,Morocco With Stock,MAD,20023.422579066668,1,0,Pc,Pricing sheet clean,16,IT.1-5
+IT.1-6,Morocco Min,MAD,21123.185677533333,1,0,Pc,Pricing sheet clean,17,IT.1-6
+IT.1-6,Morocco Normal,MAD,21804.285677533331,1,0,Pc,Pricing sheet clean,17,IT.1-6
+IT.1-6,Morocco With Stock,MAD,24758.18595506667,1,0,Pc,Pricing sheet clean,17,IT.1-6
+IT.1-13,Morocco Min,MAD,20289.245537866675,1,0,SET,Pricing sheet clean,18,IT.1-13
+IT.1-13,Morocco Normal,MAD,20945.845537866673,1,0,SET,Pricing sheet clean,18,IT.1-13
+IT.1-13,Morocco With Stock,MAD,23793.168675733337,1,0,SET,Pricing sheet clean,18,IT.1-13
+IT.1-14,Morocco Min,MAD,26349.078935200003,1,0,SET,Pricing sheet clean,19,IT.1-14
+IT.1-14,Morocco Normal,MAD,27201.678935200001,1,0,SET,Pricing sheet clean,19,IT.1-14
+IT.1-14,Morocco With Stock,MAD,30902.2914704,1,0,SET,Pricing sheet clean,19,IT.1-14
+IT.1-17,Morocco Min,MAD,24227.962453333337,1,0,Pc,Pricing sheet clean,20,IT.1-17
+IT.1-17,Morocco Normal,MAD,25011.962453333337,1,0,Pc,Pricing sheet clean,20,IT.1-17
+IT.1-17,Morocco With Stock,MAD,28413.748906666668,1,0,Pc,Pricing sheet clean,20,IT.1-17
+IT.1-18,Morocco Min,MAD,25743.026446666667,1,0,Pc,Pricing sheet clean,21,IT.1-18
+IT.1-18,Morocco Normal,MAD,26576.026446666667,1,0,Pc,Pricing sheet clean,21,IT.1-18
+IT.1-18,Morocco With Stock,MAD,30191.240893333335,1,0,Pc,Pricing sheet clean,21,IT.1-18
+IT.1-19,Morocco Min,MAD,28015.802511666665,1,0,Pc,Pricing sheet clean,22,IT.1-19
+IT.1-19,Morocco Normal,MAD,28922.302511666665,1,0,Pc,Pricing sheet clean,22,IT.1-19
+IT.1-19,Morocco With Stock,MAD,32857.839023333334,1,0,Pc,Pricing sheet clean,22,IT.1-19
+IT.1-20,Morocco Min,MAD,18095.801837866664,1,0,Pc,Pricing sheet clean,23,IT.1-20
+IT.1-20,Morocco Normal,MAD,18664.201837866665,1,0,Pc,Pricing sheet clean,23,IT.1-20
+IT.1-20,Morocco With Stock,MAD,21128.046075733335,1,0,Pc,Pricing sheet clean,23,IT.1-20
+IT.1-21,Morocco Min,MAD,22107.03420986667,1,0,Pc,Pricing sheet clean,24,IT.1-21
+IT.1-21,Morocco Normal,MAD,22822.434209866671,1,0,Pc,Pricing sheet clean,24,IT.1-21
+IT.1-21,Morocco With Stock,MAD,25925.582819733339,1,0,Pc,Pricing sheet clean,24,IT.1-21
+IT.1-22,Morocco Min,MAD,31046.50673833333,1,0,Pc,Pricing sheet clean,25,IT.1-22
+IT.1-22,Morocco Normal,MAD,32051.00673833333,1,0,Pc,Pricing sheet clean,25,IT.1-22
+IT.1-22,Morocco With Stock,MAD,36413.975476666667,1,0,Pc,Pricing sheet clean,25,IT.1-22
+IT.1-23,Morocco Min,MAD,34835.427246666666,1,0,Pc,Pricing sheet clean,26,IT.1-23
+IT.1-23,Morocco Normal,MAD,35962.427246666666,1,0,Pc,Pricing sheet clean,26,IT.1-23
+IT.1-23,Morocco With Stock,MAD,40860.226493333335,1,0,Pc,Pricing sheet clean,26,IT.1-23
+IT.1-7,Morocco Min,MAD,6811.6294049999988,1,0,SET,Pricing sheet clean,27,IT.1-7
+IT.1-7,Morocco Normal,MAD,7252.6294049999988,1,0,SET,Pricing sheet clean,27,IT.1-7
+IT.1-7,Morocco With Stock,MAD,7986.3968100000002,1,0,SET,Pricing sheet clean,27,IT.1-7
+IT.1-8,Morocco Min,MAD,10596.708313333336,1,0,SET,Pricing sheet clean,28,IT.1-8
+IT.1-8,Morocco Normal,MAD,11282.708313333336,1,0,SET,Pricing sheet clean,28,IT.1-8
+IT.1-8,Morocco With Stock,MAD,12424.964626666668,1,0,SET,Pricing sheet clean,28,IT.1-8
+IT.1-9,Morocco Min,MAD,7114.4136284666665,1,0,SET,Pricing sheet clean,29,IT.1-9
+IT.1-9,Morocco Normal,MAD,7575.0136284666669,1,0,SET,Pricing sheet clean,29,IT.1-9
+IT.1-9,Morocco With Stock,MAD,8341.4380569333334,1,0,SET,Pricing sheet clean,29,IT.1-9
+IT.1-10,Morocco Min,MAD,10899.540556800002,1,0,SET,Pricing sheet clean,30,IT.1-10
+IT.1-10,Morocco Normal,MAD,11605.140556800001,1,0,SET,Pricing sheet clean,30,IT.1-10
+IT.1-10,Morocco With Stock,MAD,12780.101913600003,1,0,SET,Pricing sheet clean,30,IT.1-10
+IT.1-11,Morocco Min,MAD,7417.2016935333331,1,0,SET,Pricing sheet clean,31,IT.1-11
+IT.1-11,Morocco Normal,MAD,7897.4016935333329,1,0,SET,Pricing sheet clean,31,IT.1-11
+IT.1-11,Morocco With Stock,MAD,8696.4869870666662,1,0,SET,Pricing sheet clean,31,IT.1-11
+IT.1-12,Morocco Min,MAD,11202.376641866666,1,0,SET,Pricing sheet clean,32,IT.1-12
+IT.1-12,Morocco Normal,MAD,11927.576641866666,1,0,SET,Pricing sheet clean,32,IT.1-12
+IT.1-12,Morocco With Stock,MAD,13135.246883733334,1,0,SET,Pricing sheet clean,32,IT.1-12
+IT.1-15,Morocco Min,MAD,8931.1996428666662,1,0,SET,Pricing sheet clean,33,IT.1-15
+IT.1-15,Morocco Normal,MAD,9509.3996428666669,1,0,SET,Pricing sheet clean,33,IT.1-15
+IT.1-15,Morocco With Stock,MAD,10471.846885733334,1,0,SET,Pricing sheet clean,33,IT.1-15
+IT.1-16,Morocco Min,MAD,14230.948780533332,1,0,SET,Pricing sheet clean,34,IT.1-16
+IT.1-16,Morocco Normal,MAD,15152.148780533333,1,0,SET,Pricing sheet clean,34,IT.1-16
+IT.1-16,Morocco With Stock,MAD,16687.119161066665,1,0,SET,Pricing sheet clean,34,IT.1-16
+IT.1-17-ARCADE,Morocco Min,MAD,15139.595333333335,1,0,SET,Pricing sheet clean,35,IT.1-17
+IT.1-17-ARCADE,Morocco Normal,MAD,16119.595333333335,1,0,SET,Pricing sheet clean,35,IT.1-17
+IT.1-17-ARCADE,Morocco With Stock,MAD,17752.830666666669,1,0,SET,Pricing sheet clean,35,IT.1-17
+IT.1-18-ARCADE,Morocco Min,MAD,18168.666880000001,1,0,SET,Pricing sheet clean,36,IT.1-18
+IT.1-18-ARCADE,Morocco Normal,MAD,19344.666880000001,1,0,SET,Pricing sheet clean,36,IT.1-18
+IT.1-18-ARCADE,Morocco With Stock,MAD,21305.70176,1,0,SET,Pricing sheet clean,36,IT.1-18
+IT.2,Morocco Min,MAD,4498.4592039075806,1,0,Pc,Pricing sheet clean,45,IT.2
+IT.2,Morocco Normal,MAD,4746.1479302128682,1,0,Pc,Pricing sheet clean,45,IT.2
+IT.2,Morocco With Stock,MAD,5158.0307789491817,1,0,Pc,Pricing sheet clean,45,IT.2
+IT.3,Morocco Min,MAD,2818.751269437566,1,0,Pc,Pricing sheet clean,46,IT.3
+IT.3,Morocco Normal,MAD,3001.2587519783042,1,0,Pc,Pricing sheet clean,46,IT.3
+IT.3,Morocco With Stock,MAD,3304.6918970394145,1,0,Pc,Pricing sheet clean,46,IT.3
+IT.4,Morocco Min,MAD,6342.6587637824141,1,0,Pc,Pricing sheet clean,47,IT.4
+IT.4,Morocco Normal,MAD,6753.3005994990754,1,0,Pc,Pricing sheet clean,47,IT.4
+IT.4,Morocco With Stock,MAD,7436.4935834344633,1,0,Pc,Pricing sheet clean,47,IT.4
+IT.5,Morocco Min,MAD,1683.5153708666667,1,0,Pc,Pricing sheet clean,48,IT.5
+IT.5,Morocco Normal,MAD,1791.3153708666669,1,0,Pc,Pricing sheet clean,48,IT.5
+IT.5,Morocco With Stock,MAD,1970.5011417333333,1,0,Pc,Pricing sheet clean,48,IT.5
+IT.6,Morocco Min,MAD,2175.5903708666665,1,0,Pc,Pricing sheet clean,49,IT.6
+IT.6,Morocco Normal,MAD,2283.3903708666667,1,0,Pc,Pricing sheet clean,49,IT.6
+IT.6,Morocco With Stock,MAD,2462.5761417333333,1,0,Pc,Pricing sheet clean,49,IT.6
+IT.7,Morocco Min,MAD,272.42783584800003,1,0,Pc,Pricing sheet clean,50,IT.7
+IT.7,Morocco Normal,MAD,290.06783584800002,1,0,Pc,Pricing sheet clean,50,IT.7
+IT.7,Morocco With Stock,MAD,319.38119169599997,1,0,Pc,Pricing sheet clean,50,IT.7
+IT.8,Morocco Min,MAD,665.94020333866672,1,0,Pc,Pricing sheet clean,51,IT.8
+IT.8,Morocco Normal,MAD,709.06020333866672,1,0,Pc,Pricing sheet clean,51,IT.8
+IT.8,Morocco With Stock,MAD,780.72056667733341,1,0,Pc,Pricing sheet clean,51,IT.8
+IT.9,Morocco Min,MAD,102.91681671114668,1,0,Pc,Pricing sheet clean,52,IT.9
+IT.9,Morocco Normal,MAD,109.58081671114667,1,0,Pc,Pricing sheet clean,52,IT.9
+IT.9,Morocco With Stock,MAD,120.65438542229333,1,0,Pc,Pricing sheet clean,52,IT.9
+IT.10,Morocco Min,MAD,15442.4852008,1,0,Pc,Pricing sheet clean,53,IT.10
+IT.10,Morocco Normal,MAD,16442.0852008,1,0,Pc,Pricing sheet clean,53,IT.10
+IT.10,Morocco With Stock,MAD,18108.083201599999,1,0,Pc,Pricing sheet clean,53,IT.10
+IT.11,Morocco Min,MAD,16336.032691948669,1,0,Pc,Pricing sheet clean,54,IT.11
+IT.11,Morocco Normal,MAD,17393.452691948667,1,0,Pc,Pricing sheet clean,54,IT.11
+IT.11,Morocco With Stock,MAD,19156.122943897335,1,0,Pc,Pricing sheet clean,54,IT.11
+IT.12,Morocco Min,MAD,15139.595333333335,1,0,Pc,Pricing sheet clean,55,IT.12
+IT.12,Morocco Normal,MAD,16119.595333333335,1,0,Pc,Pricing sheet clean,55,IT.12
+IT.12,Morocco With Stock,MAD,17752.830666666669,1,0,Pc,Pricing sheet clean,55,IT.12
+IT.13,Morocco Min,MAD,16199.726676466667,1,0,Pc,Pricing sheet clean,56,IT.13
+IT.13,Morocco Normal,MAD,17248.326676466666,1,0,Pc,Pricing sheet clean,56,IT.13
+IT.13,Morocco With Stock,MAD,18996.248152933334,1,0,Pc,Pricing sheet clean,56,IT.13
+IT.14,Morocco Min,MAD,9.2064277287199996,1,0,Pc,Pricing sheet clean,57,IT.14
+IT.14,Morocco Normal,MAD,9.7944277287199988,1,0,Pc,Pricing sheet clean,57,IT.14
+IT.14,Morocco With Stock,MAD,10.77148945744,1,0,Pc,Pricing sheet clean,57,IT.14
+IT.15,Morocco Min,MAD,13.62131788962,1,0,Pc,Pricing sheet clean,58,IT.15
+IT.15,Morocco Normal,MAD,14.50331788962,1,0,Pc,Pricing sheet clean,58,IT.15
+IT.15,Morocco With Stock,MAD,15.968911779239999,1,0,Pc,Pricing sheet clean,58,IT.15
+IT.16,Morocco Min,MAD,4.2377425098101336,1,0,Pc,Pricing sheet clean,59,IT.16
+IT.16,Morocco Normal,MAD,4.5121425098101335,1,0,Pc,Pricing sheet clean,59,IT.16
+IT.16,Morocco With Stock,MAD,4.968104219620268,1,0,Pc,Pricing sheet clean,59,IT.16
+IT.17,Morocco Min,MAD,5.5998741907271334,1,0,Pc,Pricing sheet clean,60,IT.17
+IT.17,Morocco Normal,MAD,5.962474190727133,1,0,Pc,Pricing sheet clean,60,IT.17
+IT.17,Morocco With Stock,MAD,6.5649951814542673,1,0,Pc,Pricing sheet clean,60,IT.17
+IT.18,Morocco Min,MAD,606.06614911666668,1,0,SET,Pricing sheet clean,61,IT.18
+IT.18,Morocco Normal,MAD,640.36614911666663,1,0,SET,Pricing sheet clean,61,IT.18
+IT.18,Morocco With Stock,MAD,697.36719823333328,1,0,SET,Pricing sheet clean,61,IT.18
+IT.19,Morocco Min,MAD,7.1133539274284656,1,0,Pc,Pricing sheet clean,62,IT.19
+IT.19,Morocco Normal,MAD,7.573953927428466,1,0,Pc,Pricing sheet clean,62,IT.19
+IT.19,Morocco With Stock,MAD,8.3393186548569336,1,0,Pc,Pricing sheet clean,62,IT.19
+IT.20,Morocco Min,MAD,803.3266716666667,1,0,SET,Pricing sheet clean,63,IT.20
+IT.20,Morocco Normal,MAD,852.3266716666667,1,0,SET,Pricing sheet clean,63,IT.20
+IT.20,Morocco With Stock,MAD,933.76034333333337,1,0,SET,Pricing sheet clean,63,IT.20
+IT.21,Morocco Min,MAD,1.0594355568631335,1,0,Pc,Pricing sheet clean,64,IT.21
+IT.21,Morocco Normal,MAD,1.1280355568631335,1,0,Pc,Pricing sheet clean,64,IT.21
+IT.21,Morocco With Stock,MAD,1.242025913726267,1,0,Pc,Pricing sheet clean,64,IT.21
+IT.22,Morocco Min,MAD,2.7242629555847997,1,0,Pc,Pricing sheet clean,65,IT.22
+IT.22,Morocco Normal,MAD,2.9006629555847998,1,0,Pc,Pricing sheet clean,65,IT.22
+IT.22,Morocco With Stock,MAD,3.1937811111696002,1,0,Pc,Pricing sheet clean,65,IT.22
+IT.23,Morocco Min,MAD,3.0269588587466671,1,0,Pc,Pricing sheet clean,66,IT.23
+IT.23,Morocco Normal,MAD,3.2229588587466669,1,0,Pc,Pricing sheet clean,66,IT.23
+IT.23,Morocco With Stock,MAD,3.5486457174933337,1,0,Pc,Pricing sheet clean,66,IT.23
+IT.24,Morocco Min,MAD,4.5404384321800002,1,0,Pc,Pricing sheet clean,67,IT.24
+IT.24,Morocco Normal,MAD,4.8344384321799998,1,0,Pc,Pricing sheet clean,67,IT.24
+IT.24,Morocco With Stock,MAD,5.3229688643599999,1,0,Pc,Pricing sheet clean,67,IT.24
+IT.25,Morocco Min,MAD,3.1989618117682004,1,0,Pc,Pricing sheet clean,68,IT.25
+IT.25,Morocco Normal,MAD,3.4047618117682004,1,0,Pc,Pricing sheet clean,68,IT.25
+IT.25,Morocco With Stock,MAD,3.7467330235364007,1,0,Pc,Pricing sheet clean,68,IT.25
+IT.26,Morocco Min,MAD,299.89405785352,1,0,Pc,Pricing sheet clean,69,IT.26
+IT.26,Morocco Normal,MAD,316.94605785352002,1,0,Pc,Pricing sheet clean,69,IT.26
+IT.26,Morocco With Stock,MAD,345.28225170704002,1,0,Pc,Pricing sheet clean,69,IT.26
+IT.27,Morocco Min,MAD,589.26339809565343,1,0,Pc,Pricing sheet clean,70,IT.27
+IT.27,Morocco Normal,MAD,623.17139809565344,1,0,Pc,Pricing sheet clean,70,IT.27
+IT.27,Morocco With Stock,MAD,679.52094019130675,1,0,Pc,Pricing sheet clean,70,IT.27
+IT.28,Morocco Min,MAD,787.02223794133351,1,0,SET,Pricing sheet clean,71,IT.28
+IT.28,Morocco Normal,MAD,837.98223794133344,1,0,SET,Pricing sheet clean,71,IT.28
+IT.28,Morocco With Stock,MAD,922.6737558826668,1,0,SET,Pricing sheet clean,71,IT.28
+IT.29,Morocco Min,MAD,983.78185511666663,1,0,Pc,Pricing sheet clean,72,IT.29
+IT.29,Morocco Normal,MAD,1047.4818551166666,1,0,Pc,Pricing sheet clean,72,IT.29
+IT.29,Morocco With Stock,MAD,1153.3503102333334,1,0,Pc,Pricing sheet clean,72,IT.29
+IT.30,Morocco Min,MAD,7.5673978671666671,1,0,SET,Pricing sheet clean,73,IT.30
+IT.30,Morocco Normal,MAD,8.0573978671666673,1,0,SET,Pricing sheet clean,73,IT.30
+IT.30,Morocco With Stock,MAD,8.8716157343333339,1,0,SET,Pricing sheet clean,73,IT.30
+IT.31,Morocco Min,MAD,13.924013931079468,1,0,M,Pricing sheet clean,74,IT.31
+IT.31,Morocco Normal,MAD,14.825613931079468,1,0,M,Pricing sheet clean,74,IT.31
+IT.31,Morocco With Stock,MAD,16.323776662158934,1,0,M,Pricing sheet clean,74,IT.31
+IT.32,Morocco Min,MAD,13.167273834633798,1,0,M,Pricing sheet clean,75,IT.32
+IT.32,Morocco Normal,MAD,14.019873834633799,1,0,M,Pricing sheet clean,75,IT.32
+IT.32,Morocco With Stock,MAD,15.4366144692676,1,0,M,Pricing sheet clean,75,IT.32
+IT.33,Morocco Min,MAD,4.2612325098101342,1,0,M,Pricing sheet clean,76,IT.33
+IT.33,Morocco Normal,MAD,4.5356325098101342,1,0,M,Pricing sheet clean,76,IT.33
+IT.33,Morocco With Stock,MAD,4.9915942196202678,1,0,M,Pricing sheet clean,76,IT.33
+IT.34,Morocco Min,MAD,33.570552863911672,1,0,Pc,Pricing sheet clean,77,IT.34
+IT.34,Morocco Normal,MAD,35.677552863911671,1,0,Pc,Pricing sheet clean,77,IT.34
+IT.34,Morocco With Stock,MAD,39.178706727823339,1,0,Pc,Pricing sheet clean,77,IT.34
+IT.35,Morocco Min,MAD,32.539827863911668,1,0,Pc,Pricing sheet clean,78,IT.35
+IT.35,Morocco Normal,MAD,34.646827863911668,1,0,Pc,Pricing sheet clean,78,IT.35
+IT.35,Morocco With Stock,MAD,38.147981727823336,1,0,Pc,Pricing sheet clean,78,IT.35
+IT.36,Morocco Min,MAD,3.0269588587466671,1,0,Pc,Pricing sheet clean,79,IT.36
+IT.36,Morocco Normal,MAD,3.2229588587466669,1,0,Pc,Pricing sheet clean,79,IT.36
+IT.36,Morocco With Stock,MAD,3.5486457174933337,1,0,Pc,Pricing sheet clean,79,IT.36
+IT.37,Morocco Min,MAD,2.270219108045,1,0,Pc,Pricing sheet clean,80,IT.37
+IT.37,Morocco Normal,MAD,2.4172191080449998,1,0,Pc,Pricing sheet clean,80,IT.37
+IT.37,Morocco With Stock,MAD,2.6614842160899999,1,0,Pc,Pricing sheet clean,80,IT.37
+IT.38,Morocco Min,MAD,1.5134793813533336,1,0,Pc,Pricing sheet clean,81,IT.38
+IT.38,Morocco Normal,MAD,1.6114793813533335,1,0,Pc,Pricing sheet clean,81,IT.38
+IT.38,Morocco With Stock,MAD,1.7743227627066669,1,0,Pc,Pricing sheet clean,81,IT.38
+IT.39,Morocco Min,MAD,90.808932872,1,0,Pc,Pricing sheet clean,82,IT.39
+IT.39,Morocco Normal,MAD,96.688932872000009,1,0,Pc,Pricing sheet clean,82,IT.39
+IT.39,Morocco With Stock,MAD,106.45970574400002,1,0,Pc,Pricing sheet clean,82,IT.39
+IT.40,Morocco Min,MAD,3.7836986334583336,1,0,Pc,Pricing sheet clean,83,IT.40
+IT.40,Morocco Normal,MAD,4.0286986334583341,1,0,Pc,Pricing sheet clean,83,IT.40
+IT.40,Morocco With Stock,MAD,4.435807266916667,1,0,Pc,Pricing sheet clean,83,IT.40
+IT.41,Morocco Min,MAD,15.134798135333334,1,0,Pc,Pricing sheet clean,84,IT.41
+IT.41,Morocco Normal,MAD,16.114798135333334,1,0,Pc,Pricing sheet clean,84,IT.41
+IT.41,Morocco With Stock,MAD,17.743236270666667,1,0,Pc,Pricing sheet clean,84,IT.41
+IT.42,Morocco Min,MAD,90.808932872,1,0,Pc,Pricing sheet clean,85,IT.42
+IT.42,Morocco Normal,MAD,96.688932872000009,1,0,Pc,Pricing sheet clean,85,IT.42
+IT.42,Morocco With Stock,MAD,106.45970574400002,1,0,Pc,Pricing sheet clean,85,IT.42
+IT.43,Morocco Min,MAD,52.971835491166672,1,0,Pc,Pricing sheet clean,86,IT.43
+IT.43,Morocco Normal,MAD,56.401835491166672,1,0,Pc,Pricing sheet clean,86,IT.43
+IT.43,Morocco With Stock,MAD,62.101410982333341,1,0,Pc,Pricing sheet clean,86,IT.43
+IT.44,Morocco Min,MAD,7.5673978671666671,1,0,Pc,Pricing sheet clean,87,IT.44
+IT.44,Morocco Normal,MAD,8.0573978671666673,1,0,Pc,Pricing sheet clean,87,IT.44
+IT.44,Morocco With Stock,MAD,8.8716157343333339,1,0,Pc,Pricing sheet clean,87,IT.44
+IT.45,Morocco Min,MAD,#REF!,1,0,Pc,Pricing sheet clean,88,IT.45
+IT.45,Morocco Normal,MAD,#REF!,1,0,Pc,Pricing sheet clean,88,IT.45
+IT.45,Morocco With Stock,MAD,#REF!,1,0,Pc,Pricing sheet clean,88,IT.45
+IT.46,Morocco Min,MAD,540.88490937800009,1,0,SET,Pricing sheet clean,89,IT.46
+IT.46,Morocco Normal,MAD,573.22490937800012,1,0,SET,Pricing sheet clean,89,IT.46
+IT.46,Morocco With Stock,MAD,626.96843875600007,1,0,SET,Pricing sheet clean,89,IT.46
+IT.47,Morocco Min,MAD,0.54545674920692455,1,0,M,Pricing sheet clean,90,IT.47
+IT.47,Morocco Normal,MAD,0.56799674920692456,1,0,M,Pricing sheet clean,90,IT.47
+IT.47,Morocco With Stock,MAD,0.60545071841384934,1,0,M,Pricing sheet clean,90,IT.47
+IT.48,Morocco Min,MAD,1.7715814416447646,1,0,M,Pricing sheet clean,91,IT.48
+IT.48,Morocco Normal,MAD,1.8764414416447646,1,0,M,Pricing sheet clean,91,IT.48
+IT.48,Morocco With Stock,MAD,2.050683863289529,1,0,M,Pricing sheet clean,91,IT.48
+IT.49,Morocco Min,MAD,2.0903358581396345,1,0,M,Pricing sheet clean,92,IT.49
+IT.49,Morocco Normal,MAD,2.2098958581396344,1,0,M,Pricing sheet clean,92,IT.49
+IT.49,Morocco With Stock,MAD,2.4085647962792693,1,0,M,Pricing sheet clean,92,IT.49
+IT.50,Morocco Min,MAD,2.4090902767954048,1,0,M,Pricing sheet clean,93,IT.50
+IT.50,Morocco Normal,MAD,2.5433502767954046,1,0,M,Pricing sheet clean,93,IT.50
+IT.50,Morocco With Stock,MAD,2.7664457335908095,1,0,M,Pricing sheet clean,93,IT.50
+IT.51,Morocco Min,MAD,34.874859138616365,1,0,M,Pricing sheet clean,94,IT.51
+IT.51,Morocco Normal,MAD,36.387293138616364,1,0,M,Pricing sheet clean,94,IT.51
+IT.51,Morocco With Stock,MAD,38.900465739232715,1,0,M,Pricing sheet clean,94,IT.51
+IT.52,Morocco Min,MAD,14.165237739946669,1,0,M,Pricing sheet clean,95,IT.52
+IT.52,Morocco Normal,MAD,14.949237739946668,1,0,M,Pricing sheet clean,95,IT.52
+IT.52,Morocco With Stock,MAD,16.251987479893334,1,0,M,Pricing sheet clean,95,IT.52
+IT.53,Morocco Min,MAD,11.335118101653334,1,0,M,Pricing sheet clean,96,IT.53
+IT.53,Morocco Normal,MAD,11.727118101653334,1,0,M,Pricing sheet clean,96,IT.53
+IT.53,Morocco With Stock,MAD,12.378492203306667,1,0,M,Pricing sheet clean,96,IT.53
+IT.54,Morocco Min,MAD,13.3335264388962,1,0,M,Pricing sheet clean,97,IT.54
+IT.54,Morocco Normal,MAD,13.421726438896201,1,0,M,Pricing sheet clean,97,IT.54
+IT.54,Morocco With Stock,MAD,13.568285477792401,1,0,M,Pricing sheet clean,97,IT.54
+IT.55,Morocco Min,MAD,1437.848704716667,1,0,Pc,Pricing sheet clean,98,IT.55
+IT.55,Morocco Normal,MAD,1530.948704716667,1,0,Pc,Pricing sheet clean,98,IT.55
+IT.55,Morocco With Stock,MAD,1685.6932094333333,1,0,Pc,Pricing sheet clean,98,IT.55
+IT.56,Morocco Min,MAD,1210.8141994666667,1,0,Pc,Pricing sheet clean,99,IT.56
+IT.56,Morocco Normal,MAD,1289.2141994666667,1,0,Pc,Pricing sheet clean,99,IT.56
+IT.56,Morocco With Stock,MAD,1419.5195989333333,1,0,Pc,Pricing sheet clean,99,IT.56
+IT.57,Morocco Min,MAD,96.86287402325334,1,0,Pc,Pricing sheet clean,100,IT.57
+IT.57,Morocco Normal,MAD,103.13487402325335,1,0,Pc,Pricing sheet clean,100,IT.57
+IT.57,Morocco With Stock,MAD,113.55704404650668,1,0,Pc,Pricing sheet clean,100,IT.57
+IT.58,Morocco Min,MAD,62.052733388286676,1,0,Pc,Pricing sheet clean,101,IT.58
+IT.58,Morocco Normal,MAD,66.070733388286669,1,0,Pc,Pricing sheet clean,101,IT.58
+IT.58,Morocco With Stock,MAD,72.747390776573326,1,0,Pc,Pricing sheet clean,101,IT.58
+IT.59,Morocco Min,MAD,118.05168015368001,1,0,Pc,Pricing sheet clean,102,IT.59
+IT.59,Morocco Normal,MAD,125.69568015368,1,0,Pc,Pricing sheet clean,102,IT.59
+IT.59,Morocco With Stock,MAD,138.39775230736001,1,0,Pc,Pricing sheet clean,102,IT.59
+IT.60,Morocco Min,MAD,30.269605874666667,1,0,Pc,Pricing sheet clean,103,IT.60
+IT.60,Morocco Normal,MAD,32.229605874666667,1,0,Pc,Pricing sheet clean,103,IT.60
+IT.60,Morocco With Stock,MAD,35.486491749333339,1,0,Pc,Pricing sheet clean,103,IT.60
+IT.61,Morocco Min,MAD,24.215681626453339,1,0,Pc,Pricing sheet clean,104,IT.61
+IT.61,Morocco Normal,MAD,25.783681626453337,1,0,Pc,Pricing sheet clean,104,IT.61
+IT.61,Morocco With Stock,MAD,28.38918725290667,1,0,Pc,Pricing sheet clean,104,IT.61
+IT.62,Morocco Min,MAD,37.837013345833334,1,0,Pc,Pricing sheet clean,105,IT.62
+IT.62,Morocco Normal,MAD,40.287013345833337,1,0,Pc,Pricing sheet clean,105,IT.62
+IT.62,Morocco With Stock,MAD,44.358126691666669,1,0,Pc,Pricing sheet clean,105,IT.62
+IT.63,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,106,IT.63
+IT.63,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,106,IT.63
+IT.63,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,106,IT.63
+IT.64,Morocco Min,MAD,802.15753548466682,1,0,Pc,Pricing sheet clean,107,IT.64
+IT.64,Morocco Normal,MAD,854.09753548466676,1,0,Pc,Pricing sheet clean,107,IT.64
+IT.64,Morocco With Stock,MAD,940.41799096933346,1,0,Pc,Pricing sheet clean,107,IT.64
+IT.65,Morocco Min,MAD,908.10488720000012,1,0,Pc,Pricing sheet clean,108,IT.65
+IT.65,Morocco Normal,MAD,966.90488720000008,1,0,Pc,Pricing sheet clean,108,IT.65
+IT.65,Morocco With Stock,MAD,1064.6281744,1,0,Pc,Pricing sheet clean,108,IT.65
+IT.66,Morocco Min,MAD,544.85878339200008,1,0,Pc,Pricing sheet clean,109,IT.66
+IT.66,Morocco Normal,MAD,580.13878339200005,1,0,Pc,Pricing sheet clean,109,IT.66
+IT.66,Morocco With Stock,MAD,638.76860678399999,1,0,Pc,Pricing sheet clean,109,IT.66
+IT.67,Morocco Min,MAD,973.71488720000013,1,0,Pc,Pricing sheet clean,110,IT.67
+IT.67,Morocco Normal,MAD,1032.5148872000002,1,0,Pc,Pricing sheet clean,110,IT.67
+IT.67,Morocco With Stock,MAD,1130.2381743999999,1,0,Pc,Pricing sheet clean,110,IT.67
+IT.68,Morocco Min,MAD,947.1269025178334,1,0,Pc,Pricing sheet clean,111,IT.68
+IT.68,Morocco Normal,MAD,1002.4969025178334,1,0,Pc,Pricing sheet clean,111,IT.68
+IT.68,Morocco With Stock,MAD,1094.5187150356667,1,0,Pc,Pricing sheet clean,111,IT.68
+IT.69,Morocco Min,MAD,9461.1216145833332,1,0,SET,Pricing sheet clean,112,IT.69
+IT.69,Morocco Normal,MAD,10073.621614583333,1,0,SET,Pricing sheet clean,112,IT.69
+IT.69,Morocco With Stock,MAD,11093.268229166666,1,0,SET,Pricing sheet clean,112,IT.69
+IT.70,Morocco Min,MAD,9461.1216145833332,1,0,SET,Pricing sheet clean,113,IT.70
+IT.70,Morocco Normal,MAD,10073.621614583333,1,0,SET,Pricing sheet clean,113,IT.70
+IT.70,Morocco With Stock,MAD,11093.268229166666,1,0,SET,Pricing sheet clean,113,IT.70
+IT.71,Morocco Min,MAD,5751.9148754666676,1,0,SET,Pricing sheet clean,114,IT.71
+IT.71,Morocco Normal,MAD,6124.3148754666672,1,0,SET,Pricing sheet clean,114,IT.71
+IT.71,Morocco With Stock,MAD,6743.8129509333339,1,0,SET,Pricing sheet clean,114,IT.71
+IT.72,Morocco Min,MAD,5751.9148754666676,1,0,SET,Pricing sheet clean,115,IT.72
+IT.72,Morocco Normal,MAD,6124.3148754666672,1,0,SET,Pricing sheet clean,115,IT.72
+IT.72,Morocco With Stock,MAD,6743.8129509333339,1,0,SET,Pricing sheet clean,115,IT.72
+IT.73,Morocco Min,MAD,1135.13651125,1,0,Pc,Pricing sheet clean,116,IT.73
+IT.73,Morocco Normal,MAD,1208.63651125,1,0,Pc,Pricing sheet clean,116,IT.73
+IT.73,Morocco With Stock,MAD,1330.7960224999999,1,0,Pc,Pricing sheet clean,116,IT.73
+IT.74,Morocco Min,MAD,#REF!,1,0,SET,Pricing sheet clean,117,IT.74
+IT.74,Morocco Normal,MAD,#REF!,1,0,SET,Pricing sheet clean,117,IT.74
+IT.74,Morocco With Stock,MAD,#REF!,1,0,SET,Pricing sheet clean,117,IT.74
+IT.75,Morocco Min,MAD,3972.3234583333333,1,0,SET,Pricing sheet clean,118,IT.75
+IT.75,Morocco Normal,MAD,4217.3234583333333,1,0,SET,Pricing sheet clean,118,IT.75
+IT.75,Morocco With Stock,MAD,4624.7319166666666,1,0,SET,Pricing sheet clean,118,IT.75
+IT.76,Morocco Min,MAD,11050.958119133335,1,0,SET,Pricing sheet clean,119,IT.76
+IT.76,Morocco Normal,MAD,11766.358119133336,1,0,SET,Pricing sheet clean,119,IT.76
+IT.76,Morocco With Stock,MAD,12957.673438266669,1,0,SET,Pricing sheet clean,119,IT.76
+IT.77,Morocco Min,MAD,11050.958119133335,1,0,SET,Pricing sheet clean,120,IT.77
+IT.77,Morocco Normal,MAD,11766.358119133336,1,0,SET,Pricing sheet clean,120,IT.77
+IT.77,Morocco With Stock,MAD,12957.673438266669,1,0,SET,Pricing sheet clean,120,IT.77
+IT.78,Morocco Min,MAD,6054.6856533333339,1,0,Pc,Pricing sheet clean,121,IT.78
+IT.78,Morocco Normal,MAD,6446.6856533333339,1,0,Pc,Pricing sheet clean,121,IT.78
+IT.78,Morocco With Stock,MAD,7098.8273066666679,1,0,Pc,Pricing sheet clean,121,IT.78
+IT.79,Morocco Min,MAD,15241.153619999999,1,0,Pc,Pricing sheet clean,122,IT.79
+IT.79,Morocco Normal,MAD,16123.153619999999,1,0,Pc,Pricing sheet clean,122,IT.79
+IT.79,Morocco With Stock,MAD,17592.633239999999,1,0,Pc,Pricing sheet clean,122,IT.79
+IT.80,Morocco Min,MAD,60.539250165333335,1,0,Pc,Pricing sheet clean,123,IT.80
+IT.80,Morocco Normal,MAD,64.459250165333344,1,0,Pc,Pricing sheet clean,123,IT.80
+IT.80,Morocco With Stock,MAD,70.973060330666669,1,0,Pc,Pricing sheet clean,123,IT.80
+IT.81,Morocco Min,MAD,68.874993515217867,1,0,Pc,Pricing sheet clean,124,IT.81
+IT.81,Morocco Normal,MAD,70.469943515217864,1,0,Pc,Pricing sheet clean,124,IT.81
+IT.81,Morocco With Stock,MAD,77.005784630435741,1,0,Pc,Pricing sheet clean,124,IT.81
+IT.82,Morocco Min,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,125,IT.82
+IT.82,Morocco Normal,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,125,IT.82
+IT.82,Morocco With Stock,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,125,IT.82
+IT.83,Morocco Min,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,126,IT.83
+IT.83,Morocco Normal,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,126,IT.83
+IT.83,Morocco With Stock,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,126,IT.83
+IT.84,Morocco Min,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,127,IT.84
+IT.84,Morocco Normal,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,127,IT.84
+IT.84,Morocco With Stock,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,127,IT.84
+IT.85,Morocco Min,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,128,IT.85
+IT.85,Morocco Normal,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,128,IT.85
+IT.85,Morocco With Stock,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,128,IT.85
+IT.86,Morocco Min,MAD,5231.1197378000015,1,0,Pc,Pricing sheet clean,129,IT.86
+IT.86,Morocco Normal,MAD,5554.5197378000012,1,0,Pc,Pricing sheet clean,129,IT.86
+IT.86,Morocco With Stock,MAD,6092.4256756000013,1,0,Pc,Pricing sheet clean,129,IT.86
+IT.87,Morocco Min,MAD,4052.5591012499999,1,0,Pc,Pricing sheet clean,130,IT.87
+IT.87,Morocco Normal,MAD,4273.0591012499999,1,0,Pc,Pricing sheet clean,130,IT.87
+IT.87,Morocco With Stock,MAD,4639.6997025000001,1,0,Pc,Pricing sheet clean,130,IT.87
+IT.88,Morocco Min,MAD,2800.1011151166663,1,0,Pc,Pricing sheet clean,131,IT.88
+IT.88,Morocco Normal,MAD,2981.4011151166665,1,0,Pc,Pricing sheet clean,131,IT.88
+IT.88,Morocco With Stock,MAD,3282.8256302333339,1,0,Pc,Pricing sheet clean,131,IT.88
+IT.89,Morocco Min,MAD,6025.5352812500005,1,0,Pc,Pricing sheet clean,132,IT.89
+IT.89,Morocco Normal,MAD,6393.0352812500005,1,0,Pc,Pricing sheet clean,132,IT.89
+IT.89,Morocco With Stock,MAD,7004.3730625000007,1,0,Pc,Pricing sheet clean,132,IT.89
+IT.90,Morocco Min,MAD,4389.4939148666663,1,0,Pc,Pricing sheet clean,133,IT.90
+IT.90,Morocco Normal,MAD,4673.693914866667,1,0,Pc,Pricing sheet clean,133,IT.90
+IT.90,Morocco With Stock,MAD,5146.3434297333333,1,0,Pc,Pricing sheet clean,133,IT.90
+IT.91,Morocco Min,MAD,10521.000852716668,1,0,Pc,Pricing sheet clean,134,IT.91
+IT.91,Morocco Normal,MAD,11202.100852716667,1,0,Pc,Pricing sheet clean,134,IT.91
+IT.91,Morocco With Stock,MAD,12336.181505433335,1,0,Pc,Pricing sheet clean,134,IT.91
+IT.92,Morocco Min,MAD,12398.616734322002,1,0,Pc,Pricing sheet clean,135,IT.92
+IT.92,Morocco Normal,MAD,13201.236734322003,1,0,Pc,Pricing sheet clean,135,IT.92
+IT.92,Morocco With Stock,MAD,14538.144628644,1,0,Pc,Pricing sheet clean,135,IT.92
+IT.93,Morocco Min,MAD,13909.144750703124,1,0,Pc,Pricing sheet clean,136,IT.93
+IT.93,Morocco Normal,MAD,14809.519750703124,1,0,Pc,Pricing sheet clean,136,IT.93
+IT.93,Morocco With Stock,MAD,16309.696251406251,1,0,Pc,Pricing sheet clean,136,IT.93
+IT.94,Morocco Min,MAD,16124.001448449999,1,0,Pc,Pricing sheet clean,137,IT.94
+IT.94,Morocco Normal,MAD,17167.70144845,1,0,Pc,Pricing sheet clean,137,IT.94
+IT.94,Morocco With Stock,MAD,18907.4294969,1,0,Pc,Pricing sheet clean,137,IT.94
+IT.95,Morocco Min,MAD,#VALUE!,1,0,SET,Pricing sheet clean,138,IT.95
+IT.95,Morocco Normal,MAD,#VALUE!,1,0,SET,Pricing sheet clean,138,IT.95
+IT.95,Morocco With Stock,MAD,#VALUE!,1,0,SET,Pricing sheet clean,138,IT.95
+IT.96,Morocco Min,MAD,#VALUE!,1,0,SET,Pricing sheet clean,139,IT.96
+IT.96,Morocco Normal,MAD,#VALUE!,1,0,SET,Pricing sheet clean,139,IT.96
+IT.96,Morocco With Stock,MAD,#VALUE!,1,0,SET,Pricing sheet clean,139,IT.96
+IT.97,Morocco Min,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,140,IT.97
+IT.97,Morocco Normal,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,140,IT.97
+IT.97,Morocco With Stock,MAD,#VALUE!,1,0,Pc,Pricing sheet clean,140,IT.97
+IT.98,Morocco Min,MAD,24480.703099239399,1,0,Pc,Pricing sheet clean,141,IT.98
+IT.98,Morocco Normal,MAD,26065.051740289069,1,0,Pc,Pricing sheet clean,141,IT.98
+IT.98,Morocco With Stock,MAD,28710.261868581918,1,0,Pc,Pricing sheet clean,141,IT.98
+IT.99,Morocco Min,MAD,24480.703099239399,1,0,Pc,Pricing sheet clean,142,IT.99
+IT.99,Morocco Normal,MAD,26065.051740289069,1,0,Pc,Pricing sheet clean,142,IT.99
+IT.99,Morocco With Stock,MAD,28710.261868581918,1,0,Pc,Pricing sheet clean,142,IT.99
+IT.100,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,143,IT.100
+IT.100,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,143,IT.100
+IT.100,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,143,IT.100
+IT.101,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,144,IT.101
+IT.101,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,144,IT.101
+IT.101,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,144,IT.101
+IT.102,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,145,IT.102
+IT.102,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,145,IT.102
+IT.102,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,145,IT.102
+IT.103,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,146,IT.103
+IT.103,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,146,IT.103
+IT.103,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,146,IT.103
+IT.104,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,147,IT.104
+IT.104,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,147,IT.104
+IT.104,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,147,IT.104
+IT.105,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,148,IT.105
+IT.105,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,148,IT.105
+IT.105,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,148,IT.105
+IT.106,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,149,IT.106
+IT.106,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,149,IT.106
+IT.106,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,149,IT.106
+IT.107,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,150,IT.107
+IT.107,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,150,IT.107
+IT.107,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,150,IT.107
+IT.108,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,151,IT.108
+IT.108,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,151,IT.108
+IT.108,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,151,IT.108
+IT.109,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,152,IT.109
+IT.109,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,152,IT.109
+IT.109,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,152,IT.109
+IT.110,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,153,IT.110
+IT.110,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,153,IT.110
+IT.110,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,153,IT.110
+IT.111,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,154,IT.111
+IT.111,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,154,IT.111
+IT.111,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,154,IT.111
+IT.112,Morocco Min,MAD,29033.022956841141,1,0,Pc,Pricing sheet clean,155,IT.112
+IT.112,Morocco Normal,MAD,30911.810835629021,1,0,Pc,Pricing sheet clean,155,IT.112
+IT.112,Morocco With Stock,MAD,34051.379247015611,1,0,Pc,Pricing sheet clean,155,IT.112
+IT.113,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,156,IT.113
+IT.113,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,156,IT.113
+IT.113,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,156,IT.113
+IT.114,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,157,IT.114
+IT.114,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,157,IT.114
+IT.114,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,157,IT.114
+IT.115,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,158,IT.115
+IT.115,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,158,IT.115
+IT.115,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,158,IT.115
+IT.116,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,159,IT.116
+IT.116,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,159,IT.116
+IT.116,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,159,IT.116
+IT.117,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,160,IT.117
+IT.117,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,160,IT.117
+IT.117,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,160,IT.117
+IT.118,Morocco Min,MAD,21244.494791666668,1,0,Pc,Pricing sheet clean,161,IT.118
+IT.118,Morocco Normal,MAD,22619.494791666668,1,0,Pc,Pricing sheet clean,161,IT.118
+IT.118,Morocco With Stock,MAD,24913.739583333328,1,0,Pc,Pricing sheet clean,161,IT.118
+IT.119,Morocco Min,MAD,21244.494791666668,1,0,Pc,Pricing sheet clean,162,IT.119
+IT.119,Morocco Normal,MAD,22619.494791666668,1,0,Pc,Pricing sheet clean,162,IT.119
+IT.119,Morocco With Stock,MAD,24913.739583333328,1,0,Pc,Pricing sheet clean,162,IT.119
+IT.120,Morocco Min,MAD,24142.936197916668,1,0,Pc,Pricing sheet clean,163,IT.120
+IT.120,Morocco Normal,MAD,25705.436197916668,1,0,Pc,Pricing sheet clean,163,IT.120
+IT.120,Morocco With Stock,MAD,28313.997395833336,1,0,Pc,Pricing sheet clean,163,IT.120
+IT.121,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,164,IT.121
+IT.121,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,164,IT.121
+IT.121,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,164,IT.121
+IT.122,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,165,IT.122
+IT.122,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,165,IT.122
+IT.122,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,165,IT.122
+IT.123,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,166,IT.123
+IT.123,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,166,IT.123
+IT.123,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,166,IT.123
+IT.124,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,167,IT.124
+IT.124,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,167,IT.124
+IT.124,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,167,IT.124
+IT.125,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,168,IT.125
+IT.125,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,168,IT.125
+IT.125,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,168,IT.125
+IT.126,Morocco Min,MAD,28.124643558479995,1,0,Pc,Pricing sheet clean,169,IT.126
+IT.126,Morocco Normal,MAD,29.006643558479997,1,0,Pc,Pricing sheet clean,169,IT.126
+IT.126,Morocco With Stock,MAD,31.937839116959999,1,0,Pc,Pricing sheet clean,169,IT.126
+IT.127,Morocco Min,MAD,28.124643558479995,1,0,Pc,Pricing sheet clean,170,IT.127
+IT.127,Morocco Normal,MAD,29.006643558479997,1,0,Pc,Pricing sheet clean,170,IT.127
+IT.127,Morocco With Stock,MAD,31.937839116959999,1,0,Pc,Pricing sheet clean,170,IT.127
+IT.128,Morocco Min,MAD,31.249605874666667,1,0,SET,Pricing sheet clean,171,IT.128
+IT.128,Morocco Normal,MAD,32.229605874666667,1,0,SET,Pricing sheet clean,171,IT.128
+IT.128,Morocco With Stock,MAD,35.486491749333339,1,0,SET,Pricing sheet clean,171,IT.128
+IT.129,Morocco Min,MAD,6304.7927803813336,1,0,Pc,Pricing sheet clean,172,IT.129
+IT.129,Morocco Normal,MAD,6491.9727803813339,1,0,Pc,Pricing sheet clean,172,IT.129
+IT.129,Morocco With Stock,MAD,7114.7350407626673,1,0,Pc,Pricing sheet clean,172,IT.129
+IT.130,Morocco Min,MAD,4687.8701799999999,1,0,Pc,Pricing sheet clean,173,IT.130
+IT.130,Morocco Normal,MAD,4834.8701799999999,1,0,Pc,Pricing sheet clean,173,IT.130
+IT.130,Morocco With Stock,MAD,5323.8323600000003,1,0,Pc,Pricing sheet clean,173,IT.130
+IT.131,Morocco Min,MAD,11252.340556800002,1,0,Pc,Pricing sheet clean,174,IT.131
+IT.131,Morocco Normal,MAD,11605.140556800001,1,0,Pc,Pricing sheet clean,174,IT.131
+IT.131,Morocco With Stock,MAD,12780.101913600003,1,0,Pc,Pricing sheet clean,174,IT.131
+IT.132,Morocco Min,MAD,390.62283458333337,1,0,Pc,Pricing sheet clean,175,IT.132
+IT.132,Morocco Normal,MAD,402.87283458333337,1,0,Pc,Pricing sheet clean,175,IT.132
+IT.132,Morocco With Stock,MAD,443.58666916666675,1,0,Pc,Pricing sheet clean,175,IT.132
+IT.133,Morocco Min,MAD,5031.5895093457584,1,0,Pc,Pricing sheet clean,176,IT.133
+IT.133,Morocco Normal,MAD,5170.1338724984016,1,0,Pc,Pricing sheet clean,176,IT.133
+IT.133,Morocco With Stock,MAD,5630.9468635202493,1,0,Pc,Pricing sheet clean,176,IT.133
+IT.134,Morocco Min,MAD,4083.6941375628071,1,0,Pc,Pricing sheet clean,177,IT.134
+IT.134,Morocco Normal,MAD,4189.647878833176,1,0,Pc,Pricing sheet clean,177,IT.134
+IT.134,Morocco With Stock,MAD,4541.9920028941533,1,0,Pc,Pricing sheet clean,177,IT.134
+IT.135,Morocco Min,MAD,7329.4325678069117,1,0,Pc,Pricing sheet clean,178,IT.135
+IT.135,Morocco Normal,MAD,7559.2534856652419,1,0,Pc,Pricing sheet clean,178,IT.135
+IT.135,Morocco With Stock,MAD,8324.0813557668007,1,0,Pc,Pricing sheet clean,178,IT.135
+IT.136,Morocco Min,MAD,6476.2274949258908,1,0,Pc,Pricing sheet clean,179,IT.136
+IT.136,Morocco Normal,MAD,6666.6552983538841,1,0,Pc,Pricing sheet clean,179,IT.136
+IT.136,Morocco With Stock,MAD,7300.2356200459508,1,0,Pc,Pricing sheet clean,179,IT.136
+IT.137,Morocco Min,MAD,9202.0207803091798,1,0,Pc,Pricing sheet clean,180,IT.137
+IT.137,Morocco Normal,MAD,9490.5477552000793,1,0,Pc,Pricing sheet clean,180,IT.137
+IT.137,Morocco With Stock,MAD,10451.084024725627,1,0,Pc,Pricing sheet clean,180,IT.137
+IT.138,Morocco Min,MAD,840.00340052435331,1,0,Pc,Pricing sheet clean,181,IT.138
+IT.138,Morocco Normal,MAD,866.34582035864594,1,0,Pc,Pricing sheet clean,181,IT.138
+IT.138,Morocco With Stock,MAD,953.90434073626625,1,0,Pc,Pricing sheet clean,181,IT.138
+IT.139,Morocco Min,MAD,6413.9447842,1,0,Pc,Pricing sheet clean,182,IT.139
+IT.139,Morocco Normal,MAD,6605.0447842000003,1,0,Pc,Pricing sheet clean,182,IT.139
+IT.139,Morocco With Stock,MAD,7240.8641684000013,1,0,Pc,Pricing sheet clean,182,IT.139
+IT.140,Morocco Min,MAD,#REF!,1,0,Pc,Pricing sheet clean,183,IT.140
+IT.140,Morocco Normal,MAD,#REF!,1,0,Pc,Pricing sheet clean,183,IT.140
+IT.140,Morocco With Stock,MAD,#REF!,1,0,Pc,Pricing sheet clean,183,IT.140
+IT.141,Morocco Min,MAD,11721.296125000003,1,0,Pc,Pricing sheet clean,184,IT.141
+IT.141,Morocco Normal,MAD,12088.796125000003,1,0,Pc,Pricing sheet clean,184,IT.141
+IT.141,Morocco With Stock,MAD,13312.822250000001,1,0,Pc,Pricing sheet clean,184,IT.141
+IT.142,Morocco Min,MAD,1218.763095368,1,0,Pc,Pricing sheet clean,185,IT.142
+IT.142,Morocco Normal,MAD,1256.983095368,1,0,Pc,Pricing sheet clean,185,IT.142
+IT.142,Morocco With Stock,MAD,1384.0301107360001,1,0,Pc,Pricing sheet clean,185,IT.142
+IT.143,Morocco Min,MAD,4062.770881866667,1,0,Pc,Pricing sheet clean,217,IT.143
+IT.143,Morocco Normal,MAD,4190.1708818666666,1,0,Pc,Pricing sheet clean,217,IT.143
+IT.143,Morocco With Stock,MAD,4613.8881637333334,1,0,Pc,Pricing sheet clean,217,IT.143
+IT.144,Morocco Min,MAD,281.24783584800002,1,0,Pc,Pricing sheet clean,218,IT.144
+IT.144,Morocco Normal,MAD,290.06783584800002,1,0,Pc,Pricing sheet clean,218,IT.144
+IT.144,Morocco With Stock,MAD,319.38119169599997,1,0,Pc,Pricing sheet clean,218,IT.144
+IT.145,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,219,IT.145
+IT.145,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,219,IT.145
+IT.145,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,219,IT.145
+IT.146,Morocco Min,MAD,0,1,0,Pc,Pricing sheet clean,220,IT.146
+IT.146,Morocco Normal,MAD,0,1,0,Pc,Pricing sheet clean,220,IT.146
+IT.146,Morocco With Stock,MAD,0,1,0,Pc,Pricing sheet clean,220,IT.146
+IT.1,Turkey Source Cost,USD,1500,0,1,SET,Pricing Turkey,3,IT.1
+IT.1-1,Turkey Source Cost,USD,950,0,1,Pc,Pricing Turkey,4,IT.1-1
+IT.1-2,Turkey Source Cost,USD,1200,0,1,Pc,Pricing Turkey,5,IT.1-2
+IT.1-3,Turkey Source Cost,USD,1020,0,1,Pc,Pricing Turkey,6,IT.1-3
+IT.1-4,Turkey Source Cost,USD,1320,0,1,Pc,Pricing Turkey,7,IT.1-4
+IT.1-5,Turkey Source Cost,USD,1090,0,1,Pc,Pricing Turkey,8,IT.1-5
+IT.1-6,Turkey Source Cost,USD,1390,0,1,Pc,Pricing Turkey,9,IT.1-6
+IT.1-13,Turkey Source Cost,USD,1340,0,1,SET,Pricing Turkey,10,IT.1-13
+IT.1-14,Turkey Source Cost,USD,1740,0,1,SET,Pricing Turkey,11,IT.1-14
+IT.1-17,Turkey Source Cost,USD,1600,0,1,Pc,Pricing Turkey,12,IT.1-17
+IT.1-18,Turkey Source Cost,USD,1700,0,1,Pc,Pricing Turkey,13,IT.1-18
+IT.1-19,Turkey Source Cost,USD,1850,0,1,Pc,Pricing Turkey,14,IT.1-19
+IT.1-20,Turkey Source Cost,USD,1160,0,1,Pc,Pricing Turkey,15,IT.1-20
+IT.1-21,Turkey Source Cost,USD,1460,0,1,Pc,Pricing Turkey,16,IT.1-21
+IT.1-22,Turkey Source Cost,USD,2050,0,1,Pc,Pricing Turkey,17,IT.1-22
+IT.1-23,Turkey Source Cost,USD,2300,0,1,Pc,Pricing Turkey,18,IT.1-23
+IT.1-7,Turkey Source Cost,USD,450,0,1,SET,Pricing Turkey,19,IT.1-7
+IT.1-8,Turkey Source Cost,USD,700,0,1,SET,Pricing Turkey,20,IT.1-8
+IT.1-9,Turkey Source Cost,USD,470,0,1,SET,Pricing Turkey,21,IT.1-9
+IT.1-10,Turkey Source Cost,USD,720,0,1,SET,Pricing Turkey,22,IT.1-10
+IT.1-11,Turkey Source Cost,USD,490,0,1,SET,Pricing Turkey,23,IT.1-11
+IT.1-12,Turkey Source Cost,USD,740,0,1,SET,Pricing Turkey,24,IT.1-12
+IT.1-15,Turkey Source Cost,USD,590,0,1,SET,Pricing Turkey,25,IT.1-15
+IT.1-16,Turkey Source Cost,USD,940,0,1,SET,Pricing Turkey,26,IT.1-16
+IT.1-17-ARCADE,Turkey Source Cost,USD,1000,0,1,SET,Pricing Turkey,27,IT.1-17
+IT.1-18-ARCADE,Turkey Source Cost,USD,1200,0,1,SET,Pricing Turkey,28,IT.1-18
+IT.2,Turkey Source Cost,USD,252.74359827070171,0,1,Pc,Pricing Turkey,37,IT.2
+IT.3,Turkey Source Cost,USD,186.2321250415697,0,1,Pc,Pricing Turkey,38,IT.3
+IT.4,Turkey Source Cost,USD,419.0222813435318,0,1,Pc,Pricing Turkey,39,IT.4
+IT.5,Turkey Source Cost,USD,110,0,1,Pc,Pricing Turkey,40,IT.5
+IT.6,Turkey Source Cost,USD,110,0,1,Pc,Pricing Turkey,41,IT.6
+IT.7,Turkey Source Cost,USD,18,0,1,Pc,Pricing Turkey,42,IT.7
+IT.8,Turkey Source Cost,USD,44,0,1,Pc,Pricing Turkey,43,IT.8
+IT.9,Turkey Source Cost,USD,6.8,0,1,Pc,Pricing Turkey,44,IT.9
+IT.10,Turkey Source Cost,USD,1020,0,1,Pc,Pricing Turkey,45,IT.10
+IT.11,Turkey Source Cost,USD,1079,0,1,Pc,Pricing Turkey,46,IT.11
+IT.12,Turkey Source Cost,USD,1000,0,1,Pc,Pricing Turkey,47,IT.12
+IT.13,Turkey Source Cost,USD,1070,0,1,Pc,Pricing Turkey,48,IT.13
+IT.14,Turkey Source Cost,USD,0.6,0,1,Pc,Pricing Turkey,49,IT.14
+IT.15,Turkey Source Cost,USD,0.9,0,1,Pc,Pricing Turkey,50,IT.15
+IT.16,Turkey Source Cost,USD,0.28000000000000003,0,1,Pc,Pricing Turkey,51,IT.16
+IT.17,Turkey Source Cost,USD,0.37,0,1,Pc,Pricing Turkey,52,IT.17
+IT.18,Turkey Source Cost,USD,35,0,1,SET,Pricing Turkey,53,IT.18
+IT.19,Turkey Source Cost,USD,0.47,0,1,Pc,Pricing Turkey,54,IT.19
+IT.20,Turkey Source Cost,USD,50,0,1,SET,Pricing Turkey,55,IT.20
+IT.21,Turkey Source Cost,USD,7.0000000000000007E-2,0,1,Pc,Pricing Turkey,56,IT.21
+IT.22,Turkey Source Cost,USD,0.18,0,1,Pc,Pricing Turkey,57,IT.22
+IT.23,Turkey Source Cost,USD,0.2,0,1,Pc,Pricing Turkey,58,IT.23
+IT.24,Turkey Source Cost,USD,0.3,0,1,Pc,Pricing Turkey,59,IT.24
+IT.25,Turkey Source Cost,USD,0.21,0,1,Pc,Pricing Turkey,60,IT.25
+IT.26,Turkey Source Cost,USD,17.399999999999999,0,1,Pc,Pricing Turkey,61,IT.26
+IT.27,Turkey Source Cost,USD,34.6,0,1,Pc,Pricing Turkey,62,IT.27
+IT.28,Turkey Source Cost,USD,52,0,1,SET,Pricing Turkey,63,IT.28
+IT.29,Turkey Source Cost,USD,65,0,1,Pc,Pricing Turkey,64,IT.29
+IT.30,Turkey Source Cost,USD,0.5,0,1,SET,Pricing Turkey,65,IT.30
+IT.31,Turkey Source Cost,USD,0.92,0,1,M,Pricing Turkey,66,IT.31
+IT.32,Turkey Source Cost,USD,0.87,0,1,M,Pricing Turkey,67,IT.32
+IT.33,Turkey Source Cost,USD,0.28000000000000003,0,1,M,Pricing Turkey,68,IT.33
+IT.34,Turkey Source Cost,USD,2.15,0,1,Pc,Pricing Turkey,69,IT.34
+IT.35,Turkey Source Cost,USD,2.15,0,1,Pc,Pricing Turkey,70,IT.35
+IT.36,Turkey Source Cost,USD,0.2,0,1,Pc,Pricing Turkey,71,IT.36
+IT.37,Turkey Source Cost,USD,0.15,0,1,Pc,Pricing Turkey,72,IT.37
+IT.38,Turkey Source Cost,USD,0.1,0,1,Pc,Pricing Turkey,73,IT.38
+IT.39,Turkey Source Cost,USD,6,0,1,Pc,Pricing Turkey,74,IT.39
+IT.40,Turkey Source Cost,USD,0.25,0,1,Pc,Pricing Turkey,75,IT.40
+IT.41,Turkey Source Cost,USD,1,0,1,Pc,Pricing Turkey,76,IT.41
+IT.42,Turkey Source Cost,USD,6,0,1,Pc,Pricing Turkey,77,IT.42
+IT.43,Turkey Source Cost,USD,3.5,0,1,Pc,Pricing Turkey,78,IT.43
+IT.44,Turkey Source Cost,USD,0.5,0,1,Pc,Pricing Turkey,79,IT.44
+IT.45,Turkey Source Cost,USD,60,0,1,Pc,Pricing Turkey,80,IT.45
+IT.46,Turkey Source Cost,USD,33,0,1,SET,Pricing Turkey,81,IT.46
+IT.47,Turkey Source Cost,USD,2.3E-2,0,1,M,Pricing Turkey,82,IT.47
+IT.48,Turkey Source Cost,USD,0.107,0,1,M,Pricing Turkey,83,IT.48
+IT.49,Turkey Source Cost,USD,0.122,0,1,M,Pricing Turkey,84,IT.49
+IT.50,Turkey Source Cost,USD,0.13700000000000001,0,1,M,Pricing Turkey,85,IT.50
+IT.51,Turkey Source Cost,USD,1.5432999999999999,0,1,M,Pricing Turkey,86,IT.51
+IT.52,Turkey Source Cost,USD,0.8,0,1,M,Pricing Turkey,87,IT.52
+IT.53,Turkey Source Cost,USD,0.4,0,1,M,Pricing Turkey,88,IT.53
+IT.54,Turkey Source Cost,USD,0.09,0,1,M,Pricing Turkey,89,IT.54
+IT.55,Turkey Source Cost,USD,95,0,1,Pc,Pricing Turkey,90,IT.55
+IT.56,Turkey Source Cost,USD,80,0,1,Pc,Pricing Turkey,91,IT.56
+IT.57,Turkey Source Cost,USD,6.4,0,1,Pc,Pricing Turkey,92,IT.57
+IT.58,Turkey Source Cost,USD,4.0999999999999996,0,1,Pc,Pricing Turkey,93,IT.58
+IT.59,Turkey Source Cost,USD,7.8,0,1,Pc,Pricing Turkey,94,IT.59
+IT.60,Turkey Source Cost,USD,2,0,1,Pc,Pricing Turkey,95,IT.60
+IT.61,Turkey Source Cost,USD,1.6,0,1,Pc,Pricing Turkey,96,IT.61
+IT.62,Turkey Source Cost,USD,2.5,0,1,Pc,Pricing Turkey,97,IT.62
+IT.63,Turkey Source Cost,USD,0,0,1,Pc,Pricing Turkey,98,IT.63
+IT.64,Turkey Source Cost,USD,53,0,1,Pc,Pricing Turkey,99,IT.64
+IT.65,Turkey Source Cost,USD,60,0,1,Pc,Pricing Turkey,100,IT.65
+IT.66,Turkey Source Cost,USD,36,0,1,Pc,Pricing Turkey,101,IT.66
+IT.67,Turkey Source Cost,USD,60,0,1,Pc,Pricing Turkey,102,IT.67
+IT.68,Turkey Source Cost,USD,56.5,0,1,Pc,Pricing Turkey,103,IT.68
+IT.69,Turkey Source Cost,USD,625,0,1,SET,Pricing Turkey,104,IT.69
+IT.70,Turkey Source Cost,USD,625,0,1,SET,Pricing Turkey,105,IT.70
+IT.71,Turkey Source Cost,USD,380,0,1,SET,Pricing Turkey,106,IT.71
+IT.72,Turkey Source Cost,USD,380,0,1,SET,Pricing Turkey,107,IT.72
+IT.73,Turkey Source Cost,USD,75,0,1,Pc,Pricing Turkey,108,IT.73
+IT.74,Turkey Source Cost,USD,55,0,1,SET,Pricing Turkey,109,IT.74
+IT.75,Turkey Source Cost,USD,250,0,1,SET,Pricing Turkey,110,IT.75
+IT.76,Turkey Source Cost,USD,730,0,1,SET,Pricing Turkey,111,IT.76
+IT.77,Turkey Source Cost,USD,730,0,1,SET,Pricing Turkey,112,IT.77
+IT.78,Turkey Source Cost,USD,400,0,1,Pc,Pricing Turkey,113,IT.78
+IT.79,Turkey Source Cost,USD,900,0,1,Pc,Pricing Turkey,114,IT.79
+IT.80,Turkey Source Cost,USD,4,0,1,Pc,Pricing Turkey,115,IT.80
+IT.81,Turkey Source Cost,USD,4.34,0,1,Pc,Pricing Turkey,116,IT.81
+IT.82,Turkey Source Cost,USD,-,0,1,Pc,Pricing Turkey,117,IT.82
+IT.83,Turkey Source Cost,USD,-,0,1,Pc,Pricing Turkey,118,IT.83
+IT.84,Turkey Source Cost,USD,-,0,1,Pc,Pricing Turkey,119,IT.84
+IT.85,Turkey Source Cost,USD,-,0,1,Pc,Pricing Turkey,120,IT.85
+IT.86,Turkey Source Cost,USD,330,0,1,Pc,Pricing Turkey,121,IT.86
+IT.87,Turkey Source Cost,USD,225,0,1,Pc,Pricing Turkey,122,IT.87
+IT.88,Turkey Source Cost,USD,185,0,1,Pc,Pricing Turkey,123,IT.88
+IT.89,Turkey Source Cost,USD,375,0,1,Pc,Pricing Turkey,124,IT.89
+IT.90,Turkey Source Cost,USD,290,0,1,Pc,Pricing Turkey,125,IT.90
+IT.91,Turkey Source Cost,USD,695,0,1,Pc,Pricing Turkey,126,IT.91
+IT.92,Turkey Source Cost,USD,819,0,1,Pc,Pricing Turkey,127,IT.92
+IT.93,Turkey Source Cost,USD,918.75,0,1,Pc,Pricing Turkey,128,IT.93
+IT.94,Turkey Source Cost,USD,1065,0,1,Pc,Pricing Turkey,129,IT.94
+IT.95,Turkey Source Cost,USD,-,0,1,SET,Pricing Turkey,130,IT.95
+IT.96,Turkey Source Cost,USD,-,0,1,SET,Pricing Turkey,131,IT.96
+IT.97,Turkey Source Cost,USD,-,0,1,Pc,Pricing Turkey,132,IT.97
+IT.98,Turkey Source Cost,USD,1616.6822867853775,0,1,Pc,Pricing Turkey,133,IT.98
+IT.99,Turkey Source Cost,USD,1616.6822867853775,0,1,Pc,Pricing Turkey,134,IT.99
+IT.112,Turkey Source Cost,USD,1917.1304885590598,0,1,Pc,Pricing Turkey,147,IT.112
+IT.118,Turkey Source Cost,USD,1403.0612244897957,0,1,Pc,Pricing Turkey,153,IT.118
+IT.119,Turkey Source Cost,USD,1403.0612244897957,0,1,Pc,Pricing Turkey,154,IT.119
+IT.120,Turkey Source Cost,USD,1594.3877551020407,0,1,Pc,Pricing Turkey,155,IT.120
+IT.126,Turkey Source Cost,USD,1.8,0,1,Pc,Pricing Turkey,161,IT.126
+IT.127,Turkey Source Cost,USD,1.8,0,1,Pc,Pricing Turkey,162,IT.127
+IT.128,Turkey Source Cost,USD,2,0,1,SET,Pricing Turkey,163,IT.128
+IT.129,Turkey Source Cost,USD,382,0,1,Pc,Pricing Turkey,164,IT.129
+IT.130,Turkey Source Cost,USD,300,0,1,Pc,Pricing Turkey,165,IT.130
+IT.131,Turkey Source Cost,USD,720,0,1,Pc,Pricing Turkey,166,IT.131
+IT.132,Turkey Source Cost,USD,25,0,1,Pc,Pricing Turkey,167,IT.132
+IT.133,Turkey Source Cost,USD,282.74359827070168,0,1,Pc,Pricing Turkey,168,IT.133
+IT.134,Turkey Source Cost,USD,216.2321250415697,0,1,Pc,Pricing Turkey,169,IT.134
+IT.135,Turkey Source Cost,USD,469.0222813435318,0,1,Pc,Pricing Turkey,170,IT.135
+IT.136,Turkey Source Cost,USD,388.62817026121064,0,1,Pc,Pricing Turkey,171,IT.136
+IT.137,Turkey Source Cost,USD,588.83056100183421,0,1,Pc,Pricing Turkey,172,IT.137
+IT.138,Turkey Source Cost,USD,53.760040478148127,0,1,Pc,Pricing Turkey,173,IT.138
+IT.139,Turkey Source Cost,USD,390,0,1,Pc,Pricing Turkey,174,IT.139
+IT.140,Turkey Source Cost,USD,305,0,1,Pc,Pricing Turkey,175,IT.140
+IT.141,Turkey Source Cost,USD,750,0,1,Pc,Pricing Turkey,176,IT.141
+IT.142,Turkey Source Cost,USD,78,0,1,Pc,Pricing Turkey,177,IT.142
+IT.143,Turkey Source Cost,USD,260,0,1,Pc,Pricing Turkey,209,IT.143
+IT.144,Turkey Source Cost,USD,18,0,1,Pc,Pricing Turkey,210,IT.144

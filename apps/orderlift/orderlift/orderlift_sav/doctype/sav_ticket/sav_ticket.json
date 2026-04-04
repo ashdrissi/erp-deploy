@@ -1,0 +1,278 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-04-01 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "customer",
+    "contact",
+    "reported_via",
+    "column_break_1",
+    "status",
+    "priority",
+    "sla_breach",
+    "section_break_details",
+    "item_concerned",
+    "installation_project",
+    "anomaly_description",
+    "section_break_assignment",
+    "assigned_technician",
+    "intervention_date",
+    "column_break_2",
+    "closed_by",
+    "closure_date",
+    "section_break_resolution",
+    "resolution_report",
+    "section_break_notes",
+    "manager_comment",
+    "amended_from"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Série",
+      "options": "SAV-.YYYY.-.#####",
+      "default": "SAV-.YYYY.-.#####",
+      "reqd": 1,
+      "set_only_once": 1,
+      "no_copy": 1,
+      "print_hide": 1
+    },
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "label": "Client",
+      "options": "Customer",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1,
+      "bold": 1
+    },
+    {
+      "fieldname": "contact",
+      "fieldtype": "Link",
+      "label": "Contact",
+      "options": "Contact"
+    },
+    {
+      "fieldname": "reported_via",
+      "fieldtype": "Select",
+      "label": "Signalé via",
+      "options": "\nAppel\nPortail\nEmail\nWhatsApp",
+      "default": "Appel"
+    },
+    {
+      "fieldname": "column_break_1",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Statut",
+      "options": "Open\nAssigned\nIn Progress\nResolved\nClosed",
+      "default": "Open",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "priority",
+      "fieldtype": "Select",
+      "label": "Priorité",
+      "options": "Low\nMedium\nHigh\nCritical",
+      "default": "Medium",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "sla_breach",
+      "fieldtype": "Check",
+      "label": "Dépassement SLA",
+      "read_only": 1,
+      "default": 0
+    },
+    {
+      "fieldname": "section_break_details",
+      "fieldtype": "Section Break",
+      "label": "Détails de l'anomalie"
+    },
+    {
+      "fieldname": "item_concerned",
+      "fieldtype": "Link",
+      "label": "Article concerné",
+      "options": "Item"
+    },
+    {
+      "fieldname": "installation_project",
+      "fieldtype": "Link",
+      "label": "Projet d'installation",
+      "options": "Project"
+    },
+    {
+      "fieldname": "anomaly_description",
+      "fieldtype": "Text Editor",
+      "label": "Description de l'anomalie",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_break_assignment",
+      "fieldtype": "Section Break",
+      "label": "Affectation"
+    },
+    {
+      "fieldname": "assigned_technician",
+      "fieldtype": "Link",
+      "label": "Technicien assigné",
+      "options": "User",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "intervention_date",
+      "fieldtype": "Date",
+      "label": "Date d'intervention"
+    },
+    {
+      "fieldname": "column_break_2",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "closed_by",
+      "fieldtype": "Link",
+      "label": "Clôturé par",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "closure_date",
+      "fieldtype": "Datetime",
+      "label": "Date de clôture",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "section_break_resolution",
+      "fieldtype": "Section Break",
+      "label": "Rapport de résolution",
+      "depends_on": "eval:['Resolved','Closed'].includes(doc.status)"
+    },
+    {
+      "fieldname": "resolution_report",
+      "fieldtype": "Text Editor",
+      "label": "Rapport de résolution",
+      "mandatory_depends_on": "eval:['Resolved','Closed'].includes(doc.status)"
+    },
+    {
+      "fieldname": "section_break_notes",
+      "fieldtype": "Section Break",
+      "label": "Notes du responsable",
+      "collapsible": 1
+    },
+    {
+      "fieldname": "manager_comment",
+      "fieldtype": "Small Text",
+      "label": "Commentaire responsable",
+      "description": "Renseigné lors d'un rejet de clôture"
+    },
+    {
+      "fieldname": "amended_from",
+      "fieldtype": "Link",
+      "label": "Amended From",
+      "options": "SAV Ticket",
+      "no_copy": 1,
+      "read_only": 1,
+      "print_hide": 1,
+      "hidden": 1
+    }
+  ],
+  "is_submittable": 0,
+  "links": [],
+  "modified": "2026-04-01 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift SAV",
+  "name": "SAV Ticket",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "share": 1,
+      "export": 1,
+      "import": 1
+    },
+    {
+      "role": "Orderlift Technician",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Orderlift Accountant",
+      "read": 1,
+      "report": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "report": 1
+    }
+  ],
+  "search_fields": "customer,status,priority,assigned_technician",
+  "show_name_in_global_search": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [
+    {
+      "color": "Orange",
+      "title": "Open"
+    },
+    {
+      "color": "Blue",
+      "title": "Assigned"
+    },
+    {
+      "color": "Yellow",
+      "title": "In Progress"
+    },
+    {
+      "color": "Purple",
+      "title": "Resolved"
+    },
+    {
+      "color": "Green",
+      "title": "Closed"
+    }
+  ],
+  "title_field": "customer",
+  "track_changes": 1
+}

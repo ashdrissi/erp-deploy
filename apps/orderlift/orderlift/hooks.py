@@ -87,6 +87,10 @@ doc_events = {
     "Customer": {
         "before_save": "orderlift.sales.utils.customer_tier.sync_customer_tier_mode",
     },
+    "SAV Ticket": {
+        # Notify assigned technician when ticket status changes to Assigned
+        "on_update": "orderlift.orderlift_sav.doctype.sav_ticket.sav_ticket.on_status_change",
+    },
 }
 
 doctype_js = {
@@ -95,6 +99,7 @@ doctype_js = {
     "Pricing Sheet": "public/js/pricing_sheet_form_20260226_10.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
+    "SAV Ticket": "public/js/sav_ticket_v2.js",
 }
 
 # ---------------------------------------------------------
@@ -141,6 +146,7 @@ jinja = {
     "methods": [
         "orderlift.utils.jinja_helpers.format_currency_fr",
         "orderlift.utils.jinja_helpers.get_company_address",
+        "orderlift.utils.jinja_helpers.get_company_info",
     ]
 }
 
