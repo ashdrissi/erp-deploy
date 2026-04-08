@@ -127,7 +127,7 @@ function _add_sig_buttons(frm) {
     if (frm.doc.custom_latitude && frm.doc.custom_longitude) {
         frm.add_custom_button(__("Open in Map"), () => {
             window.open(
-                `/project-map?project=${encodeURIComponent(frm.doc.name)}`,
+                `/app/project-map?project=${encodeURIComponent(frm.doc.name)}`,
                 "_blank"
             );
         }, __("SIG"));

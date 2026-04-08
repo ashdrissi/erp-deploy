@@ -17,11 +17,10 @@
   --header-h:    52px;
 }
 
-body:has(#sig-dash-root) .navbar,
-body:has(#sig-dash-root) .web-header { display: none !important; }
-
-html, body { margin: 0; padding: 0; background: var(--sig-bg); }
-.page-content { padding: 0 !important; }
+#sig-dash-root {
+  background: var(--sig-bg);
+  min-height: calc(100vh - 170px);
+}
 
 /* ── Header ───────────────────────────────────────────────── */
 .sig-dash-header {

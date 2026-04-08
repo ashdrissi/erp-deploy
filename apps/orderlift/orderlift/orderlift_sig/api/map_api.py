@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import frappe
-from frappe import _
 
 
 @frappe.whitelist(allow_guest=False)
-def get_map_projects(filters: dict | None = None) -> list[dict]:
+def get_map_projects(filters: dict | str | None = None) -> list[dict]:
     """
     Return all projects that have geocoordinates, with SIG custom fields.
     Used by the /project-map web page.
@@ -15,7 +14,9 @@ def get_map_projects(filters: dict | None = None) -> list[dict]:
       qc_status     — matches custom_qc_status
       status        — matches ERPNext Project.status
     """
-    filters = filters or {}
+    filters = frappe.parse_json(filters) if filters else {}
+    if not isinstance(filters, dict):
+        filters = {}
 
     conditions = ["(p.custom_latitude IS NOT NULL AND p.custom_latitude != 0)"]
     values = {}

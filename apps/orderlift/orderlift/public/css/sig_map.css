@@ -17,18 +17,12 @@
   --toolbar-h:  56px;
 }
 
-/* Hide Frappe navbar on this page */
-body:has(#sig-map-root) .navbar,
-body:has(#sig-map-root) .web-header { display: none !important; }
-
-html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-.page-content { padding: 0 !important; margin: 0; }
-
 /* ── Root ─────────────────────────────────────────────────── */
 #sig-map-root {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: calc(100vh - 170px);
+  height: calc(100vh - 170px);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: var(--sig-text);

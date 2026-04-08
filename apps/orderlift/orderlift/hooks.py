@@ -162,10 +162,6 @@ before_request = [
 website_route_rules = [
     {"from_route": "/b2b-portal", "to_route": "b2b_portal"},
     {"from_route": "/b2b-portal/<path:name>", "to_route": "b2b_portal"},
-    # SIG module web pages
-    {"from_route": "/project-map",   "to_route": "project-map"},
-    {"from_route": "/sig-dashboard", "to_route": "sig-dashboard"},
-    {"from_route": "/sig-qc",        "to_route": "sig-qc"},
 ]
 
 # Roles allowed to access the web portal

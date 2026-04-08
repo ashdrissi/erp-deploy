@@ -20,9 +20,9 @@ SECTIONS = [
     {
         "label": "SIG",
         "links": [
-            {"type": "Link", "label": "SIG Dashboard", "link_type": "URL", "link_to": "", "url": "/sig-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Project Map", "link_type": "URL", "link_to": "", "url": "/project-map", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Mobile QC", "link_type": "URL", "link_to": "", "url": "/sig-qc", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "SIG Dashboard", "link_type": "URL", "link_to": "", "url": "/app/sig-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Project Map", "link_type": "URL", "link_to": "", "url": "/app/project-map", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Mobile QC", "link_type": "URL", "link_to": "", "url": "/app/sig-qc", "child": 1, "icon": "dot"},
             {"type": "Link", "label": "QC Templates", "link_type": "DocType", "link_to": "QC Checklist Template", "child": 1, "icon": "dot"},
             {"type": "Link", "label": "Projects", "link_type": "DocType", "link_to": "Project", "child": 1, "icon": "dot"},
         ],

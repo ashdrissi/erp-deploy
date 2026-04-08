@@ -1,325 +1,360 @@
-/* ============================================================
-   SIG Mobile QC — /sig-qc
-   Touch-optimised QC checklist for field technicians
-   ============================================================ */
-
-(function () {
+(function (global) {
     "use strict";
 
-    // ── State ────────────────────────────────────────────────
-    let _project = null;           // full checklist payload
-    let _activeCategory = "All";
-    let _pendingSave = false;       // dirty flag
-    let _saving = false;
+    const LOCAL_CSS = "/assets/orderlift/css/sig_qc.css?v=20260408b";
 
-    const QC_STATUS_BADGE = {
-        "Complete":    "sig-qc-badge-green",
-        "In Progress": "sig-qc-badge-orange",
-        "Blocked":     "sig-qc-badge-red",
-        "Not Started": "sig-qc-badge-gray",
-        "":            "sig-qc-badge-gray",
-    };
-
-    // ── Init ─────────────────────────────────────────────────
-    document.addEventListener("DOMContentLoaded", () => {
-        const root = document.getElementById("sig-qc-root");
-        const preload = root ? root.dataset.preload : "";
-
-        _loadProjectList();
-
-        if (preload) {
-            _loadChecklist(preload);
-        }
-
-        document.getElementById("sig-qc-back").addEventListener("click", _goBack);
-        document.getElementById("sig-qc-save-btn").addEventListener("click", _saveAll);
-        document.getElementById("sig-qc-search").addEventListener("input", _filterPicker);
-    });
-
-    // ── Project picker ────────────────────────────────────────
-
-    let _allPickerProjects = [];
-
-    function _loadProjectList() {
-        frappe.call({
-            method: "orderlift.orderlift_sig.api.map_api.get_map_projects",
-            args: { filters: {} },
-            callback(r) {
-                if (r.exc) return;
-                // Include projects even without geocoords for QC purposes
-                frappe.call({
-                    method: "frappe.client.get_list",
-                    args: {
-                        doctype: "Project",
-                        fields: ["name", "project_name", "customer", "custom_qc_status",
-                                 "custom_city", "custom_project_type_ol", "status"],
-                        filters: [["status", "!=", "Cancelled"]],
-                        order_by: "modified desc",
-                        limit: 100,
-                    },
-                    callback(r2) {
-                        if (r2.exc) return;
-                        _allPickerProjects = r2.message || [];
-                        _renderPickerList(_allPickerProjects);
-                    },
-                });
-            },
+    function ensureStylesheet(id, href) {
+        if (document.getElementById(id)) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const link = document.createElement("link");
+            link.id = id;
+            link.rel = "stylesheet";
+            link.href = href;
+            link.onload = resolve;
+            link.onerror = () => reject(new Error(`Failed to load stylesheet: ${href}`));
+            document.head.appendChild(link);
         });
     }
 
-    function _filterPicker() {
-        const q = (document.getElementById("sig-qc-search").value || "").toLowerCase();
-        if (!q) { _renderPickerList(_allPickerProjects); return; }
-        const filtered = _allPickerProjects.filter(p =>
-            (p.project_name || "").toLowerCase().includes(q) ||
-            (p.customer     || "").toLowerCase().includes(q) ||
-            (p.custom_city  || "").toLowerCase().includes(q)
-        );
-        _renderPickerList(filtered);
-    }
-
-    function _renderPickerList(projects) {
-        const el = document.getElementById("sig-qc-picker-list");
-        if (!projects.length) {
-            el.innerHTML = `<p class="sig-qc-meta">No projects found.</p>`;
-            return;
-        }
-        el.innerHTML = projects.map(p => {
-            const badgeCls = QC_STATUS_BADGE[p.custom_qc_status] || "sig-qc-badge-gray";
-            return `
-                <div class="sig-qc-picker-item" data-project="${_esc(p.name)}">
-                    <div class="sig-qc-picker-item-left">
-                        <div class="sig-qc-picker-item-name">${_esc(p.project_name)}</div>
-                        <div class="sig-qc-picker-item-sub">
-                            ${_esc(p.customer || "")}
-                            ${p.custom_city ? " · " + _esc(p.custom_city) : ""}
-                            ${p.custom_project_type_ol ? " · " + _esc(p.custom_project_type_ol) : ""}
+    function renderShell(root, preloadProject) {
+        root.innerHTML = `
+            <div id="sig-qc-root" data-preload-project="${esc(preloadProject || "")}">
+                <div class="sig-qc-topbar">
+                    <button id="sig-qc-back" class="sig-qc-icon-btn" title="Back">←</button>
+                    <span class="sig-qc-topbar-title" id="sig-qc-topbar-title">QC Checklist</span>
+                    <div class="sig-qc-topbar-right">
+                        <span id="sig-qc-status-badge" class="sig-qc-badge"></span>
+                    </div>
+                </div>
+                <div id="sig-qc-picker" class="sig-qc-screen">
+                    <div class="sig-qc-picker-body">
+                        <h2 class="sig-qc-picker-title">Select Project</h2>
+                        <div class="sig-qc-search-wrap">
+                            <input id="sig-qc-search" type="text" class="sig-qc-search" placeholder="Search project name or customer..." autocomplete="off">
+                        </div>
+                        <div id="sig-qc-picker-list" class="sig-qc-picker-list">
+                            <p class="sig-qc-meta">Loading projects...</p>
                         </div>
                     </div>
-                    <span class="sig-qc-badge ${badgeCls}">${_esc(p.custom_qc_status || "Not Started")}</span>
-                    <span class="sig-qc-picker-arrow">›</span>
-                </div>`;
-        }).join("");
+                </div>
+                <div id="sig-qc-checklist" class="sig-qc-screen sig-qc-screen-hidden">
+                    <div class="sig-qc-progress-wrap">
+                        <div id="sig-qc-progress-bar" class="sig-qc-progress-bar"></div>
+                    </div>
+                    <div class="sig-qc-progress-label" id="sig-qc-progress-label"></div>
+                    <div class="sig-qc-tabs" id="sig-qc-tabs"></div>
+                    <div id="sig-qc-items" class="sig-qc-items"></div>
+                    <div class="sig-qc-fab-wrap">
+                        <button id="sig-qc-save-btn" class="sig-qc-fab">✓ Save Progress</button>
+                    </div>
+                </div>
+                <div id="sig-qc-toast-root"></div>
+            </div>
+        `;
+    }
 
-        el.querySelectorAll(".sig-qc-picker-item").forEach(item => {
-            item.addEventListener("click", () => _loadChecklist(item.dataset.project));
+    function mount(root, options) {
+        if (!root) return Promise.resolve();
+        options = options || {};
+        const preloadProject = options.preloadProject || new URL(global.location.href).searchParams.get("project") || "";
+        return ensureStylesheet("orderlift-sig-qc-css", LOCAL_CSS).then(() => {
+            renderShell(root, preloadProject);
+            init(root, preloadProject);
         });
     }
 
-    // ── Checklist loading ─────────────────────────────────────
+    function init(root, preloadProject) {
+        let project = null;
+        let activeCategory = "All";
+        let pendingSave = false;
+        let saving = false;
+        let allPickerProjects = [];
 
-    function _loadChecklist(projectName) {
-        frappe.call({
-            method: "orderlift.orderlift_sig.api.dashboard_api.get_qc_checklist",
-            args: { project_name: projectName },
-            callback(r) {
-                if (r.exc || !r.message) return;
-                _project = r.message;
-                _activeCategory = "All";
-                _renderChecklist();
-                _showScreen("checklist");
-            },
-        });
-    }
+        const QC_STATUS_BADGE = {
+            "Complete": "sig-qc-badge-green",
+            "In Progress": "sig-qc-badge-orange",
+            "Blocked": "sig-qc-badge-red",
+            "Not Started": "sig-qc-badge-gray",
+            "": "sig-qc-badge-gray",
+        };
 
-    // ── Checklist rendering ───────────────────────────────────
+        const $ = (selector) => root.querySelector(selector);
 
-    function _renderChecklist() {
-        const p = _project;
+        $("#sig-qc-back").addEventListener("click", goBack);
+        $("#sig-qc-save-btn").addEventListener("click", saveAll);
+        $("#sig-qc-search").addEventListener("input", filterPicker);
 
-        // Topbar
-        document.getElementById("sig-qc-topbar-title").textContent =
-            p.project_display || p.project_name;
-        const badge = document.getElementById("sig-qc-status-badge");
-        badge.textContent = p.qc_status || "Not Started";
-        badge.className = "sig-qc-badge " + (QC_STATUS_BADGE[p.qc_status] || "sig-qc-badge-gray");
+        loadProjectList();
+        if (preloadProject) {
+            loadChecklist(preloadProject);
+        }
 
-        // Progress
-        _updateProgress();
-
-        // Category tabs
-        const categories = ["All", ...new Set(p.rows.map(r => r.category || "Other"))];
-        const tabsEl = document.getElementById("sig-qc-tabs");
-        tabsEl.innerHTML = categories.map(c => `
-            <button class="sig-qc-tab ${c === _activeCategory ? "is-active" : ""}"
-                    data-cat="${_esc(c)}">${_esc(c)}</button>`).join("");
-        tabsEl.querySelectorAll(".sig-qc-tab").forEach(btn => {
-            btn.addEventListener("click", () => {
-                _activeCategory = btn.dataset.cat;
-                tabsEl.querySelectorAll(".sig-qc-tab").forEach(b =>
-                    b.classList.toggle("is-active", b.dataset.cat === _activeCategory));
-                _renderItems();
+        function loadProjectList() {
+            frappe.call({
+                method: "frappe.client.get_list",
+                args: {
+                    doctype: "Project",
+                    fields: [
+                        "name",
+                        "project_name",
+                        "customer",
+                        "custom_qc_status",
+                        "custom_city",
+                        "custom_project_type_ol",
+                        "status",
+                    ],
+                    filters: [["status", "!=", "Cancelled"]],
+                    order_by: "modified desc",
+                    limit: 100,
+                },
+                callback(r) {
+                    if (r.exc) return;
+                    allPickerProjects = r.message || [];
+                    renderPickerList(allPickerProjects);
+                },
             });
-        });
+        }
 
-        _renderItems();
-    }
+        function filterPicker() {
+            const query = ($("#sig-qc-search").value || "").toLowerCase();
+            if (!query) {
+                renderPickerList(allPickerProjects);
+                return;
+            }
+            renderPickerList(allPickerProjects.filter((item) => {
+                return (item.project_name || "").toLowerCase().includes(query)
+                    || (item.customer || "").toLowerCase().includes(query)
+                    || (item.custom_city || "").toLowerCase().includes(query);
+            }));
+        }
 
-    function _renderItems() {
-        const p = _project;
-        const rows = _activeCategory === "All"
-            ? p.rows
-            : p.rows.filter(r => (r.category || "Other") === _activeCategory);
+        function renderPickerList(projects) {
+            const el = $("#sig-qc-picker-list");
+            if (!projects.length) {
+                el.innerHTML = '<p class="sig-qc-meta">No projects found.</p>';
+                return;
+            }
 
-        const el = document.getElementById("sig-qc-items");
-        el.innerHTML = rows.map(row => {
-            const verified = row.is_verified ? "is-verified" : "";
-            const mandatory = row.is_mandatory ? "is-mandatory" : "";
-            return `
-                <div class="sig-qc-item ${verified} ${mandatory}" data-row="${_esc(row.name)}">
+            el.innerHTML = projects.map((item) => {
+                const badgeCls = QC_STATUS_BADGE[item.custom_qc_status] || "sig-qc-badge-gray";
+                return `
+                    <div class="sig-qc-picker-item" data-project="${esc(item.name)}">
+                        <div class="sig-qc-picker-item-left">
+                            <div class="sig-qc-picker-item-name">${esc(item.project_name)}</div>
+                            <div class="sig-qc-picker-item-sub">
+                                ${esc(item.customer || "")}
+                                ${item.custom_city ? " · " + esc(item.custom_city) : ""}
+                                ${item.custom_project_type_ol ? " · " + esc(item.custom_project_type_ol) : ""}
+                            </div>
+                        </div>
+                        <span class="sig-qc-badge ${badgeCls}">${esc(item.custom_qc_status || "Not Started")}</span>
+                        <span class="sig-qc-picker-arrow">›</span>
+                    </div>`;
+            }).join("");
+
+            el.querySelectorAll(".sig-qc-picker-item").forEach((item) => {
+                item.addEventListener("click", () => loadChecklist(item.dataset.project));
+            });
+        }
+
+        function loadChecklist(projectName) {
+            frappe.call({
+                method: "orderlift.orderlift_sig.api.dashboard_api.get_qc_checklist",
+                args: { project_name: projectName },
+                callback(r) {
+                    if (r.exc || !r.message) return;
+                    project = r.message;
+                    activeCategory = "All";
+                    renderChecklist();
+                    showScreen("checklist");
+                },
+            });
+        }
+
+        function renderChecklist() {
+            $("#sig-qc-topbar-title").textContent = project.project_display || project.project_name;
+            const badge = $("#sig-qc-status-badge");
+            badge.textContent = project.qc_status || "Not Started";
+            badge.className = `sig-qc-badge ${QC_STATUS_BADGE[project.qc_status] || "sig-qc-badge-gray"}`;
+
+            updateProgress();
+
+            const categories = ["All", ...new Set(project.rows.map((row) => row.category || "Other"))];
+            const tabs = $("#sig-qc-tabs");
+            tabs.innerHTML = categories.map((category) => `
+                <button class="sig-qc-tab ${category === activeCategory ? "is-active" : ""}" data-cat="${esc(category)}">${esc(category)}</button>`).join("");
+
+            tabs.querySelectorAll(".sig-qc-tab").forEach((button) => {
+                button.addEventListener("click", () => {
+                    activeCategory = button.dataset.cat;
+                    renderChecklist();
+                });
+            });
+
+            renderItems();
+        }
+
+        function renderItems() {
+            const rows = activeCategory === "All"
+                ? project.rows
+                : project.rows.filter((row) => (row.category || "Other") === activeCategory);
+
+            const el = $("#sig-qc-items");
+            el.innerHTML = rows.map((row) => `
+                <div class="sig-qc-item ${row.is_verified ? "is-verified" : ""} ${row.is_mandatory ? "is-mandatory" : ""}" data-row="${esc(row.name)}">
                     <div class="sig-qc-check">${row.is_verified ? "✓" : ""}</div>
                     <div class="sig-qc-item-body">
                         <div class="sig-qc-item-name">
-                            ${_esc(row.item_code)}
+                            ${esc(row.item_code)}
                             ${row.is_mandatory ? '<span style="color:#fd7e14;margin-left:4px" title="Mandatory">★</span>' : ""}
                         </div>
-                        ${row.description ? `<div class="sig-qc-item-desc">${_esc(row.description)}</div>` : ""}
-                        ${row.verified_by ? `<div class="sig-qc-item-meta">Verified by ${_esc(row.verified_by)} ${row.verified_on ? "on " + row.verified_on.split(" ")[0] : ""}</div>` : ""}
+                        ${row.description ? `<div class="sig-qc-item-desc">${esc(row.description)}</div>` : ""}
+                        ${row.verified_by ? `<div class="sig-qc-item-meta">Verified by ${esc(row.verified_by)} ${row.verified_on ? "on " + row.verified_on.split(" ")[0] : ""}</div>` : ""}
                         <div class="sig-qc-remarks-wrap">
-                            <textarea class="sig-qc-remarks" data-row="${_esc(row.name)}"
-                                      placeholder="Add remarks…"
-                                      rows="1">${_esc(row.remarks || "")}</textarea>
+                            <textarea class="sig-qc-remarks" data-row="${esc(row.name)}" placeholder="Add remarks..." rows="1">${esc(row.remarks || "")}</textarea>
                         </div>
                     </div>
-                </div>`;
-        }).join("");
+                </div>`).join("");
 
-        // Click to toggle verification
-        el.querySelectorAll(".sig-qc-item").forEach(item => {
-            // Toggle on click (but not on textarea interaction)
-            item.addEventListener("click", (e) => {
-                if (e.target.tagName === "TEXTAREA") return;
-                const rowName = item.dataset.row;
-                const row = p.rows.find(r => r.name === rowName);
-                if (!row) return;
-                row.is_verified = row.is_verified ? 0 : 1;
-                _pendingSave = true;
-                _renderChecklist();
-            });
-        });
-
-        // Remarks change
-        el.querySelectorAll(".sig-qc-remarks").forEach(ta => {
-            ta.addEventListener("input", () => { _pendingSave = true; });
-            // sync remarks value back to row on blur
-            ta.addEventListener("blur", () => {
-                const rowName = ta.dataset.row;
-                const row = p.rows.find(r => r.name === rowName);
-                if (row) row.remarks = ta.value;
-            });
-        });
-    }
-
-    function _updateProgress() {
-        const rows = _project.rows;
-        const total = rows.length;
-        const verified = rows.filter(r => r.is_verified).length;
-        const pct = total ? Math.round((verified / total) * 100) : 0;
-
-        const qc = _project.qc_status;
-        const barColor = qc === "Complete"    ? "#28a745"
-                       : qc === "Blocked"     ? "#dc3545"
-                       : qc === "In Progress" ? "#fd7e14"
-                       : "#adb5bd";
-
-        const bar = document.getElementById("sig-qc-progress-bar");
-        if (bar) { bar.style.width = pct + "%"; bar.style.background = barColor; }
-        const lbl = document.getElementById("sig-qc-progress-label");
-        if (lbl) lbl.textContent = `${verified} / ${total} verified (${pct}%)`;
-    }
-
-    // ── Save all (batch sync) ─────────────────────────────────
-
-    async function _saveAll() {
-        if (_saving) return;
-        _saving = true;
-        const btn = document.getElementById("sig-qc-save-btn");
-        if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-
-        // Sync remarks first from textarea values
-        document.querySelectorAll(".sig-qc-remarks").forEach(ta => {
-            const row = _project.rows.find(r => r.name === ta.dataset.row);
-            if (row) row.remarks = ta.value;
-        });
-
-        try {
-            // Call sync for each row that has changed
-            for (const row of _project.rows) {
-                await new Promise((resolve, reject) => {
-                    frappe.call({
-                        method: "orderlift.orderlift_sig.utils.project_qc.sync_qc_item_verification",
-                        args: {
-                            project_name: _project.project_name,
-                            row_name: row.name,
-                            is_verified: row.is_verified ? 1 : 0,
-                        },
-                        callback(r) {
-                            if (r.exc) { reject(r.exc); return; }
-                            // Update local QC status from server response
-                            if (r.message) {
-                                _project.qc_status = r.message.qc_status;
-                            }
-                            resolve();
-                        },
-                    });
+            el.querySelectorAll(".sig-qc-item").forEach((item) => {
+                item.addEventListener("click", (event) => {
+                    if (event.target.tagName === "TEXTAREA") return;
+                    const row = project.rows.find((entry) => entry.name === item.dataset.row);
+                    if (!row) return;
+                    row.is_verified = row.is_verified ? 0 : 1;
+                    pendingSave = true;
+                    renderChecklist();
                 });
+            });
+
+            el.querySelectorAll(".sig-qc-remarks").forEach((textarea) => {
+                textarea.addEventListener("input", () => {
+                    pendingSave = true;
+                });
+                textarea.addEventListener("blur", () => {
+                    const row = project.rows.find((entry) => entry.name === textarea.dataset.row);
+                    if (row) row.remarks = textarea.value;
+                });
+            });
+        }
+
+        function updateProgress() {
+            const total = project.rows.length;
+            const verified = project.rows.filter((row) => row.is_verified).length;
+            const pct = total ? Math.round((verified / total) * 100) : 0;
+
+            const color = project.qc_status === "Complete" ? "#28a745"
+                : project.qc_status === "Blocked" ? "#dc3545"
+                    : project.qc_status === "In Progress" ? "#fd7e14"
+                        : "#adb5bd";
+
+            const bar = $("#sig-qc-progress-bar");
+            bar.style.width = `${pct}%`;
+            bar.style.background = color;
+            $("#sig-qc-progress-label").textContent = `${verified} / ${total} verified (${pct}%)`;
+        }
+
+        async function saveAll() {
+            if (saving || !project) return;
+            saving = true;
+            const btn = $("#sig-qc-save-btn");
+            btn.disabled = true;
+            btn.textContent = "Saving...";
+
+            root.querySelectorAll(".sig-qc-remarks").forEach((textarea) => {
+                const row = project.rows.find((entry) => entry.name === textarea.dataset.row);
+                if (row) row.remarks = textarea.value;
+            });
+
+            try {
+                for (const row of project.rows) {
+                    await new Promise((resolve, reject) => {
+                        frappe.call({
+                            method: "orderlift.orderlift_sig.utils.project_qc.sync_qc_item_verification",
+                            args: {
+                                project_name: project.project_name,
+                                row_name: row.name,
+                                is_verified: row.is_verified ? 1 : 0,
+                            },
+                            callback(r) {
+                                if (r.exc) {
+                                    reject(r.exc);
+                                    return;
+                                }
+                                if (r.message) {
+                                    project.qc_status = r.message.qc_status;
+                                }
+                                resolve();
+                            },
+                        });
+                    });
+                }
+                pendingSave = false;
+                renderChecklist();
+                toast("Saved successfully!", "success");
+            } catch (error) {
+                toast("Save failed. Please try again.", "error");
+            } finally {
+                saving = false;
+                btn.disabled = false;
+                btn.textContent = "✓ Save Progress";
             }
-            _pendingSave = false;
-            _renderChecklist();
-            _toast("Saved successfully!", "success");
-        } catch (err) {
-            _toast("Save failed. Please try again.", "error");
-        } finally {
-            _saving = false;
-            if (btn) { btn.disabled = false; btn.textContent = "✓ Save Progress"; }
+        }
+
+        function showScreen(name) {
+            $("#sig-qc-picker").classList.toggle("sig-qc-screen-hidden", name !== "picker");
+            $("#sig-qc-checklist").classList.toggle("sig-qc-screen-hidden", name !== "checklist");
+        }
+
+        function goBack() {
+            if ($("#sig-qc-checklist").classList.contains("sig-qc-screen-hidden")) {
+                global.history.back();
+                return;
+            }
+            if (pendingSave && !global.confirm("You have unsaved changes. Discard and go back?")) {
+                return;
+            }
+            project = null;
+            pendingSave = false;
+            showScreen("picker");
+        }
+
+        function toast(message, type) {
+            const toastRoot = $("#sig-qc-toast-root");
+            const el = document.createElement("div");
+            el.className = `sig-qc-toast sig-qc-toast-${type || "info"}`;
+            el.textContent = message;
+            toastRoot.appendChild(el);
+            setTimeout(() => el.classList.add("in"), 10);
+            setTimeout(() => {
+                el.classList.remove("in");
+                setTimeout(() => el.remove(), 300);
+            }, 2800);
         }
     }
 
-    // ── Navigation ────────────────────────────────────────────
-
-    function _showScreen(name) {
-        document.getElementById("sig-qc-picker").classList.toggle(
-            "sig-qc-screen-hidden", name !== "picker");
-        document.getElementById("sig-qc-checklist").classList.toggle(
-            "sig-qc-screen-hidden", name !== "checklist");
-    }
-
-    function _goBack() {
-        if (document.getElementById("sig-qc-checklist").classList.contains("sig-qc-screen-hidden")) {
-            history.back();
-        } else {
-            if (_pendingSave) {
-                if (!confirm("You have unsaved changes. Discard and go back?")) return;
-            }
-            _project = null;
-            _pendingSave = false;
-            _showScreen("picker");
-        }
-    }
-
-    // ── Toast ─────────────────────────────────────────────────
-
-    function _toast(msg, type) {
-        const root = document.getElementById("sig-qc-toast-root");
-        const el = document.createElement("div");
-        el.className = `sig-qc-toast sig-qc-toast-${type || "info"}`;
-        el.textContent = msg;
-        root.appendChild(el);
-        setTimeout(() => el.classList.add("in"), 10);
-        setTimeout(() => {
-            el.classList.remove("in");
-            setTimeout(() => el.remove(), 300);
-        }, 2800);
-    }
-
-    // ── Escape helper ─────────────────────────────────────────
-
-    function _esc(s) {
-        return String(s == null ? "" : s)
+    function esc(value) {
+        return String(value == null ? "" : value)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
+            .replace(/\"/g, "&quot;");
     }
 
-})();
+    global.orderliftSigQc = {
+        mount,
+    };
+
+    function autoMount() {
+        const root = document.getElementById("sig-qc-page-root");
+        if (!root || root.dataset.autoloadMounted) return;
+        root.dataset.autoloadMounted = "1";
+        mount(root, {});
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", autoMount);
+    } else {
+        autoMount();
+    }
+})(window);
