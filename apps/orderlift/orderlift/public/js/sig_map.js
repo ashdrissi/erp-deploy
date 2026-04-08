@@ -45,9 +45,9 @@
 
     function renderShell(root) {
         root.innerHTML = `
-            <div class="sig-map-toolbar">
+            <div id="sig-map-root">
+                <div class="sig-map-toolbar">
                 <div class="sig-map-logo">
-                    <img src="/assets/orderlift/images/orderlift_logo.png" alt="Orderlift" height="28">
                     <span>Project Map</span>
                 </div>
                 <div class="sig-map-filters">
@@ -91,6 +91,7 @@
             <div id="sig-map-loading" class="sig-map-loading">
                 <div class="sig-spinner"></div>
                 <p>Loading projects...</p>
+            </div>
             </div>
         `;
     }

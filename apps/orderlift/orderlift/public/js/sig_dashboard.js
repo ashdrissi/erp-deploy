@@ -21,7 +21,6 @@
             <div id="sig-dash-root">
                 <div class="sig-dash-header">
                     <div class="sig-dash-logo">
-                        <img src="/assets/orderlift/images/orderlift_logo.png" alt="Orderlift" height="26">
                         <span>SIG Dashboard</span>
                     </div>
                     <nav class="sig-dash-nav">

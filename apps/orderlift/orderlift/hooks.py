@@ -18,7 +18,7 @@ required_apps = ["frappe", "erpnext"]
 app_include_css = ["/assets/orderlift/css/orderlift_bundle.css"]
 app_include_js = [
     "/assets/orderlift/js/orderlift_bundle.js",
-    "/assets/orderlift/js/pricing_sheet_global_loader_20260408_02.js",
+    "/assets/orderlift/js/pricing_sheet_global_loader_20260408_03.js",
 ]
 
 # ---------------------------------------------------------
@@ -112,7 +112,7 @@ doctype_js = {
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Sales Order": "public/js/sales_order_logistics.js",
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260406_46.js",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260406_47.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v2.js",
@@ -166,8 +166,8 @@ website_route_rules = [
 
 # Roles allowed to access the web portal
 website_context = {
-    "favicon": "/assets/orderlift/images/favicon.ico",
-    "splash_image": "/assets/orderlift/images/orderlift_logo.png",
+    "favicon": "/assets/frappe/images/frappe-favicon.svg",
+    "splash_image": "/assets/frappe/images/frappe-framework-logo.svg",
 }
 
 get_website_user_home_page = "orderlift.orderlift_client_portal.utils.website.get_portal_home_page"
