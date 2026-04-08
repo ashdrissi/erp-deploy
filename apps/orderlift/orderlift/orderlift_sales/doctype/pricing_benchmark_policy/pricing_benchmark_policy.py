@@ -12,10 +12,12 @@ from frappe.utils import cint, flt
 
 class PricingBenchmarkPolicy(Document):
     def validate(self):
+        self.margin_application_basis = (self.margin_application_basis or "Base Price").strip() or "Base Price"
         self._sync_benchmark_basis()
         self._validate_sources()
         self._validate_rules()
         self._validate_tier_modifiers()
+        self._validate_margin_application_basis()
 
     def _sync_benchmark_basis(self):
         active_types = []
@@ -111,6 +113,21 @@ class PricingBenchmarkPolicy(Document):
 
         if active == 0:
             frappe.throw(_("At least one active benchmark rule is required."))
+
+    def _validate_margin_application_basis(self):
+        basis = (self.margin_application_basis or "Base Price").strip() or "Base Price"
+        if basis not in {"Base Price", "Loaded Cost", "Sale Price"}:
+            frappe.throw(_("Margin Application Basis must be Base Price, Loaded Cost, or Sale Price."))
+
+        if basis != "Sale Price":
+            return
+
+        if flt(self.fallback_margin_percent) >= 100:
+            frappe.throw(_("Fallback Margin % must be below 100 when Margin Application Basis is Sale Price."))
+
+        for row in self.benchmark_rules or []:
+            if cint(row.is_active) and flt(row.target_margin_percent) >= 100:
+                frappe.throw(_("Row {0}: target margin must be below 100 when Margin Application Basis is Sale Price.").format(row.idx))
 
     def _validate_tier_modifiers(self):
         seen = set()

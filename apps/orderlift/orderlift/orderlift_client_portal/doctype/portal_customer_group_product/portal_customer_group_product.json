@@ -1,0 +1,27 @@
+{
+  "doctype": "DocType",
+  "name": "Portal Customer Group Product",
+  "module": "Orderlift Client Portal",
+  "istable": 1,
+  "editable_grid": 1,
+  "field_order": [
+    "enabled",
+    "item_code",
+    "product_bundle",
+    "portal_title",
+    "short_description",
+    "featured",
+    "allow_quote",
+    "sort_order"
+  ],
+  "fields": [
+    {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "1"},
+    {"fieldname": "item_code", "fieldtype": "Link", "label": "Item", "options": "Item"},
+    {"fieldname": "product_bundle", "fieldtype": "Link", "label": "Product Bundle", "options": "Product Bundle"},
+    {"fieldname": "portal_title", "fieldtype": "Data", "label": "Portal Title"},
+    {"fieldname": "short_description", "fieldtype": "Small Text", "label": "Short Description"},
+    {"fieldname": "featured", "fieldtype": "Check", "label": "Featured"},
+    {"fieldname": "allow_quote", "fieldtype": "Check", "label": "Allow Quote", "default": "1"},
+    {"fieldname": "sort_order", "fieldtype": "Int", "label": "Sort Order", "default": "0"}
+  ]
+}

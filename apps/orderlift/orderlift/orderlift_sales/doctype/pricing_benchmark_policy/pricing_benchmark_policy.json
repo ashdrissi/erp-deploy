@@ -14,7 +14,10 @@
         "column_break_settings",
         "method",
         "min_sources_required",
+        "margin_application_basis",
         "fallback_margin_percent",
+        "section_margin_basis_help",
+        "margin_basis_help_html",
         "section_notes",
         "notes",
         "section_sources",
@@ -98,11 +101,32 @@
             "description": "Minimum valid benchmark prices needed. Below this, fallback margin is used."
         },
         {
+            "fieldname": "margin_application_basis",
+            "fieldtype": "Select",
+            "label": "Margin Application Basis",
+            "options": "Base Price\nLoaded Cost\nSale Price",
+            "default": "Base Price",
+            "reqd": 1,
+            "description": "Controls how benchmark and fallback margin percentages are converted into value."
+        },
+        {
             "fieldname": "fallback_margin_percent",
             "fieldtype": "Percent",
             "label": "Fallback Margin %",
             "default": "10",
             "description": "Used when benchmark data is insufficient"
+        },
+        {
+            "fieldname": "section_margin_basis_help",
+            "fieldtype": "Section Break",
+            "label": "Margin Basis Help",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "margin_basis_help_html",
+            "fieldtype": "HTML",
+            "label": "Margin Basis Help",
+            "options": "<div style=\"padding:8px 0 4px;line-height:1.55;\"><p><strong>Choose how margin % becomes a money amount.</strong></p><p><strong>Base Price</strong>: margin is calculated on the buying/base price only.<br><code>m = base * r</code></p><p><strong>Loaded Cost</strong>: margin is calculated on the fully loaded cost before benchmark margin (base + expenses + transport + customs).<br><code>m = loaded_cost * r</code></p><p><strong>Sale Price</strong>: margin is treated as a share of the final selling price.<br><code>s = c / (1 - r)</code><br><code>m = s * r = c * r / (1 - r)</code></p><p style=\"color:#64748b;\">Fallback Margin % uses the same basis you choose here.</p></div>"
         },
         {
             "fieldname": "section_notes",

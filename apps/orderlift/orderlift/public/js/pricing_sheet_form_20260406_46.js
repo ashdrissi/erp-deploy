@@ -38,7 +38,7 @@ function setGridFieldVisibility(grid, fieldnames, hidden) {
 
 function ensurePricingSheetStyles(frm) {
     const linkId = "pricing-sheet-ux-css";
-    const version = "v=20260307-02";
+    const version = "v=20260406-46";
     let link = document.getElementById(linkId);
     if (!link) {
         link = document.createElement("link");
@@ -46,60 +46,281 @@ function ensurePricingSheetStyles(frm) {
         link.rel = "stylesheet";
         document.head.appendChild(link);
     }
-    const expected = `/assets/orderlift/css/pricing_sheet_20260226_10.css?${version}`;
+    const expected = `/assets/orderlift/css/pricing_sheet_20260406_31.css?${version}`;
     if (link.href !== expected) link.href = expected;
 }
 
-function renderContextActions(frm) {
-    const restrictedAgent = isRestrictedAgentUser();
-    const mount = (fieldname, title, actions) => {
-        const field = frm.fields_dict[fieldname];
-        if (!field || !field.$wrapper) return;
+const PS_NATIVE_LINES_VISIBILITY_KEY = "pricing_sheet_show_native_lines";
 
-        const id = `ps-actions-${fieldname}`;
-        field.$wrapper.prev(`#${id}`).remove();
+function resolveSuggestedBuyingPriceList(frm, row) {
+    const explicit = ((row && row.source_buying_price_list) || "").trim();
+    if (explicit) {
+        return explicit;
+    }
 
-        const $bar = $(`<div id="${id}" class="ps-actions"><div class="ps-actions-title">${title}</div></div>`);
-        actions.forEach((action) => {
-            const $btn = $(`<button class="btn btn-default btn-sm">${action.label}</button>`);
-            $btn.on("click", async () => {
-                try {
-                    await action.handler();
-                } catch (e) {
-                    frappe.msgprint({
-                        title: __("Action Failed"),
-                        message: e.message || __("Unable to execute action."),
-                        indicator: "red",
-                    });
-                }
-            });
-            $bar.append($btn);
-        });
+    const mappedLists = [...new Set((frm.doc.scenario_mappings || [])
+        .filter((entry) => Number(entry.is_active ?? 1) !== 0)
+        .map((entry) => (entry.source_buying_price_list || "").trim())
+        .filter(Boolean))];
 
-        field.$wrapper.before($bar);
-    };
+    if (mappedLists.length === 1) {
+        return mappedLists[0];
+    }
 
-    const lineActions = [
-        {
-            label: __("↻ Recalculate"),
-            handler: async () => {
-                try {
-                    await frm.save();
-                    frm.refresh_field("lines");
-                    renderProjectionDashboard(frm);
-                    frappe.show_alert({ message: __("Pricing recalculated"), indicator: "green" });
-                } catch (e) {
-                    frappe.msgprint({ title: __("Recalculation Failed"), message: __("Could not recalculate."), indicator: "red" });
-                }
+    return "";
+}
+
+function highlightPricingSheetSidebar() {
+    const items = document.querySelectorAll('.desk-sidebar .standard-sidebar-item');
+    items.forEach((item) => item.classList.remove('ps-route-selected'));
+
+    const candidate = Array.from(items).find((item) => {
+        const text = (item.textContent || '').trim();
+        const href = item.querySelector('a')?.getAttribute('href') || '';
+        return text.includes('Pricing Sheet') || href.includes('/app/pricing-sheet');
+    });
+
+    if (candidate) {
+        candidate.classList.add('ps-route-selected');
+    }
+}
+
+function sanitizeLineResolutionFields(frm) {
+    (frm.doc.lines || []).forEach((row) => {
+        if ((row.resolved_pricing_scenario || '').trim() === '__NO_EXPENSES_POLICY__') {
+            row.resolved_pricing_scenario = '';
+        }
+        if ((row.scenario_source || '').trim() === 'Simulator Fallback') {
+            row.scenario_source = 'Draft Fallback';
+        }
+        if ((row.scenario_source || '').trim() === 'Sheet Mapping') {
+            row.scenario_source = 'Policy Rule';
+        }
+    });
+}
+
+function shouldShowNativeLines() {
+    try {
+        return window.localStorage.getItem(PS_NATIVE_LINES_VISIBILITY_KEY) === "1";
+    } catch (e) {
+        return false;
+    }
+}
+
+function setShowNativeLines(visible) {
+    try {
+        window.localStorage.setItem(PS_NATIVE_LINES_VISIBILITY_KEY, visible ? "1" : "0");
+    } catch (e) {
+        // ignore storage failures
+    }
+}
+
+function getLinesSection(frm) {
+    const field = frm.fields_dict.lines;
+    if (!field || !field.$wrapper) {
+        return null;
+    }
+    const $section = field.$wrapper.closest(".form-section");
+    return $section && $section.length ? $section : null;
+}
+
+function applyNativeLinesSectionVisibility(frm) {
+    const $section = getLinesSection(frm);
+    if (!$section) {
+        return;
+    }
+    $section.toggleClass("ps-native-lines-hidden", !shouldShowNativeLines());
+}
+
+function toggleNativeLinesSection(frm) {
+    setShowNativeLines(!shouldShowNativeLines());
+    applyNativeLinesSectionVisibility(frm);
+    renderProjectionDashboard(frm);
+}
+
+async function addCustomLineItem(frm, values) {
+    const itemCode = (values.item_code || "").trim();
+    const qty = Math.max(1, Number(values.qty || 1));
+    const buyingList = (values.source_buying_price_list || "").trim();
+
+    if (!itemCode) {
+        frappe.show_alert({ message: __("Select an item first."), indicator: "orange" });
+        return;
+    }
+
+    const row = frm.add_child("lines");
+    frm.refresh_field("lines");
+    await frappe.model.set_value(row.doctype, row.name, "qty", qty);
+    if (buyingList) {
+        await frappe.model.set_value(row.doctype, row.name, "source_buying_price_list", buyingList);
+    }
+    await frappe.model.set_value(row.doctype, row.name, "item", itemCode);
+    frm.refresh_field("lines");
+    renderProjectionDashboard(frm);
+}
+
+async function setManualSellOverride(frm, row, rawValue) {
+    if (!row) {
+        return;
+    }
+    const value = (rawValue || "").toString().trim();
+    await frappe.model.set_value(row.doctype, row.name, "manual_sell_unit_price", value ? Number(value) : 0);
+    frm.refresh_field("lines");
+    renderProjectionDashboard(frm);
+}
+
+function mountLinesToolbarControls(frm, dashId, lines) {
+    const $root = frm.fields_dict.projection_dashboard.$wrapper.find(`#${dashId}`);
+    const itemHost = $root.find("[data-lines-item-control]").get(0);
+    const priceHost = $root.find("[data-lines-buying-list-control]").get(0);
+    const qtyInput = $root.find("[data-lines-qty]");
+
+    if (itemHost) {
+        itemHost.innerHTML = "";
+        const itemControl = frappe.ui.form.make_control({
+            parent: itemHost,
+            df: {
+                fieldname: "ps_custom_item",
+                fieldtype: "Link",
+                options: "Item",
+                label: __("Item"),
+                get_query: () => ({
+                    query: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.stock_item_query",
+                }),
             },
-        },
-        {
-            label: __("Add from Bundle"),
-            handler: async () => openAddFromBundleDialog(frm),
-        },
-    ];
+            render_input: true,
+        });
+        itemControl.refresh();
+        $root.data("ps-item-control", itemControl);
+    }
 
-    mount("lines", __("Pricing Sheet Actions"), lineActions);
+    if (priceHost) {
+        priceHost.innerHTML = "";
+        const priceControl = frappe.ui.form.make_control({
+            parent: priceHost,
+            df: {
+                fieldname: "ps_custom_buying_list",
+                fieldtype: "Link",
+                options: "Price List",
+                label: __("Buying List"),
+                get_query: () => ({ filters: { buying: 1 } }),
+            },
+            render_input: true,
+        });
+        priceControl.refresh();
+        $root.data("ps-price-control", priceControl);
+    }
+
+    $root.find("[data-lines-add]").off("click").on("click", async () => {
+        const itemControl = $root.data("ps-item-control");
+        const priceControl = $root.data("ps-price-control");
+        await addCustomLineItem(frm, {
+            item_code: itemControl ? itemControl.get_value() : "",
+            qty: qtyInput.val() || 1,
+            source_buying_price_list: priceControl ? priceControl.get_value() : "",
+        });
+        itemControl && itemControl.set_value("");
+        priceControl && priceControl.set_value("");
+        qtyInput.val("1");
+    });
+
+    $root.find("[data-toggle-native-lines]").text(
+        shouldShowNativeLines() ? __("Hide native table") : __("Show native table")
+    ).off("click").on("click", () => toggleNativeLinesSection(frm));
+
+    $root.find("[data-apply-override-index]").off("click").on("click", async function () {
+        const index = Number($(this).attr("data-apply-override-index"));
+        const row = lines[index];
+        const value = $root.find(`[data-override-index="${index}"]`).val();
+        await setManualSellOverride(frm, row, value);
+    });
+
+    $root.find("[data-clear-override-index]").off("click").on("click", async function () {
+        const index = Number($(this).attr("data-clear-override-index"));
+        const row = lines[index];
+        await setManualSellOverride(frm, row, "");
+    });
+
+    $root.find("[data-override-index]").off("keydown").on("keydown", function (e) {
+        if (e.key !== "Enter") {
+            return;
+        }
+        e.preventDefault();
+        const index = Number($(this).attr("data-override-index"));
+        $root.find(`[data-apply-override-index="${index}"]`).trigger("click");
+    });
+}
+
+function getWarningCount(rawWarnings) {
+    return (rawWarnings || "")
+        .split("\n")
+        .map((row) => row.trim())
+        .filter(Boolean)
+        .length;
+}
+
+function hasAppliedPolicyMappings(frm) {
+    return (frm.doc.scenario_mappings || []).some((row) => Number(row.is_active ?? 1) !== 0);
+}
+
+function renderContextActions(frm) {
+    frm.$wrapper && frm.$wrapper.find(".ps-actions").remove();
+}
+
+function hasActivePolicyMappings(frm) {
+    return (frm.doc.scenario_mappings || []).some((row) => Number(row.is_active ?? 1) !== 0);
+}
+
+function getFallbackPolicyMapping(frm) {
+    return (frm.doc.scenario_mappings || []).find((row) => {
+        return Number(row.is_active ?? 1) !== 0 && !((row.source_buying_price_list || "").trim());
+    });
+}
+
+function ensureFallbackPolicyMapping(frm, selected) {
+    if (!selected || !selected.pricing_scenario) {
+        return;
+    }
+
+    let row = getFallbackPolicyMapping(frm);
+    if (!row && !hasActivePolicyMappings(frm)) {
+        frm.add_child("scenario_mappings", {
+            source_buying_price_list: "",
+            pricing_scenario: selected.pricing_scenario,
+            customs_policy: selected.customs_policy || "",
+            benchmark_policy: selected.benchmark_policy || "",
+            priority: 10,
+            is_active: 1,
+            notes: __("Fallback mapping"),
+        });
+        frm.refresh_field("scenario_mappings");
+        return;
+    }
+
+    if (!row) {
+        return;
+    }
+
+    let changed = false;
+    if (!row.pricing_scenario && selected.pricing_scenario) {
+        row.pricing_scenario = selected.pricing_scenario;
+        changed = true;
+    }
+    if (!row.customs_policy && selected.customs_policy) {
+        row.customs_policy = selected.customs_policy;
+        changed = true;
+    }
+    if (!row.benchmark_policy && selected.benchmark_policy) {
+        row.benchmark_policy = selected.benchmark_policy;
+        changed = true;
+    }
+    if (!row.priority) {
+        row.priority = 10;
+        changed = true;
+    }
+    if (changed) {
+        frm.refresh_field("scenario_mappings");
+    }
 }
 
 function openAddFromBundleDialog(frm) {
@@ -421,6 +642,91 @@ function applyFormLayoutClass(frm) {
     }
 }
 
+function applyLinesSectionClass(frm) {
+    const field = frm.fields_dict.lines;
+    if (!field || !field.$wrapper) return;
+
+    const $section = field.$wrapper.closest(".form-section");
+    if ($section && $section.length) {
+        $section.addClass("ps-lines-section");
+    }
+    applyNativeLinesSectionVisibility(frm);
+}
+
+function applyPricingStrategyVisibility(frm) {
+    const isStatic = frm.doc.resolved_mode === "Static";
+    frm.set_df_property("pricing_scenario", "reqd", 0);
+    ["pricing_scenario", "benchmark_policy", "customs_policy"].forEach((fieldname) => {
+        frm.toggle_display(fieldname, false);
+    });
+
+    const anchorField = frm.fields_dict.pricing_scenario || frm.fields_dict.selected_price_list;
+    if (!anchorField || !anchorField.$wrapper) return;
+
+    const $section = anchorField.$wrapper.closest(".form-section");
+    if ($section && $section.length) {
+        $section.toggle(isStatic);
+    }
+}
+
+function renderTopSummaryBand(frm) {
+    if (!frm || !frm.$wrapper) return;
+
+    frm.$wrapper.find(".ps-summary-band").remove();
+
+    const mode = frm.doc.resolved_mode || __("Pending");
+    const warningCount = getWarningCount(frm.doc.projection_warnings || "");
+    const hasMappings = hasAppliedPolicyMappings(frm);
+    const policyPrimary = mode === "Static"
+        ? (frm.doc.selected_price_list || "-")
+        : (frm.doc.applied_benchmark_policy || (hasMappings ? "-" : __("Not mapped yet")));
+    const policySecondary = mode === "Static"
+        ? (frm.doc.pricing_scenario || "-")
+        : (frm.doc.applied_customs_policy || (hasMappings ? "-" : __("Not mapped yet")));
+    const modeBadgeClass = mode === "Static" ? "ps-summary-mode ps-summary-mode--static" : "ps-summary-mode ps-summary-mode--dynamic";
+
+    const html = `
+        <section class="ps-summary-band">
+            <div class="ps-summary-main">
+                <div class="ps-summary-topline">
+                    <div class="ps-summary-kicker">${__("Pricing Workspace")}</div>
+                    <span class="${modeBadgeClass}">${frappe.utils.escape_html(mode)}</span>
+                </div>
+                <div class="ps-summary-title">${frappe.utils.escape_html(frm.doc.sheet_name || frm.doc.name || __("New Pricing Sheet"))}</div>
+                <div class="ps-summary-subcopy">${__("Review the commercial context, validate pricing signals, then move into the native lines grid.")}</div>
+                <div class="ps-summary-meta">
+                    <span><strong>${__("Customer")}</strong> ${frappe.utils.escape_html(frm.doc.customer || "-")}</span>
+                    <span><strong>${__("Sales")}</strong> ${frappe.utils.escape_html(frm.doc.sales_person || "-")}</span>
+                    <span><strong>${__("Territory")}</strong> ${frappe.utils.escape_html(frm.doc.geography_territory || "-")}</span>
+                </div>
+            </div>
+            <div class="ps-summary-stats">
+                <div class="ps-summary-stat">
+                    <div class="ps-summary-stat-label">${__("Final Total HT")}</div>
+                    <div class="ps-summary-stat-value">${frappe.format(frm.doc.total_selling || 0, { fieldtype: "Currency" })}</div>
+                </div>
+                <div class="ps-summary-stat">
+                    <div class="ps-summary-stat-label">${__("Primary Policy")}</div>
+                    <div class="ps-summary-stat-value ps-summary-stat-value--text">${frappe.utils.escape_html(policyPrimary)}</div>
+                </div>
+                <div class="ps-summary-stat">
+                    <div class="ps-summary-stat-label">${__("Secondary Policy")}</div>
+                    <div class="ps-summary-stat-value ps-summary-stat-value--text">${frappe.utils.escape_html(policySecondary)}</div>
+                </div>
+                <div class="ps-summary-stat ${warningCount ? "ps-summary-stat--warn" : ""}">
+                    <div class="ps-summary-stat-label">${__("Warnings")}</div>
+                    <div class="ps-summary-stat-value">${warningCount}</div>
+                </div>
+            </div>
+        </section>
+    `;
+
+    const $layout = frm.$wrapper.find(".form-layout").first();
+    if ($layout.length) {
+        $layout.before(html);
+    }
+}
+
 function applyModeLayout(frm) {
     const mode = frm.doc.resolved_mode || "";
     const isStatic = mode === "Static";
@@ -517,6 +823,33 @@ function psMarginBadge(pct) {
     const v = Number(pct || 0);
     const cls = v >= 20 ? "ps-mgn-good" : v >= 10 ? "ps-mgn-mid" : "ps-mgn-bad";
     return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+}
+
+function derivePolicyMarginPercent(row, isStatic) {
+    if (isStatic) {
+        return Number(row.margin_pct || 0);
+    }
+
+    const ruleText = (row.resolved_benchmark_rule || "").trim();
+    const ruleMatch = ruleText.match(/:\s*([0-9.]+)%/);
+    if (ruleMatch) {
+        return Number(ruleMatch[1] || 0);
+    }
+
+    try {
+        const steps = JSON.parse(row.pricing_breakdown_json || "[]");
+        const policyStep = steps.find((step) => {
+            const label = String(step.label || "");
+            return label.startsWith("Dynamic Margin") || label.startsWith("Fallback Margin");
+        });
+        if (policyStep && String(policyStep.type || "").toLowerCase() === "percentage") {
+            return Number(policyStep.value || 0);
+        }
+    } catch (e) {
+        // ignore malformed breakdown payload
+    }
+
+    return Number(row.margin_pct || 0);
 }
 
 function psDashLink(doctype, name, label) {
@@ -635,18 +968,30 @@ function renderProjectionDashboard(frm) {
     const totalBase = frm.doc.total_buy || 0;
     const totalExpenses = frm.doc.total_expenses || 0;
     const totalFinal = frm.doc.total_selling || 0;
-    const avgMarkup = totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0;
+    const isStatic = (frm.doc.resolved_mode === "Static");
+    const totalCustoms = lines.reduce((sum, row) => sum + Number(row.customs_applied || 0), 0);
+    const totalPolicyExpenses = lines.reduce((sum, row) => sum + Number(row.expense_total || 0), 0);
+    const totalMarginAmount = lines.reduce((sum, row) => sum + Number(row.margin_total_amount || 0), 0);
+    const totalOperationalExpenses = Math.max(0, totalExpenses - totalCustoms - totalMarginAmount);
+    const totalCost = totalBase + totalOperationalExpenses + totalCustoms;
+    const avgPolicyMargin = lines.length
+        ? lines.reduce((sum, row) => sum + derivePolicyMarginPercent(row, isStatic), 0) / lines.length
+        : 0;
+    const avgDisplayLabel = isRestrictedAgentUser() ? __("Avg Margin") : (isStatic ? __("Avg Markup") : __("Avg Policy Margin"));
+    const avgDisplayValue = frm.doc.resolved_mode === "Static"
+        ? (totalBase > 0 ? (totalFinal / totalBase - 1) * 100 : 0)
+        : avgPolicyMargin;
     const warnings = frm.doc.projection_warnings || "";
     const restrictedAgent = isRestrictedAgentUser();
-    const pricingPolicy = frm.doc.applied_benchmark_policy || frm.doc.benchmark_policy || "";
-    const customsPolicy = frm.doc.applied_customs_policy || frm.doc.customs_policy || "";
+    const pricingPolicy = frm.doc.applied_benchmark_policy || "";
+    const customsPolicy = frm.doc.applied_customs_policy || "";
     const customsTotalApplied = frm.doc.customs_total_applied || 0;
     const salesPerson = frm.doc.sales_person || "";
     const geography = frm.doc.geography_territory || "";
 
     const scenarioCounts = {};
     lines.forEach((row) => {
-        const key = row.resolved_pricing_scenario || row.pricing_scenario || frm.doc.pricing_scenario || "Unresolved";
+        const key = row.resolved_pricing_scenario || row.pricing_scenario || "Unresolved";
         scenarioCounts[key] = (scenarioCounts[key] || 0) + 1;
     });
     const scenarioPills = Object.entries(scenarioCounts)
@@ -680,8 +1025,17 @@ function renderProjectionDashboard(frm) {
                     <td style="text-align:right;">${frappe.format(row.expense_unit_price || 0, { fieldtype: "Currency" })}</td>
                     <td style="text-align:right;">${frappe.format(row.expense_total || 0, { fieldtype: "Currency" })}</td>
                     <td style="text-align:right;">${frappe.format(row.projected_unit_price || 0, { fieldtype: "Currency" })}</td>
-                    <td style="text-align:right;"><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
-                    <td>${psMarginBadge(row.margin_pct)}</td>
+                    <td style="text-align:right;">
+                        <div class="ps-sale-stack">
+                            <strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong>
+                            <div class="ps-inline-override">
+                                <input type="number" step="0.01" class="form-control ps-inline-input" data-override-index="${index}" value="${row.is_manual_override ? frappe.utils.escape_html(String(row.manual_sell_unit_price || "")) : ""}" placeholder="${frappe.utils.escape_html(__("Override"))}">
+                                <button class="btn btn-xs btn-default" type="button" data-apply-override-index="${index}">${__("Set")}</button>
+                                ${row.is_manual_override ? `<button class="btn btn-xs btn-link" type="button" data-clear-override-index="${index}">${__("Reset")}</button>` : ""}
+                            </div>
+                        </div>
+                    </td>
+                    <td>${psMarginBadge(derivePolicyMarginPercent(row, isStatic))}</td>
                     <td>${floor}</td>
                     <td>${preview}</td>
                     <td style="text-align:right;"><button class="btn btn-xs btn-default" data-breakdown-index="${index}">${__("View")}</button></td>
@@ -726,23 +1080,53 @@ function renderProjectionDashboard(frm) {
     const warningBlock = psSmartWarnings(warnings);
 
     ensurePricingSheetStyles(frm);
+    renderTopSummaryBand(frm);
 
-    const isStatic = (frm.doc.resolved_mode === "Static");
     const dashId = `ps-dash-${frm.doc.name || "new"}`.replace(/[^a-z0-9-]/gi, "_");
 
     const html = `
     <div class="ps-shell" id="${dashId}">
 
         <!-- KPI strip -->
+        ${!isStatic && !restrictedAgent ? `
+        <div class="ps-kpi-grid ps-kpi-strip">
+            <div class="ps-kpi ps-kpi--base">
+                <div class="ps-kpi-label">${__("Buy Price")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
+            </div>
+            <div class="ps-kpi ps-kpi--exp">
+                <div class="ps-kpi-label">${__("Expenses")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalOperationalExpenses, { fieldtype: "Currency" })}</div>
+            </div>
+            <div class="ps-kpi ps-kpi--customs">
+                <div class="ps-kpi-label">${__("Customs")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalCustoms, { fieldtype: "Currency" })}</div>
+            </div>
+            <div class="ps-kpi ps-kpi--landed">
+                <div class="ps-kpi-label">${__("Total Cost")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalCost, { fieldtype: "Currency" })}</div>
+            </div>
+        </div>
+        <div class="ps-kpi-grid ps-kpi-strip ps-kpi-strip-secondary">
+            <div class="ps-kpi ps-kpi--amount">
+                <div class="ps-kpi-label">${__("Margin Amount")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalMarginAmount, { fieldtype: "Currency" })}</div>
+            </div>
+            <div class="ps-kpi ps-kpi--margin">
+                <div class="ps-kpi-label">${__("Margin %")}</div>
+                <div class="ps-kpi-value">${Number(avgPolicyMargin).toFixed(1)}%</div>
+            </div>
+            <div class="ps-kpi ps-kpi--final">
+                <div class="ps-kpi-label">${__("Total Sell Price")}</div>
+                <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
+            </div>
+        </div>` : `
         <div class="ps-kpi-grid ps-kpi-strip">
             ${!restrictedAgent ? `<div class="ps-kpi ps-kpi--base">
                 <div class="ps-kpi-label">📦 ${isStatic ? __("Buy Price (Info)") : __("Total Base")}</div>
                 <div class="ps-kpi-value">${frappe.format(totalBase, { fieldtype: "Currency" })}</div>
             </div>` : ""}
-            ${!isStatic && !restrictedAgent ? `<div class="ps-kpi ps-kpi--exp">
-                <div class="ps-kpi-label">⚙ ${__("Additions")}</div>
-                <div class="ps-kpi-value">${frappe.format(totalExpenses, { fieldtype: "Currency" })}</div>
-            </div>` : isStatic ? `<div class="ps-kpi ps-kpi--margin" style="background:#ede9fe;">
+            ${isStatic ? `<div class="ps-kpi ps-kpi--margin" style="background:#ede9fe;">
                 <div class="ps-kpi-label">📋 ${__("Price List")}</div>
                 <div class="ps-kpi-value" style="font-size:13px;color:#4f46e5;">${frappe.utils.escape_html(frm.doc.selected_price_list || "—")}</div>
             </div>` : ""}
@@ -751,17 +1135,17 @@ function renderProjectionDashboard(frm) {
                 <div class="ps-kpi-value">${frappe.format(totalFinal, { fieldtype: "Currency" })}</div>
             </div>
             <div class="ps-kpi ps-kpi--margin">
-                <div class="ps-kpi-label">📈 ${__("Avg Markup")}</div>
-                <div class="ps-kpi-value">${Number(avgMarkup).toFixed(1)}%</div>
+                <div class="ps-kpi-label">📈 ${avgDisplayLabel}</div>
+                <div class="ps-kpi-value">${Number(avgDisplayValue).toFixed(1)}%</div>
             </div>
-        </div>
+        </div>`}
 
         <!-- Tab bar -->
         <div class="ps-dash-tabs">
-            <button class="ps-dash-tab ps-dash-tab--active" data-tab="overview" data-dash="${dashId}">
+            <button class="ps-dash-tab" data-tab="overview" data-dash="${dashId}">
                 🧭 ${__("Overview")}
             </button>
-            <button class="ps-dash-tab" data-tab="lines" data-dash="${dashId}">
+            <button class="ps-dash-tab ps-dash-tab--active" data-tab="lines" data-dash="${dashId}">
                 📋 ${__("Lines")} <span class="ps-preview-count">${lines.length}</span>
             </button>
             ${!isStatic && !restrictedAgent ? `
@@ -774,7 +1158,7 @@ function renderProjectionDashboard(frm) {
         </div>
 
         <!-- Tab: Overview -->
-        <div class="ps-dash-panel ps-dash-panel--active" data-panel="overview" data-dash="${dashId}">
+        <div class="ps-dash-panel" data-panel="overview" data-dash="${dashId}">
             <!-- Scenario pills -->
             <div class="ps-chip-row">
                 ${restrictedAgent ? `<span class="ps-scenario-chip" style="color:#64748b;">${__("Pricing configuration applied automatically")}</span>` : (scenarioPills || `<span class="ps-scenario-chip" style="color:#64748b;">${__("No resolved scenario")}</span>`)}
@@ -792,7 +1176,21 @@ function renderProjectionDashboard(frm) {
         </div>
 
         <!-- Tab: Lines -->
-        <div class="ps-dash-panel" data-panel="lines" data-dash="${dashId}">
+        <div class="ps-dash-panel ps-dash-panel--active" data-panel="lines" data-dash="${dashId}">
+            <div class="ps-lines-toolbar">
+                <div class="ps-lines-toolbar-main">
+                    <div class="ps-lines-control" data-lines-item-control></div>
+                    <div class="ps-lines-qty-card">
+                        <label class="control-label ps-lines-mini-label">${__("Qty")}</label>
+                        <input type="number" min="1" step="1" class="form-control" data-lines-qty value="1">
+                    </div>
+                    <div class="ps-lines-control" data-lines-buying-list-control></div>
+                    <button class="btn btn-primary btn-sm" type="button" data-lines-add>${__("Add item")}</button>
+                </div>
+                <div class="ps-lines-toolbar-actions">
+                    <button class="btn btn-default btn-sm" type="button" data-toggle-native-lines>${__("Show native table")}</button>
+                </div>
+            </div>
             <div class="ps-preview-scroll">
                 <table class="ps-table">
                     <thead>
@@ -800,16 +1198,16 @@ function renderProjectionDashboard(frm) {
                             <th>${__("Item")}</th>
                             ${restrictedAgent ? `
                             <th style="text-align:right;">${__("Qty")}</th>
-                            <th style="text-align:right;">${__("Final Unit")}</th>
-                            <th style="text-align:right;">${__("Final Total HT")}</th>
+                            <th style="text-align:right;">${__("Prix vente PU HT")}</th>
+                            <th style="text-align:right;">${__("Prix vente PT HT")}</th>
                             ` : `
                             <th>${__("Expenses Policy")}</th>
                             <th style="text-align:right;">${__("Qty")}</th>
-                            <th style="text-align:right;">${__("Base")}</th>
-                            <th style="text-align:right;">${__("Exp/Unit")}</th>
-                            <th style="text-align:right;">${__("Exp Total")}</th>
-                            <th style="text-align:right;">${__("Projected")}</th>
-                            <th style="text-align:right;">${__("Final")}</th>
+                            <th style="text-align:right;">${__("Base PU HT")}</th>
+                            <th style="text-align:right;">${__("Charges PU HT")}</th>
+                            <th style="text-align:right;">${__("Charges PT HT")}</th>
+                            <th style="text-align:right;">${__("Cout PU HT")}</th>
+                            <th style="text-align:right;">${__("Prix vente PU HT")}</th>
                             <th>${__("Margin")}</th>
                             <th>${__("Flags")}</th>
                             <th>${__("Expense Flow")}</th>
@@ -829,7 +1227,7 @@ function renderProjectionDashboard(frm) {
                     <th>${__("Component")}</th>
                     <th style="text-align:right;">${__("Total Impact")}</th>
                 </tr></thead>
-                <tbody>${impacts || `<tr><td colspan="2" style="padding:12px;color:#64748b;text-align:center;">${__("No adjustment data yet — run Recalculate.")}</td></tr>`}</tbody>
+                <tbody>${impacts || `<tr><td colspan="2" style="padding:12px;color:#64748b;text-align:center;">${__("No adjustment data yet.")}</td></tr>`}</tbody>
             </table>
         </div>
 
@@ -857,6 +1255,7 @@ function renderProjectionDashboard(frm) {
     `;
 
     frm.fields_dict.projection_dashboard.$wrapper.html(html);
+    mountLinesToolbarControls(frm, dashId, lines);
 
     // Tab switching — scoped to this dashId
     frm.fields_dict.projection_dashboard.$wrapper.find(".ps-dash-tab").on("click", function () {
@@ -974,15 +1373,8 @@ async function applyAgentDynamicDefaults(frm) {
         return;
     }
 
-    const selected = context.selected || {};
-    if (selected.pricing_scenario) {
-        await frm.set_value("pricing_scenario", selected.pricing_scenario);
-    }
-    if (selected.benchmark_policy) {
-        await frm.set_value("benchmark_policy", selected.benchmark_policy);
-    }
-    if (selected.customs_policy) {
-        await frm.set_value("customs_policy", selected.customs_policy);
+    if (isRestrictedAgentUser()) {
+        ensureFallbackPolicyMapping(frm, context.selected || {});
     }
 }
 
@@ -997,15 +1389,25 @@ frappe.ui.form.on("Pricing Sheet", {
         frm.set_query("dimensioning_set", () => ({ filters: { is_active: 1 } }));
         setAgentPolicyQueries(frm, null);
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
+        if (frm.fields_dict.lines.grid.get_field("margin_pct")) {
+            frm.fields_dict.lines.grid.get_field("margin_pct").formatter = (value, df, options, doc) => {
+                return psMarginBadge(derivePolicyMarginPercent(doc || {}, frm.doc.resolved_mode === "Static"));
+            };
+        }
         if (frm.fields_dict.lines.grid.get_field("margin_source")) {
             frm.fields_dict.lines.grid.get_field("margin_source").formatter = (value) => marginSourceBadge(value);
         }
     },
 
     refresh(frm) {
+        sanitizeLineResolutionFields(frm);
         applyFormLayoutClass(frm);
         applyDashboardSectionClass(frm);
+        applyLinesSectionClass(frm);
         applyModeLayout(frm);
+        applyPricingStrategyVisibility(frm);
+        highlightPricingSheetSidebar();
+        $(document).off("keydown.psheet");
 
         if (!frm.is_new()) {
             frm.page.set_primary_action(__("Generate Quotation"), async () => {
@@ -1041,18 +1443,15 @@ frappe.ui.form.on("Pricing Sheet", {
         if (frm.doc.sales_person) {
             frm.events.sales_person(frm);
         }
+    },
 
-        // Keyboard shortcut: Ctrl+Shift+R = Recalculate
-        $(document).off("keydown.psheet").on("keydown.psheet", async (e) => {
-            if (e.ctrlKey && e.shiftKey && e.key === "R" && frm.doc.doctype === "Pricing Sheet") {
-                e.preventDefault();
-                try {
-                    await frm.save();
-                    renderProjectionDashboard(frm);
-                    frappe.show_alert({ message: __("Pricing recalculated"), indicator: "green" });
-                } catch (_) { }
-            }
-        });
+    validate(frm) {
+        sanitizeLineResolutionFields(frm);
+    },
+
+    before_save(frm) {
+        sanitizeLineResolutionFields(frm);
+        frm.refresh_field("lines");
     },
 
     async customer(frm) {
@@ -1104,12 +1503,17 @@ frappe.ui.form.on("Pricing Sheet Item", {
             return;
         }
 
+        const resolvedBuyingList = resolveSuggestedBuyingPriceList(frm, row);
+        if (!row.source_buying_price_list && resolvedBuyingList) {
+            frappe.model.set_value(cdt, cdn, "source_buying_price_list", resolvedBuyingList);
+        }
+
         frappe.call({
             method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_item_pricing_defaults",
             args: {
                 item_code: row.item,
-                pricing_scenario: row.pricing_scenario || frm.doc.pricing_scenario,
-                source_buying_price_list: row.source_buying_price_list,
+                pricing_scenario: row.pricing_scenario,
+                source_buying_price_list: resolvedBuyingList || row.source_buying_price_list,
             },
             callback: (r) => {
                 const data = r.message || {};
@@ -1119,6 +1523,7 @@ frappe.ui.form.on("Pricing Sheet Item", {
                 if (!row.display_group) {
                     frappe.model.set_value(cdt, cdn, "display_group", data.item_group || "Ungrouped");
                 }
+                frm.refresh_field("lines");
                 renderProjectionDashboard(frm);
             },
         });
@@ -1147,16 +1552,19 @@ frappe.ui.form.on("Pricing Sheet Item", {
             return;
         }
 
+        const resolvedBuyingList = resolveSuggestedBuyingPriceList(frm, row);
+
         frappe.call({
             method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_item_pricing_defaults",
             args: {
                 item_code: row.item,
-                pricing_scenario: row.pricing_scenario || frm.doc.pricing_scenario,
-                source_buying_price_list: row.source_buying_price_list,
+                pricing_scenario: row.pricing_scenario,
+                source_buying_price_list: resolvedBuyingList || row.source_buying_price_list,
             },
             callback: (r) => {
                 const data = r.message || {};
                 frappe.model.set_value(cdt, cdn, "buy_price", data.buy_price || 0);
+                frm.refresh_field("lines");
                 renderProjectionDashboard(frm);
             },
         });

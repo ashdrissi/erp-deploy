@@ -27,8 +27,19 @@ class TestPricingProjection(unittest.TestCase):
             ],
         )
         self.assertAlmostEqual(result["projected_unit"], 55.0, places=4)
-        self.assertAlmostEqual(result["projected_line"], 240.0, places=4)
+        self.assertAlmostEqual(result["projected_line"], 220.0, places=4)
         self.assertAlmostEqual(result["sheet_fixed_total"], 100.0, places=4)
+
+    def test_per_line_fixed_not_double_counted_for_single_qty(self):
+        result = apply_expenses(
+            base_unit=720,
+            qty=1,
+            expenses=[
+                {"label": "Transport", "type": "Fixed", "value": 38.052, "scope": "Per Line", "sequence": 10},
+            ],
+        )
+        self.assertAlmostEqual(result["projected_unit"], 758.052, places=6)
+        self.assertAlmostEqual(result["projected_line"], 758.052, places=6)
 
     def test_negative_percentage_discount(self):
         result = apply_expenses(

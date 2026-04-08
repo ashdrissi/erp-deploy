@@ -1,0 +1,1 @@
+from orderlift.client_portal.doctype.portal_customer_group_policy.portal_customer_group_policy import PortalCustomerGroupPolicy

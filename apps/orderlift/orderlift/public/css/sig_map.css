@@ -1,0 +1,315 @@
+/* ============================================================
+   SIG Map — /project-map page
+   ============================================================ */
+
+:root {
+  --sig-blue:   #1a73e8;
+  --sig-green:  #28a745;
+  --sig-orange: #fd7e14;
+  --sig-red:    #dc3545;
+  --sig-gray:   #6c757d;
+  --sig-bg:     #f8f9fa;
+  --sig-card:   #ffffff;
+  --sig-border: #dee2e6;
+  --sig-text:   #212529;
+  --sig-radius: 8px;
+  --sig-shadow: 0 2px 8px rgba(0,0,0,.12);
+  --toolbar-h:  56px;
+}
+
+/* Hide Frappe navbar on this page */
+body:has(#sig-map-root) .navbar,
+body:has(#sig-map-root) .web-header { display: none !important; }
+
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+.page-content { padding: 0 !important; margin: 0; }
+
+/* ── Root ─────────────────────────────────────────────────── */
+#sig-map-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--sig-text);
+}
+
+/* ── Toolbar ──────────────────────────────────────────────── */
+.sig-map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--toolbar-h);
+  padding: 0 16px;
+  background: var(--sig-card);
+  border-bottom: 1px solid var(--sig-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  z-index: 1000;
+}
+
+.sig-map-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sig-blue);
+  white-space: nowrap;
+}
+.sig-map-logo img { height: 28px; }
+
+.sig-map-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.sig-filter-select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--sig-border);
+  border-radius: 6px;
+  background: var(--sig-bg);
+  font-size: 13px;
+  color: var(--sig-text);
+  cursor: pointer;
+}
+.sig-filter-select:focus { outline: none; border-color: var(--sig-blue); }
+
+.sig-btn {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--sig-border);
+  border-radius: 6px;
+  background: var(--sig-bg);
+  font-size: 13px;
+  color: var(--sig-text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.sig-btn:hover { background: #e9ecef; }
+.sig-btn-primary {
+  background: var(--sig-blue);
+  color: #fff;
+  border-color: var(--sig-blue);
+}
+.sig-btn-primary:hover { background: #1557b0; }
+
+.sig-map-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.sig-map-count {
+  font-size: 13px;
+  color: var(--sig-gray);
+  white-space: nowrap;
+}
+
+/* ── Map body ─────────────────────────────────────────────── */
+.sig-map-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.sig-map-canvas {
+  flex: 1;
+  height: 100%;
+  z-index: 1;
+}
+
+/* ── Side panel ───────────────────────────────────────────── */
+.sig-map-panel {
+  width: 340px;
+  height: 100%;
+  background: var(--sig-card);
+  border-left: 1px solid var(--sig-border);
+  box-shadow: -2px 0 8px rgba(0,0,0,.08);
+  overflow-y: auto;
+  z-index: 2;
+  transition: width .25s ease, opacity .25s ease;
+  position: relative;
+}
+.sig-map-panel-hidden {
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  border: none;
+}
+
+.sig-panel-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: var(--sig-gray);
+  cursor: pointer;
+  z-index: 1;
+}
+.sig-panel-close:hover { color: var(--sig-text); }
+
+.sig-panel-content {
+  padding: 20px 16px;
+}
+
+/* Panel sections */
+.sig-panel-header { margin-bottom: 16px; }
+.sig-panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  padding-right: 24px;
+}
+.sig-panel-subtitle { font-size: 13px; color: var(--sig-gray); margin: 0; }
+
+.sig-panel-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+.sig-badge-green   { background: #d4edda; color: #155724; }
+.sig-badge-orange  { background: #fff3cd; color: #856404; }
+.sig-badge-red     { background: #f8d7da; color: #721c24; }
+.sig-badge-gray    { background: #e2e3e5; color: #383d41; }
+
+.sig-panel-section {
+  margin: 16px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--sig-border);
+}
+.sig-panel-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--sig-gray);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/* QC progress */
+.sig-qc-bar-wrap {
+  background: #e9ecef;
+  border-radius: 4px;
+  height: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.sig-qc-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .3s ease;
+}
+
+.sig-qc-cats { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.sig-qc-cat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.sig-qc-cat-name { flex: 1; }
+.sig-qc-cat-count { color: var(--sig-gray); font-variant-numeric: tabular-nums; }
+
+.sig-panel-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.sig-panel-btn {
+  width: 100%;
+  padding: 9px 14px;
+  border: 1px solid var(--sig-border);
+  border-radius: 6px;
+  background: var(--sig-bg);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  color: var(--sig-text);
+  display: block;
+}
+.sig-panel-btn:hover { background: #e9ecef; }
+.sig-panel-btn-primary {
+  background: var(--sig-blue);
+  color: #fff;
+  border-color: var(--sig-blue);
+}
+.sig-panel-btn-primary:hover { background: #1557b0; }
+
+/* ── Leaflet custom markers ───────────────────────────────── */
+.sig-marker {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid rgba(0,0,0,.18);
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+}
+.sig-marker-green   { background: var(--sig-green); }
+.sig-marker-orange  { background: var(--sig-orange); }
+.sig-marker-red     { background: var(--sig-red); }
+.sig-marker-gray    { background: var(--sig-gray); }
+.sig-marker-blue    { background: var(--sig-blue); }
+
+/* ── Loading overlay ──────────────────────────────────────── */
+.sig-map-loading {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  font-size: 14px;
+  color: var(--sig-gray);
+}
+.sig-map-loading.hidden { display: none; }
+
+.sig-spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid #dee2e6;
+  border-top-color: var(--sig-blue);
+  border-radius: 50%;
+  animation: sig-spin .8s linear infinite;
+  margin-bottom: 12px;
+}
+@keyframes sig-spin { to { transform: rotate(360deg); } }
+
+/* ── Cluster badge ────────────────────────────────────────── */
+.sig-cluster {
+  background: var(--sig-blue);
+  color: #fff;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  border: 2px solid rgba(255,255,255,.6);
+  box-shadow: var(--sig-shadow);
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sig-map-panel { width: 100%; height: 50vh; border-top: 1px solid var(--sig-border); }
+  .sig-map-panel-hidden { height: 0; }
+  .sig-map-body { flex-direction: column; }
+  .sig-map-canvas { height: 50vh; }
+  .sig-map-filters { gap: 4px; }
+  .sig-filter-select { font-size: 12px; padding: 0 4px; }
+}

@@ -117,7 +117,7 @@
    "fieldtype": "Link",
    "label": "Default Expenses Policy",
    "options": "Pricing Scenario",
-   "reqd": 1,
+   "reqd": 0,
    "in_standard_filter": 1
   },
   {

@@ -1,0 +1,22 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "custom_sig_section",
+    "fieldtype": "Section Break",
+    "label": "SIG — Installation",
+    "insert_after": "terms",
+    "collapsible": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Order",
+    "fieldname": "custom_installation_project",
+    "fieldtype": "Link",
+    "label": "Installation Project",
+    "options": "Project",
+    "insert_after": "custom_sig_section",
+    "read_only": 1,
+    "in_list_view": 0
+  }
+]

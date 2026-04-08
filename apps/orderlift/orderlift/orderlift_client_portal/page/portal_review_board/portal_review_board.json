@@ -1,0 +1,24 @@
+{
+    "content": null,
+    "creation": "2026-04-05 00:00:00.000000",
+    "docstatus": 0,
+    "doctype": "Page",
+    "idx": 0,
+    "modified": "2026-04-05 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift Client Portal",
+    "name": "portal-review-board",
+    "owner": "Administrator",
+    "page_name": "portal-review-board",
+    "roles": [
+        {"role": "Orderlift Admin"},
+        {"role": "System Manager"},
+        {"role": "Sales Manager"},
+        {"role": "Orderlift Commercial"}
+    ],
+    "script": null,
+    "standard": "Yes",
+    "style": null,
+    "system_page": 0,
+    "title": "Portal Review Board"
+}

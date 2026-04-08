@@ -114,6 +114,54 @@ def resolve_benchmark_margin(
     }
 
 
+def compute_margin_step(
+    margin_percent,
+    margin_application_basis="Base Price",
+    *,
+    base_price,
+    loaded_cost,
+    sequence=90,
+    is_fallback=False,
+):
+    basis = (margin_application_basis or "Base Price").strip() or "Base Price"
+    margin_percent = flt(margin_percent)
+    label_prefix = "Fallback Margin" if is_fallback else "Dynamic Margin"
+    label = f"{label_prefix} ({basis})"
+
+    if basis == "Base Price":
+        return {
+            "label": label,
+            "type": "Percentage",
+            "value": margin_percent,
+            "applies_to": "Base Price",
+            "scope": "Per Unit",
+            "sequence": cint(sequence or 90),
+            "is_active": 1,
+            "is_overridden": 0,
+            "override_source": "pricing_policy",
+        }
+
+    cost_basis = flt(loaded_cost)
+    if basis == "Sale Price":
+        if margin_percent >= 100:
+            raise ValueError("Sale Price margin basis requires margin percent below 100")
+        margin_value = cost_basis * (margin_percent / 100.0) / (1 - (margin_percent / 100.0)) if margin_percent else 0.0
+    else:
+        margin_value = cost_basis * (margin_percent / 100.0)
+
+    return {
+        "label": label,
+        "type": "Fixed",
+        "value": flt(margin_value),
+        "applies_to": basis,
+        "scope": "Per Unit",
+        "sequence": cint(sequence or 90),
+        "is_active": 1,
+        "is_overridden": 0,
+        "override_source": "pricing_policy",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------

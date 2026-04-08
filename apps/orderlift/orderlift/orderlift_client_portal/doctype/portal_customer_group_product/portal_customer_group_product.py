@@ -1,0 +1,1 @@
+from orderlift.client_portal.doctype.portal_customer_group_product.portal_customer_group_product import PortalCustomerGroupProduct

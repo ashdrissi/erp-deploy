@@ -16,7 +16,10 @@ required_apps = ["frappe", "erpnext"]
 # Assets — included in Desk for all logged-in users
 # ---------------------------------------------------------
 app_include_css = ["/assets/orderlift/css/orderlift_bundle.css"]
-app_include_js = ["/assets/orderlift/js/orderlift_bundle.js"]
+app_include_js = [
+    "/assets/orderlift/js/orderlift_bundle.js",
+    "/assets/orderlift/js/pricing_sheet_global_loader_20260408_02.js",
+]
 
 # ---------------------------------------------------------
 # Fixtures — exported configuration records loaded on
@@ -69,7 +72,11 @@ doc_events = {
     },
     "Sales Order": {
         # Notify stock manager when a sales order is confirmed
-        "on_submit": "orderlift.sales.utils.stock_notifier.notify_stock_manager",
+        # Also warn if linked installation project has a Blocked QC (SIG)
+        "on_submit": [
+            "orderlift.sales.utils.stock_notifier.notify_stock_manager",
+            "orderlift.orderlift_sig.utils.project_status_guard.on_sales_order_submit",
+        ],
     },
     "Item": {
         # Archive cost price into Item Cost History on save when cost changes
@@ -91,15 +98,31 @@ doc_events = {
         # Notify assigned technician when ticket status changes to Assigned
         "on_update": "orderlift.orderlift_sav.doctype.sav_ticket.sav_ticket.on_status_change",
     },
+    "Project": {
+        # Recalculate QC status + enforce completion guard (SIG module)
+        "before_save": [
+            "orderlift.orderlift_sig.utils.project_qc.on_project_save",
+            "orderlift.orderlift_sig.utils.project_status_guard.before_project_status_change",
+        ],
+    },
 }
 
 doctype_js = {
     "Delivery Note": "public/js/delivery_note_logistics.js",
+    "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
+    "Portal Quote Request": "public/js/portal_quote_request.js",
     "Sales Order": "public/js/sales_order_logistics.js",
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260226_10.js",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260406_46.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v2.js",
+    # SIG module — Project form enhancements (QC Template, Geocoding)
+    "Project": "public/js/project_sig.js",
+    "QC Checklist Template": "orderlift_sig/doctype/qc_checklist_template/qc_checklist_template.js",
+}
+
+doctype_list_js = {
+    "Portal Quote Request": "public/js/portal_quote_request_list.js",
 }
 
 # ---------------------------------------------------------
@@ -121,15 +144,28 @@ scheduler_events = {
 after_migrate = [
     "orderlift.sales.utils.pricing_setup.after_migrate",
     "orderlift.logistics.setup.after_migrate",
+    "orderlift.orderlift_sig.setup.after_migrate",
+    "orderlift.scripts.setup_main_dashboard_sidebar.run",
+]
+
+on_login = [
+    "orderlift.orderlift_client_portal.utils.website.sync_b2b_only_user_type_on_login",
+]
+
+before_request = [
+    "orderlift.orderlift_client_portal.utils.website.redirect_b2b_only_users_from_desk",
 ]
 
 # ---------------------------------------------------------
 # Portal (B2B web portal pages)
 # ---------------------------------------------------------
 website_route_rules = [
-    {"from_route": "/b2b-portal", "to_route": "b2b-portal"},
-    {"from_route": "/b2b-portal/<path:name>", "to_route": "b2b-portal"},
-    {"from_route": "/project-map", "to_route": "project-map"},
+    {"from_route": "/b2b-portal", "to_route": "b2b_portal"},
+    {"from_route": "/b2b-portal/<path:name>", "to_route": "b2b_portal"},
+    # SIG module web pages
+    {"from_route": "/project-map",   "to_route": "project-map"},
+    {"from_route": "/sig-dashboard", "to_route": "sig-dashboard"},
+    {"from_route": "/sig-qc",        "to_route": "sig-qc"},
 ]
 
 # Roles allowed to access the web portal
@@ -137,6 +173,8 @@ website_context = {
     "favicon": "/assets/orderlift/images/favicon.ico",
     "splash_image": "/assets/orderlift/images/orderlift_logo.png",
 }
+
+get_website_user_home_page = "orderlift.orderlift_client_portal.utils.website.get_portal_home_page"
 
 # ---------------------------------------------------------
 # Jinja2 custom filters/functions available in print formats

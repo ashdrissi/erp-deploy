@@ -1,0 +1,10 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<link rel="stylesheet" href="/assets/orderlift/css/b2b_portal.css?v=20260405l">
+<script>document.body.classList.add("olp-hide-frappe-nav");</script>
+<div id="ol-b2b-portal-root"
+     data-is-guest="{{ 1 if is_guest else 0 }}"
+     data-login-url="{{ login_url }}"></div>
+<script src="/assets/orderlift/js/b2b_portal.js?v=20260405l"></script>
+{% endblock %}

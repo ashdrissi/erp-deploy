@@ -99,11 +99,10 @@
   },
   {
    "fieldname": "resolved_pricing_scenario",
-   "fieldtype": "Link",
+    "fieldtype": "Data",
     "label": "Resolved Expenses Policy",
-   "options": "Pricing Scenario",
-   "read_only": 1,
-   "in_list_view": 1
+    "read_only": 1,
+    "in_list_view": 1
   },
   {
    "fieldname": "resolved_scenario_rule",
@@ -121,9 +120,9 @@
    "fieldname": "scenario_source",
    "fieldtype": "Select",
     "label": "Expenses Policy Source",
-   "options": "Line\nBundle Rule\nPolicy Rule\nSheet Default",
-   "read_only": 1,
-   "in_list_view": 1
+    "options": "Line\nBundle Rule\nPolicy Rule\nSheet Default\nDraft Fallback",
+    "read_only": 1,
+    "in_list_view": 1
   },
   {
    "fieldname": "has_scenario_override",
@@ -187,10 +186,10 @@
   {
    "fieldname": "buy_price",
    "fieldtype": "Currency",
-   "label": "Base Unit Price",
-   "default": "0",
-   "in_list_view": 1,
-   "non_negative": 1
+    "label": "Base PU HT",
+    "default": "0",
+    "in_list_view": 1,
+    "non_negative": 1
   },
   {
    "fieldname": "buy_price_missing",
@@ -220,24 +219,24 @@
   {
    "fieldname": "base_amount",
    "fieldtype": "Currency",
-   "label": "Base Amount",
-   "read_only": 1,
-   "in_list_view": 1
+    "label": "Base PT HT",
+    "read_only": 1,
+    "in_list_view": 1
   },
   {
    "fieldname": "expense_unit_price",
    "fieldtype": "Currency",
-    "label": "Policy Expenses Unit",
+     "label": "Charges PU HT",
    "read_only": 1,
    "in_list_view": 1
   },
   {
    "fieldname": "expense_total",
    "fieldtype": "Currency",
-    "label": "Policy Expenses Total",
-    "read_only": 1,
-    "in_list_view": 1
-  },
+     "label": "Charges PT HT",
+     "read_only": 1,
+     "in_list_view": 1
+   },
   {
    "fieldname": "customs_unit_amount",
    "fieldtype": "Currency",
@@ -259,17 +258,17 @@
   {
    "fieldname": "projected_unit_price",
    "fieldtype": "Currency",
-   "label": "Projected Unit Price",
-   "read_only": 1,
-   "in_list_view": 1
-  },
+    "label": "Cout PU HT",
+    "read_only": 1,
+    "in_list_view": 1
+   },
   {
    "fieldname": "projected_total_price",
    "fieldtype": "Currency",
-    "label": "Projected Total HT",
-    "read_only": 1,
-    "in_list_view": 1
-  },
+     "label": "Cout PT HT",
+     "read_only": 1,
+     "in_list_view": 1
+   },
   {
    "fieldname": "manual_sell_unit_price",
    "fieldtype": "Currency",
@@ -284,10 +283,10 @@
   {
    "fieldname": "final_sell_unit_price",
    "fieldtype": "Currency",
-    "label": "Final Unit Price HT",
-    "read_only": 1,
-    "in_list_view": 1
-  },
+     "label": "Prix vente PU HT",
+     "read_only": 1,
+     "in_list_view": 1
+   },
   {
    "fieldname": "margin_pct",
    "fieldtype": "Percent",
@@ -382,10 +381,10 @@
   {
    "fieldname": "final_sell_total",
    "fieldtype": "Currency",
-    "label": "Final Total HT",
-    "read_only": 1,
-    "in_list_view": 1
-  },
+     "label": "Prix vente PT HT",
+     "read_only": 1,
+     "in_list_view": 1
+   },
   {
    "fieldname": "benchmark_price",
    "fieldtype": "Currency",

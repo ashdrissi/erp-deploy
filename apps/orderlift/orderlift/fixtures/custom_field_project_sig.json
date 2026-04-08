@@ -1,0 +1,116 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_sig_section",
+    "fieldtype": "Section Break",
+    "label": "SIG — Site & Installation",
+    "insert_after": "notes",
+    "collapsible": 1,
+    "module": "Orderlift SIG"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_project_type_ol",
+    "fieldtype": "Select",
+    "label": "Project Type",
+    "options": "\nNew Installation\nMaintenance\nUpgrade\nInspection",
+    "insert_after": "custom_sig_section",
+    "in_list_view": 1,
+    "in_standard_filter": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_site_address",
+    "fieldtype": "Small Text",
+    "label": "Site Address",
+    "insert_after": "custom_project_type_ol"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_city",
+    "fieldtype": "Data",
+    "label": "City",
+    "insert_after": "custom_site_address",
+    "in_list_view": 1,
+    "in_standard_filter": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_col_break_geo",
+    "fieldtype": "Column Break",
+    "insert_after": "custom_city"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_latitude",
+    "fieldtype": "Float",
+    "label": "Latitude",
+    "insert_after": "custom_col_break_geo",
+    "precision": "6",
+    "read_only": 0
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_longitude",
+    "fieldtype": "Float",
+    "label": "Longitude",
+    "insert_after": "custom_latitude",
+    "precision": "6",
+    "read_only": 0
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_geocode_status",
+    "fieldtype": "Data",
+    "label": "Geocode Status",
+    "insert_after": "custom_longitude",
+    "read_only": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_qc_section",
+    "fieldtype": "Section Break",
+    "label": "QC Checklist",
+    "insert_after": "custom_geocode_status",
+    "collapsible": 0
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_qc_template",
+    "fieldtype": "Link",
+    "label": "QC Template",
+    "options": "QC Checklist Template",
+    "insert_after": "custom_qc_section"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_qc_status",
+    "fieldtype": "Select",
+    "label": "QC Status",
+    "options": "\nNot Started\nIn Progress\nComplete\nBlocked",
+    "insert_after": "custom_qc_template",
+    "read_only": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Project",
+    "fieldname": "custom_qc_checklist",
+    "fieldtype": "Table",
+    "label": "QC Checklist",
+    "options": "Installation QC Item",
+    "insert_after": "custom_qc_status"
+  }
+]

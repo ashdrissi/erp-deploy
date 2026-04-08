@@ -39,9 +39,51 @@ async function refreshTierModeUI(frm) {
     }
 }
 
+function addPortalActions(frm) {
+    if (frm.is_new()) return;
+
+    frm.add_custom_button(__("Portal Policies"), () => {
+        frappe.set_route("List", "Portal Customer Group Policy", { customer_group: frm.doc.customer_group || undefined });
+    }, __("B2B Portal"));
+
+    frm.add_custom_button(__("Portal Requests"), () => {
+        frappe.set_route("List", "Portal Quote Request", { customer: frm.doc.name });
+    }, __("B2B Portal"));
+
+    frm.add_custom_button(__("Invite Portal User"), () => {
+        const d = new frappe.ui.Dialog({
+            title: __("Invite Portal User"),
+            fields: [
+                { fieldname: "email", fieldtype: "Data", label: __("Email"), reqd: 1, options: "Email" },
+                { fieldname: "first_name", fieldtype: "Data", label: __("First Name") },
+                { fieldname: "last_name", fieldtype: "Data", label: __("Last Name") },
+            ],
+            primary_action_label: __("Invite"),
+            primary_action(values) {
+                frappe.call({
+                    method: "orderlift.orderlift_client_portal.api.invite_portal_user",
+                    args: {
+                        email: values.email,
+                        customer: frm.doc.name,
+                        first_name: values.first_name,
+                        last_name: values.last_name,
+                    },
+                    callback: () => {
+                        d.hide();
+                        frappe.show_alert({ message: __("Portal user invited"), indicator: "green" });
+                        frm.reload_doc();
+                    },
+                });
+            },
+        });
+        d.show();
+    }, __("B2B Portal"));
+}
+
 frappe.ui.form.on("Customer", {
     async refresh(frm) {
         await refreshTierModeUI(frm);
+        addPortalActions(frm);
     },
 
     async customer_group(frm) {

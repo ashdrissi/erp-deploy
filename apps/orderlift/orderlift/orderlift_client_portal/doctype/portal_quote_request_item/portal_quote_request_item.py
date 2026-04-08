@@ -1,0 +1,1 @@
+from orderlift.client_portal.doctype.portal_quote_request_item.portal_quote_request_item import PortalQuoteRequestItem

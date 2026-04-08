@@ -10,8 +10,8 @@ Provides the active custom modules on top of ERPNext:
 - Analytics dashboards & reports
 
 Current delivery focus:
-- Active modules: Sales/Pricing, Logistics, analytics dashboards, and branded UX
-- Roadmap modules for now: B2B Portal, CRM, SAV, SIG, and HR extensions
+- Active modules: Sales/Pricing, Logistics, analytics dashboards, branded UX, invite-only B2B portal, and dashboard operations hubs
+- Roadmap modules for now: CRM business workflows, SAV advanced SLA workflow, SIG, and HR advanced extensions
 
 ## Installation
 

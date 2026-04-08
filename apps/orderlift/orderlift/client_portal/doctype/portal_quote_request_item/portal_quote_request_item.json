@@ -1,0 +1,33 @@
+{
+  "doctype": "DocType",
+  "name": "Portal Quote Request Item",
+  "module": "Orderlift Client Portal",
+  "istable": 1,
+  "editable_grid": 1,
+  "field_order": [
+    "item_type",
+    "item_code",
+    "product_bundle",
+    "item_name",
+    "brand",
+    "uom",
+    "qty",
+    "unit_price",
+    "line_total",
+    "source_price_list",
+    "image"
+  ],
+  "fields": [
+    {"fieldname": "item_type", "fieldtype": "Select", "label": "Item Type", "options": "Item\nBundle"},
+    {"fieldname": "item_code", "fieldtype": "Link", "label": "Item", "options": "Item", "reqd": 1},
+    {"fieldname": "product_bundle", "fieldtype": "Link", "label": "Product Bundle", "options": "Product Bundle"},
+    {"fieldname": "item_name", "fieldtype": "Data", "label": "Item Name", "read_only": 1},
+    {"fieldname": "brand", "fieldtype": "Data", "label": "Brand", "read_only": 1},
+    {"fieldname": "uom", "fieldtype": "Link", "label": "UOM", "options": "UOM"},
+    {"fieldname": "qty", "fieldtype": "Float", "label": "Qty", "reqd": 1},
+    {"fieldname": "unit_price", "fieldtype": "Currency", "label": "Unit Price", "read_only": 1},
+    {"fieldname": "line_total", "fieldtype": "Currency", "label": "Line Total", "read_only": 1},
+    {"fieldname": "source_price_list", "fieldtype": "Link", "label": "Source Price List", "options": "Price List", "read_only": 1},
+    {"fieldname": "image", "fieldtype": "Data", "label": "Image", "read_only": 1}
+  ]
+}

@@ -5,19 +5,19 @@ def get_data():
     return [
         {
             "module_name": "Orderlift SAV",
-            "label": _("After-Sales Service (Roadmap)"),
+            "label": _("After-Sales Service"),
             "color": "#e74c3c",
             "icon": "octicon octicon-tools",
             "type": "module",
-            "description": "Roadmap module - SAV tickets, technician assignment, and closure tracking are planned next.",
+            "description": "SAV tickets, technician assignment, closure tracking, and service dashboards.",
         },
         {
             "module_name": "Orderlift SIG",
-            "label": _("Project Map (Roadmap)"),
+            "label": _("SIG Projects"),
             "color": "#2ecc71",
             "icon": "octicon octicon-location",
             "type": "module",
-            "description": "Roadmap module - geo-location and installation project tracking are planned next.",
+            "description": "Installation project QC, maps, dashboard visibility, and field execution tools.",
         },
         {
             "module_name": "Orderlift Logistics",
@@ -29,11 +29,11 @@ def get_data():
         },
         {
             "module_name": "Orderlift Client Portal",
-            "label": _("B2B Portal (Roadmap)"),
+            "label": _("B2B Portal"),
             "color": "#9b59b6",
             "icon": "octicon octicon-globe",
             "type": "module",
-            "description": "Roadmap module - client self-service orders and portal pricing are planned next.",
+            "description": "Invite-only B2B portal for customer-group pricing and quotation requests.",
         },
         {
             "module_name": "Orderlift Sales",
@@ -45,18 +45,18 @@ def get_data():
         },
         {
             "module_name": "Orderlift CRM",
-            "label": _("CRM (Roadmap)"),
+            "label": _("CRM"),
             "color": "#1abc9c",
             "icon": "octicon octicon-organization",
             "type": "module",
-            "description": "Roadmap module - customer interactions, stage tracking, and contact scheduling are planned next.",
+            "description": "CRM dashboard, customer pipeline visibility, and customer-facing commercial operations.",
         },
         {
             "module_name": "Orderlift HR",
-            "label": _("HR Extensions (Roadmap)"),
+            "label": _("HR Extensions"),
             "color": "#34495e",
             "icon": "octicon octicon-person",
             "type": "module",
-            "description": "Roadmap module - employee evaluations and training paths are planned next.",
+            "description": "HR dashboard, employee, leave, attendance, payroll, and expense visibility.",
         },
     ]

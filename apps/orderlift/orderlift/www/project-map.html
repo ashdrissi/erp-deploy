@@ -1,0 +1,66 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="/assets/orderlift/css/sig_map.css?v=20260408a">
+
+<div id="sig-map-root">
+  <!-- Toolbar -->
+  <div class="sig-map-toolbar">
+    <div class="sig-map-logo">
+      <img src="/assets/orderlift/images/orderlift_logo.png" alt="Orderlift" height="28">
+      <span>Project Map</span>
+    </div>
+    <div class="sig-map-filters">
+      <select id="sig-filter-type" class="sig-filter-select">
+        <option value="">All Types</option>
+        <option value="New Installation">New Installation</option>
+        <option value="Maintenance">Maintenance</option>
+        <option value="Upgrade">Upgrade</option>
+        <option value="Inspection">Inspection</option>
+      </select>
+      <select id="sig-filter-qc" class="sig-filter-select">
+        <option value="">All QC Status</option>
+        <option value="Not Started">Not Started</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Complete">Complete</option>
+        <option value="Blocked">Blocked</option>
+      </select>
+      <select id="sig-filter-status" class="sig-filter-select">
+        <option value="">All Status</option>
+        <option value="Open">Open</option>
+        <option value="Completed">Completed</option>
+        <option value="Cancelled">Cancelled</option>
+      </select>
+      <button id="sig-filter-apply" class="sig-btn sig-btn-primary">Apply</button>
+      <button id="sig-filter-reset" class="sig-btn">Reset</button>
+    </div>
+    <div class="sig-map-toolbar-right">
+      <span id="sig-project-count" class="sig-map-count">—</span>
+      <a href="/app/project" class="sig-btn">← Back to ERP</a>
+    </div>
+  </div>
+
+  <!-- Map + side panel layout -->
+  <div class="sig-map-body">
+    <div id="sig-map" class="sig-map-canvas"></div>
+    <div id="sig-map-panel" class="sig-map-panel sig-map-panel-hidden">
+      <button id="sig-panel-close" class="sig-panel-close">✕</button>
+      <div id="sig-panel-content" class="sig-panel-content">
+        <!-- filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="sig-map-loading" class="sig-map-loading">
+    <div class="sig-spinner"></div>
+    <p>Loading projects…</p>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=" crossorigin=""></script>
+<script src="/assets/orderlift/js/sig_map.js?v=20260408a"></script>
+{% endblock %}

@@ -76,7 +76,7 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
         )
 
     projected_unit = running_total
-    projected_line = projected_unit * qty + line_fixed_total
+    projected_line = projected_unit * qty
     return {
         "projected_unit": projected_unit,
         "projected_line": projected_line,

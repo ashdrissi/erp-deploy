@@ -1,0 +1,226 @@
+/* ============================================================
+   SIG Dashboard — /sig-dashboard
+   ============================================================ */
+
+:root {
+  --sig-blue:    #1a73e8;
+  --sig-green:   #28a745;
+  --sig-orange:  #fd7e14;
+  --sig-red:     #dc3545;
+  --sig-gray:    #6c757d;
+  --sig-bg:      #f0f2f5;
+  --sig-card:    #ffffff;
+  --sig-border:  #dee2e6;
+  --sig-text:    #212529;
+  --sig-radius:  10px;
+  --sig-shadow:  0 1px 6px rgba(0,0,0,.1);
+  --header-h:    52px;
+}
+
+body:has(#sig-dash-root) .navbar,
+body:has(#sig-dash-root) .web-header { display: none !important; }
+
+html, body { margin: 0; padding: 0; background: var(--sig-bg); }
+.page-content { padding: 0 !important; }
+
+/* ── Header ───────────────────────────────────────────────── */
+.sig-dash-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--header-h);
+  padding: 0 20px;
+  background: var(--sig-card);
+  border-bottom: 1px solid var(--sig-border);
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-wrap: wrap;
+}
+
+.sig-dash-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sig-blue);
+  white-space: nowrap;
+}
+.sig-dash-logo img { height: 26px; }
+
+.sig-dash-nav { display: flex; gap: 4px; align-items: center; }
+.sig-dash-nav-link {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--sig-gray);
+  text-decoration: none;
+  font-weight: 500;
+  transition: background .15s;
+}
+.sig-dash-nav-link:hover,
+.sig-dash-nav-link.is-active {
+  background: #e8f0fe;
+  color: var(--sig-blue);
+}
+
+.sig-dash-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.sig-dash-meta { font-size: 12px; color: var(--sig-gray); }
+
+.sig-btn { cursor: pointer; font-size: 13px; }
+.sig-btn-sm {
+  padding: 5px 12px;
+  border: 1px solid var(--sig-border);
+  border-radius: 6px;
+  background: var(--sig-card);
+  color: var(--sig-text);
+}
+.sig-btn-sm:hover { background: #e9ecef; }
+
+/* ── Content ──────────────────────────────────────────────── */
+.sig-dash-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── KPI Row ──────────────────────────────────────────────── */
+.sig-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.sig-kpi-card {
+  background: var(--sig-card);
+  border-radius: var(--sig-radius);
+  box-shadow: var(--sig-shadow);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sig-kpi-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--sig-gray);
+  font-weight: 600;
+}
+.sig-kpi-value {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--sig-text);
+}
+.sig-kpi-card.kpi-blue   .sig-kpi-value { color: var(--sig-blue); }
+.sig-kpi-card.kpi-green  .sig-kpi-value { color: var(--sig-green); }
+.sig-kpi-card.kpi-red    .sig-kpi-value { color: var(--sig-red); }
+.sig-kpi-card.kpi-orange .sig-kpi-value { color: var(--sig-orange); }
+
+/* ── Cards ────────────────────────────────────────────────── */
+.sig-dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.sig-dash-card {
+  background: var(--sig-card);
+  border-radius: var(--sig-radius);
+  box-shadow: var(--sig-shadow);
+  padding: 20px;
+}
+.sig-dash-card-full { grid-column: 1 / -1; }
+.sig-dash-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sig-text);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Bar charts ───────────────────────────────────────────── */
+.sig-bar-chart { display: flex; flex-direction: column; gap: 10px; }
+.sig-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.sig-bar-label { min-width: 110px; color: var(--sig-text); font-weight: 500; }
+.sig-bar-track {
+  flex: 1;
+  height: 10px;
+  background: #e9ecef;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.sig-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width .4s ease;
+}
+.sig-bar-count { min-width: 28px; text-align: right; color: var(--sig-gray); font-size: 12px; }
+
+/* ── Project table ────────────────────────────────────────── */
+.sig-proj-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.sig-proj-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--sig-gray);
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--sig-border);
+}
+.sig-proj-table td {
+  padding: 10px;
+  border-bottom: 1px solid #f0f2f5;
+  vertical-align: middle;
+}
+.sig-proj-table tr:hover td { background: #f8f9fa; }
+.sig-proj-table a { color: var(--sig-blue); text-decoration: none; font-weight: 500; }
+.sig-proj-table a:hover { text-decoration: underline; }
+
+/* ── Badges ───────────────────────────────────────────────── */
+.sig-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sig-badge-green  { background: #d4edda; color: #155724; }
+.sig-badge-orange { background: #fff3cd; color: #856404; }
+.sig-badge-red    { background: #f8d7da; color: #721c24; }
+.sig-badge-gray   { background: #e2e3e5; color: #383d41; }
+.sig-badge-blue   { background: #cfe2ff; color: #084298; }
+.sig-badge-sm     { font-size: 12px; padding: 1px 6px; }
+
+.sig-meta { font-size: 13px; color: var(--sig-gray); }
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sig-dash-grid { grid-template-columns: 1fr; }
+  .sig-kpi-row   { grid-template-columns: repeat(2, 1fr); }
+  .sig-proj-table th:nth-child(n+4),
+  .sig-proj-table td:nth-child(n+4) { display: none; }
+}

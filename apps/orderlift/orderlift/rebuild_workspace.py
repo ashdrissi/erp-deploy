@@ -1,5 +1,183 @@
 import frappe
 
+
+SERIALIZED_FIELDS = (
+    "type",
+    "label",
+    "link_type",
+    "link_to",
+    "child",
+    "icon",
+    "description",
+    "hidden",
+    "collapsible",
+    "indent",
+    "keep_closed",
+    "show_arrow",
+    "dependencies",
+    "only_for",
+    "report_ref_doctype",
+    "onboard",
+    "is_query_report",
+)
+
+MY_WORK_ITEMS = [
+    {
+        "type": "Section Break",
+        "label": "My Work",
+        "icon": "user-round",
+        "child": 0,
+    },
+    {
+        "type": "Link",
+        "label": "Notifications",
+        "link_type": "DocType",
+        "link_to": "Notification Log",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "ToDo",
+        "link_type": "DocType",
+        "link_to": "ToDo",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Assignments",
+        "link_type": "DocType",
+        "link_to": "ToDo",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Calendar",
+        "link_type": "DocType",
+        "link_to": "Event",
+        "icon": "dot",
+        "child": 1,
+    },
+]
+
+ADMIN_ITEMS = [
+    {
+        "type": "Section Break",
+        "label": "Administration",
+        "icon": "users",
+        "child": 0,
+    },
+    {
+        "type": "Link",
+        "label": "Users",
+        "link_type": "DocType",
+        "link_to": "User",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Roles",
+        "link_type": "DocType",
+        "link_to": "Role",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Role Profiles",
+        "link_type": "DocType",
+        "link_to": "Role Profile",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "User Permissions",
+        "link_type": "DocType",
+        "link_to": "User Permission",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Permission Manager",
+        "link_type": "Page",
+        "link_to": "permission-manager",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Workflow",
+        "link_type": "DocType",
+        "link_to": "Workflow",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Workflow State",
+        "link_type": "DocType",
+        "link_to": "Workflow State",
+        "icon": "dot",
+        "child": 1,
+    },
+    {
+        "type": "Link",
+        "label": "Assignment Rule",
+        "link_type": "DocType",
+        "link_to": "Assignment Rule",
+        "icon": "dot",
+        "child": 1,
+    },
+]
+
+
+def _serialize_item(item):
+    data = {}
+    for fieldname in SERIALIZED_FIELDS:
+        value = getattr(item, fieldname, None)
+        if value is not None:
+            data[fieldname] = value
+    return data
+
+
+def _remove_by_labels(items, labels):
+    label_set = set(labels)
+    return [item for item in items if item.get("label") not in label_set]
+
+
+def _insert_after_label(items, after_label, new_items):
+    for index, item in enumerate(items):
+        if item.get("label") == after_label:
+            return items[: index + 1] + new_items + items[index + 1 :]
+    return items + new_items
+
+
+def ensure_main_dashboard_admin_sections():
+    ws = frappe.get_doc("Workspace Sidebar", "Main Dashboard")
+    items = [_serialize_item(item) for item in ws.get("items", [])]
+
+    items = _remove_by_labels(items, [item["label"] for item in MY_WORK_ITEMS + ADMIN_ITEMS])
+    items = _insert_after_label(items, "Dashboard", MY_WORK_ITEMS)
+    items = _insert_after_label(items, "Companies", ADMIN_ITEMS)
+
+    ws.set("items", [])
+    for item in items:
+        ws.append("items", item)
+
+    ws.save(ignore_permissions=True)
+    frappe.db.commit()
+    frappe.clear_cache()
+    return {
+        "workspace_sidebar": ws.name,
+        "items_added": [item["label"] for item in MY_WORK_ITEMS + ADMIN_ITEMS],
+    }
+
+
 def execute():
     ws = frappe.get_doc("Workspace Sidebar", "Main Dashboard")
     

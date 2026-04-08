@@ -18,6 +18,7 @@ sys.modules.setdefault("frappe", _frappe)
 sys.modules.setdefault("frappe.utils", _frappe_utils)
 
 from orderlift.sales.utils.benchmark_policy import (
+    compute_margin_step,
     resolve_benchmark_margin,
     _compute_reference,
     _match_benchmark_rule,
@@ -247,6 +248,30 @@ class TestResolveBenchmarkMargin(unittest.TestCase):
         )
         self.assertAlmostEqual(result["benchmark_reference"], 4250)
         self.assertFalse(result["is_fallback"])
+
+
+class TestComputeMarginStep(unittest.TestCase):
+    def test_base_price_basis_keeps_percentage_step(self):
+        step = compute_margin_step(15, "Base Price", base_price=100, loaded_cost=130)
+        self.assertEqual(step["type"], "Percentage")
+        self.assertEqual(step["value"], 15)
+        self.assertEqual(step["label"], "Dynamic Margin (Base Price)")
+
+    def test_loaded_cost_basis_uses_fixed_amount(self):
+        step = compute_margin_step(15, "Loaded Cost", base_price=100, loaded_cost=130)
+        self.assertEqual(step["type"], "Fixed")
+        self.assertAlmostEqual(step["value"], 19.5)
+        self.assertEqual(step["label"], "Dynamic Margin (Loaded Cost)")
+
+    def test_sale_price_basis_uses_sale_share_formula(self):
+        step = compute_margin_step(20, "Sale Price", base_price=100, loaded_cost=130)
+        self.assertEqual(step["type"], "Fixed")
+        self.assertAlmostEqual(step["value"], 32.5)
+        self.assertEqual(step["label"], "Dynamic Margin (Sale Price)")
+
+    def test_fallback_label_is_used(self):
+        step = compute_margin_step(15, "Loaded Cost", base_price=100, loaded_cost=130, is_fallback=True)
+        self.assertEqual(step["label"], "Fallback Margin (Loaded Cost)")
 
 
 if __name__ == "__main__":
