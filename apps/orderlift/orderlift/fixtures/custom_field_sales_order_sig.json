@@ -1,6 +1,7 @@
 [
   {
     "doctype": "Custom Field",
+    "name": "Sales Order-custom_sig_section",
     "dt": "Sales Order",
     "fieldname": "custom_sig_section",
     "fieldtype": "Section Break",
@@ -10,6 +11,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Sales Order-custom_installation_project",
     "dt": "Sales Order",
     "fieldname": "custom_installation_project",
     "fieldtype": "Link",
