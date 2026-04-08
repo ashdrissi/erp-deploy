@@ -3,7 +3,7 @@
 
     const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
     const LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    const LOCAL_CSS = "/assets/orderlift/css/sig_map.css?v=20260408b";
+    const LOCAL_CSS = "/assets/orderlift/css/sig_map.css?v=20260408e";
 
     function ensureStylesheet(id, href) {
         if (document.getElementById(id)) return Promise.resolve();
@@ -76,9 +76,9 @@
                 </div>
                 <div class="sig-map-toolbar-right">
                     <span id="sig-project-count" class="sig-map-count">-</span>
-                    <a href="/app/project" class="sig-btn">Projects</a>
-                    <a href="/app/sig-dashboard" class="sig-btn">Dashboard</a>
-                    <a href="/app/sig-qc" class="sig-btn">Mobile QC</a>
+                    <a href="/app/project" data-route="List/Project" class="sig-btn">Projects</a>
+                    <a href="/app/sig-dashboard" data-route="sig-dashboard" class="sig-btn">Dashboard</a>
+                    <a href="/app/sig-qc" data-route="sig-qc" class="sig-btn">Mobile QC</a>
                 </div>
             </div>
             <div class="sig-map-body">
@@ -113,6 +113,7 @@
         let map = null;
         let markers = [];
         let allProjects = [];
+        let lastBounds = [];
 
         const preloadProject = options.preloadProject
             || root.dataset.preloadProject
@@ -147,10 +148,37 @@
             zoomControl: true,
         });
 
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
             maxZoom: 19,
         }).addTo(map);
+
+        map.whenReady(() => refreshMapLayout());
+        global.addEventListener("resize", () => refreshMapLayout());
+        root.addEventListener("click", (event) => {
+            const target = event.target.closest("[data-route], [data-page-route], [data-form-doctype]");
+            if (!target || !global.frappe) return;
+
+            event.preventDefault();
+            if (target.dataset.formDoctype && target.dataset.docname) {
+                frappe.set_route("Form", target.dataset.formDoctype, target.dataset.docname);
+                return;
+            }
+
+            if (target.dataset.pageRoute) {
+                frappe.route_options = target.dataset.project ? { project: target.dataset.project } : null;
+                frappe.set_route(target.dataset.pageRoute);
+                return;
+            }
+
+            const route = target.dataset.route;
+            if (!route) return;
+            if (route.includes("/")) {
+                frappe.set_route(...route.split("/"));
+            } else {
+                frappe.set_route(route);
+            }
+        });
 
         $("#sig-filter-apply").addEventListener("click", () => {
             loadProjects({
@@ -169,6 +197,7 @@
 
         $("#sig-panel-close").addEventListener("click", () => {
             $("#sig-map-panel").classList.add("sig-map-panel-hidden");
+            refreshMapLayout(lastBounds);
         });
 
         loadProjects({});
@@ -217,8 +246,11 @@
                 bounds.push([project.latitude, project.longitude]);
             });
 
+            lastBounds = bounds;
             if (bounds.length) {
-                map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+                refreshMapLayout(bounds);
+            } else {
+                refreshMapLayout();
             }
         }
 
@@ -261,12 +293,14 @@
                     <div id="sig-qc-detail"><em style="color:#6c757d">Loading...</em></div>
                 </div>
                 <div class="sig-panel-actions">
-                    <a href="/app/project/${encodeURIComponent(project.name)}" target="_blank" class="sig-panel-btn sig-panel-btn-primary">Open in ERP</a>
-                    <a href="/app/sig-qc?project=${encodeURIComponent(project.name)}" target="_blank" class="sig-panel-btn">Open Mobile QC</a>
+                    <a href="#" data-form-doctype="Project" data-docname="${esc(project.name)}" class="sig-panel-btn sig-panel-btn-primary">Open in ERP</a>
+                    <a href="#" data-page-route="sig-qc" data-project="${esc(project.name)}" class="sig-panel-btn">Open Mobile QC</a>
+                    ${project.latitude && project.longitude ? `<a href="https://www.google.com/maps?q=${encodeURIComponent(project.latitude + ',' + project.longitude)}" target="_blank" rel="noopener noreferrer" class="sig-panel-btn">Open in Google Maps</a>` : ""}
                     <button onclick='window._sigFlyTo(${JSON.stringify(project.name)})' class="sig-panel-btn">Fly to on Map</button>
                 </div>`;
 
             $("#sig-map-panel").classList.remove("sig-map-panel-hidden");
+            refreshMapLayout(lastBounds);
 
             frappe.call({
                 method: "orderlift.orderlift_sig.api.map_api.get_project_qc_summary",
@@ -334,6 +368,23 @@
         function updateCount(count) {
             const label = $("#sig-project-count");
             if (label) label.textContent = `${count} project${count === 1 ? "" : "s"}`;
+        }
+
+        function refreshMapLayout(bounds) {
+            if (!map) return;
+
+            const apply = () => {
+                map.invalidateSize(false);
+                if (bounds && bounds.length) {
+                    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+                }
+            };
+
+            global.requestAnimationFrame(() => {
+                apply();
+                global.setTimeout(apply, 120);
+                global.setTimeout(apply, 360);
+            });
         }
     }
 

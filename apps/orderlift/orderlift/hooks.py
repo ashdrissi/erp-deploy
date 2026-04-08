@@ -112,7 +112,7 @@ doctype_js = {
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Sales Order": "public/js/sales_order_logistics.js",
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260406_47.js",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260406_48.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v2.js",

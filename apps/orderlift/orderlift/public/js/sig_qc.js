@@ -1,7 +1,7 @@
 (function (global) {
     "use strict";
 
-    const LOCAL_CSS = "/assets/orderlift/css/sig_qc.css?v=20260408b";
+    const LOCAL_CSS = "/assets/orderlift/css/sig_qc.css?v=20260408c";
 
     function ensureStylesheet(id, href) {
         if (document.getElementById(id)) return Promise.resolve();
@@ -56,7 +56,10 @@
     function mount(root, options) {
         if (!root) return Promise.resolve();
         options = options || {};
-        const preloadProject = options.preloadProject || new URL(global.location.href).searchParams.get("project") || "";
+        const preloadProject = options.preloadProject
+            || (global.frappe && frappe.route_options && frappe.route_options.project)
+            || new URL(global.location.href).searchParams.get("project")
+            || "";
         return ensureStylesheet("orderlift-sig-qc-css", LOCAL_CSS).then(() => {
             renderShell(root, preloadProject);
             init(root, preloadProject);
@@ -267,28 +270,27 @@
             });
 
             try {
-                for (const row of project.rows) {
-                    await new Promise((resolve, reject) => {
-                        frappe.call({
-                            method: "orderlift.orderlift_sig.utils.project_qc.sync_qc_item_verification",
-                            args: {
-                                project_name: project.project_name,
-                                row_name: row.name,
+                const response = await new Promise((resolve, reject) => {
+                    frappe.call({
+                        method: "orderlift.orderlift_sig.utils.project_qc.save_qc_checklist",
+                        args: {
+                            project_name: project.project_name,
+                            rows: project.rows.map((row) => ({
+                                name: row.name,
                                 is_verified: row.is_verified ? 1 : 0,
-                            },
-                            callback(r) {
-                                if (r.exc) {
-                                    reject(r.exc);
-                                    return;
-                                }
-                                if (r.message) {
-                                    project.qc_status = r.message.qc_status;
-                                }
-                                resolve();
-                            },
-                        });
+                                remarks: row.remarks || "",
+                            })),
+                        },
+                        callback(r) {
+                            if (r.exc) {
+                                reject(r.exc);
+                                return;
+                            }
+                            resolve(r.message || {});
+                        },
                     });
-                }
+                });
+                project.qc_status = response.qc_status || project.qc_status;
                 pendingSave = false;
                 renderChecklist();
                 toast("Saved successfully!", "success");
@@ -346,7 +348,7 @@
     };
 
     function autoMount() {
-        const root = document.getElementById("sig-qc-page-root");
+        const root = document.getElementById("sig-qc-page-shell");
         if (!root || root.dataset.autoloadMounted) return;
         root.dataset.autoloadMounted = "1";
         mount(root, {});

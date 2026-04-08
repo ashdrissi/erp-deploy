@@ -38,16 +38,14 @@
   flex-wrap: wrap;
 }
 
-.sig-dash-logo {
+.sig-dash-title {
   display: flex;
   align-items: center;
-  gap: 8px;
   font-size: 16px;
   font-weight: 700;
   color: var(--sig-blue);
   white-space: nowrap;
 }
-.sig-dash-logo img { height: 26px; }
 
 .sig-dash-nav { display: flex; gap: 4px; align-items: center; }
 .sig-dash-nav-link {

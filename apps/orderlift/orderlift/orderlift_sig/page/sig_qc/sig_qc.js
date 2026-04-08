@@ -4,16 +4,18 @@ frappe.pages["sig-qc"].on_page_load = function (wrapper) {
         title: __("Mobile QC"),
         single_column: true,
     });
+    _setSigBreadcrumbs(wrapper.sig_page, __("Mobile QC"));
 };
 
 frappe.pages["sig-qc"].on_page_show = function (wrapper) {
+    _setSigBreadcrumbs(wrapper.sig_page, __("Mobile QC"));
     renderSigPage(wrapper, {
         rootId: "sig-qc-page-shell",
         scriptId: "orderlift-sig-qc-script",
-        scriptSrc: "/assets/orderlift/js/sig_qc.js?v=20260408b",
+        scriptSrc: "/assets/orderlift/js/sig_qc.js?v=20260408c",
         mountKey: "orderliftSigQc",
         mountOptions: {
-            preloadProject: new URL(window.location.href).searchParams.get("project") || "",
+            preloadProject: _getPreloadProject(),
         },
     });
 };
@@ -39,4 +41,20 @@ function loadSigScript(id, src) {
         script.onerror = () => reject(new Error(`Failed to load ${src}`));
         document.head.appendChild(script);
     });
+}
+
+function _setSigBreadcrumbs(page, title) {
+    if (page && page.set_breadcrumbs) {
+        page.set_breadcrumbs(__("Main Dashboard"));
+    }
+    if (page && page.set_title) {
+        page.set_title(title);
+    }
+}
+
+
+function _getPreloadProject() {
+    return (frappe.route_options && frappe.route_options.project)
+        || new URL(window.location.href).searchParams.get("project")
+        || "";
 }

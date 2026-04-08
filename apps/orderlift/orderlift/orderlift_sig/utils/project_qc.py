@@ -41,7 +41,12 @@ def apply_qc_template(project_name: str, template_name: str) -> dict:
 
 
 @frappe.whitelist()
-def sync_qc_item_verification(project_name: str, row_name: str, is_verified: int) -> dict:
+def sync_qc_item_verification(
+    project_name: str,
+    row_name: str,
+    is_verified: int,
+    remarks: str | None = None,
+) -> dict:
     """
     Toggle is_verified on a single Installation QC Item row and
     recalculate custom_qc_status on the parent Project.
@@ -54,13 +59,57 @@ def sync_qc_item_verification(project_name: str, row_name: str, is_verified: int
     if not row:
         frappe.throw(_("QC item {0} not found on project {1}").format(row_name, project_name))
 
-    row.is_verified = int(is_verified)
-    if row.is_verified:
-        row.verified_by = frappe.session.user
-        row.verified_on = frappe.utils.now_datetime()
-    else:
-        row.verified_by = None
-        row.verified_on = None
+    _apply_qc_row_state(
+        row,
+        is_verified=bool(int(is_verified)),
+        remarks=remarks,
+        user=frappe.session.user,
+        timestamp=frappe.utils.now_datetime(),
+    )
+
+    _set_qc_status(project)
+    project.save(ignore_permissions=False)
+
+    verified = sum(1 for r in project.custom_qc_checklist if r.is_verified)
+    total = len(project.custom_qc_checklist)
+    return {
+        "qc_status": project.custom_qc_status,
+        "verified": verified,
+        "total": total,
+    }
+
+
+@frappe.whitelist()
+def save_qc_checklist(project_name: str, rows: list[dict] | str) -> dict:
+    """
+    Persist QC checklist verification state and remarks in one transaction.
+    Used by the mobile QC page to save the full checklist reliably.
+    """
+    payload = frappe.parse_json(rows) if isinstance(rows, str) else rows
+    if not isinstance(payload, list):
+        frappe.throw(_("QC checklist payload must be a list of rows."))
+
+    project = frappe.get_doc("Project", project_name)
+    project_rows = {row.name: row for row in (project.custom_qc_checklist or [])}
+    timestamp = frappe.utils.now_datetime()
+    user = frappe.session.user
+
+    for entry in payload:
+        row_name = (entry or {}).get("name")
+        if not row_name:
+            continue
+
+        row = project_rows.get(row_name)
+        if not row:
+            frappe.throw(_("QC item {0} not found on project {1}").format(row_name, project_name))
+
+        _apply_qc_row_state(
+            row,
+            is_verified=bool((entry or {}).get("is_verified")),
+            remarks=(entry or {}).get("remarks"),
+            user=user,
+            timestamp=timestamp,
+        )
 
     _set_qc_status(project)
     project.save(ignore_permissions=False)
@@ -143,3 +192,14 @@ def _set_qc_status(project) -> None:
         project.custom_qc_status = "In Progress"
     else:
         project.custom_qc_status = "Not Started"
+
+
+def _apply_qc_row_state(row, is_verified: bool, remarks: str | None, user: str, timestamp) -> None:
+    row.is_verified = int(is_verified)
+    row.remarks = (remarks or "").strip()
+    if row.is_verified:
+        row.verified_by = user
+        row.verified_on = timestamp
+    else:
+        row.verified_by = None
+        row.verified_on = None

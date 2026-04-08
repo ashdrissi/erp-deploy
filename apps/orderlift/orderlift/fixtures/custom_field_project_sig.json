@@ -1,13 +1,23 @@
 [
   {
     "doctype": "Custom Field",
+    "name": "Project-custom_sig_tab",
+    "dt": "Project",
+    "fieldname": "custom_sig_tab",
+    "fieldtype": "Tab Break",
+    "label": "SIG - Site & Installation",
+    "insert_after": "notes",
+    "module": "Orderlift SIG"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Project-custom_sig_section",
     "dt": "Project",
     "fieldname": "custom_sig_section",
     "fieldtype": "Section Break",
-    "label": "SIG — Site & Installation",
-    "insert_after": "notes",
-    "collapsible": 1,
+    "label": "",
+    "insert_after": "custom_sig_tab",
+    "collapsible": 0,
     "module": "Orderlift SIG"
   },
   {
@@ -84,12 +94,22 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Project-custom_qc_tab",
+    "dt": "Project",
+    "fieldname": "custom_qc_tab",
+    "fieldtype": "Tab Break",
+    "label": "QC Checklist",
+    "insert_after": "custom_geocode_status",
+    "module": "Orderlift SIG"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Project-custom_qc_section",
     "dt": "Project",
     "fieldname": "custom_qc_section",
     "fieldtype": "Section Break",
-    "label": "QC Checklist",
-    "insert_after": "custom_geocode_status",
+    "label": "",
+    "insert_after": "custom_qc_tab",
     "collapsible": 0
   },
   {

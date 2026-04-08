@@ -24,39 +24,16 @@ def get_dashboard_data() -> dict:
         filters={"custom_qc_status": "Blocked", "status": ["!=", "Completed"]},
     )
 
-    geocoded = frappe.db.count(
+    projects = frappe.get_all(
         "Project",
-        filters={
-            "custom_latitude": ["not in", ["", None, 0]],
-            "status": ["!=", "Cancelled"],
-        },
+        filters={"status": ["!=", "Cancelled"]},
+        fields=["custom_project_type_ol", "custom_qc_status", "custom_latitude"],
+        limit_page_length=0,
     )
 
-    # ── Projects by type ──────────────────────────────────────
-    by_type = frappe.db.sql(
-        """
-        SELECT COALESCE(custom_project_type_ol, 'Unspecified') AS project_type,
-               COUNT(*) AS cnt
-        FROM `tabProject`
-        WHERE status != 'Cancelled'
-        GROUP BY project_type
-        ORDER BY cnt DESC
-        """,
-        as_dict=True,
-    )
-
-    # ── Projects by QC status ─────────────────────────────────
-    by_qc = frappe.db.sql(
-        """
-        SELECT COALESCE(custom_qc_status, 'Not Started') AS qc_status,
-               COUNT(*) AS cnt
-        FROM `tabProject`
-        WHERE status != 'Cancelled'
-        GROUP BY qc_status
-        ORDER BY cnt DESC
-        """,
-        as_dict=True,
-    )
+    geocoded = sum(1 for row in projects if row.get("custom_latitude") not in (None, 0, 0.0, ""))
+    by_type = _group_counts(projects, "custom_project_type_ol", "Unspecified", "project_type")
+    by_qc = _group_counts(projects, "custom_qc_status", "Not Started", "qc_status")
 
     # ── Recent active projects ────────────────────────────────
     recent_projects = frappe.db.sql(
@@ -108,6 +85,18 @@ def get_dashboard_data() -> dict:
         "recent_projects": recent_projects,
         "blocked_projects": blocked_projects,
     }
+
+
+def _group_counts(rows: list[dict], source_key: str, default_label: str, output_key: str) -> list[dict]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = (row.get(source_key) or "").strip() or default_label
+        counts[value] = counts.get(value, 0) + 1
+
+    return [
+        {output_key: label, "cnt": count}
+        for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
 
 
 @frappe.whitelist(allow_guest=False)

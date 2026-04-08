@@ -20,14 +20,12 @@
         root.innerHTML = `
             <div id="sig-dash-root">
                 <div class="sig-dash-header">
-                    <div class="sig-dash-logo">
-                        <span>SIG Dashboard</span>
-                    </div>
+                    <div class="sig-dash-title">SIG Dashboard</div>
                     <nav class="sig-dash-nav">
-                        <a href="/app/sig-dashboard" class="sig-dash-nav-link is-active">Dashboard</a>
-                        <a href="/app/project-map" class="sig-dash-nav-link">Map</a>
-                        <a href="/app/project" class="sig-dash-nav-link">Projects</a>
-                        <a href="/app/sig-qc" class="sig-dash-nav-link">Mobile QC</a>
+                        <a href="/app/sig-dashboard" data-route="sig-dashboard" class="sig-dash-nav-link is-active">Dashboard</a>
+                        <a href="/app/project-map" data-route="project-map" class="sig-dash-nav-link">Map</a>
+                        <a href="/app/project" data-route="List/Project" class="sig-dash-nav-link">Projects</a>
+                        <a href="/app/sig-qc" data-route="sig-qc" class="sig-dash-nav-link">Mobile QC</a>
                     </nav>
                     <div class="sig-dash-header-right">
                         <span id="sig-dash-last-updated" class="sig-dash-meta"></span>
@@ -81,6 +79,30 @@
         const $ = (selector) => root.querySelector(selector);
 
         $("#sig-dash-refresh").addEventListener("click", load);
+        root.addEventListener("click", (event) => {
+            const target = event.target.closest("[data-route], [data-page-route], [data-form-doctype]");
+            if (!target) return;
+
+            event.preventDefault();
+            if (target.dataset.formDoctype && target.dataset.docname) {
+                frappe.set_route("Form", target.dataset.formDoctype, target.dataset.docname);
+                return;
+            }
+
+            if (target.dataset.pageRoute) {
+                frappe.route_options = target.dataset.project ? { project: target.dataset.project } : null;
+                frappe.set_route(target.dataset.pageRoute);
+                return;
+            }
+
+            const route = target.dataset.route;
+            if (!route) return;
+            if (route.includes("/")) {
+                frappe.set_route(...route.split("/"));
+            } else {
+                frappe.set_route(route);
+            }
+        });
         load();
 
         function load() {
@@ -165,7 +187,7 @@
                     <tbody>
                         ${projects.map((project) => `
                             <tr>
-                                <td><a href="/app/project/${encodeURIComponent(project.name)}" target="_blank">${esc(project.project_name)}</a></td>
+                                <td><a href="#" data-form-doctype="Project" data-docname="${esc(project.name)}">${esc(project.project_name)}</a></td>
                                 <td>${esc(project.customer || "-")}</td>
                                 <td>${project.project_type ? `<span class="sig-badge sig-badge-blue">${esc(project.project_type)}</span>` : "-"}</td>
                                 <td>${esc(project.city || "-")}</td>
@@ -199,12 +221,12 @@
                             const hasMap = project.latitude && project.longitude;
                             return `
                                 <tr>
-                                    <td><a href="/app/project/${encodeURIComponent(project.name)}" target="_blank">${esc(project.project_name)}</a></td>
+                                    <td><a href="#" data-form-doctype="Project" data-docname="${esc(project.name)}">${esc(project.project_name)}</a></td>
                                     <td>${esc(project.customer || "-")}</td>
                                     <td>${project.project_type ? `<span class="sig-badge sig-badge-blue">${esc(project.project_type)}</span>` : "-"}</td>
                                     <td>${qcBadge(project.qc_status)}</td>
                                     <td>${esc(project.city || "-")}</td>
-                                    <td>${hasMap ? `<a href="/app/project-map?project=${encodeURIComponent(project.name)}" target="_blank" title="View on map">📍</a>` : '<span title="Not geocoded" style="color:#adb5bd">-</span>'}</td>
+                                    <td>${hasMap ? `<a href="#" data-page-route="project-map" data-project="${esc(project.name)}" title="View on map">📍</a>` : '<span title="Not geocoded" style="color:#adb5bd">-</span>'}</td>
                                 </tr>`;
                         }).join("")}
                     </tbody>

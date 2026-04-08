@@ -4,13 +4,15 @@ frappe.pages["sig-dashboard"].on_page_load = function (wrapper) {
         title: __("SIG Dashboard"),
         single_column: true,
     });
+    _setSigBreadcrumbs(wrapper.sig_page, __("SIG Dashboard"));
 };
 
 frappe.pages["sig-dashboard"].on_page_show = function (wrapper) {
+    _setSigBreadcrumbs(wrapper.sig_page, __("SIG Dashboard"));
     renderSigPage(wrapper, {
         rootId: "sig-dashboard-page-root",
         scriptId: "orderlift-sig-dashboard-script",
-        scriptSrc: "/assets/orderlift/js/sig_dashboard.js?v=20260408b",
+        scriptSrc: "/assets/orderlift/js/sig_dashboard.js?v=20260408d",
         mountKey: "orderliftSigDashboard",
     });
 };
@@ -36,4 +38,13 @@ function loadSigScript(id, src) {
         script.onerror = () => reject(new Error(`Failed to load ${src}`));
         document.head.appendChild(script);
     });
+}
+
+function _setSigBreadcrumbs(page, title) {
+    if (page && page.set_breadcrumbs) {
+        page.set_breadcrumbs(__("Main Dashboard"));
+    }
+    if (page && page.set_title) {
+        page.set_title(title);
+    }
 }

@@ -126,10 +126,8 @@ function _add_sig_buttons(frm) {
     // Open in Map (only if geocoded)
     if (frm.doc.custom_latitude && frm.doc.custom_longitude) {
         frm.add_custom_button(__("Open in Map"), () => {
-            window.open(
-                `/app/project-map?project=${encodeURIComponent(frm.doc.name)}`,
-                "_blank"
-            );
+            frappe.route_options = { project: frm.doc.name };
+            frappe.set_route("project-map");
         }, __("SIG"));
     }
 

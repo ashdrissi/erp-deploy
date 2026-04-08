@@ -31,6 +31,18 @@
 - Bench commands usually need to run inside the app container, not on the host.
 - App source is bind-mounted in dev for `orderlift` and `custom_desk_theme`; theme frontend assets may still require rebuilds.
 
+## Runtime Targets
+- Confirm the target host before running operational commands.
+- Production host is `erp.ecomepivot.com` and is routed by the production `backend` service from `docker-compose.yml`.
+- Dev host is `erp-dev.ecomepivot.com` and is routed by the dev `backend` service from `docker-compose.dev.yml`.
+- Do not assume the first `app-*` container is the right one when both stacks are running.
+- Identify the correct backend container with:
+  `docker inspect <backend-container> --format '{{json .Config.Labels}}'`
+- Match the Traefik host rule:
+  `traefik.http.routers.erp-https.rule=Host(\`erp.ecomepivot.com\`)` for production.
+- Once the backend container is identified, use the matching `app` container from the same Compose project for `bench` commands.
+- In this environment, the production pair is currently named like `backend-cs08...` and `app-cs08...`.
+
 ## Preferred Command Entry Points
 - Start by choosing the narrowest command that proves your change.
 - For Frappe app changes, prefer `docker exec <app-container> bash -lc "cd /home/frappe/frappe-bench && ..."`.
@@ -39,6 +51,7 @@
 - For pricing workbook import prep, use `python3 scripts/prepare_erpnext_imports.py --dry-run` to verify counts, then rerun without `--dry-run` to write CSVs under `docs/data/generated`.
 - To load the generated catalog into the live site, copy `docs/data/generated` into the app container and run `bench --site <site> execute orderlift.scripts.import_generated_catalog.run --kwargs '{"import_dir": "/tmp/orderlift-import"}'`.
 - To seed workbook-derived pricing policy records, run `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.run` and verify with `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.verify`.
+- To seed SIG demo projects and QC data, run `bench --site <site> execute orderlift.orderlift_sig.utils.demo_seed.seed_demo_data`.
 
 ## Build Commands
 - Dev stack: `docker compose -f docker-compose.dev.yml up -d`
@@ -50,6 +63,16 @@
 - Restart app container after Python-only changes: `./scripts/dev.sh restart`
 - Run migrations after schema or fixture changes: `./scripts/dev.sh migrate`
 - Open shell in running app container: `./scripts/dev.sh shell`
+
+## Build Vs Restart Vs Migrate
+- Python-only logic changes in `apps/orderlift` usually need an app container restart, not a migration.
+- `hooks.py` changes are not schema changes, but they often require cache clearing and an app restart before Frappe reloads hook metadata.
+- DocType JSON, fixtures, custom fields, property setters, patches, or `after_migrate` changes require `bench --site <site> migrate`.
+- Direct `orderlift/public/js/*.js` and `orderlift/public/css/*.css` edits are served as static app assets and often do not need `bench build`.
+- `custom_desk_theme` asset changes usually need `bench build --app custom_desk_theme`.
+- `infintrix_theme` sidebar changes need `npm run build` in `apps/infintrix_theme/infintrix_theme/public/js/sidebar_menu`.
+- If a workflow depends on `app_include_js`, `doctype_js`, or `app_include_css`, treat it as a hook-cache problem first, not a migration problem.
+- In the current production app container, `node` may be unavailable, so `bench build` can fail even when static `orderlift` assets are already linked and usable.
 
 ## Lint And Format Commands
 - Python lint/format rules are defined only for `apps/infintrix_theme` via Ruff and pre-commit.
@@ -73,6 +96,8 @@
   `cd apps/orderlift && python -m unittest orderlift.tests.test_pricing_projection.TestPricingProjection.test_percentage_and_fixed_sequence`
 - There is also one standalone module-level test file:
   `cd apps/orderlift && python -m unittest orderlift.test_consolidation`
+- Run the SIG unit tests:
+  `cd apps/orderlift && python -m unittest orderlift.tests.test_sig_qc orderlift.tests.test_sig_sidebar_setup`
 - `infintrix_theme` uses Frappe's test framework for doctype tests.
 - Run all tests for that app inside the bench container:
   `bench --site $SITE_NAME run-tests --app infintrix_theme`
@@ -83,9 +108,30 @@
 ## When To Run What
 - Python business-logic helper change in `orderlift.sales.utils`: run the narrowest `python -m unittest ...` target that covers it.
 - Frappe DocType/model/hook change: run the nearest unit test plus a bench migration if schema or fixtures changed.
-- Desk JS/CSS change in `orderlift` or `custom_desk_theme`: rebuild the touched app with `bench build --app <app>`.
+- `orderlift/public/js/*` or `orderlift/public/css/*` change: clear cache first; only escalate to restart or asset URL bump if the browser still serves stale code.
+- `custom_desk_theme` Desk asset change: rebuild that app with `bench build --app custom_desk_theme`.
 - React sidebar change in `infintrix_theme`: run `npm run lint` and `npm run build` in the sidebar package.
 - Deployment or compose change: validate with the relevant `docker compose` file and note restart/migrate impact.
+
+## Desk Asset And Cache Runbook
+- For `apps/orderlift/orderlift/public/js/*` and `apps/orderlift/orderlift/public/css/*`, start by assuming the files are served directly from `/sites/assets/orderlift/...`.
+- After changing existing `orderlift` static files, clear site cache before attempting restarts:
+  `docker exec <app-container> bash -lc "cd /home/frappe/frappe-bench && bench --site <site> clear-cache && bench --site <site> clear-website-cache"`
+- If the change touched `hooks.py` entries like `doctype_js`, `app_include_js`, or `app_include_css`, also clear the Frappe hook cache explicitly:
+  `docker exec <app-container> bash -lc "cd /home/frappe/frappe-bench && bench --site <site> console <<'PY'`
+  `import frappe`
+  `frappe.cache.delete_value('app_hooks')`
+  `frappe.clear_cache()`
+  `print(frappe.get_hooks('doctype_js').get('Pricing Sheet'))`
+  `PY"`
+- After hook-cache clearing, restart both the matching `app` and `backend` containers for the target stack.
+- For production, prefer restarting the matching `app-cs08...` and `backend-cs08...` pair once cache has been cleared.
+- If a browser still shows stale Desk UI after hook and site cache clearing, do a full hard reload of the Desk shell.
+- `app_include_js` changes require a full Desk reload, not just navigating between routes inside ERPNext.
+- If static assets are still stale by filename, force a new asset URL by introducing a new filename or a new boot wrapper file rather than relying only on query-string changes.
+- Before assuming the code is not loading, verify the live asset directly from the public host:
+  `curl -s https://erp.ecomepivot.com/assets/orderlift/js/<file>.js`
+- If the public host serves the new file but the UI does not change, suspect Frappe hook cache or a full-shell browser cache before suspecting the source edit.
 
 ## Python Style Guidelines
 - Follow existing Frappe conventions and preserve surrounding style in touched files.
@@ -142,3 +188,4 @@
 - Update docs or runbooks when changing operator-facing workflows.
 - If you touch schema, fixtures, or hooks, mention migration/rebuild requirements in your handoff.
 - If you add a new command or workflow, update this `AGENTS.md` so future agents inherit it.
+- Operator-facing SAV/SIG delivery notes now live in `docs/sav_sig_delivery_runbook.md`.

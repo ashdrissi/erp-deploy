@@ -1,97 +1,265 @@
 from __future__ import annotations
 
+import json
+
 import frappe
 
 
-SECTIONS = [
+SIDEBAR_GROUPS = [
     {
-        "label": "Dashboards",
+        "section": "CRM & Customers",
+        "create_after": None,
+        "manage_section": False,
         "links": [
-            {"type": "Link", "label": "CRM Dashboard", "link_type": "URL", "link_to": "", "url": "/app/crm-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "SAV Dashboard", "link_type": "URL", "link_to": "", "url": "/app/sav-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Logistics Dashboard", "link_type": "URL", "link_to": "", "url": "/app/logistics-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Stock Dashboard", "link_type": "URL", "link_to": "", "url": "/app/stock-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Pricing Dashboard", "link_type": "URL", "link_to": "", "url": "/app/pricing-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Finance Dashboard", "link_type": "URL", "link_to": "", "url": "/app/finance-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "HR Dashboard", "link_type": "URL", "link_to": "", "url": "/app/hr-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "B2B Portal Dashboard", "link_type": "URL", "link_to": "", "url": "/app/b2b-portal-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "CRM Dashboard", "link_type": "Page", "link_to": "crm-dashboard", "child": 1, "icon": "dot"},
         ],
     },
     {
-        "label": "SIG",
+        "section": "Sales",
+        "create_after": None,
+        "manage_section": False,
         "links": [
-            {"type": "Link", "label": "SIG Dashboard", "link_type": "URL", "link_to": "", "url": "/app/sig-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Project Map", "link_type": "URL", "link_to": "", "url": "/app/project-map", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Mobile QC", "link_type": "URL", "link_to": "", "url": "/app/sig-qc", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Pricing Dashboard", "link_type": "Page", "link_to": "pricing-dashboard", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "SAV",
+        "create_after": "Sales",
+        "manage_section": True,
+        "links": [
+            {"type": "Link", "label": "SAV Dashboard", "link_type": "Page", "link_to": "sav-dashboard", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "Finance",
+        "create_after": None,
+        "manage_section": False,
+        "links": [
+            {"type": "Link", "label": "Finance Dashboard", "link_type": "Page", "link_to": "finance-dashboard", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "HR",
+        "create_after": None,
+        "manage_section": False,
+        "links": [
+            {"type": "Link", "label": "HR Dashboard", "link_type": "Page", "link_to": "hr-dashboard", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "Warehouse & Stock",
+        "create_after": None,
+        "manage_section": False,
+        "links": [
+            {"type": "Link", "label": "Stock Dashboard", "link_type": "Page", "link_to": "stock-dashboard", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "Logistics",
+        "create_after": None,
+        "manage_section": False,
+        "links": [
+            {"type": "Link", "label": "Logistics Dashboard", "link_type": "Page", "link_to": "logistics-dashboard", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "B2B Portal",
+        "create_after": "Logistics",
+        "manage_section": True,
+        "links": [
+            {"type": "Link", "label": "B2B Portal Dashboard", "link_type": "Page", "link_to": "b2b-portal-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Portal Policies", "link_type": "DocType", "link_to": "Portal Customer Group Policy", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Portal Quote Requests", "link_type": "DocType", "link_to": "Portal Quote Request", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Portal Review Board", "link_type": "Page", "link_to": "portal-review-board", "child": 1, "icon": "dot"},
+        ],
+    },
+    {
+        "section": "SIG",
+        "create_after": "B2B Portal",
+        "manage_section": True,
+        "links": [
+            {"type": "Link", "label": "SIG Dashboard", "link_type": "Page", "link_to": "sig-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Project Map", "link_type": "Page", "link_to": "project-map", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Mobile QC", "link_type": "Page", "link_to": "sig-qc", "child": 1, "icon": "dot"},
             {"type": "Link", "label": "QC Templates", "link_type": "DocType", "link_to": "QC Checklist Template", "child": 1, "icon": "dot"},
             {"type": "Link", "label": "Projects", "link_type": "DocType", "link_to": "Project", "child": 1, "icon": "dot"},
         ],
     },
-    {
-        "label": "B2B Portal",
-        "links": [
-            {"type": "Link", "label": "Portal Policies", "link_type": "DocType", "link_to": "Portal Customer Group Policy", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Portal Quote Requests", "link_type": "DocType", "link_to": "Portal Quote Request", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Portal Review Board", "link_type": "URL", "link_to": "", "url": "/app/portal-review-board", "child": 1, "icon": "dot"},
-        ],
-    },
 ]
+
+WORKSPACE_SHORTCUTS = [
+    {"label": "SIG Dashboard", "type": "Page", "link_to": "sig-dashboard"},
+    {"label": "Project Map", "type": "Page", "link_to": "project-map"},
+    {"label": "Mobile QC", "type": "Page", "link_to": "sig-qc"},
+]
+
+REMOVED_SECTION_LABELS = {"Dashboards"}
 
 
 @frappe.whitelist()
 def run(workspace_name: str = "Main Dashboard"):
-    ws = frappe.get_doc("Workspace Sidebar", workspace_name)
-    items = []
-    for row in ws.get("items", []):
-        items.append(
-            {
-                "type": row.type,
-                "label": row.label,
-                "link_type": getattr(row, "link_type", None),
-                "link_to": getattr(row, "link_to", None),
-                "url": getattr(row, "url", None),
-                "child": row.child,
-                "icon": getattr(row, "icon", None),
-            }
-        )
+    sidebar = frappe.get_doc("Workspace Sidebar", workspace_name)
+    current_items = [_sidebar_row(row) for row in sidebar.get("items", [])]
+    updated_items = _build_sidebar_items(current_items)
 
-    managed_labels = {section["label"] for section in SECTIONS}
-    managed_link_labels = {link["label"] for section in SECTIONS for link in section["links"]}
-    managed_link_targets = {
-        link.get("link_to")
-        for section in SECTIONS
-        for link in section["links"]
-        if link.get("link_to")
-    }
+    sidebar.set("items", [])
+    for item in updated_items:
+        sidebar.append("items", item)
+    sidebar.save(ignore_permissions=True)
 
-    items = [
-        row
-        for row in items
-        if row.get("label") not in managed_labels
-        and row.get("label") not in managed_link_labels
-        and row.get("link_to") not in managed_link_targets
-    ]
-
-    insert_at = len(items)
-    settings_index = next((i for i, row in enumerate(items) if row.get("label") == "Settings"), None)
-    if settings_index is not None:
-        insert_at = settings_index
-
-    next_index = insert_at
-    for section in SECTIONS:
-        items.insert(next_index, {"type": "Section Break", "label": section["label"], "child": 0, "icon": "dot"})
-        next_index += 1
-        for link in section["links"]:
-            items.insert(next_index, link)
-            next_index += 1
-
-    ws.set("items", [])
-    for item in items:
-        ws.append("items", item)
-    ws.save(ignore_permissions=True)
+    _sync_workspace_shortcuts(workspace_name)
     frappe.db.commit()
     frappe.clear_cache()
     return {
         "workspace": workspace_name,
-        "links": [link["label"] for section in SECTIONS for link in section["links"]],
+        "links": [link["label"] for group in SIDEBAR_GROUPS for link in group["links"]],
     }
+
+
+def _sidebar_row(row) -> dict:
+    return {
+        "type": row.type,
+        "label": row.label,
+        "link_type": getattr(row, "link_type", None),
+        "link_to": getattr(row, "link_to", None),
+        "url": getattr(row, "url", None),
+        "child": row.child,
+        "icon": getattr(row, "icon", None),
+        "route_options": getattr(row, "route_options", None),
+        "navigate_to_tab": getattr(row, "navigate_to_tab", None),
+    }
+
+
+def _build_sidebar_items(items: list[dict]) -> list[dict]:
+    managed_labels = {
+        group["section"]
+        for group in SIDEBAR_GROUPS
+        if group["manage_section"]
+    }
+    managed_labels.update(
+        link["label"]
+        for group in SIDEBAR_GROUPS
+        for link in group["links"]
+    )
+
+    rows = [
+        row
+        for row in items
+        if row.get("label") not in managed_labels
+        and row.get("label") not in REMOVED_SECTION_LABELS
+    ]
+
+    for group in SIDEBAR_GROUPS:
+        section = group["section"]
+        if group["manage_section"] and not _has_label(rows, section):
+            section_row = {
+                "type": "Section Break",
+                "label": section,
+                "child": 0,
+                "icon": "dot",
+            }
+            rows = _insert_after_label(rows, group["create_after"], [section_row])
+
+    for group in SIDEBAR_GROUPS:
+        section = group["section"]
+        insert_index = _label_index(rows, section)
+        if insert_index is None:
+            continue
+
+        for offset, link in enumerate(group["links"], start=1):
+            rows.insert(insert_index + offset, dict(link))
+
+    return rows
+
+
+def _has_label(rows: list[dict], label: str) -> bool:
+    return any(row.get("label") == label for row in rows)
+
+
+def _label_index(rows: list[dict], label: str) -> int | None:
+    for index, row in enumerate(rows):
+        if row.get("label") == label:
+            return index
+    return None
+
+
+def _insert_after_label(rows: list[dict], after_label: str | None, new_rows: list[dict]) -> list[dict]:
+    if not after_label:
+        return rows + list(new_rows)
+
+    for index, row in enumerate(rows):
+        if row.get("label") == after_label:
+            return rows[: index + 1] + list(new_rows) + rows[index + 1 :]
+
+    return rows + list(new_rows)
+
+
+def _sync_workspace_shortcuts(workspace_name: str) -> None:
+    managed_labels = [shortcut["label"] for shortcut in WORKSPACE_SHORTCUTS]
+    frappe.db.delete(
+        "Workspace Shortcut",
+        {"parent": workspace_name, "label": ["in", managed_labels]},
+    )
+
+    existing_rows = frappe.get_all(
+        "Workspace Shortcut",
+        filters={"parent": workspace_name},
+        fields=["idx"],
+        order_by="idx desc",
+        limit=1,
+    )
+    start_idx = existing_rows[0]["idx"] if existing_rows else 0
+
+    for offset, shortcut in enumerate(WORKSPACE_SHORTCUTS, start=1):
+        doc = frappe.get_doc(
+            {
+                "doctype": "Workspace Shortcut",
+                "name": frappe.generate_hash(length=10),
+                "parent": workspace_name,
+                "parenttype": "Workspace",
+                "parentfield": "shortcuts",
+                "idx": start_idx + offset,
+                "label": shortcut["label"],
+                "type": shortcut["type"],
+                "link_to": shortcut["link_to"],
+            }
+        )
+        doc.db_insert()
+
+    workspace_content = frappe.db.get_value("Workspace", workspace_name, "content") or "[]"
+    try:
+        content = json.loads(workspace_content)
+    except Exception:
+        content = []
+
+    content = [
+        block
+        for block in content
+        if not str(block.get("id", "")).startswith("sig_main_dashboard_")
+    ]
+    content.extend(
+        [
+            {
+                "id": "sig_main_dashboard_header",
+                "type": "header",
+                "data": {"text": '<span class="h4"><b>SIG</b></span>', "col": 12},
+            },
+            {"id": "sig_main_dashboard_spacer", "type": "spacer", "data": {"col": 12}},
+            {
+                "id": "sig_main_dashboard_shortcut_1",
+                "type": "shortcut",
+                "data": {"shortcut_name": "SIG Dashboard", "col": 4},
+            },
+            {
+                "id": "sig_main_dashboard_shortcut_2",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Project Map", "col": 4},
+            },
+            {
+                "id": "sig_main_dashboard_shortcut_3",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Mobile QC", "col": 4},
+            },
+        ]
+    )
+    frappe.db.set_value("Workspace", workspace_name, "content", json.dumps(content), update_modified=False)
