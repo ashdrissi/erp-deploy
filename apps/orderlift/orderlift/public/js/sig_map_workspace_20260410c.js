@@ -3,7 +3,7 @@
 
     const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
     const LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    const LOCAL_CSS = "/assets/orderlift/css/sig_map.css?v=20260408e";
+    const LOCAL_CSS = "/assets/orderlift/css/sig_map_workspace_20260410.css";
 
     function ensureStylesheet(id, href) {
         if (document.getElementById(id)) return Promise.resolve();
@@ -114,6 +114,12 @@
         let markers = [];
         let allProjects = [];
         let lastBounds = [];
+
+        ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"].forEach((eventName) => {
+            root.addEventListener(eventName, (event) => {
+                event.stopPropagation();
+            });
+        });
 
         const preloadProject = options.preloadProject
             || root.dataset.preloadProject

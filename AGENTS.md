@@ -74,6 +74,29 @@
 - If a workflow depends on `app_include_js`, `doctype_js`, or `app_include_css`, treat it as a hook-cache problem first, not a migration problem.
 - In the current production app container, `node` may be unavailable, so `bench build` can fail even when static `orderlift` assets are already linked and usable.
 
+## Live Apply Decision Table
+- In this deployment, app code under `/root/erp-deploy/apps/...` is usually mounted into the live Coolify containers.
+- That means you normally do **not** need to specify individual files when applying local changes.
+- Edit the local files first, then run the narrowest bench/cache/restart action that matches the type of change.
+
+| Changed | Run | Notes |
+|---|---|---|
+| Python logic only (`*.py`) | Clear cache + restart `app/backend/websocket` | No `migrate` needed unless schema or fixtures changed |
+| `hooks.py`, `doctype_js`, page wiring | Clear cache + clear hook cache + restart `app/backend/websocket` | Full Desk reload afterward |
+| Existing `orderlift/public/js/*` or `orderlift/public/css/*` | Clear cache first; restart if still stale | Usually no `bench build` needed |
+| DocType JSON, fixtures, custom fields, property setters, patches | `bench --site <site> migrate` | If migrate fails late on missing `node`, run relevant setup hooks manually |
+| `setup.py` / `after_migrate` logic | `bench --site <site> migrate` or explicit `bench execute ...after_migrate` | Then clear cache + restart |
+| New workspace/sidebar setup logic | Run the setup hook explicitly | Example: `bench --site <site> execute orderlift.scripts.setup_main_dashboard_sidebar.run --kwargs '{"workspace_name":"Main Dashboard"}'` |
+| New static file not picked up publicly | Verify public asset URL directly with `curl` | Only use direct file copy/patching if mounted source is not enough |
+
+### Typical Live Apply Flow
+1. Edit local files under `/root/erp-deploy/apps/orderlift/...`
+2. If schema/fixtures changed: run `bench --site <site> migrate`
+3. Clear site cache
+4. If hooks changed: clear hook cache
+5. Restart `app`, `backend`, and `websocket`
+6. Verify route, asset, or DB record
+
 ## Lint And Format Commands
 - Python lint/format rules are defined only for `apps/infintrix_theme` via Ruff and pre-commit.
 - Run pre-commit for that app: `cd apps/infintrix_theme && pre-commit run --all-files`

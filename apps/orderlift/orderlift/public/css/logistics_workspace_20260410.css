@@ -1,0 +1,1125 @@
+.container-capacity-card {
+    border: 1px solid #d9e0ea;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+    padding: 14px;
+}
+
+.container-capacity-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: #22324a;
+}
+
+.container-capacity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.container-capacity-label {
+    color: #5b6b84;
+}
+
+.container-capacity-value {
+    font-weight: 700;
+    color: #1f2a3d;
+}
+
+.container-capacity-bar {
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    background: #edf2f8;
+    overflow: hidden;
+}
+
+.container-capacity-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 220ms ease;
+}
+
+.container-capacity-subtext {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #5b6b84;
+}
+
+.container-capacity-footer {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #3a4a61;
+}
+
+.ol-cockpit-wrap {
+    padding: 10px 2px 2px;
+    --ol-cockpit-bg: #f3f7fc;
+    --ol-cockpit-border: #d9e2ee;
+    --ol-cockpit-ink: #23364d;
+    --ol-cockpit-sub: #60758e;
+    --ol-cockpit-ok: #2d9e57;
+    --ol-cockpit-warn: #e99a1a;
+    --ol-cockpit-danger: #d74a4a;
+}
+
+.ol-cockpit-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.ol-cockpit-search-wrap {
+    flex: 1;
+}
+
+.ol-cockpit-search {
+    width: 100%;
+    border: 1px solid var(--ol-cockpit-border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ol-cockpit-ink);
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.ol-cockpit-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ol-cockpit-legend {
+    font-size: 11px;
+    color: var(--ol-cockpit-sub);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ol-cockpit-legend .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.ol-cockpit-legend .dot.ok { background: var(--ol-cockpit-ok); }
+.ol-cockpit-legend .dot.warn { background: var(--ol-cockpit-warn); }
+.ol-cockpit-legend .dot.danger { background: var(--ol-cockpit-danger); }
+
+.ol-cockpit-center {
+    margin-bottom: 14px;
+}
+
+.ol-cockpit-card {
+    border: 1px solid var(--ol-cockpit-border);
+    border-radius: 14px;
+    background: linear-gradient(120deg, #ffffff 0%, #eef5ff 100%);
+    padding: 14px;
+    box-shadow: 0 10px 24px rgba(35, 54, 77, 0.06);
+}
+
+.ol-cockpit-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.ol-cockpit-title {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--ol-cockpit-ink);
+}
+
+.ol-cockpit-sub {
+    color: var(--ol-cockpit-sub);
+    font-size: 12px;
+}
+
+.ol-cockpit-status {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #27415b;
+    background: #e9f0f8;
+    border-radius: 999px;
+    padding: 5px 10px;
+}
+
+.ol-cockpit-status.ok {
+    color: #1f6f3b;
+    background: #e9f7ef;
+}
+
+.ol-cockpit-status.warn {
+    color: #9a5f05;
+    background: #fff4de;
+}
+
+.ol-cockpit-status.danger {
+    color: #8f2424;
+    background: #fde7e7;
+}
+
+.ol-cockpit-kpi-grid {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ol-kpi-card {
+    border: 1px solid #dbe6f1;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #fff;
+}
+
+.ol-kpi-label {
+    font-size: 10px;
+    color: var(--ol-cockpit-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ol-kpi-value {
+    margin-top: 3px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ol-cockpit-ink);
+}
+
+.ol-kpi-value.small {
+    font-size: 14px;
+}
+
+.ol-cockpit-meter-grid {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.ol-cockpit-meter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #35506f;
+    margin-bottom: 4px;
+}
+
+.ol-cockpit-meter {
+    background: #eaf0f7;
+    border-radius: 999px;
+    height: 12px;
+    overflow: hidden;
+}
+
+.ol-cockpit-meter-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 200ms ease;
+}
+
+.ol-cockpit-meter-sub {
+    margin-top: 4px;
+    color: var(--ol-cockpit-sub);
+    font-size: 11px;
+}
+
+.ol-cockpit-meta {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #3b536e;
+}
+
+.ol-factor-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.ol-factor-pill.weight {
+    color: #8f2424;
+    background: #fde8e8;
+}
+
+.ol-factor-pill.volume {
+    color: #1f4b8f;
+    background: #e7f0fd;
+}
+
+.ol-factor-pill.both {
+    color: #7a4f08;
+    background: #fff3dc;
+}
+
+.ol-factor-pill.neutral {
+    color: #4f6177;
+    background: #ecf2f9;
+}
+
+.ol-cockpit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.ol-cockpit-col {
+    border: 1px solid var(--ol-cockpit-border);
+    border-radius: 12px;
+    background: #fff;
+    min-height: 440px;
+    overflow: hidden;
+}
+
+.ol-cockpit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid #ecf1f7;
+    background: var(--ol-cockpit-bg);
+}
+
+.ol-cockpit-head h4 {
+    margin: 0;
+    font-size: 13px;
+    color: #2b445e;
+}
+
+.ol-cockpit-chip {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eaf2fb;
+    color: #33516e;
+    font-weight: 600;
+}
+
+.ol-cockpit-list {
+    max-height: 480px;
+    overflow: auto;
+    padding: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.ol-cockpit-item {
+    border: 1px solid #e1e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(21, 43, 67, 0.04);
+    transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.ol-cockpit-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(21, 43, 67, 0.08);
+}
+
+.ol-cockpit-item.active {
+    border-color: #c8dbef;
+    background: #f8fbff;
+}
+
+.ol-cockpit-item-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #263d57;
+}
+
+.ol-cockpit-item-sub,
+.ol-cockpit-item-metrics {
+    font-size: 11px;
+    color: var(--ol-cockpit-sub);
+    margin-top: 3px;
+}
+
+.ol-cockpit-item-badges {
+    margin-top: 6px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ol-badge-metric {
+    background: #edf3fb;
+    color: #35516e;
+    border: 1px solid #d8e3f0;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10px;
+}
+
+.ol-badge-metric b {
+    margin-right: 4px;
+}
+
+.ol-cockpit-item-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.ol-inline-check {
+    font-size: 11px;
+    color: #395671;
+    margin: 0;
+}
+
+.ol-btn-add {
+    background: linear-gradient(180deg, #3184d7 0%, #256ab2 100%);
+    border-color: #2364a9;
+}
+
+.ol-btn-remove {
+    border-color: #e0caca;
+    color: #8f3030;
+    background: #fff6f6;
+}
+
+.ol-cockpit-empty {
+    text-align: center;
+    color: #70839a;
+    font-size: 12px;
+    padding: 20px 8px;
+}
+
+@media (max-width: 992px) {
+    .ol-cockpit-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ol-cockpit-toolbar-right {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .ol-cockpit-grid,
+    .ol-cockpit-meter-grid,
+    .ol-cockpit-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ol-cockpit-col {
+        min-height: 320px;
+    }
+}
+
+/* ── Phase 4.1 Drag-and-Drop ── */
+.ol-draggable {
+    cursor: grab;
+}
+
+.ol-draggable:active {
+    cursor: grabbing;
+}
+
+.ol-dragging {
+    opacity: 0.40;
+    transform: scale(0.98);
+}
+
+.ol-drop-target {
+    outline: 2px dashed #3184d7;
+    outline-offset: -2px;
+    background: #eef6ff !important;
+}
+
+#ol-active-list.ol-dropzone-active {
+    background: linear-gradient(180deg, #eef6ff 0%, #f8fbff 100%);
+    outline: 2px dashed #c1d9f4;
+    outline-offset: -4px;
+    border-radius: 8px;
+}
+
+/* ── Phase 4.2 Stacked Packing Bars ── */
+.ol-stack-wrap {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--ol-cockpit-border);
+}
+
+.ol-stack-row {
+    margin-bottom: 8px;
+}
+
+.ol-stack-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #35506f;
+    margin-bottom: 4px;
+}
+
+.ol-stack-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #eaf0f7;
+}
+
+.ol-stack-seg {
+    height: 100%;
+    transition: width 200ms ease;
+}
+
+.ol-stack-seg:first-child {
+    border-radius: 999px 0 0 999px;
+}
+
+.ol-stack-seg:only-child {
+    border-radius: 999px;
+}
+
+.ol-stack-remain {
+    background: #dde6f0 !important;
+    flex: 1;
+}
+
+.ol-stack-legend {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ol-stack-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--ol-cockpit-sub);
+}
+
+.ol-stack-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ── Phase 5.1 Zone Overview ── */
+.ol-zone-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 65vh;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.ol-zone-card {
+    border: 1px solid #dbe6f1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+}
+
+.ol-zone-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.ol-zone-name {
+    font-weight: 700;
+    font-size: 13px;
+    color: #263d57;
+}
+
+.ol-zone-badge {
+    font-size: 11px;
+    color: #60758e;
+    background: #edf3fb;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.ol-zone-plans {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ol-zone-plan-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    background: #f5f9ff;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+.ol-zone-container {
+    font-weight: 600;
+    color: #2b445e;
+    flex: 1;
+}
+
+.ol-zone-util {
+    color: #2d9e57;
+    font-weight: 600;
+}
+
+.ol-zone-count {
+    color: #60758e;
+}
+
+.ol-zone-empty-plan {
+    font-size: 11px;
+    color: #d74a4a;
+    font-style: italic;
+}
+
+.ol-zone-leftover {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #e99a1a;
+    font-weight: 600;
+}
+
+/* ── Phase 5.3 Analytics Dialog ── */
+.ol-analytics-wrap {
+    font-size: 13px;
+}
+
+.ol-analytics-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.ol-analytics-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #35506f;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 12px 0 6px;
+}
+
+.ol-analytics-factors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.ol-analytics-table {
+    font-size: 12px;
+}
+
+.ol-analytics-table th {
+    background: #f3f7fc;
+    font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LOGISTICS UI IMPROVEMENT — Phase 6
+   CSS Sections: Layout, Cards, Buttons, Skeletons, Forms, Fixes
+═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── A. Cockpit column layout (flex-stretch, removes fixed heights) ── */
+.ol-cockpit-col {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 320px);
+}
+
+.ol-cockpit-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: none;
+    min-height: 120px;
+}
+
+.ol-cockpit-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--ol-cockpit-bg);
+}
+
+/* ── B. Card depth and hover ── */
+.ol-cockpit-card {
+    background: linear-gradient(130deg, #ffffff 0%, #eef5ff 100%);
+    box-shadow: 0 2px 4px rgba(35, 54, 77, 0.04), 0 8px 24px rgba(35, 54, 77, 0.08);
+    border-radius: 14px;
+}
+
+.ol-kpi-card {
+    box-shadow: 0 1px 3px rgba(35, 54, 77, 0.06);
+    transition: box-shadow 140ms ease;
+}
+
+.ol-kpi-card:hover {
+    box-shadow: 0 4px 12px rgba(35, 54, 77, 0.12);
+}
+
+/* ── C. Status pills (replace bare text with colored badges) ── */
+.ol-cockpit-status {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 5px 14px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.ol-cockpit-status.ok {
+    background: #e9f7ef;
+    color: #1f6f3b;
+    border: 1px solid #b8dfc8;
+}
+
+.ol-cockpit-status.warn {
+    background: #fff4de;
+    color: #9a5f05;
+    border: 1px solid #f0d99a;
+}
+
+.ol-cockpit-status.danger {
+    background: #fde7e7;
+    color: #8f2424;
+    border: 1px solid #f0b8b8;
+}
+
+/* ── D. Drag handle (⠷ braille dot grid = universal drag icon) ── */
+.ol-cockpit-item.ol-draggable {
+    padding-left: 28px;
+    position: relative;
+}
+
+.ol-cockpit-item.ol-draggable::before {
+    content: "\2807";
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 16px;
+    color: #b8c8d8;
+    cursor: grab;
+    user-select: none;
+    line-height: 1;
+}
+
+.ol-cockpit-item.ol-draggable:active::before {
+    color: #3184d7;
+    cursor: grabbing;
+}
+
+/* ── E. Remove duplicate metrics line ── */
+.ol-cockpit-item-metrics {
+    display: none;
+}
+
+/* ── F. Fix stacked bar last-segment border radius ── */
+.ol-stack-remain {
+    border-radius: 0 999px 999px 0;
+}
+
+.ol-stack-seg:first-child:last-child {
+    border-radius: 999px;
+}
+
+/* ── G. KPI value overflow guard + unit separator ── */
+.ol-kpi-value,
+.ol-kpi-value.small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.ol-kpi-unit {
+    font-size: 10px;
+    color: var(--ol-cockpit-sub);
+    display: block;
+    margin-top: 1px;
+}
+
+/* ── H. Polished action buttons ── */
+.ol-btn-add {
+    background: linear-gradient(180deg, #3184d7 0%, #256ab2 100%);
+    border: 1px solid #2364a9;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: opacity 120ms ease, transform 80ms ease;
+}
+
+.ol-btn-add:hover {
+    opacity: 0.88;
+}
+
+.ol-btn-add:active {
+    transform: scale(0.97);
+}
+
+.ol-btn-remove {
+    border: 1px solid #e0caca;
+    color: #8f3030;
+    background: #fff6f6;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.ol-btn-remove:hover {
+    background: #ffe8e8;
+}
+
+/* ── I. Loading skeleton (shimmer animation) ── */
+.ol-skeleton-item {
+    border: 1px solid #e8eef5;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: #fff;
+}
+
+.ol-skeleton-line {
+    border-radius: 4px;
+    background: linear-gradient(90deg, #edf2f7 25%, #e2e8f0 50%, #edf2f7 75%);
+    background-size: 200% 100%;
+    animation: ol-shimmer 1.4s infinite;
+    margin-bottom: 6px;
+}
+
+.ol-skeleton-line.title {
+    height: 13px;
+    width: 60%;
+}
+
+.ol-skeleton-line.sub {
+    height: 10px;
+    width: 40%;
+}
+
+.ol-skeleton-line.badge {
+    height: 18px;
+    width: 80px;
+    border-radius: 999px;
+    display: inline-block;
+}
+
+.ol-skeleton-card {
+    border: 1px solid #e8eef5;
+    border-radius: 14px;
+    padding: 16px;
+    background: #fff;
+}
+
+.ol-skeleton-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.ol-skeleton-kpi {
+    border: 1px solid #edf2f7;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #f9fafb;
+}
+
+@keyframes ol-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ── J. Empty state ── */
+.ol-cockpit-empty {
+    text-align: center;
+    padding: 32px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.ol-empty-icon {
+    font-size: 26px;
+    opacity: 0.25;
+    display: block;
+}
+
+.ol-empty-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #60758e;
+}
+
+.ol-empty-hint {
+    font-size: 11px;
+    color: #94a5b7;
+    max-width: 200px;
+}
+
+/* ── K. Analytics table overflow fix ── */
+.ol-analytics-wrap .ol-analytics-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ── L. Container Profile form card ── */
+.ol-profile-capacity-wrap {
+    border: 1px solid #dbe6f1;
+    border-radius: 12px;
+    background: linear-gradient(160deg, #fff 0%, #f4f9ff 100%);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+
+.ol-profile-capacity-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #35506f;
+    margin-bottom: 10px;
+}
+
+.ol-profile-capacity-specs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.ol-profile-spec-item {
+    background: #edf3fb;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.ol-profile-spec-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #60758e;
+}
+
+.ol-profile-spec-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #23364d;
+    margin-top: 2px;
+}
+
+/* ── M. Shipment Analysis status banner ── */
+.ol-sa-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.ol-sa-status-banner.ok {
+    background: #e9f7ef;
+    color: #1f6f3b;
+    border: 1px solid #b8dfc8;
+}
+
+.ol-sa-status-banner.warn {
+    background: #fff4de;
+    color: #9a5f05;
+    border: 1px solid #f0d99a;
+}
+
+.ol-sa-status-banner.danger {
+    background: #fde7e7;
+    color: #8f2424;
+    border: 1px solid #f0b8b8;
+}
+
+.ol-sa-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ── N. CLP form status pill ── */
+.container-capacity-status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-left: 8px;
+}
+
+.container-capacity-status-pill.ok {
+    background: #e9f7ef;
+    color: #1f6f3b;
+}
+
+.container-capacity-status-pill.warn {
+    background: #fff4de;
+    color: #9a5f05;
+}
+
+.container-capacity-status-pill.danger {
+    background: #fde7e7;
+    color: #8f2424;
+}
+
+/* ── Phase 5.1 Zone Overview ── */
+.ol-zone-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 65vh;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.ol-zone-card {
+    border: 1px solid #dbe6f1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+}
+
+.ol-zone-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.ol-zone-name {
+    font-weight: 700;
+    font-size: 13px;
+    color: #263d57;
+}
+
+.ol-zone-badge {
+    font-size: 11px;
+    color: #60758e;
+    background: #edf3fb;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.ol-zone-plans {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ol-zone-plan-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    background: #f5f9ff;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+.ol-zone-container {
+    font-weight: 600;
+    color: #2b445e;
+    flex: 1;
+}
+
+.ol-zone-util {
+    color: #2d9e57;
+    font-weight: 600;
+}
+
+.ol-zone-count {
+    color: #60758e;
+}
+
+.ol-zone-empty-plan {
+    font-size: 11px;
+    color: #d74a4a;
+    font-style: italic;
+}
+
+.ol-zone-leftover {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #e99a1a;
+    font-weight: 600;
+}
+
+/* ── Phase 5.3 Analytics Dialog ── */
+.ol-analytics-wrap {
+    font-size: 13px;
+}
+
+.ol-analytics-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.ol-analytics-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #35506f;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 12px 0 6px;
+}
+
+.ol-analytics-factors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.ol-analytics-table {
+    font-size: 12px;
+}
+
+.ol-analytics-table th {
+    background: #f3f7fc;
+    font-weight: 600;
+}

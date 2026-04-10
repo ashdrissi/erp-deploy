@@ -28,6 +28,7 @@ frappe.pages["stock-dashboard"].on_page_load = function (wrapper) {
 const IC = {
     warehouse: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8l8-5 8 5v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8z"/><rect x="7" y="11" width="6" height="7"/></svg>`,
     box: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 4L10 2 3 4v8l7 4 7-4V4z"/><line x1="10" y1="2" x2="10" y2="14"/><line x1="3" y1="7" x2="17" y2="7"/></svg>`,
+    receipt: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v14l4-2 2 2 2-2 4 2V4a2 2 0 0 0-2-2z"/><polyline points="7,10 9,12 13,8"/></svg>`,
     alert: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L2 17h16L10 2z"/><line x1="10" y1="9" x2="10" y2="12"/><circle cx="10" cy="14.5" r=".7" fill="currentColor" stroke="none"/></svg>`,
     trend: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,15 8,9 12,12 17,5"/><polyline points="13,5 17,5 17,9"/></svg>`,
     transit: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="7" width="14" height="9" rx="1"/><path d="M15 10h2l2 3v3h-4V10z"/><circle cx="5" cy="18" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>`,
@@ -145,6 +146,30 @@ function renderSkeleton(page) {
 
             </div>
 
+            <div class="sdb-bottom-grid sdb-bottom-grid--phase1">
+
+                <div class="sdb-card">
+                    <div class="sdb-card-hd">
+                        <div class="sdb-card-title">${IC.alert} ${__("Flagged Inventory")}</div>
+                        <a href="/app/item" class="sdb-viewall">${__("Items")} ${IC.arrow}</a>
+                    </div>
+                    <div id="sdb-flagged" class="sdb-flagged-list">
+                        <div class="sdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div>
+                    </div>
+                </div>
+
+                <div class="sdb-card">
+                    <div class="sdb-card-hd">
+                        <div class="sdb-card-title">${IC.receipt} ${__("QC Routing Receipts")}</div>
+                        <a href="/app/purchase-receipt" class="sdb-viewall">${__("Receipts")} ${IC.arrow}</a>
+                    </div>
+                    <div id="sdb-qc-routing" class="sdb-qc-routing-list">
+                        <div class="sdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div>
+                    </div>
+                </div>
+
+            </div>
+
         </div>
     `);
 
@@ -186,6 +211,8 @@ async function loadData(page) {
         renderAlerts(page, d.alerts || []);
         renderTransfers(page, d.recent_transfers || []);
         renderReorderQueue(page, d.reorder_queue || []);
+        renderFlaggedItems(page, d.flagged_items || []);
+        renderQcRouting(page, d.qc_routing || []);
     } catch (e) {
         console.warn("Stock Dashboard: failed to load data", e);
         frappe.show_alert({ message: __("Could not load dashboard data"), indicator: "red" });
@@ -434,17 +461,59 @@ function renderReorderQueue(page, rows) {
             <div class="sdb-reorder-info">
                 <div class="sdb-reorder-name">${frappe.utils.escape_html(r.item_name || r.item_code)}</div>
                 <div class="sdb-reorder-code">${frappe.utils.escape_html(r.item_code)} · ${frappe.utils.escape_html((r.warehouse || "").split(" - ")[0])}</div>
+                <div class="sdb-reorder-meta">${r.supplier ? frappe.utils.escape_html(r.supplier) : __("No supplier configured")}</div>
             </div>
             <div class="sdb-reorder-right">
                 <div class="sdb-reorder-qty ${r.stockout ? "sdb-qty-red" : "sdb-qty-amber"}">
                     ${r.actual_qty} / ${r.reorder_level}
                     ${r.stockout ? '<span class="sdb-reorder-tag sdb-reorder-tag--stockout">STOCKOUT</span>' : ""}
                 </div>
-                <a class="sdb-reorder-btn" href="/app/purchase-order/new-purchase-order-1">
-                    ${r.action === "Transfer" ? __("Transfer") : __("Order Now")}
-                </a>
+                ${r.existing_po
+                    ? `<a class="sdb-reorder-btn" href="/app/purchase-order/${encodeURIComponent(r.existing_po)}">${__("Open Draft PO")}</a>`
+                    : r.supplier
+                        ? `<a class="sdb-reorder-btn" href="/app/purchase-order/new-purchase-order-1">${__("Create PO")}</a>`
+                        : `<span class="sdb-reorder-missing">${__("Missing Supplier")}</span>`}
             </div>
         </div>
+    `).join("")}</div>`);
+}
+
+function renderFlaggedItems(page, rows) {
+    const el = page.main.find("#sdb-flagged");
+    if (!rows.length) {
+        el.html(`<div class="sdb-empty">${IC.check}<p>${__("No items are currently flagged.")}</p></div>`);
+        return;
+    }
+
+    el.html(`<div class="sdb-flagged-items">${rows.map(r => `
+        <a class="sdb-flagged-item" href="/app/item/${encodeURIComponent(r.item_code)}">
+            <div class="sdb-flagged-info">
+                <div class="sdb-flagged-name">${frappe.utils.escape_html(r.item_name || r.item_code)}</div>
+                <div class="sdb-flagged-code">${frappe.utils.escape_html(r.item_code)}${r.item_group ? ` · ${frappe.utils.escape_html(r.item_group)}` : ""}</div>
+            </div>
+            <span class="sdb-flag-pill sdb-flag-pill--${(r.flag || '').toLowerCase().replace(/\s+/g, '-')}">${frappe.utils.escape_html(r.flag || "")}</span>
+        </a>
+    `).join("")}</div>`);
+}
+
+function renderQcRouting(page, rows) {
+    const el = page.main.find("#sdb-qc-routing");
+    if (!rows.length) {
+        el.html(`<div class="sdb-empty">${IC.receipt}<p>${__("No purchase receipts yet.")}</p></div>`);
+        return;
+    }
+
+    el.html(`<div class="sdb-qc-items">${rows.map(r => `
+        <a class="sdb-qc-item" href="/app/purchase-receipt/${encodeURIComponent(r.name)}">
+            <div class="sdb-qc-info">
+                <div class="sdb-qc-name">${frappe.utils.escape_html(r.name)}</div>
+                <div class="sdb-qc-code">${frappe.utils.escape_html(r.supplier || __("No supplier"))}${r.warehouse ? ` · ${frappe.utils.escape_html(r.warehouse)}` : ""}</div>
+            </div>
+            <div class="sdb-qc-right">
+                <span class="sdb-status ${r.qc_routed ? 'sdb-status--submitted' : 'sdb-status--draft'}">${r.qc_routed ? __("QC Routed") : __("Pending")}</span>
+                <span class="sdb-qc-sub">${__("Transfers")}: ${r.transfer_count || 0}</span>
+            </div>
+        </a>
     `).join("")}</div>`);
 }
 
@@ -586,6 +655,8 @@ function injectStyles() {
     gap:16px;
 }
 @media(max-width:900px){.sdb-bottom-grid{grid-template-columns:1fr;}}
+.sdb-bottom-grid--phase1 { grid-template-columns:1fr 1fr; }
+@media(max-width:900px){.sdb-bottom-grid--phase1{grid-template-columns:1fr;}}
 
 /* ── Card ── */
 .sdb-card {
@@ -708,6 +779,7 @@ function injectStyles() {
 }
 .sdb-reorder-name { font-size:12.5px; font-weight:700; color:var(--heading-color,#1a1f2e); margin-bottom:2px; }
 .sdb-reorder-code { font-size:11px; color:var(--text-muted,#94a3b8); }
+.sdb-reorder-meta { font-size:11px; color:var(--text-muted,#64748b); margin-top:3px; }
 .sdb-reorder-right { text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
 .sdb-reorder-qty   { font-size:13px; font-weight:700; }
 .sdb-reorder-tag   { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.6px; padding:1px 7px; border-radius:999px; }
@@ -719,6 +791,25 @@ function injectStyles() {
     transition:background .15s;
 }
 .sdb-reorder-btn:hover { background:#4f46e5; }
+.sdb-reorder-missing { font-size:11px; font-weight:700; color:#dc2626; }
+
+/* ── Phase 1 operator cards ── */
+.sdb-flagged-items, .sdb-qc-items { padding:10px 14px; display:flex; flex-direction:column; gap:10px; }
+.sdb-flagged-item, .sdb-qc-item {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:12px 14px; background:var(--bg-color,#f8fafc);
+    border-radius:10px; gap:12px; text-decoration:none;
+}
+.sdb-flagged-name, .sdb-qc-name { font-size:12.5px; font-weight:700; color:var(--heading-color,#1a1f2e); margin-bottom:2px; }
+.sdb-flagged-code, .sdb-qc-code, .sdb-qc-sub { font-size:11px; color:var(--text-muted,#94a3b8); }
+.sdb-qc-right { text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+.sdb-flag-pill {
+    display:inline-block; padding:4px 10px; border-radius:999px;
+    font-size:11px; font-weight:700; white-space:nowrap;
+}
+.sdb-flag-pill--slow-moving { background:#fef3c7; color:#b45309; }
+.sdb-flag-pill--overstock { background:#dbeafe; color:#1d4ed8; }
+.sdb-flag-pill--dormant { background:#fee2e2; color:#b91c1c; }
 
 /* ── Utilities ── */
 .sdb-shimmer-block {

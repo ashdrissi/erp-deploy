@@ -1,0 +1,738 @@
+/*
+ * Orderlift Logistics — Shared Styles
+ * Loaded globally via app_include_css in hooks.py
+ */
+
+/* ── Scenario Badge ─────────────────────────────────── */
+.ol-scenario-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-right: 8px;
+    line-height: 1;
+}
+
+.ol-scenario-badge .badge-icon {
+    font-size: 13px;
+}
+
+.ol-scenario-badge.badge-inbound {
+    background: linear-gradient(135deg, #e8f0fe, #d2e3fc);
+    color: #1a73e8;
+    border: 1px solid #aecbfa;
+}
+
+.ol-scenario-badge.badge-domestic {
+    background: linear-gradient(135deg, #e6f4ea, #ceead6);
+    color: #137333;
+    border: 1px solid #a8dab5;
+}
+
+.ol-scenario-badge.badge-outbound {
+    background: linear-gradient(135deg, #fef7e0, #feefc3);
+    color: #b06000;
+    border: 1px solid #fdd663;
+}
+
+.ol-scenario-badge.badge-customer {
+    background: linear-gradient(135deg, #fce8e6, #f9d0cc);
+    color: #c5221f;
+    border: 1px solid #f5a5a0;
+}
+
+/* ── Responsibility Tag ─────────────────────────────── */
+.ol-responsibility-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+.ol-responsibility-tag.tag-orderlift {
+    background: #e8f0fe;
+    color: #1a73e8;
+}
+
+.ol-responsibility-tag.tag-customer {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+/* ── Capacity Dashboard ─────────────────────────────── */
+.ol-capacity-dashboard {
+    padding: 16px;
+    background: var(--fg-color);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.ol-capacity-dashboard .dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.ol-capacity-dashboard .dashboard-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--heading-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ol-capacity-dashboard .dashboard-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.ol-capacity-dashboard .status-ok {
+    background: #e6f4ea;
+    color: #137333;
+}
+
+.ol-capacity-dashboard .status-warning {
+    background: #fef7e0;
+    color: #b06000;
+}
+
+.ol-capacity-dashboard .status-over {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.ol-capacity-dashboard .status-incomplete {
+    background: #f1f3f4;
+    color: #5f6368;
+}
+
+.ol-capacity-dashboard .gauge-row {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 12px;
+}
+
+.ol-capacity-dashboard .gauge-item {
+    flex: 1;
+}
+
+.ol-capacity-dashboard .gauge-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+}
+
+.ol-capacity-dashboard .gauge-label .label-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.ol-capacity-dashboard .gauge-label .label-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--heading-color);
+}
+
+.ol-capacity-dashboard .gauge-bar-bg {
+    width: 100%;
+    height: 10px;
+    border-radius: 5px;
+    background: var(--bg-color);
+    overflow: hidden;
+    position: relative;
+}
+
+.ol-capacity-dashboard .gauge-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    min-width: 2px;
+}
+
+.ol-capacity-dashboard .gauge-bar-fill.fill-ok {
+    background: linear-gradient(90deg, #34a853, #1e8e3e);
+}
+
+.ol-capacity-dashboard .gauge-bar-fill.fill-warning {
+    background: linear-gradient(90deg, #fbbc04, #f29900);
+}
+
+.ol-capacity-dashboard .gauge-bar-fill.fill-danger {
+    background: linear-gradient(90deg, #ea4335, #c5221f);
+}
+
+.ol-capacity-dashboard .capacity-summary {
+    display: flex;
+    gap: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 4px;
+}
+
+.ol-capacity-dashboard .summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.ol-capacity-dashboard .summary-item .summary-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--heading-color);
+    line-height: 1.2;
+}
+
+.ol-capacity-dashboard .summary-item .summary-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-top: 2px;
+}
+
+/* ── Source Type Indicator ───────────────────────────── */
+.ol-source-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+}
+
+.ol-source-indicator .source-icon {
+    font-size: 14px;
+}
+
+/* ── Scenario Info Bar (for forms) ─────────────────── */
+.ol-scenario-info-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    margin: -15px -15px 15px -15px;
+    background: var(--bg-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+/* ── Limiting Factor Indicator ─────────────────────── */
+.ol-limiting-factor {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--bg-color);
+}
+
+.ol-limiting-factor.factor-weight {
+    color: #e37400;
+    background: #fef7e0;
+}
+
+.ol-limiting-factor.factor-volume {
+    color: #1a73e8;
+    background: #e8f0fe;
+}
+
+.ol-limiting-factor.factor-both {
+    color: #c5221f;
+    background: #fce8e6;
+}
+
+/* ── Container Load Plan Planning Console ───────────────── */
+.ol-clp-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 6px 0 4px;
+}
+
+.ol-clp-subbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 4px 2px 2px;
+}
+
+.ol-clp-subbar-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ol-clp-breadcrumb {
+    font-size: 12px;
+    color: #a39788;
+}
+
+.ol-clp-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.ol-clp-page-title {
+    margin: 0;
+    font-size: 23px;
+    line-height: 1.15;
+    font-weight: 700;
+    color: var(--heading-color);
+    letter-spacing: -0.02em;
+}
+
+.ol-clp-page-subtitle {
+    margin: 6px 0 0;
+    color: var(--text-color);
+    font-size: 13px;
+    line-height: 1.6;
+    max-width: 68ch;
+}
+
+.ol-clp-title-pills,
+.ol-clp-toolbar,
+.ol-clp-stats-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ol-clp-pill,
+.ol-clp-row-pill,
+.ol-clp-chip,
+.ol-clp-layout-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.ol-clp-pill,
+.ol-clp-row-pill {
+    padding: 6px 11px;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+}
+
+.ol-clp-pill--blue { background: #e8f0fe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.ol-clp-pill--green { background: #e8f7ef; color: #147a44; border: 1px solid #bbebcf; }
+.ol-clp-pill--orange { background: #fff4e8; color: #c46918; border: 1px solid #fed7aa; }
+.ol-clp-pill--rose { background: #fff0f0; color: #c93a47; border: 1px solid #fecdd3; }
+.ol-clp-pill--neutral { background: #f8f5f1; color: #6b6259; border: 1px solid #e5ddd3; }
+.ol-clp-pill--success { background: #edf9f1; color: #15803d; border: 1px solid #ccead7; }
+.ol-clp-pill--warning { background: #fff5e5; color: #b45309; border: 1px solid #fed7aa; }
+.ol-clp-pill--danger { background: #fff0f0; color: #c2410c; border: 1px solid #fecaca; }
+
+.ol-clp-toolbar {
+    justify-content: flex-end;
+}
+
+.ol-clp-layout-btn {
+    min-height: 38px;
+    padding: 0 16px;
+    border: 1px solid #e5ddd3;
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.18);
+    transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+
+.ol-clp-layout-btn.is-secondary {
+    background: #fff;
+    color: #5d5248;
+    box-shadow: none;
+}
+
+.ol-clp-layout-btn:hover:not([disabled]) {
+    transform: translateY(-1px);
+    filter: brightness(1.02);
+}
+
+.ol-clp-layout-btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.ol-clp-stats-row {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ol-clp-mini {
+    background: #fff;
+    border: 1px solid #e8e0d5;
+    border-radius: 14px;
+    padding: 12px 14px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.ol-clp-mini.is-accent-blue { border-color: #bfdbfe; background: #f7fbff; }
+.ol-clp-mini.is-accent-green { border-color: #bbebcf; background: #f7fcf9; }
+.ol-clp-mini.is-accent-orange { border-color: #fed7aa; background: #fffaf4; }
+.ol-clp-mini.is-accent-rose { border-color: #fecdd3; background: #fff8f8; }
+
+.ol-clp-mini-label,
+.ol-clp-meta-label,
+.ol-clp-gauge-caption,
+.ol-clp-preview-type {
+    font-size: 11px;
+    font-weight: 600;
+    color: #a39788;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.ol-clp-mini-value {
+    margin-top: 4px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--heading-color);
+}
+
+.ol-clp-layout-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.95fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.ol-clp-main-column,
+.ol-clp-side-column {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.ol-clp-side-column {
+    position: sticky;
+    top: 12px;
+}
+
+.ol-clp-card {
+    background: #fff;
+    border: 1px solid #e8e0d5;
+    border-radius: 16px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.04), 0 10px 22px rgba(15,23,42,0.04);
+}
+
+.ol-clp-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.ol-clp-section-head h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--heading-color);
+}
+
+.ol-clp-section-head p {
+    margin: 5px 0 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #9b8f82;
+}
+
+.ol-clp-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.ol-clp-metric {
+    padding: 12px;
+    border-radius: 12px;
+    background: #faf8f5;
+    border: 1px solid #efe7dc;
+}
+
+.ol-clp-metric-label,
+.ol-clp-summary-label {
+    margin-bottom: 4px;
+}
+
+.ol-clp-metric-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--heading-color);
+    line-height: 1.4;
+}
+
+.ol-clp-gauge { margin-bottom: 14px; }
+.ol-clp-gauge:last-of-type { margin-bottom: 0; }
+
+.ol-clp-gauge-block {
+    padding: 12px;
+    background: #faf8f5;
+    border: 1px solid #efe7dc;
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.ol-clp-gauge-block:last-of-type { margin-bottom: 0; }
+
+.ol-clp-gauge-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.ol-clp-gauge-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #7f7368;
+}
+
+.ol-clp-gauge-pct {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--heading-color);
+}
+
+.ol-clp-gauge-track {
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    background: #eee8df;
+    overflow: hidden;
+}
+
+.ol-clp-gauge-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width .4s ease;
+}
+
+.ol-clp-gauge-fill.is-ok { background: linear-gradient(90deg, #0f9f53, #2bb673); }
+.ol-clp-gauge-fill.is-warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.ol-clp-gauge-fill.is-danger { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+.ol-clp-gauge-caption {
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+.ol-clp-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ol-clp-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ol-clp-meta-tile {
+    border-radius: 12px;
+    background: #faf8f5;
+    border: 1px solid #efe7dc;
+    padding: 12px;
+}
+
+.ol-clp-meta-value {
+    margin-top: 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--heading-color);
+}
+
+.ol-clp-guide-copy {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-color);
+    margin-bottom: 10px;
+}
+
+.ol-clp-guide-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-color);
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.ol-clp-card--shipments { padding-top: 16px; }
+
+.ol-clp-preview-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid #efe7dc;
+    margin-bottom: 14px;
+}
+
+.ol-clp-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.ol-clp-preview-table thead tr { background: #faf8f5; }
+.ol-clp-preview-table th,
+.ol-clp-preview-table td {
+    padding: 11px 13px;
+    border-bottom: 1px solid #efe7dc;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.ol-clp-preview-source {
+    font-weight: 700;
+    color: var(--heading-color);
+}
+
+.ol-clp-preview-type {
+    margin-top: 2px;
+}
+
+.ol-clp-seq {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: #f0ebe3;
+    border: 1px solid #e2d9ce;
+    color: #7b6f62;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ol-clp-row-pill.is-selected { background: #dcfce7; color: #166534; }
+.ol-clp-row-pill.is-muted { background: #e5e7eb; color: #6b7280; }
+
+.ol-clp-preview-empty {
+    padding: 16px;
+    border-radius: 12px;
+    background: #faf8f5;
+    border: 1px dashed #d9cebf;
+    color: #9b8f82;
+    font-size: 13px;
+    text-align: center;
+}
+
+.ol-clp-slot .frappe-control,
+.ol-clp-slot .grid-field,
+.ol-clp-config-grid .frappe-control {
+    margin-bottom: 0;
+}
+
+.ol-clp-config-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+}
+
+.ol-clp-config-grid .frappe-control {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #faf8f5;
+    border: 1px solid #efe7dc;
+}
+
+.ol-clp-config-grid .control-label,
+.ol-clp-slot .control-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #9b8f82;
+    margin-bottom: 6px;
+}
+
+.ol-clp-config-grid .like-disabled-input,
+.ol-clp-config-grid input,
+.ol-clp-config-grid select,
+.ol-clp-config-grid textarea,
+.ol-clp-notes-control textarea {
+    border-radius: 10px;
+    background: #fff;
+}
+
+.ol-clp-grid-control {
+    border-top: 1px solid #f0ebe3;
+    padding-top: 12px;
+}
+
+.ol-clp-notes-control {
+    min-height: 120px;
+}
+
+.ol-clp-notes-control .control-label {
+    display: none;
+}
+
+@media (max-width: 1180px) {
+    .ol-clp-layout-grid { grid-template-columns: 1fr; }
+    .ol-clp-side-column { position: static; }
+    .ol-clp-stats-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 768px) {
+    .ol-clp-workspace { gap: 14px; }
+    .ol-clp-card { padding: 16px; }
+    .ol-clp-page-title { font-size: 20px; }
+    .ol-clp-stats-row,
+    .ol-clp-config-grid,
+    .ol-clp-summary-grid,
+    .ol-clp-meta-grid,
+    .ol-clp-metric-grid {
+        grid-template-columns: 1fr;
+    }
+    .ol-clp-toolbar {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    .ol-clp-layout-btn {
+        width: 100%;
+    }
+}

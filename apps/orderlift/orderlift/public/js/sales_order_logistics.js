@@ -2,6 +2,8 @@ frappe.ui.form.on("Sales Order", {
     refresh(frm) {
         if (frm.is_new()) return;
 
+        _render_so_scenario_badge(frm);
+
         // SIG — Create or open installation project
         _sig_project_button(frm);
 
@@ -64,4 +66,37 @@ function _sig_project_button(frm) {
             );
         }, __("SIG"));
     }
+}
+
+function _render_so_scenario_badge(frm) {
+    frm.page.inner_toolbar.find(".ol-scenario-info-bar").remove();
+
+    const flow = frm.doc.custom_flow_scope || "";
+    const responsibility = frm.doc.custom_shipping_responsibility || "";
+
+    if (!flow) return;
+
+    const badge_class =
+        flow === "Inbound" ? "badge-inbound" :
+        flow === "Domestic" ? "badge-domestic" : "badge-outbound";
+
+    const badge_icon =
+        flow === "Inbound" ? "↓" :
+        flow === "Domestic" ? "↔" : "↑";
+
+    const resp_class = responsibility === "Customer" ? "tag-customer" : "tag-orderlift";
+
+    const html = `
+        <div class="ol-scenario-info-bar" style="margin:0; padding:6px 12px; border-bottom:none; border-radius:8px; margin-bottom:8px;">
+            <span class="ol-scenario-badge ${badge_class}">
+                <span class="badge-icon">${badge_icon}</span>
+                ${flow}
+            </span>
+            <span class="ol-responsibility-tag ${resp_class}">
+                ${responsibility}
+            </span>
+        </div>
+    `;
+
+    frm.page.inner_toolbar.prepend(html);
 }

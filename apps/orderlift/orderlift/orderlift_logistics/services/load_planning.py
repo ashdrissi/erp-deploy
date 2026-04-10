@@ -86,6 +86,52 @@ def compute_delivery_note_totals(delivery_note_name):
     }
 
 
+def compute_purchase_order_totals(purchase_order_name):
+    """Mirror of compute_delivery_note_totals for Purchase Order items.
+
+    Uses the same _get_item_metrics() for weight/volume lookup.
+    Returns a dict with the same shape to keep capacity math uniform.
+    """
+    doc = frappe.get_doc("Purchase Order", purchase_order_name)
+    total_weight_kg = 0.0
+    total_volume_m3 = 0.0
+    items_summary = []
+    missing_data_items = []
+
+    for row in doc.items or []:
+        qty = flt(row.qty)
+        unit_weight_kg, unit_volume_m3 = _get_item_metrics(row.item_code)
+
+        if unit_weight_kg <= 0 or unit_volume_m3 <= 0:
+            missing_data_items.append(row.item_code)
+
+        line_weight_kg = qty * unit_weight_kg
+        line_volume_m3 = qty * unit_volume_m3
+
+        total_weight_kg += line_weight_kg
+        total_volume_m3 += line_volume_m3
+
+        items_summary.append(
+            {
+                "item_code": row.item_code,
+                "qty": qty,
+                "unit_weight_kg": round3(unit_weight_kg),
+                "unit_volume_m3": round3(unit_volume_m3),
+                "line_weight_kg": round3(line_weight_kg),
+                "line_volume_m3": round3(line_volume_m3),
+            }
+        )
+
+    return {
+        "purchase_order": doc.name,
+        "supplier": doc.supplier,
+        "total_weight_kg": round3(total_weight_kg),
+        "total_volume_m3": round3(total_volume_m3),
+        "items": items_summary,
+        "missing_data_items": sorted(set(missing_data_items)),
+    }
+
+
 def get_active_containers(destination_zone=None, departure_date=None):
     """
     Get active container profiles, filtered by zone and date if provided.
@@ -244,18 +290,96 @@ def _delivery_note_assigned_elsewhere(load_plan_name, delivery_note):
     return True
 
 
-def pending_delivery_notes(destination_zone=None, company=None):
+def pending_delivery_notes(destination_zone=None, company=None,
+                           flow_scope=None, shipping_responsibility=None):
+    """Get submitted Delivery Notes available for planning.
+
+    Args:
+        destination_zone: Optional zone filter.
+        company: Optional company filter.
+        flow_scope: Optional scenario filter (Inbound/Domestic/Outbound).
+        shipping_responsibility: Optional responsibility filter (Orderlift/Customer).
+
+    Returns:
+        List of Delivery Note dicts ordered by posting_date asc.
+    """
     filters = {"docstatus": 1}
     if destination_zone:
         filters["custom_destination_zone"] = destination_zone
     if company:
         filters["company"] = company
+    if flow_scope and frappe.db.has_column("Delivery Note", "custom_flow_scope"):
+        filters["custom_flow_scope"] = flow_scope
+    if shipping_responsibility and frappe.db.has_column("Delivery Note", "custom_shipping_responsibility"):
+        filters["custom_shipping_responsibility"] = shipping_responsibility
 
     return frappe.get_all(
         "Delivery Note",
         filters=filters,
         fields=["name", "customer", "company", "posting_date", "custom_destination_zone"],
         order_by="posting_date asc, creation asc",
+        limit_page_length=0,
+    )
+
+
+def get_planning_candidates(source_type, destination_zone=None, company=None,
+                            flow_scope=None, shipping_responsibility=None):
+    """Unified entry point for fetching planning candidates.
+
+    Routes to the correct adapter based on source_type.
+
+    Args:
+        source_type: 'Delivery Note' or 'Purchase Order'.
+        destination_zone: Optional zone filter.
+        company: Optional company filter.
+        flow_scope: Scenario filter (Inbound/Domestic/Outbound).
+        shipping_responsibility: Responsibility filter (Orderlift/Customer).
+
+    Returns:
+        List of candidate dicts.
+    """
+    if source_type == "Purchase Order":
+        return pending_purchase_orders(
+            company=company,
+            flow_scope=flow_scope,
+        )
+
+    return pending_delivery_notes(
+        destination_zone=destination_zone,
+        company=company,
+        flow_scope=flow_scope,
+        shipping_responsibility=shipping_responsibility,
+    )
+
+
+def pending_purchase_orders(company=None, flow_scope=None, supplier=None):
+    """Get submitted Purchase Orders available for inbound planning.
+
+    Args:
+        company: Optional company filter.
+        flow_scope: Optional scenario filter (usually 'Inbound').
+        supplier: Optional supplier filter.
+
+    Returns:
+        List of Purchase Order dicts ordered by transaction_date asc.
+    """
+    filters = {"docstatus": 1, "status": ["not in", ["Closed", "Completed"]]}
+    if company:
+        filters["company"] = company
+    if flow_scope and frappe.db.has_column("Purchase Order", "custom_flow_scope"):
+        filters["custom_flow_scope"] = flow_scope
+    if supplier:
+        filters["supplier"] = supplier
+
+    # Exclude POs that are already fully received
+    # (per_received < 100 means there are still items to receive)
+    filters["per_received"] = ["<", 100]
+
+    return frappe.get_all(
+        "Purchase Order",
+        filters=filters,
+        fields=["name", "supplier", "company", "transaction_date", "supplier_name"],
+        order_by="transaction_date asc, creation asc",
         limit_page_length=0,
     )
 
@@ -323,7 +447,13 @@ def suggest_shipments_for_load_plan(load_plan):
 
     candidates = []
     rejected = []
-    for dn in pending_delivery_notes(destination_zone=load_plan.destination_zone, company=load_plan.company):
+    for dn in get_planning_candidates(
+        source_type=getattr(load_plan, "source_type", "Delivery Note") or "Delivery Note",
+        destination_zone=load_plan.destination_zone,
+        company=load_plan.company,
+        flow_scope=getattr(load_plan, "flow_scope", None),
+        shipping_responsibility=getattr(load_plan, "shipping_responsibility", None),
+    ):
         if dn.name in already_added:
             continue
         if _delivery_note_assigned_elsewhere(load_plan.name, dn.name):
@@ -375,10 +505,15 @@ def suggest_shipments_for_load_plan(load_plan):
     }
 
 
-def consolidation_preview(company=None, departure_date=None):
+def consolidation_preview(company=None, departure_date=None, flow_scope=None):
     """
     Groups all pending delivery notes by destination zone, simulates optimal
     packing for each zone using greedy-fit, and returns a zone-by-zone summary.
+
+    Args:
+        company: Optional company filter.
+        departure_date: Optional date for seasonal container filtering.
+        flow_scope: Optional scenario filter (Domestic/Outbound). Filters DNs.
 
     Returns:
         list of zone dicts with pending DNs and suggested containers per zone.
@@ -386,7 +521,7 @@ def consolidation_preview(company=None, departure_date=None):
     from collections import defaultdict
 
     ref_date = getdate(departure_date) if departure_date else getdate(frappe.utils.today())
-    all_pending = pending_delivery_notes(company=company)
+    all_pending = pending_delivery_notes(company=company, flow_scope=flow_scope)
 
     # Group DNs by zone
     by_zone = defaultdict(list)

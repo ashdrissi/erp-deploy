@@ -50,12 +50,86 @@ def after_migrate():
                     "in_standard_filter": 1,
                 },
             ],
+            # ── Purchase Order: scenario classification ──
+            "Purchase Order": [
+                {
+                    "fieldname": "custom_logistics_section",
+                    "label": "Logistics",
+                    "fieldtype": "Section Break",
+                    "insert_after": "terms",
+                    "collapsible": 1,
+                },
+                {
+                    "fieldname": "custom_flow_scope",
+                    "label": "Flow Scope",
+                    "fieldtype": "Select",
+                    "options": "\nInbound\nDomestic",
+                    "insert_after": "custom_logistics_section",
+                    "default": "Inbound",
+                    "in_standard_filter": 1,
+                    "description": "Inbound = import/international procurement. Domestic = local supplier.",
+                },
+                {
+                    "fieldname": "custom_shipping_responsibility",
+                    "label": "Shipping Responsibility",
+                    "fieldtype": "Select",
+                    "options": "\nOrderlift\nCustomer",
+                    "insert_after": "custom_flow_scope",
+                    "default": "Orderlift",
+                    "in_standard_filter": 1,
+                },
+            ],
+            # ── Sales Order: scenario classification ──
+            "Sales Order": [
+                {
+                    "fieldname": "custom_logistics_section",
+                    "label": "Logistics",
+                    "fieldtype": "Section Break",
+                    "insert_after": "terms",
+                    "collapsible": 1,
+                },
+                {
+                    "fieldname": "custom_flow_scope",
+                    "label": "Flow Scope",
+                    "fieldtype": "Select",
+                    "options": "\nDomestic\nOutbound",
+                    "insert_after": "custom_logistics_section",
+                    "in_standard_filter": 1,
+                    "description": "Domestic = local distribution. Outbound = export.",
+                },
+                {
+                    "fieldname": "custom_shipping_responsibility",
+                    "label": "Shipping Responsibility",
+                    "fieldtype": "Select",
+                    "options": "\nOrderlift\nCustomer",
+                    "insert_after": "custom_flow_scope",
+                    "in_standard_filter": 1,
+                },
+            ],
+            # ── Delivery Note: scenario classification + existing fields ──
             "Delivery Note": [
+                {
+                    "fieldname": "custom_flow_scope",
+                    "label": "Flow Scope",
+                    "fieldtype": "Select",
+                    "options": "\nInbound\nDomestic\nOutbound",
+                    "insert_after": "shipping_address_name",
+                    "in_standard_filter": 1,
+                    "description": "Inherited from Sales Order. Set manually for domestic dispatch.",
+                },
+                {
+                    "fieldname": "custom_shipping_responsibility",
+                    "label": "Shipping Responsibility",
+                    "fieldtype": "Select",
+                    "options": "\nOrderlift\nCustomer",
+                    "insert_after": "custom_flow_scope",
+                    "in_standard_filter": 1,
+                },
                 {
                     "fieldname": "custom_destination_zone",
                     "label": "Destination Zone",
                     "fieldtype": "Data",
-                    "insert_after": "shipping_address_name",
+                    "insert_after": "custom_shipping_responsibility",
                     "in_standard_filter": 1,
                 },
                 {
@@ -124,13 +198,55 @@ def after_migrate():
                     "description": "Items have been routed to correct warehouse based on QC results",
                 },
             ],
+            "Stock Entry": [
+                {
+                    "fieldname": "custom_source_pr",
+                    "label": "Source Purchase Receipt",
+                    "fieldtype": "Link",
+                    "options": "Purchase Receipt",
+                    "insert_after": "purchase_receipt_no",
+                    "read_only": 1,
+                },
+            ],
+            # ── Delivery Trip: scenario classification + CLP link ──
+            "Delivery Trip": [
+                {
+                    "fieldname": "custom_logistics_section",
+                    "label": "Logistics",
+                    "fieldtype": "Section Break",
+                    "insert_after": "driver",
+                    "collapsible": 1,
+                },
+                {
+                    "fieldname": "custom_flow_scope",
+                    "label": "Flow Scope",
+                    "fieldtype": "Select",
+                    "options": "\nDomestic\nOutbound",
+                    "insert_after": "custom_logistics_section",
+                    "in_standard_filter": 1,
+                    "description": "Set automatically when created from a Container Load Plan or Delivery Note.",
+                },
+                {
+                    "fieldname": "custom_container_load_plan",
+                    "label": "Container Load Plan",
+                    "fieldtype": "Link",
+                    "options": "Container Load Plan",
+                    "insert_after": "custom_flow_scope",
+                    "read_only": 1,
+                    "description": "The plan this trip was created from (if any).",
+                },
+            ],
         },
         update=True,
     )
 
     frappe.clear_cache(doctype="Item")
+    frappe.clear_cache(doctype="Purchase Order")
+    frappe.clear_cache(doctype="Sales Order")
     frappe.clear_cache(doctype="Delivery Note")
     frappe.clear_cache(doctype="Purchase Receipt")
+    frappe.clear_cache(doctype="Stock Entry")
+    frappe.clear_cache(doctype="Delivery Trip")
     ensure_logistics_workspace()
 
 

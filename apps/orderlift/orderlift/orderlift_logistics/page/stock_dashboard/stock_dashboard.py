@@ -19,6 +19,8 @@ def get_dashboard_data():
         "alerts": _get_live_alerts(),
         "recent_transfers": _get_recent_transfers(),
         "reorder_queue": _get_reorder_queue(),
+        "flagged_items": _get_flagged_items(),
+        "qc_routing": _get_qc_routing_receipts(),
     }
 
 
@@ -380,7 +382,15 @@ def _get_reorder_queue():
         level = int(flt(r.reorder_level))
         lead_days = int(flt(r.lead_time_days or 0))
         stockout = actual <= 0
-        # Rough days-to-stockout estimation: not possible without consumption rate; placeholder
+        suppliers = frappe.get_all(
+            "Item Supplier",
+            filters={"parent": r.item_code},
+            fields=["supplier"],
+            limit_page_length=3,
+        )
+        supplier = suppliers[0].supplier if suppliers else ""
+        existing_po = _find_existing_open_po(r.item_code, supplier)
+
         result.append({
             "item_code": r.item_code,
             "item_name": r.item_name,
@@ -389,7 +399,84 @@ def _get_reorder_queue():
             "reorder_level": level,
             "lead_time_days": lead_days,
             "stockout": stockout,
-            "action": "Transfer" if not r.warehouse else "Order",
+            "supplier": supplier,
+            "existing_po": existing_po,
+            "action": "Open Draft PO" if existing_po else ("Missing Supplier" if not supplier else "Create PO"),
         })
+
+    return result
+
+
+def _find_existing_open_po(item_code, supplier):
+    if not supplier:
+        return ""
+
+    purchase_orders = frappe.get_all(
+        "Purchase Order",
+        filters={
+            "supplier": supplier,
+            "docstatus": ["in", [0, 1]],
+            "status": ["!=", "Closed"],
+        },
+        fields=["name"],
+        limit_page_length=50,
+    )
+    if not purchase_orders:
+        return ""
+
+    po_names = [row.name for row in purchase_orders]
+    return frappe.db.get_value(
+        "Purchase Order Item",
+        {"item_code": item_code, "parent": ["in", po_names]},
+        "parent",
+    ) or ""
+
+
+def _get_flagged_items():
+    rows = frappe.get_all(
+        "Item",
+        filters={"custom_inventory_flag": ["is", "set"]},
+        fields=["name", "item_name", "item_group", "custom_inventory_flag", "modified"],
+        order_by="modified desc",
+        limit_page_length=8,
+    )
+    return [
+        {
+            "item_code": row.name,
+            "item_name": row.item_name,
+            "item_group": row.item_group,
+            "flag": row.custom_inventory_flag,
+            "modified": row.modified,
+        }
+        for row in rows
+    ]
+
+
+def _get_qc_routing_receipts():
+    receipts = frappe.get_all(
+        "Purchase Receipt",
+        fields=["name", "supplier", "posting_date", "custom_qc_routed", "docstatus", "set_warehouse"],
+        order_by="posting_date desc, modified desc",
+        limit_page_length=8,
+    )
+
+    has_source_pr = frappe.db.has_column("Stock Entry", "custom_source_pr")
+    result = []
+    for row in receipts:
+        transfer_count = 0
+        if has_source_pr:
+            transfer_count = frappe.db.count("Stock Entry", {"custom_source_pr": row.name})
+
+        result.append(
+            {
+                "name": row.name,
+                "supplier": row.supplier,
+                "posting_date": row.posting_date,
+                "warehouse": row.set_warehouse,
+                "qc_routed": bool(row.custom_qc_routed),
+                "transfer_count": transfer_count,
+                "status": {0: "draft", 1: "submitted", 2: "cancelled"}.get(row.docstatus, "draft"),
+            }
+        )
 
     return result

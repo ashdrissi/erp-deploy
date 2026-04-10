@@ -1,18 +1,6 @@
 frappe.provide("orderlift.logistics_cockpit");
 
-function ensureLogisticsCockpitStylesheet() {
-    const id = "orderlift-logistics-cockpit-css-20260410";
-    if (document.getElementById(id)) return;
-
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href = "/assets/orderlift/css/logistics_workspace_20260410.css";
-    document.head.appendChild(link);
-}
-
 frappe.pages["logistics-hub-cockpit"].on_page_load = function (wrapper) {
-    ensureLogisticsCockpitStylesheet();
     const page = frappe.ui.make_app_page({
         parent: wrapper,
         title: __("Logistics Hub Cockpit"),
@@ -23,7 +11,6 @@ frappe.pages["logistics-hub-cockpit"].on_page_load = function (wrapper) {
 };
 
 frappe.pages["logistics-hub-cockpit"].on_page_show = function () {
-    ensureLogisticsCockpitStylesheet();
     if (orderlift.logistics_cockpit.instance) {
         orderlift.logistics_cockpit.instance._subscribeRealtime();
     }
@@ -101,41 +88,34 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
 
     renderShell() {
         const html = `
-            <div class="ol-cc-root">
-                <div class="ol-cc-masthead" id="ol-cc-masthead"></div>
-                <div class="ol-cc-stats-strip" id="ol-cc-stats-strip"></div>
-                <div class="ol-cc-search-bar">
-                    <input id="ol-cockpit-search" class="ol-cc-search-input" placeholder="${__("Search Delivery Note or customer")}" />
-                    <div class="ol-cc-legend">
-                        <span class="ol-cc-legend-item">
-                            <span class="ol-cc-legend-dot ok"></span>${__("Healthy")}
-                        </span>
-                        <span class="ol-cc-legend-item">
-                            <span class="ol-cc-legend-dot warn"></span>${__("Watch")}
-                        </span>
-                        <span class="ol-cc-legend-item">
-                            <span class="ol-cc-legend-dot danger"></span>${__("Critical")}
-                        </span>
+            <div class="ol-cockpit-wrap">
+                <div class="ol-cockpit-toolbar">
+                    <div class="ol-cockpit-search-wrap">
+                        <input id="ol-cockpit-search" class="ol-cockpit-search" placeholder="${__("Search Delivery Note or customer")}" />
+                    </div>
+                    <div class="ol-cockpit-toolbar-right">
+                        <span class="ol-cockpit-legend"><i class="dot ok"></i>${__("Healthy")}</span>
+                        <span class="ol-cockpit-legend"><i class="dot warn"></i>${__("Watch")}</span>
+                        <span class="ol-cockpit-legend"><i class="dot danger"></i>${__("Critical")}</span>
                     </div>
                 </div>
-                <div class="ol-cc-body">
-                    <section class="ol-cc-col">
-                        <div class="ol-cc-col-head">
-                            <span class="ol-cc-col-title">${__("Pending Queue")}</span>
-                            <span id="ol-cc-queue-count" class="ol-cc-col-chip">0</span>
+                <div class="ol-cockpit-center" id="ol-cockpit-center"></div>
+                <div class="ol-cockpit-grid">
+                    <section class="ol-cockpit-col">
+                        <div class="ol-cockpit-head">
+                            <h4>${__("Pending Queue")}</h4>
+                            <span id="ol-queue-count" class="ol-cockpit-chip">0</span>
                         </div>
-                        <div id="ol-cc-queue-list" class="ol-cc-col-list"></div>
+                        <div id="ol-queue-list" class="ol-cockpit-list"></div>
                     </section>
-                    <section class="ol-cc-col">
-                        <div class="ol-cc-col-head">
-                            <span class="ol-cc-col-title">${__("Active Container")}</span>
-                            <span id="ol-cc-active-count" class="ol-cc-col-chip">0</span>
+                    <section class="ol-cockpit-col">
+                        <div class="ol-cockpit-head">
+                            <h4>${__("Active Container")}</h4>
+                            <span id="ol-active-count" class="ol-cockpit-chip">0</span>
                         </div>
-                        <div class="ol-cc-capacity-strip" id="ol-cc-capacity-strip"></div>
-                        <div id="ol-cc-active-list" class="ol-cc-col-list"></div>
+                        <div id="ol-active-list" class="ol-cockpit-list"></div>
                     </section>
                 </div>
-                <div class="ol-cc-stacked-section" id="ol-cc-stacked-section"></div>
             </div>
         `;
 
@@ -172,93 +152,64 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         const usedVolume = Number(plan.total_volume_m3 || 0);
         const remainingWeight = Math.max(maxWeight - usedWeight, 0);
         const remainingVolume = Math.max(maxVolume - usedVolume, 0);
+        const weightColor = this.utilizationColor(weightPct);
+        const volumeColor = this.utilizationColor(volumePct);
         const statusClass = this.analysisStatusClass(plan.analysis_status);
+        const factorClass = this.factorClass(plan.limiting_factor);
         const queueCount = (this.data.queue || []).length;
         const activeCount = (this.data.shipments || []).length;
 
-        // Masthead
-        const masthead = `
-            <div class="ol-cc-eyebrow">${__("Load Plan")}</div>
-            <div class="ol-cc-plan-name-row">
-                <div class="ol-cc-plan-name">${frappe.utils.escape_html(plan.container_label || this.loadPlan || "")}</div>
-                <div class="ol-cc-status ${statusClass}">${frappe.utils.escape_html(plan.analysis_status || "ok")}</div>
-            </div>
-            <div class="ol-cc-plan-meta">
-                <div class="ol-cc-meta-item">
-                    <span class="ol-cc-meta-label">${__("Profile")}:</span>
-                    ${frappe.utils.escape_html(plan.container_profile_label || "-")}
+        const html = `
+            <div class="ol-cockpit-card">
+                <div class="ol-cockpit-title-row">
+                    <div>
+                        <div class="ol-cockpit-title">${frappe.utils.escape_html(plan.container_label || this.loadPlan || "")}</div>
+                        <div class="ol-cockpit-sub">${frappe.utils.escape_html(plan.container_profile_label || "")} | ${frappe.utils.escape_html(plan.destination_zone || "-")} | ${frappe.utils.escape_html(plan.departure_date || "")}</div>
+                    </div>
+                    <div class="ol-cockpit-status ${statusClass}">${frappe.utils.escape_html(plan.analysis_status || "ok")}</div>
                 </div>
-                <div class="ol-cc-meta-item">
-                    <span class="ol-cc-meta-label">${__("Zone")}:</span>
-                    ${frappe.utils.escape_html(plan.destination_zone || "-")}
+
+                <div class="ol-cockpit-kpi-grid">
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Pending Queue")}</div>
+                        <div class="ol-kpi-value">${queueCount}</div>
+                    </div>
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Loaded Shipments")}</div>
+                        <div class="ol-kpi-value">${activeCount}</div>
+                    </div>
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Remaining Weight")}</div>
+                        <div class="ol-kpi-value small">${remainingWeight.toFixed(3)}<span class="ol-kpi-unit">kg</span></div>
+                    </div>
+                    <div class="ol-kpi-card">
+                        <div class="ol-kpi-label">${__("Remaining Volume")}</div>
+                        <div class="ol-kpi-value small">${remainingVolume.toFixed(3)}<span class="ol-kpi-unit">m³</span></div>
+                    </div>
                 </div>
-                <div class="ol-cc-meta-item">
-                    <span class="ol-cc-meta-label">${__("Departure")}:</span>
-                    ${frappe.utils.escape_html(plan.departure_date || "-")}
+
+                <div class="ol-cockpit-meter-grid">
+                    <div>
+                        <div class="ol-cockpit-meter-label">${__("Weight")}</div>
+                        <div class="ol-cockpit-meter">
+                            <div class="ol-cockpit-meter-fill" style="width:${Math.min(weightPct, 100)}%;background:${weightColor};"></div>
+                        </div>
+                        <div class="ol-cockpit-meter-sub">${Number(plan.total_weight_kg || 0).toFixed(3)} / ${Number(plan.max_weight_kg || 0).toFixed(3)} kg (${weightPct.toFixed(2)}%)</div>
+                    </div>
+                    <div>
+                        <div class="ol-cockpit-meter-label">${__("Volume")}</div>
+                        <div class="ol-cockpit-meter">
+                            <div class="ol-cockpit-meter-fill" style="width:${Math.min(volumePct, 100)}%;background:${volumeColor};"></div>
+                        </div>
+                        <div class="ol-cockpit-meter-sub">${Number(plan.total_volume_m3 || 0).toFixed(3)} / ${Number(plan.max_volume_m3 || 0).toFixed(3)} m3 (${volumePct.toFixed(2)}%)</div>
+                    </div>
                 </div>
-                <div class="ol-cc-meta-item">
-                    <span class="ol-cc-meta-label">${__("Factor")}:</span>
-                    <span class="ol-factor-pill ${this.factorClass(plan.limiting_factor)}">${frappe.utils.escape_html(plan.limiting_factor || "n/a")}</span>
-                </div>
+
+                <div class="ol-cockpit-meta">${__("Limiting Factor")}: <span class="ol-factor-pill ${factorClass}">${frappe.utils.escape_html(plan.limiting_factor || "n/a")}</span></div>
             </div>
         `;
 
-        // Stats strip (6 tiles)
-        const stats = `
-            <div class="ol-cc-stat-tile accent-blue">
-                <div class="ol-cc-stat-label">${__("Pending Queue")}</div>
-                <div class="ol-cc-stat-value">${queueCount}</div>
-                <div class="ol-cc-stat-bar"><div class="ol-cc-stat-bar-fill" style="width:${Math.min((queueCount / 10) * 100, 100)}%"></div></div>
-            </div>
-            <div class="ol-cc-stat-tile accent-green">
-                <div class="ol-cc-stat-label">${__("Loaded")}</div>
-                <div class="ol-cc-stat-value">${activeCount}</div>
-                <div class="ol-cc-stat-bar"><div class="ol-cc-stat-bar-fill" style="width:${Math.min((activeCount / 10) * 100, 100)}%"></div></div>
-            </div>
-            <div class="ol-cc-stat-tile">
-                <div class="ol-cc-stat-label">${__("Rem Weight")}</div>
-                <div class="ol-cc-stat-value">${remainingWeight.toFixed(1)}</div>
-                <div class="ol-cc-stat-bar"><div class="ol-cc-stat-bar-fill" style="width:${Math.min((remainingWeight / maxWeight * 100) || 0, 100)}%"></div></div>
-            </div>
-            <div class="ol-cc-stat-tile">
-                <div class="ol-cc-stat-label">${__("Rem Volume")}</div>
-                <div class="ol-cc-stat-value">${remainingVolume.toFixed(1)}</div>
-                <div class="ol-cc-stat-bar"><div class="ol-cc-stat-bar-fill" style="width:${Math.min((remainingVolume / maxVolume * 100) || 0, 100)}%"></div></div>
-            </div>
-            <div class="ol-cc-stat-tile ${weightPct >= 95 ? 'danger' : weightPct >= 75 ? 'warn' : ''}">
-                <div class="ol-cc-stat-label">${__("Weight %")}</div>
-                <div class="ol-cc-stat-value">${weightPct.toFixed(1)}</div>
-                <div class="ol-cc-stat-bar"><div class="ol-cc-stat-bar-fill" style="width:${Math.min(weightPct, 100)}%"></div></div>
-            </div>
-            <div class="ol-cc-stat-tile ${volumePct >= 95 ? 'danger' : volumePct >= 75 ? 'warn' : ''}">
-                <div class="ol-cc-stat-label">${__("Volume %")}</div>
-                <div class="ol-cc-stat-value">${volumePct.toFixed(1)}</div>
-                <div class="ol-cc-stat-bar"><div class="ol-cc-stat-bar-fill" style="width:${Math.min(volumePct, 100)}%"></div></div>
-            </div>
-        `;
-
-        // Capacity gauges (for active column)
-        const weightState = weightPct >= 95 ? 'danger' : weightPct >= 75 ? 'warn' : 'ok';
-        const volumeState = volumePct >= 95 ? 'danger' : volumePct >= 75 ? 'warn' : 'ok';
-
-        const capacity = `
-            <div class="ol-cc-cap-gauge ${weightState}">
-                <div class="ol-cc-cap-label-row">${__("Weight")}</div>
-                <div class="ol-cc-cap-pct">${weightPct.toFixed(1)}%</div>
-                <div class="ol-cc-cap-track"><div class="ol-cc-cap-fill" style="width:${Math.min(weightPct, 100)}%"></div></div>
-                <div class="ol-cc-cap-caption">${usedWeight.toFixed(1)} / ${maxWeight.toFixed(1)} kg</div>
-            </div>
-            <div class="ol-cc-cap-gauge ${volumeState}">
-                <div class="ol-cc-cap-label-row">${__("Volume")}</div>
-                <div class="ol-cc-cap-pct">${volumePct.toFixed(1)}%</div>
-                <div class="ol-cc-cap-track"><div class="ol-cc-cap-fill" style="width:${Math.min(volumePct, 100)}%"></div></div>
-                <div class="ol-cc-cap-caption">${usedVolume.toFixed(1)} / ${maxVolume.toFixed(1)} m³</div>
-            </div>
-        `;
-
-        this.page.main.find("#ol-cc-masthead").html(masthead);
-        this.page.main.find("#ol-cc-stats-strip").html(stats);
-        this.page.main.find("#ol-cc-capacity-strip").html(capacity);
+        this.page.main.find("#ol-cockpit-center").html(html);
         this.renderStackedBars(plan, this.data.shipments || []);
     }
 
@@ -279,33 +230,30 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         const rows = queue
             .map((row) => {
                 return `
-                    <article class="ol-cc-queue-card ol-draggable" draggable="true" data-dn="${frappe.utils.escape_html(row.delivery_note)}">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div>
-                                <div class="ol-cc-card-dn">${frappe.utils.escape_html(row.delivery_note)}</div>
-                                <div class="ol-cc-card-customer">${frappe.utils.escape_html(row.customer || "-")}</div>
-                            </div>
-                            <div class="ol-cc-zone-pill">${frappe.utils.escape_html(row.destination_zone || "")}</div>
-                        </div>
-                        <div class="ol-cc-card-metrics">
+                    <article class="ol-cockpit-item ol-draggable" draggable="true" data-dn="${frappe.utils.escape_html(row.delivery_note)}">
+                        <div class="ol-cockpit-item-title">${frappe.utils.escape_html(row.delivery_note)}</div>
+                        <div class="ol-cockpit-item-sub">${frappe.utils.escape_html(row.customer || "-")} - ${frappe.utils.escape_html(row.destination_zone || "")}</div>
+                        <div class="ol-cockpit-item-badges">
                             ${this.metricBadge("W", row.total_weight_kg, "kg")}
                             ${this.metricBadge("V", row.total_volume_m3, "m3")}
                         </div>
-                        <button class="ol-cc-btn-add" data-action="add" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Add to Container")}</button>
+                        <div class="ol-cockpit-item-actions">
+                            <button class="btn btn-xs btn-primary ol-btn-add" data-action="add" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Add to Container")}</button>
+                        </div>
                     </article>
                 `;
             })
             .join("");
 
-        const list = this.page.main.find("#ol-cc-queue-list");
+        const list = this.page.main.find("#ol-queue-list");
         list.html(rows || `
-            <div class="ol-cc-empty">
-                <span class="ol-cc-empty-icon">📦</span>
-                <span class="ol-cc-empty-label">${__("No pending shipments")}</span>
-                <span class="ol-cc-empty-hint">${__("Queue is empty for selected zone")}</span>
+            <div class="ol-cockpit-empty">
+                <span class="ol-empty-icon">📦</span>
+                <span class="ol-empty-label">${__("No pending shipments")}</span>
+                <span class="ol-empty-hint">${__("Queue is empty for selected zone")}</span>
             </div>
         `);
-        this.page.main.find("#ol-cc-queue-count").text(String(queue.length));
+        this.page.main.find("#ol-queue-count").text(String(queue.length));
 
         list.find("button[data-action='add']").on("click", async (e) => {
             const dn = $(e.currentTarget).attr("data-dn");
@@ -318,11 +266,11 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
             e.originalEvent.dataTransfer.setData("text/plain", dn);
             e.originalEvent.dataTransfer.setData("application/ol-source", "queue");
             e.currentTarget.classList.add("ol-dragging");
-            this.page.main.find("#ol-cc-active-list")[0].classList.add("ol-dropzone-active");
+            this.page.main.find("#ol-active-list")[0].classList.add("ol-dropzone-active");
         });
         list.find("article.ol-draggable").on("dragend", (e) => {
             e.currentTarget.classList.remove("ol-dragging");
-            this.page.main.find("#ol-cc-active-list")[0].classList.remove("ol-dropzone-active");
+            this.page.main.find("#ol-active-list")[0].classList.remove("ol-dropzone-active");
         });
     }
 
@@ -331,42 +279,34 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         const ordered = [...shipments].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
 
         const rows = ordered
-            .map((row, idx) => {
+            .map((row) => {
                 const checked = Number(row.selected || 0) ? "checked" : "";
                 return `
-                    <article class="ol-cc-active-card ol-draggable" draggable="true" data-sequence="${row.sequence || 0}" data-dn="${frappe.utils.escape_html(row.delivery_note)}">
-                        <div style="display: flex; align-items: flex-start; gap: 8px;">
-                            <div class="ol-cc-seq-badge">${idx + 1}</div>
-                            <div style="flex: 1; min-width: 0;">
-                                <div class="ol-cc-card-dn">${frappe.utils.escape_html(row.delivery_note)}</div>
-                                <div class="ol-cc-card-customer">${frappe.utils.escape_html(row.customer || "-")}</div>
-                            </div>
-                        </div>
-                        <div class="ol-cc-card-metrics">
+                    <article class="ol-cockpit-item active ol-draggable" draggable="true" data-sequence="${row.sequence || 0}" data-dn="${frappe.utils.escape_html(row.delivery_note)}">
+                        <div class="ol-cockpit-item-title">${frappe.utils.escape_html(row.delivery_note)}</div>
+                        <div class="ol-cockpit-item-sub">${frappe.utils.escape_html(row.customer || "-")}</div>
+                        <div class="ol-cockpit-item-badges">
                             ${this.metricBadge("W", row.shipment_weight_kg, "kg")}
                             ${this.metricBadge("V", row.shipment_volume_m3, "m3")}
                         </div>
-                        <div class="ol-cc-card-footer">
-                            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; margin: 0;">
-                                <input type="checkbox" class="ol-cc-card-checkbox" data-action="toggle" data-dn="${frappe.utils.escape_html(row.delivery_note)}" ${checked} />
-                                <span style="font-size: 11px; color: #a39788;">${__("Include")}</span>
-                            </label>
-                            <button class="ol-cc-btn-remove" data-action="remove" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Remove")}</button>
+                        <div class="ol-cockpit-item-actions">
+                            <label class="ol-inline-check"><input type="checkbox" data-action="toggle" data-dn="${frappe.utils.escape_html(row.delivery_note)}" ${checked}> ${__("Include")}</label>
+                            <button class="btn btn-xs btn-default ol-btn-remove" data-action="remove" data-dn="${frappe.utils.escape_html(row.delivery_note)}">${__("Remove")}</button>
                         </div>
                     </article>
                 `;
             })
             .join("");
 
-        const list = this.page.main.find("#ol-cc-active-list");
+        const list = this.page.main.find("#ol-active-list");
         list.html(rows || `
-            <div class="ol-cc-empty">
-                <span class="ol-cc-empty-icon">📋</span>
-                <span class="ol-cc-empty-label">${__("Container is empty")}</span>
-                <span class="ol-cc-empty-hint">${__("Drag or add shipments from queue")}</span>
+            <div class="ol-cockpit-empty">
+                <span class="ol-empty-icon">📋</span>
+                <span class="ol-empty-label">${__("Container is empty")}</span>
+                <span class="ol-empty-hint">${__("Drag or add shipments from queue")}</span>
             </div>
         `);
-        this.page.main.find("#ol-cc-active-count").text(String(shipments.length));
+        this.page.main.find("#ol-active-count").text(String(shipments.length));
 
         list.find("button[data-action='remove']").on("click", async (e) => {
             const dn = $(e.currentTarget).attr("data-dn");
@@ -383,7 +323,7 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         listEl.addEventListener("dragover", (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
-            const target = e.target.closest("article.ol-cc-active-card");
+            const target = e.target.closest("article.ol-cockpit-item");
             if (target) {
                 listEl.querySelectorAll(".ol-drop-target").forEach(el => el.classList.remove("ol-drop-target"));
                 target.classList.add("ol-drop-target");
@@ -503,14 +443,14 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
     }
 
     metricBadge(prefix, value, unit) {
-        const amount = Number(value || 0).toFixed(1);
-        return `<span class="ol-cc-card-badge"><b>${prefix}</b> ${amount} ${unit}</span>`;
+        const amount = Number(value || 0).toFixed(3);
+        return `<span class="ol-badge-metric"><b>${prefix}</b> ${amount} ${unit}</span>`;
     }
 
     async _reorderByDrop(draggedDn, dropEvent) {
-        const list = this.page.main.find("#ol-cc-active-list")[0];
-        const articles = Array.from(list.querySelectorAll("article.ol-cc-active-card[data-dn]"));
-        const dropTarget = dropEvent.target.closest("article.ol-cc-active-card");
+        const list = this.page.main.find("#ol-active-list")[0];
+        const articles = Array.from(list.querySelectorAll("article.ol-cockpit-item[data-dn]"));
+        const dropTarget = dropEvent.target.closest("article.ol-cockpit-item");
         if (!dropTarget || dropTarget.getAttribute("data-dn") === draggedDn) return;
 
         const dns = articles.map(el => el.getAttribute("data-dn")).filter(d => d !== draggedDn);
@@ -534,18 +474,10 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         const PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#6366f1"];
         const maxWeight = Number(plan.max_weight_kg || 0);
         const maxVolume = Number(plan.max_volume_m3 || 0);
-        const section = this.page.main.find("#ol-cc-stacked-section");
-
-        if (!maxWeight && !maxVolume) {
-            section.removeClass("visible");
-            return;
-        }
+        if (!maxWeight && !maxVolume) return;
 
         const activeShipments = shipments.filter(s => Number(s.selected));
-        if (!activeShipments.length) {
-            section.removeClass("visible");
-            return;
-        }
+        if (!activeShipments.length) return;
 
         const weightSegs = activeShipments.map((s, i) => ({
             dn: s.delivery_note,
@@ -586,18 +518,20 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
         ).join("");
 
         const html = `
-            <div class="ol-stack-row">
-                <div class="ol-stack-label">${__("Weight by shipment")}</div>
-                ${buildBar(weightSegs, weightTotalPct)}
+            <div class="ol-stack-wrap">
+                <div class="ol-stack-row">
+                    <div class="ol-stack-label">${__("Weight by shipment")}</div>
+                    ${buildBar(weightSegs, weightTotalPct)}
+                </div>
+                <div class="ol-stack-row">
+                    <div class="ol-stack-label">${__("Volume by shipment")}</div>
+                    ${buildBar(volumeSegs, volumeTotalPct)}
+                </div>
+                <div class="ol-stack-legend">${legendHtml}</div>
             </div>
-            <div class="ol-stack-row">
-                <div class="ol-stack-label">${__("Volume by shipment")}</div>
-                ${buildBar(volumeSegs, volumeTotalPct)}
-            </div>
-            <div class="ol-stack-legend">${legendHtml}</div>
         `;
 
-        section.html(html).addClass("visible");
+        this.page.main.find("#ol-cockpit-center .ol-cockpit-meter-grid").after(html);
     }
 
     _subscribeRealtime() {
@@ -628,24 +562,26 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
     }
 
     _showSkeleton() {
-        // Render shimmer skeleton in masthead, stats, and list columns during data fetch
-        const masthead = `
-            <div class="ol-skeleton-line title"></div>
-            <div class="ol-skeleton-line sub" style="width:70%;"></div>
-            <div style="display:flex;gap:12px;margin-top:8px;">
-                <div class="ol-skeleton-line title" style="width:150px;"></div>
-                <div class="ol-skeleton-line title" style="width:120px;"></div>
-            </div>
-        `;
-
-        const stats = `
-            ${[1, 2, 3, 4, 5, 6].map(() => `
-                <div class="ol-skeleton-item" style="padding:12px 10px;">
-                    <div class="ol-skeleton-line sub" style="width:60%; margin-bottom: 6px;"></div>
-                    <div class="ol-skeleton-line title" style="width:40%; margin-bottom: 6px;"></div>
-                    <div class="ol-skeleton-line" style="height:4px; width:100%;"></div>
+        // Render shimmer skeleton in center card and list columns during data fetch
+        const centerSkeleton = `
+            <div class="ol-cockpit-card">
+                <div class="ol-cockpit-title-row">
+                    <div>
+                        <div class="ol-skeleton-line title"></div>
+                        <div class="ol-skeleton-line sub"></div>
+                    </div>
                 </div>
-            `).join("")}
+                <div class="ol-cockpit-kpi-grid">
+                    <div class="ol-skeleton-kpi"></div>
+                    <div class="ol-skeleton-kpi"></div>
+                    <div class="ol-skeleton-kpi"></div>
+                    <div class="ol-skeleton-kpi"></div>
+                </div>
+                <div class="ol-cockpit-meter-grid">
+                    <div><div class="ol-skeleton-line" style="height:24px;"></div></div>
+                    <div><div class="ol-skeleton-line" style="height:24px;"></div></div>
+                </div>
+            </div>
         `;
 
         const listSkeleton = `
@@ -654,19 +590,16 @@ orderlift.logistics_cockpit.Cockpit = class Cockpit {
                     <div class="ol-skeleton-line title"></div>
                     <div class="ol-skeleton-line sub"></div>
                     <div style="display:flex;gap:6px;margin-top:6px;">
-                        <div class="ol-skeleton-line" style="width:40px; height:10px;"></div>
-                        <div class="ol-skeleton-line" style="width:40px; height:10px;"></div>
+                        <div class="ol-skeleton-line badge"></div>
+                        <div class="ol-skeleton-line badge"></div>
                     </div>
                 </div>
             `).join("")}
         `;
 
-        this.page.main.find("#ol-cc-masthead").html(masthead);
-        this.page.main.find("#ol-cc-stats-strip").html(stats);
-        this.page.main.find("#ol-cc-capacity-strip").html(`<div class="ol-skeleton-item" style="grid-column: 1/3; margin: 0;"></div>`);
-        this.page.main.find("#ol-cc-queue-list").html(listSkeleton);
-        this.page.main.find("#ol-cc-active-list").html(listSkeleton);
-        this.page.main.find("#ol-cc-stacked-section").removeClass("visible");
+        this.page.main.find("#ol-cockpit-center").html(centerSkeleton);
+        this.page.main.find("#ol-queue-list").html(listSkeleton);
+        this.page.main.find("#ol-active-list").html(listSkeleton);
     }
 
     async showZoneOverview() {

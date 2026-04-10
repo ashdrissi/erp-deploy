@@ -15,7 +15,11 @@ required_apps = ["frappe", "erpnext"]
 # ---------------------------------------------------------
 # Assets — included in Desk for all logged-in users
 # ---------------------------------------------------------
-app_include_css = ["/assets/orderlift/css/orderlift_bundle.css"]
+app_include_css = [
+    "/assets/orderlift/css/orderlift_bundle.css",
+    "/assets/orderlift/css/orderlift_logistics.css?v=20260410c",
+    "/assets/orderlift/css/clp_dashboard_v4.css",
+]
 app_include_js = [
     "/assets/orderlift/js/orderlift_bundle.js",
 ]
@@ -86,6 +90,8 @@ doc_events = {
         "on_submit": "orderlift.logistics.utils.stock_router.route_received_stock",
     },
     "Delivery Note": {
+        # Inherit scenario classification from linked Sales Order
+        "before_save": "orderlift.logistics.utils.flow_inherit.inherit_flow_from_sales_order",
         # Analyze physical shipment (weight/volume) on the real movement document
         "on_submit": "orderlift.logistics.utils.delivery_note_logistics.analyze_delivery_note",
         "on_cancel": "orderlift.logistics.utils.delivery_note_logistics.cancel_delivery_note_analysis",
@@ -104,10 +110,20 @@ doc_events = {
             "orderlift.orderlift_sig.utils.project_status_guard.before_project_status_change",
         ],
     },
+    "Container Load Plan": {
+        # Validate scenario consistency (flow_scope + source_type + shipping_responsibility)
+        "validate": "orderlift.logistics.utils.scenario_guard.validate_container_load_plan",
+    },
+    "Delivery Trip": {
+        # Block Delivery Trip creation for inbound or customer-managed scenarios
+        "validate": "orderlift.logistics.utils.scenario_guard.validate_delivery_trip",
+    },
 }
 
 doctype_js = {
+    "Container Load Plan": "public/js/clp_dashboard_v4.js",
     "Delivery Note": "public/js/delivery_note_logistics.js",
+    "Purchase Receipt": "public/js/purchase_receipt_logistics.js",
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Sales Order": "public/js/sales_order_logistics.js",

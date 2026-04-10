@@ -68,6 +68,63 @@ def route_received_stock(doc, method=None):
         frappe.db.set_value("Purchase Receipt", doc.name, "custom_qc_routed", 1)
 
 
+@frappe.whitelist()
+def get_purchase_receipt_routing_summary(purchase_receipt_name: str) -> dict:
+    """Return routing visibility data for the Purchase Receipt form."""
+    pr = frappe.get_doc("Purchase Receipt", purchase_receipt_name)
+
+    passed = []
+    failed = []
+    no_qi = []
+    inspections = []
+
+    for row in pr.items or []:
+        inspection_name = row.quality_inspection
+        if not inspection_name:
+            no_qi.append({"item_code": row.item_code, "qty": row.qty})
+            continue
+
+        inspection = frappe.get_doc("Quality Inspection", inspection_name)
+        inspections.append(
+            {
+                "name": inspection_name,
+                "item_code": row.item_code,
+                "status": inspection.status,
+            }
+        )
+        target = failed if inspection.status == "Rejected" else passed
+        target.append({"item_code": row.item_code, "qty": row.qty, "inspection": inspection_name})
+
+    source_warehouse = pr.warehouse or ""
+    real_warehouse = _get_destination_warehouse(source_warehouse, "REAL")
+    return_warehouse = _get_destination_warehouse(source_warehouse, "RETURN")
+
+    transfer_fields = ["name", "stock_entry_type", "posting_date", "docstatus", "to_warehouse"]
+    if frappe.db.has_column("Stock Entry", "custom_source_pr"):
+        transfers = frappe.get_all(
+            "Stock Entry",
+            filters={"custom_source_pr": purchase_receipt_name},
+            fields=transfer_fields,
+            order_by="posting_date desc, modified desc",
+            limit_page_length=10,
+        )
+    else:
+        transfers = []
+
+    return {
+        "purchase_receipt": pr.name,
+        "warehouse": source_warehouse,
+        "qc_routed": bool(pr.get("custom_qc_routed")),
+        "passed": passed,
+        "failed": failed,
+        "no_qi": no_qi,
+        "inspections": inspections,
+        "real_warehouse": real_warehouse,
+        "return_warehouse": return_warehouse,
+        "transfers": transfers,
+    }
+
+
 def _create_warehouse_transfer(pr_doc, items, destination_type):
     """Create Stock Entry to transfer items to destination warehouse."""
     if not items:
@@ -91,7 +148,8 @@ def _create_warehouse_transfer(pr_doc, items, destination_type):
     stock_entry.posting_date = nowdate()
     stock_entry.from_warehouse = source_warehouse
     stock_entry.to_warehouse = dest_warehouse
-    stock_entry.custom_source_pr = pr_doc.name
+    if frappe.db.has_column("Stock Entry", "custom_source_pr"):
+        stock_entry.custom_source_pr = pr_doc.name
 
     for item in items:
         stock_entry.append("items", {

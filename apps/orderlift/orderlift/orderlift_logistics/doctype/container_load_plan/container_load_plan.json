@@ -10,6 +10,9 @@
     "container_label",
     "container_profile",
     "company",
+    "flow_scope",
+    "shipping_responsibility",
+    "source_type",
     "destination_zone",
     "group_by_customer",
     "departure_date",
@@ -60,6 +63,34 @@
       "reqd": 1,
       "in_list_view": 1,
       "in_standard_filter": 1
+    },
+    {
+      "fieldname": "flow_scope",
+      "fieldtype": "Select",
+      "label": "Flow Scope",
+      "options": "Inbound\nDomestic\nOutbound",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "description": "Inbound = import from supplier. Domestic = local distribution. Outbound = export."
+    },
+    {
+      "fieldname": "shipping_responsibility",
+      "fieldtype": "Select",
+      "label": "Shipping Responsibility",
+      "options": "Orderlift\nCustomer",
+      "reqd": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "source_type",
+      "fieldtype": "Select",
+      "label": "Source Document Type",
+      "options": "Delivery Note\nPurchase Order",
+      "reqd": 1,
+      "default": "Delivery Note",
+      "in_standard_filter": 1,
+      "description": "Inbound plans use Purchase Order. Domestic/Outbound plans use Delivery Note."
     },
     {
       "fieldname": "destination_zone",

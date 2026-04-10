@@ -8,6 +8,7 @@ from orderlift.orderlift_logistics.services.load_planning import (
     STATUS_OVER_CAPACITY,
     build_analysis,
     compute_delivery_note_totals,
+    compute_purchase_order_totals,
     compute_utilization,
     create_shipment_analysis,
     detect_limiting_factor,
@@ -21,7 +22,7 @@ from orderlift.orderlift_logistics.services.capacity_math import (
 
 class ContainerLoadPlan(Document):
     def validate(self):
-        self._enforce_unique_delivery_notes()
+        self._enforce_unique_sources()
         self.recalculate_totals()
 
         if self.analysis_status == STATUS_OVER_CAPACITY:
@@ -29,23 +30,42 @@ class ContainerLoadPlan(Document):
 
     def on_submit(self):
         self.status = self.status or "Loading"
-        self._flag_delivery_notes(1)
+        if self.source_type == "Purchase Order":
+            # Inbound plans don't flag Delivery Notes
+            pass
+        else:
+            self._flag_delivery_notes(1)
         self._create_plan_analysis_snapshot()
 
     def on_cancel(self):
-        self._flag_delivery_notes(0)
+        if self.source_type == "Purchase Order":
+            pass
+        else:
+            self._flag_delivery_notes(0)
         self._mark_latest_analysis_cancelled()
 
-    def _enforce_unique_delivery_notes(self):
+    def _enforce_unique_sources(self):
+        """Prevent duplicate source documents in the same plan.
+        Checks delivery_note or purchase_order depending on source_type.
+        """
         seen = set()
+        source_field = "purchase_order" if self.source_type == "Purchase Order" else "delivery_note"
         for row in self.shipments or []:
-            if not row.delivery_note:
+            source_name = row.get(source_field)
+            if not source_name:
                 continue
-            if row.delivery_note in seen:
-                frappe.throw(f"Duplicate Delivery Note in plan: {row.delivery_note}")
-            seen.add(row.delivery_note)
+            if source_name in seen:
+                frappe.throw(f"Duplicate {self.source_type} in plan: {source_name}")
+            seen.add(source_name)
 
     def recalculate_totals(self):
+        if self.source_type == "Purchase Order":
+            self._recalculate_from_purchase_orders()
+        else:
+            self._recalculate_from_delivery_notes()
+
+    def _recalculate_from_delivery_notes(self):
+        """Original recalculate logic for DN-based plans."""
         total_weight = 0.0
         total_volume = 0.0
         has_missing = False
@@ -69,6 +89,37 @@ class ContainerLoadPlan(Document):
                 total_weight += flt(row.shipment_weight_kg)
                 total_volume += flt(row.shipment_volume_m3)
 
+        self._apply_utilization(total_weight, total_volume, has_missing)
+
+    def _recalculate_from_purchase_orders(self):
+        """Recalculate for PO-based inbound plans."""
+        total_weight = 0.0
+        total_volume = 0.0
+        has_missing = False
+
+        for idx, row in enumerate(self.shipments or [], start=1):
+            if not cint(row.sequence):
+                row.sequence = idx * 10
+            if not row.purchase_order:
+                continue
+
+            totals = compute_purchase_order_totals(row.purchase_order)
+            row.supplier = totals.get("supplier")
+            row.shipment_weight_kg = round3(totals.get("total_weight_kg"))
+            row.shipment_volume_m3 = round3(totals.get("total_volume_m3"))
+            row.selected = 1 if cint(row.selected) else 0
+
+            if totals.get("missing_data_items"):
+                has_missing = True
+
+            if row.selected:
+                total_weight += flt(row.shipment_weight_kg)
+                total_volume += flt(row.shipment_volume_m3)
+
+        self._apply_utilization(total_weight, total_volume, has_missing)
+
+    def _apply_utilization(self, total_weight, total_volume, has_missing):
+        """Shared utilization calculation for both DN and PO plans."""
         self.total_weight_kg = round3(total_weight)
         self.total_volume_m3 = round3(total_volume)
 
@@ -249,6 +300,14 @@ def _queue_for_plan(doc):
     if doc.destination_zone and frappe.db.has_column("Delivery Note", "custom_destination_zone"):
         filters["custom_destination_zone"] = doc.destination_zone
 
+    # Phase 2: filter by scenario classification
+    flow_scope = getattr(doc, "flow_scope", None)
+    if flow_scope and frappe.db.has_column("Delivery Note", "custom_flow_scope"):
+        filters["custom_flow_scope"] = flow_scope
+    responsibility = getattr(doc, "shipping_responsibility", None)
+    if responsibility and frappe.db.has_column("Delivery Note", "custom_shipping_responsibility"):
+        filters["custom_shipping_responsibility"] = responsibility
+
     rows = frappe.get_all(
         "Delivery Note",
         filters=filters,
@@ -327,10 +386,10 @@ def reorder_shipments(load_plan_name, delivery_notes_ordered):
 
 
 @frappe.whitelist()
-def preview_consolidation(company=None, departure_date=None):
+def preview_consolidation(company=None, departure_date=None, flow_scope=None):
     """Wraps consolidation_preview for cockpit access."""
     from orderlift.orderlift_logistics.services.load_planning import consolidation_preview
-    return consolidation_preview(company=company, departure_date=departure_date)
+    return consolidation_preview(company=company, departure_date=departure_date, flow_scope=flow_scope)
 
 
 @frappe.whitelist()

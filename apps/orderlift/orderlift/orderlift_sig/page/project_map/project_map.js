@@ -5,20 +5,28 @@ frappe.pages["project-map"].on_page_load = function (wrapper) {
         single_column: true,
     });
     _setSigBreadcrumbs(wrapper.sig_page, __("Project Map"));
+    _isolateProjectMapPage(wrapper);
+    // Render once on initial load
+    _renderProjectMapOnce(wrapper);
 };
 
 frappe.pages["project-map"].on_page_show = function (wrapper) {
     _setSigBreadcrumbs(wrapper.sig_page, __("Project Map"));
+    _isolateProjectMapPage(wrapper);
+    // Update breadcrumbs and isolation on every show, but don't re-render (already done in on_page_load)
+};
+
+function _renderProjectMapOnce(wrapper) {
     renderSigPage(wrapper, {
         rootId: "sig-map-page-root",
-        scriptId: "orderlift-sig-map-script-v4",
-        scriptSrc: "/assets/orderlift/js/sig_map.js?v=20260408f",
+        scriptId: "orderlift-sig-map-script-v10",
+        scriptSrc: "/assets/orderlift/js/sig_map_workspace_20260410d.js",
         mountKey: "orderliftSigMap",
         mountOptions: {
             preloadProject: _getPreloadProject(),
         },
     });
-};
+}
 
 function renderSigPage(wrapper, config) {
     const page = wrapper.sig_page;
@@ -94,4 +102,35 @@ function _stretchProjectMapLayout(wrapper, rootId) {
         mapRoot.style.height = "calc(100vh - 88px)";
         mapRoot.style.minHeight = "calc(100vh - 88px)";
     }
+}
+
+
+function _isolateProjectMapPage(wrapper) {
+    if (wrapper.dataset.projectMapIsolated === "1") return;
+    wrapper.dataset.projectMapIsolated = "1";
+
+    ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"].forEach((eventName) => {
+        wrapper.addEventListener(eventName, (event) => {
+            event.stopPropagation();
+        });
+    });
+
+    wrapper.addEventListener("click", (event) => {
+        const anchor = event.target.closest("a");
+        const allowDefault = anchor && (
+            anchor.getAttribute("target") === "_blank"
+            || anchor.closest(".leaflet-control-attribution")
+        );
+
+        if (anchor && !allowDefault) {
+            event.preventDefault();
+        }
+
+        event.stopPropagation();
+    });
+
+    wrapper.addEventListener("submit", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
 }

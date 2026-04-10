@@ -7,7 +7,9 @@
   "engine": "InnoDB",
   "field_order": [
     "delivery_note",
+    "purchase_order",
     "customer",
+    "supplier",
     "shipment_weight_kg",
     "shipment_volume_m3",
     "selected",
@@ -19,7 +21,14 @@
       "fieldtype": "Link",
       "label": "Delivery Note",
       "options": "Delivery Note",
-      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "purchase_order",
+      "fieldtype": "Link",
+      "label": "Purchase Order",
+      "options": "Purchase Order",
       "in_list_view": 1,
       "in_standard_filter": 1
     },
@@ -30,6 +39,15 @@
       "options": "Customer",
       "read_only": 1,
       "in_list_view": 1
+    },
+    {
+      "fieldname": "supplier",
+      "fieldtype": "Link",
+      "label": "Supplier",
+      "options": "Supplier",
+      "read_only": 1,
+      "in_list_view": 1,
+      "depends_on": "purchase_order"
     },
     {
       "fieldname": "shipment_weight_kg",

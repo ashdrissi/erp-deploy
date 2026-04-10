@@ -9,3 +9,4 @@ orderlift.patches.v1_0.create_default_benchmark_policy
 orderlift.patches.v1_0.seed_pricing_demo_data
 orderlift.patches.v1_0.normalize_pricing_customer_group_and_tier_mode
 orderlift.patches.v1_0.remove_legacy_pricing_policy_and_market_price
+orderlift.patches.v1_0.backfill_clp_scenario_fields
