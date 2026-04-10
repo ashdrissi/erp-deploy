@@ -148,6 +148,7 @@ scheduler_events = {
 after_migrate = [
     "orderlift.sales.utils.pricing_setup.after_migrate",
     "orderlift.logistics.setup.after_migrate",
+    "orderlift.orderlift_logistics.setup.after_migrate",
     "orderlift.orderlift_sig.setup.after_migrate",
     "orderlift.scripts.setup_main_dashboard_sidebar.run",
 ]
