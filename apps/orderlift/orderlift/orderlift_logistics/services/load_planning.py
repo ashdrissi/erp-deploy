@@ -1,8 +1,9 @@
 import frappe
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 
 from orderlift.orderlift_logistics.services.capacity_math import (
     candidate_pressure,
+    candidate_balance_score,
     compute_utilization,
     detect_limiting_factor,
     round3,
@@ -85,18 +86,62 @@ def compute_delivery_note_totals(delivery_note_name):
     }
 
 
-def get_active_containers():
-    return frappe.get_all(
+def get_active_containers(destination_zone=None, departure_date=None):
+    """
+    Get active container profiles, filtered by zone and date if provided.
+
+    :param destination_zone: Optional zone name (comma-separated allowed_zones must include it)
+    :param departure_date: Optional date for seasonal filtering (defaults to today)
+    :return: List of container profile dicts, ordered by cost_rank asc
+    """
+    containers = frappe.get_all(
         "Container Profile",
         filters={"is_active": 1},
-        fields=["name", "container_name", "container_type", "max_weight_kg", "max_volume_m3", "cost_rank"],
+        fields=[
+            "name", "container_name", "container_type",
+            "max_weight_kg", "max_volume_m3", "cost_rank",
+            "allowed_zones", "active_from", "active_to"
+        ],
         order_by="cost_rank asc, max_volume_m3 asc, max_weight_kg asc",
         limit_page_length=0,
     )
 
+    # Apply zone and date filters
+    filtered = []
+    ref_date = getdate(departure_date) if departure_date else getdate()
 
-def recommend_container(total_weight_kg, total_volume_m3):
-    for container in get_active_containers():
+    for container in containers:
+        # Seasonal date filter (null-safe)
+        if container.active_from and ref_date < getdate(container.active_from):
+            continue
+        if container.active_to and ref_date > getdate(container.active_to):
+            continue
+
+        # Zone filter: empty allowed_zones means all zones
+        if destination_zone and container.allowed_zones:
+            allowed = [z.strip().lower() for z in container.allowed_zones.split(",") if z.strip()]
+            if destination_zone.strip().lower() not in allowed:
+                continue
+
+        filtered.append(container)
+
+    return filtered
+
+
+def recommend_containers(total_weight_kg, total_volume_m3, destination_zone=None, departure_date=None, top_n=3):
+    """
+    Return a list of up to top_n fitting containers as recommendation dicts,
+    ordered by cost_rank asc (cheapest first).
+
+    :param total_weight_kg: Total weight of shipment
+    :param total_volume_m3: Total volume of shipment
+    :param destination_zone: Optional zone name for filtering
+    :param departure_date: Optional date for seasonal filtering
+    :param top_n: Maximum number of candidates to return (default 3)
+    :return: List of recommendation dicts (may be < top_n if fewer containers fit)
+    """
+    candidates = []
+    for container in get_active_containers(destination_zone=destination_zone, departure_date=departure_date):
         if flt(total_weight_kg) <= flt(container.max_weight_kg) and flt(total_volume_m3) <= flt(container.max_volume_m3):
             utilization = compute_utilization(
                 total_weight_kg,
@@ -104,15 +149,38 @@ def recommend_container(total_weight_kg, total_volume_m3):
                 container.max_weight_kg,
                 container.max_volume_m3,
             )
-            return {
+            candidates.append({
                 "container": container,
                 "weight_utilization_pct": utilization["weight_utilization_pct"],
                 "volume_utilization_pct": utilization["volume_utilization_pct"],
                 "limiting_factor": detect_limiting_factor(
                     utilization["weight_utilization_pct"], utilization["volume_utilization_pct"]
                 ),
-            }
-    return None
+            })
+            if len(candidates) >= top_n:
+                break
+
+    return candidates
+
+
+def recommend_container(total_weight_kg, total_volume_m3, destination_zone=None, departure_date=None):
+    """
+    Return the single best-fit container recommendation dict, or None.
+    Backward-compatible wrapper around recommend_containers().
+
+    :param total_weight_kg: Total weight of shipment
+    :param total_volume_m3: Total volume of shipment
+    :param destination_zone: Optional zone name for filtering
+    :param departure_date: Optional date for seasonal filtering
+    :return: First (best) recommendation dict, or None if no container fits
+    """
+    candidates = recommend_containers(
+        total_weight_kg, total_volume_m3,
+        destination_zone=destination_zone,
+        departure_date=departure_date,
+        top_n=1
+    )
+    return candidates[0] if candidates else None
 
 
 def build_analysis(source_type, source_name, customer, destination_zone, totals, recommendation):
@@ -193,12 +261,51 @@ def pending_delivery_notes(destination_zone=None, company=None):
 
 
 def _score_candidate(candidate, remaining_weight, remaining_volume):
-    return candidate_pressure(
+    """Score a candidate for balanced packing."""
+    return candidate_balance_score(
         candidate["total_weight_kg"],
         candidate["total_volume_m3"],
         remaining_weight,
         remaining_volume,
     )
+
+
+def _sort_candidates_by_customer_group(candidates):
+    """
+    Sort candidates by customer group, with best-scoring customers first.
+    Within each customer group, candidates are sorted by score (descending).
+
+    :param candidates: List of candidate dicts with 'customer' and 'score' keys
+    :return: Re-sorted list with customer grouping applied
+    """
+    from collections import defaultdict
+
+    if not candidates:
+        return []
+
+    # Group candidates by customer
+    groups = defaultdict(list)
+    for candidate in candidates:
+        customer_key = candidate.get("customer") or ""
+        groups[customer_key].append(candidate)
+
+    # Sort within each group by score (descending)
+    for customer in groups:
+        groups[customer].sort(key=lambda x: x["score"], reverse=True)
+
+    # Sort customer groups by their best candidate's score (descending)
+    sorted_customers = sorted(
+        groups.keys(),
+        key=lambda cust: groups[cust][0]["score"] if groups[cust] else 0,
+        reverse=True,
+    )
+
+    # Flatten into a single list
+    result = []
+    for customer in sorted_customers:
+        result.extend(groups[customer])
+
+    return result
 
 
 def suggest_shipments_for_load_plan(load_plan):
@@ -237,7 +344,11 @@ def suggest_shipments_for_load_plan(load_plan):
             }
         )
 
-    candidates.sort(key=lambda x: x["score"], reverse=True)
+    # Apply grouping or sorting
+    if frappe.utils.cint(load_plan.get("group_by_customer")):
+        candidates = _sort_candidates_by_customer_group(candidates)
+    else:
+        candidates.sort(key=lambda x: x["score"], reverse=True)
 
     selected = []
     for candidate in candidates:
@@ -262,3 +373,101 @@ def suggest_shipments_for_load_plan(load_plan):
         "remaining_weight_kg": round3(remaining_weight),
         "remaining_volume_m3": round3(remaining_volume),
     }
+
+
+def consolidation_preview(company=None, departure_date=None):
+    """
+    Groups all pending delivery notes by destination zone, simulates optimal
+    packing for each zone using greedy-fit, and returns a zone-by-zone summary.
+
+    Returns:
+        list of zone dicts with pending DNs and suggested containers per zone.
+    """
+    from collections import defaultdict
+
+    ref_date = getdate(departure_date) if departure_date else getdate(frappe.utils.today())
+    all_pending = pending_delivery_notes(company=company)
+
+    # Group DNs by zone
+    by_zone = defaultdict(list)
+    for dn_row in all_pending:
+        zone = (dn_row.get("custom_destination_zone") or "").strip() or "_unzoned"
+        by_zone[zone].append(dn_row)
+
+    result = []
+    for zone, dn_rows in sorted(by_zone.items()):
+        # Compute totals for each DN in this zone
+        candidates = []
+        zone_weight = 0.0
+        zone_volume = 0.0
+        for dn_row in dn_rows:
+            totals = compute_delivery_note_totals(dn_row.name)
+            if totals.get("missing_data_items"):
+                continue  # skip incomplete DNs
+            w = flt(totals["total_weight_kg"])
+            v = flt(totals["total_volume_m3"])
+            if w <= 0 and v <= 0:
+                continue
+            zone_weight += w
+            zone_volume += v
+            candidates.append({"delivery_note": dn_row.name, "total_weight_kg": w, "total_volume_m3": v})
+
+        zone_name = zone if zone != "_unzoned" else ""
+        containers = get_active_containers(destination_zone=zone_name, departure_date=ref_date)
+        plans = []
+        leftover = list(candidates)
+
+        # Simulate greedy multi-container packing for the zone
+        MAX_PLANS = 5  # safety cap
+        plan_count = 0
+        while leftover and containers and plan_count < MAX_PLANS:
+            # Pick the cheapest (first by cost_rank) container
+            container = containers[0]
+            max_w = flt(container.max_weight_kg)
+            max_v = flt(container.max_volume_m3)
+            remaining_w = max_w
+            remaining_v = max_v
+            loaded = []
+            still_leftover = []
+
+            for cand in leftover:
+                if cand["total_weight_kg"] <= remaining_w and cand["total_volume_m3"] <= remaining_v:
+                    loaded.append(cand)
+                    remaining_w -= cand["total_weight_kg"]
+                    remaining_v -= cand["total_volume_m3"]
+                else:
+                    still_leftover.append(cand)
+
+            if loaded:
+                used_w = max_w - remaining_w
+                used_v = max_v - remaining_v
+                util = compute_utilization(used_w, used_v, max_w, max_v)
+                plans.append({
+                    "container_profile": container.name,
+                    "container_name": container.container_name,
+                    "container_type": container.container_type,
+                    "max_weight_kg": round3(max_w),
+                    "max_volume_m3": round3(max_v),
+                    "shipment_count": len(loaded),
+                    "weight_utilization_pct": util["weight_utilization_pct"],
+                    "volume_utilization_pct": util["volume_utilization_pct"],
+                    "limiting_factor": detect_limiting_factor(
+                        util["weight_utilization_pct"], util["volume_utilization_pct"]
+                    ),
+                })
+                leftover = still_leftover
+                plan_count += 1
+            else:
+                # None of the remaining DNs fit in this container — try next cheapest
+                containers = containers[1:]
+
+        result.append({
+            "zone": zone_name or "(no zone)",
+            "pending_dn_count": len(candidates),
+            "total_weight_kg": round3(zone_weight),
+            "total_volume_m3": round3(zone_volume),
+            "plans": plans,
+            "leftover_count": len(leftover),
+        })
+
+    return result

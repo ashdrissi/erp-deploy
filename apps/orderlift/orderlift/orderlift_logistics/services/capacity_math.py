@@ -30,3 +30,20 @@ def candidate_pressure(total_weight_kg, total_volume_m3, remaining_weight_kg, re
     weight_pressure = _flt(total_weight_kg) / _flt(remaining_weight_kg) if _flt(remaining_weight_kg) > 0 else 0
     volume_pressure = _flt(total_volume_m3) / _flt(remaining_volume_m3) if _flt(remaining_volume_m3) > 0 else 0
     return max(weight_pressure, volume_pressure)
+
+
+def candidate_balance_score(total_weight_kg, total_volume_m3, remaining_weight_kg, remaining_volume_m3):
+    """
+    Balanced packing score: rewards candidates that fill both weight and volume
+    dimensions proportionally.
+
+    Returns 2 * min(weight_pressure, volume_pressure).
+    Range: [0.0, 2.0]. Higher is better.
+
+    A score of 2.0 means the candidate fills both dimensions to 100%.
+    A score of 1.0 means it fills both dimensions to 50% (balanced fill).
+    A score near 0 means it fills only one dimension (imbalanced).
+    """
+    weight_pressure = _flt(total_weight_kg) / _flt(remaining_weight_kg) if _flt(remaining_weight_kg) > 0 else 0.0
+    volume_pressure = _flt(total_volume_m3) / _flt(remaining_volume_m3) if _flt(remaining_volume_m3) > 0 else 0.0
+    return 2.0 * min(weight_pressure, volume_pressure)

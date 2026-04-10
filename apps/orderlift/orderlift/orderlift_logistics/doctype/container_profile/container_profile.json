@@ -14,6 +14,9 @@
     "max_weight_kg",
     "max_volume_m3",
     "is_active",
+    "allowed_zones",
+    "active_from",
+    "active_to",
     "notes"
   ],
   "fields": [
@@ -83,6 +86,24 @@
       "in_list_view": 1
     },
     {
+      "fieldname": "allowed_zones",
+      "fieldtype": "Data",
+      "label": "Allowed Zones",
+      "description": "Comma-separated zone names. Leave blank to allow any zone."
+    },
+    {
+      "fieldname": "active_from",
+      "fieldtype": "Date",
+      "label": "Active From",
+      "description": "Leave blank for no lower date bound."
+    },
+    {
+      "fieldname": "active_to",
+      "fieldtype": "Date",
+      "label": "Active To",
+      "description": "Leave blank for no upper date bound."
+    },
+    {
       "fieldname": "notes",
       "fieldtype": "Small Text",
       "label": "Notes"
@@ -90,7 +111,7 @@
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2026-02-22 00:00:00.000000",
+  "modified": "2026-04-10 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift Logistics",
   "name": "Container Profile",

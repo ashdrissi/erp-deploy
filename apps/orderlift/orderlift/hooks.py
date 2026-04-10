@@ -18,7 +18,6 @@ required_apps = ["frappe", "erpnext"]
 app_include_css = ["/assets/orderlift/css/orderlift_bundle.css"]
 app_include_js = [
     "/assets/orderlift/js/orderlift_bundle.js",
-    "/assets/orderlift/js/pricing_sheet_global_loader_20260408_03.js",
 ]
 
 # ---------------------------------------------------------
@@ -112,7 +111,10 @@ doctype_js = {
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Sales Order": "public/js/sales_order_logistics.js",
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260406_48.js",
+    # Loaded via doctype_js so setup/refresh fire before the form opens.
+    # The file sets window["__orderlift_pricing_sheet_latest_loaded_v6"] = true
+    # so the app_include_js global loader skips re-requiring it.
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260409_77.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v2.js",
@@ -138,6 +140,8 @@ scheduler_events = {
     "weekly": [
         # Flag slow-moving and overstock items for dashboard
         "orderlift.logistics.utils.stock_analyzer.flag_slow_moving_items",
+        # Send weekly container load plan efficiency digest to dispatchers
+        "orderlift.orderlift_logistics.utils.efficiency_digest.send_weekly_efficiency_digest",
     ],
 }
 

@@ -14,6 +14,9 @@ from orderlift.orderlift_logistics.services.load_planning import (
     round3,
     suggest_shipments_for_load_plan,
 )
+from orderlift.orderlift_logistics.services.capacity_math import (
+    candidate_balance_score,
+)
 
 
 class ContainerLoadPlan(Document):
@@ -48,7 +51,8 @@ class ContainerLoadPlan(Document):
         has_missing = False
 
         for idx, row in enumerate(self.shipments or [], start=1):
-            row.sequence = cint(row.sequence or (idx * 10))
+            if not cint(row.sequence):
+                row.sequence = idx * 10
             if not row.delivery_note:
                 continue
 
@@ -153,6 +157,7 @@ def run_load_plan_analysis(load_plan_name):
     doc = frappe.get_doc("Container Load Plan", load_plan_name)
     doc.recalculate_totals()
     doc.save(ignore_permissions=True)
+    _publish_load_plan_updated(load_plan_name)
     return {
         "total_weight_kg": doc.total_weight_kg,
         "total_volume_m3": doc.total_volume_m3,
@@ -187,6 +192,7 @@ def append_shipments(load_plan_name, delivery_notes):
 
     doc.recalculate_totals()
     doc.save(ignore_permissions=True)
+    _publish_load_plan_updated(load_plan_name)
     return {
         "added": added,
         "total_weight_kg": doc.total_weight_kg,
@@ -287,6 +293,108 @@ def _queue_for_plan(doc):
     return queue
 
 
+def _publish_load_plan_updated(load_plan_name):
+    """Broadcast that this load plan was modified, so any open cockpit tabs refresh."""
+    frappe.publish_realtime(
+        event="load_plan_updated",
+        message={
+            "load_plan": load_plan_name,
+            "user": frappe.session.user,
+            "user_fullname": frappe.db.get_value("User", frappe.session.user, "full_name") or frappe.session.user,
+        },
+        doctype="Container Load Plan",
+        docname=load_plan_name,
+        after_commit=True,
+    )
+
+
+@frappe.whitelist()
+def reorder_shipments(load_plan_name, delivery_notes_ordered):
+    """Update the sequence field of shipments to reflect a new order."""
+    if isinstance(delivery_notes_ordered, str):
+        delivery_notes_ordered = frappe.parse_json(delivery_notes_ordered)
+
+    doc = frappe.get_doc("Container Load Plan", load_plan_name)
+    index_map = {dn: (i + 1) * 10 for i, dn in enumerate(delivery_notes_ordered)}
+
+    for row in doc.shipments or []:
+        if row.delivery_note in index_map:
+            row.sequence = index_map[row.delivery_note]
+
+    doc.save(ignore_permissions=True)
+    _publish_load_plan_updated(load_plan_name)
+    return {"reordered": len(index_map)}
+
+
+@frappe.whitelist()
+def preview_consolidation(company=None, departure_date=None):
+    """Wraps consolidation_preview for cockpit access."""
+    from orderlift.orderlift_logistics.services.load_planning import consolidation_preview
+    return consolidation_preview(company=company, departure_date=departure_date)
+
+
+@frappe.whitelist()
+def get_utilization_trends(days=30):
+    """Aggregates Shipment Analysis records to compute utilization trends."""
+    from collections import defaultdict
+
+    days = cint(days) or 30
+    from_date = frappe.utils.add_days(frappe.utils.today(), -days)
+
+    records = frappe.get_all(
+        "Shipment Analysis",
+        filters={
+            "source_type": "Container Load Plan",
+            "status": "ok",
+            "creation": [">=", from_date],
+        },
+        fields=[
+            "destination_zone",
+            "weight_utilization_pct",
+            "volume_utilization_pct",
+            "limiting_factor",
+            "creation",
+        ],
+        limit_page_length=0,
+    )
+
+    if not records:
+        return {"plan_count": 0, "avg_weight_pct": 0, "avg_volume_pct": 0, "by_zone": [], "by_limiting_factor": {}}
+
+    total = len(records)
+    avg_w = round3(sum(flt(r.weight_utilization_pct) for r in records) / total)
+    avg_v = round3(sum(flt(r.volume_utilization_pct) for r in records) / total)
+
+    # Per-zone breakdown
+    zone_data = defaultdict(lambda: {"count": 0, "weight_sum": 0.0, "volume_sum": 0.0})
+    factor_counts = defaultdict(int)
+
+    for r in records:
+        z = (r.destination_zone or "(no zone)").strip()
+        zone_data[z]["count"] += 1
+        zone_data[z]["weight_sum"] += flt(r.weight_utilization_pct)
+        zone_data[z]["volume_sum"] += flt(r.volume_utilization_pct)
+        factor_counts[r.limiting_factor or "unknown"] += 1
+
+    by_zone = [
+        {
+            "zone": z,
+            "count": d["count"],
+            "avg_weight_pct": round3(d["weight_sum"] / d["count"]),
+            "avg_volume_pct": round3(d["volume_sum"] / d["count"]),
+        }
+        for z, d in sorted(zone_data.items(), key=lambda x: x[1]["count"], reverse=True)
+    ]
+
+    return {
+        "plan_count": total,
+        "avg_weight_pct": avg_w,
+        "avg_volume_pct": avg_v,
+        "by_zone": by_zone,
+        "by_limiting_factor": dict(factor_counts),
+    }
+
+
 @frappe.whitelist()
 def get_cockpit_data(load_plan_name):
     doc = frappe.get_doc("Container Load Plan", load_plan_name)
@@ -303,8 +411,12 @@ def get_cockpit_data(load_plan_name):
                 "shipment_weight_kg": round3(row.shipment_weight_kg),
                 "shipment_volume_m3": round3(row.shipment_volume_m3),
                 "selected": cint(row.selected),
+                "sequence": cint(row.sequence),
             }
         )
+
+    # Sort shipments by sequence order for proper rendering
+    shipments.sort(key=lambda x: cint(x.get("sequence") or 0))
 
     queue = _queue_for_plan(doc)
     return {
@@ -322,6 +434,7 @@ def remove_shipment(load_plan_name, delivery_note):
             doc.remove(row)
     doc.recalculate_totals()
     doc.save(ignore_permissions=True)
+    _publish_load_plan_updated(load_plan_name)
     return {
         "removed": delivery_note,
         "total_weight_kg": doc.total_weight_kg,
@@ -346,6 +459,7 @@ def set_shipment_selected(load_plan_name, delivery_note, selected=1):
 
     doc.recalculate_totals()
     doc.save(ignore_permissions=True)
+    _publish_load_plan_updated(load_plan_name)
     return {
         "delivery_note": delivery_note,
         "selected": selected_int,

@@ -40,6 +40,15 @@ def after_migrate():
                     "default": "0",
                     "non_negative": 1,
                 },
+                {
+                    "fieldname": "custom_inventory_flag",
+                    "label": "Inventory Flag",
+                    "fieldtype": "Select",
+                    "options": "Slow Moving\nOverstock\nDormant",
+                    "insert_after": "custom_height_cm",
+                    "read_only": 1,
+                    "in_standard_filter": 1,
+                },
             ],
             "Delivery Note": [
                 {
@@ -104,12 +113,24 @@ def after_migrate():
                     "default": "0",
                 },
             ],
+            "Purchase Receipt": [
+                {
+                    "fieldname": "custom_qc_routed",
+                    "label": "QC Routed",
+                    "fieldtype": "Check",
+                    "insert_after": "remarks",
+                    "read_only": 1,
+                    "default": "0",
+                    "description": "Items have been routed to correct warehouse based on QC results",
+                },
+            ],
         },
         update=True,
     )
 
     frappe.clear_cache(doctype="Item")
     frappe.clear_cache(doctype="Delivery Note")
+    frappe.clear_cache(doctype="Purchase Receipt")
     ensure_logistics_workspace()
 
 

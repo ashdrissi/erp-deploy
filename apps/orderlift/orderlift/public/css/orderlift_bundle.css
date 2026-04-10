@@ -442,3 +442,217 @@
         min-height: 320px;
     }
 }
+
+/* ── Phase 4.1 Drag-and-Drop ── */
+.ol-draggable {
+    cursor: grab;
+}
+
+.ol-draggable:active {
+    cursor: grabbing;
+}
+
+.ol-dragging {
+    opacity: 0.40;
+    transform: scale(0.98);
+}
+
+.ol-drop-target {
+    outline: 2px dashed #3184d7;
+    outline-offset: -2px;
+    background: #eef6ff !important;
+}
+
+#ol-active-list.ol-dropzone-active {
+    background: linear-gradient(180deg, #eef6ff 0%, #f8fbff 100%);
+    outline: 2px dashed #c1d9f4;
+    outline-offset: -4px;
+    border-radius: 8px;
+}
+
+/* ── Phase 4.2 Stacked Packing Bars ── */
+.ol-stack-wrap {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--ol-cockpit-border);
+}
+
+.ol-stack-row {
+    margin-bottom: 8px;
+}
+
+.ol-stack-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #35506f;
+    margin-bottom: 4px;
+}
+
+.ol-stack-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #eaf0f7;
+}
+
+.ol-stack-seg {
+    height: 100%;
+    transition: width 200ms ease;
+}
+
+.ol-stack-seg:first-child {
+    border-radius: 999px 0 0 999px;
+}
+
+.ol-stack-seg:only-child {
+    border-radius: 999px;
+}
+
+.ol-stack-remain {
+    background: #dde6f0 !important;
+    flex: 1;
+}
+
+.ol-stack-legend {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ol-stack-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--ol-cockpit-sub);
+}
+
+.ol-stack-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ── Phase 5.1 Zone Overview ── */
+.ol-zone-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 65vh;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.ol-zone-card {
+    border: 1px solid #dbe6f1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+}
+
+.ol-zone-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.ol-zone-name {
+    font-weight: 700;
+    font-size: 13px;
+    color: #263d57;
+}
+
+.ol-zone-badge {
+    font-size: 11px;
+    color: #60758e;
+    background: #edf3fb;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.ol-zone-plans {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ol-zone-plan-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    background: #f5f9ff;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+.ol-zone-container {
+    font-weight: 600;
+    color: #2b445e;
+    flex: 1;
+}
+
+.ol-zone-util {
+    color: #2d9e57;
+    font-weight: 600;
+}
+
+.ol-zone-count {
+    color: #60758e;
+}
+
+.ol-zone-empty-plan {
+    font-size: 11px;
+    color: #d74a4a;
+    font-style: italic;
+}
+
+.ol-zone-leftover {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #e99a1a;
+    font-weight: 600;
+}
+
+/* ── Phase 5.3 Analytics Dialog ── */
+.ol-analytics-wrap {
+    font-size: 13px;
+}
+
+.ol-analytics-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.ol-analytics-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #35506f;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 12px 0 6px;
+}
+
+.ol-analytics-factors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.ol-analytics-table {
+    font-size: 12px;
+}
+
+.ol-analytics-table th {
+    background: #f3f7fc;
+    font-weight: 600;
+}
