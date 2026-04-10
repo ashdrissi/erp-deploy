@@ -197,7 +197,65 @@ def after_migrate():
     frappe.clear_cache(doctype="Quotation")
     frappe.clear_cache(doctype="Quotation Item")
     frappe.clear_cache(doctype="Selling Settings")
+    ensure_quotation_discount_snapshot_fields()
     ensure_pricing_workspace()
+
+
+def ensure_quotation_discount_snapshot_fields():
+    create_custom_fields(
+        {
+            "Quotation Item": [
+                {
+                    "fieldname": "source_gross_sell_rate",
+                    "label": "Source Gross Sell Rate",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_customs_basis",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_discount_percent",
+                    "label": "Source Discount Percent",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_gross_sell_rate",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_discount_amount",
+                    "label": "Source Discount Amount",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_discount_percent",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_discounted_sell_rate",
+                    "label": "Source Discounted Sell Rate",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_discount_amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_commission_rate",
+                    "label": "Source Commission Rate",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_discounted_sell_rate",
+                    "read_only": 1,
+                    "hidden": 1,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_commission_amount",
+                    "label": "Source Commission Amount",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_commission_rate",
+                    "read_only": 1,
+                    "hidden": 1,
+                    "print_hide": 1,
+                },
+            ]
+        },
+        update=True,
+        ignore_validate=True,
+    )
 
 
 def ensure_pricing_workspace():

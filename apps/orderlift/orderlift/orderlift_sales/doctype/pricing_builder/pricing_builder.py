@@ -23,7 +23,11 @@ class PricingBuilder(Document):
         if qty <= 0:
             qty = 1
 
-        items, item_warnings = _load_builder_items(active_buying_lists, item_group=(self.item_group or "").strip(), max_items=cint(self.max_items or 0))
+        items, item_warnings = _load_builder_items(
+            active_buying_lists,
+            item_group=(getattr(self, "item_group", "") or "").strip(),
+            max_items=cint(self.max_items or 0),
+        )
         self.set("builder_items", [])
 
         if not items:
@@ -95,6 +99,7 @@ class PricingBuilder(Document):
             customs_calc = sheet._compute_customs_for_row(row, base_amount, item_details, row_customs_policy)
             transport_calc = sheet._compute_transport_for_row(row=row, qty=qty, base_amount=base_amount, item_details=item_details, transport_config=cache.get("transport_config") or {})
             effective_expenses = sheet._inject_transport_expense(cache.get("line_expenses") or [], transport_calc)
+            effective_expenses = sheet._strip_scenario_margin_expenses(effective_expenses)
 
             benchmark_policy_doc = _get_benchmark_policy_doc(matched_rule.get("benchmark_policy"), benchmark_cache)
             benchmark_result = None
@@ -102,7 +107,13 @@ class PricingBuilder(Document):
                 runtime = _get_benchmark_runtime_cache(benchmark_policy_doc, item_codes, benchmark_runtime_cache)
                 landed_cost = sheet._compute_landed_cost(base_buy, qty, effective_expenses, customs_calc, transport_calc)
                 benchmark_result = sheet._resolve_benchmark_for_row(row, landed_cost, benchmark_policy_doc, item_details, runtime.get("price_map") or {}, runtime.get("source_types") or {}, line_context)
-                effective_expenses = sheet._inject_benchmark_margin_expense(effective_expenses, benchmark_result)
+                effective_expenses = sheet._inject_benchmark_margin_expense(
+                    effective_expenses,
+                    benchmark_result,
+                    benchmark_policy_doc,
+                    base_buy,
+                    landed_cost,
+                )
 
             pricing = apply_expenses(base_unit=base_buy, qty=qty, expenses=effective_expenses)
             component_summary = sheet._summarize_pricing_components(pricing.get("steps") or [], qty)
@@ -110,6 +121,12 @@ class PricingBuilder(Document):
             projected_unit = projected_total / qty if qty else 0
             benchmark_reference = flt((benchmark_result or {}).get("benchmark_reference") or 0)
             published_price = flt(published_map.get(item_code) or 0)
+            policy_margin_pct = flt((benchmark_result or {}).get("target_margin_percent") or 0)
+            cost_before_margin = (
+                flt(base_buy)
+                + flt(component_summary.get("policy_expense_unit") or 0)
+                + (flt(customs_calc.get("applied") or 0) / qty if qty else 0)
+            )
 
             if base_buy <= 0:
                 status = "Missing Buy Price"
@@ -132,7 +149,7 @@ class PricingBuilder(Document):
                 "avg_benchmark": benchmark_reference,
                 "projected_price": projected_unit,
                 "override_selling_price": 0,
-                "final_margin_pct": _margin_pct(projected_unit, base_buy),
+                "final_margin_pct": _effective_margin_pct(projected_unit, cost_before_margin, policy_margin_pct),
                 "published_price": published_price,
                 "status": status,
                 "status_note": status_note,
@@ -413,10 +430,10 @@ def _get_latest_item_price_name(item_code, price_list):
     return rows[0].name if rows else ""
 
 
-def _margin_pct(sell_price, buy_price):
-    if flt(buy_price) <= 0:
-        return 0.0
-    return flt(((flt(sell_price) - flt(buy_price)) / flt(buy_price)) * 100)
+def _effective_margin_pct(sell_price, cost_before_margin, fallback_percent=0.0):
+    if flt(cost_before_margin) <= 0:
+        return flt(fallback_percent)
+    return flt(((flt(sell_price) - flt(cost_before_margin)) / flt(cost_before_margin)) * 100)
 
 
 def _publish_state(projected_price, published_price):

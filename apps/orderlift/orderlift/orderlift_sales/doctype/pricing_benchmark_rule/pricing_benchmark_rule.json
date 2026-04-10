@@ -9,6 +9,7 @@
         "ratio_min",
         "ratio_max",
         "target_margin_percent",
+        "max_discount_percent",
         "customer_type",
         "item_group",
         "material",
@@ -41,6 +42,13 @@
             "fieldtype": "Percent",
             "label": "Target Margin %",
             "reqd": 1,
+            "default": "0",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "max_discount_percent",
+            "fieldtype": "Percent",
+            "label": "Max Discount %",
             "default": "0",
             "in_list_view": 1
         },

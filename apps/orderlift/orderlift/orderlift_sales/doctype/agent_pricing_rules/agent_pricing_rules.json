@@ -9,6 +9,7 @@
         "section_profile",
         "sales_person",
         "max_discount_percent",
+        "commission_rate",
         "column_break_profile",
         "pricing_mode",
         "section_dynamic",
@@ -46,6 +47,13 @@
             "label": "Maximum Allowed Discount (%)",
             "default": "10",
             "description": "Cannot go above this discount margin globally on their pricing sheets."
+        },
+        {
+            "fieldname": "commission_rate",
+            "fieldtype": "Percent",
+            "label": "Commission Rate (%)",
+            "default": "20",
+            "description": "Agent commission is calculated from the discount amount using this rate."
         },
         {
             "fieldname": "column_break_profile",

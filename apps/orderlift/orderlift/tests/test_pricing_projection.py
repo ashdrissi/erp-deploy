@@ -1,6 +1,6 @@
 import unittest
 
-from orderlift.sales.utils.pricing_projection import apply_expenses
+from orderlift.sales.utils.pricing_projection import apply_discount_and_commission, apply_expenses
 
 
 class TestPricingProjection(unittest.TestCase):
@@ -74,6 +74,63 @@ class TestPricingProjection(unittest.TestCase):
             "10|margin|percentage|base price|per unit",
         )
         self.assertEqual(result["steps"][0].get("override_source"), "line")
+
+    def test_percentage_step_rejects_non_base_price_basis(self):
+        with self.assertRaisesRegex(ValueError, "must apply to Base Price"):
+            apply_expenses(
+                base_unit=100,
+                qty=1,
+                expenses=[
+                    {
+                        "label": "Bad Loaded Cost Expense",
+                        "type": "Percentage",
+                        "value": 5,
+                        "applies_to": "Loaded Cost",
+                        "scope": "Per Unit",
+                        "sequence": 10,
+                    }
+                ],
+            )
+
+    def test_fixed_step_allows_non_base_price_basis_for_margin_compatibility(self):
+        result = apply_expenses(
+            base_unit=100,
+            qty=1,
+            expenses=[
+                {
+                    "label": "Dynamic Margin (Loaded Cost)",
+                    "type": "Fixed",
+                    "value": 12,
+                    "applies_to": "Loaded Cost",
+                    "scope": "Per Unit",
+                    "sequence": 90,
+                }
+            ],
+        )
+        self.assertAlmostEqual(result["projected_unit"], 112.0, places=4)
+        self.assertEqual(result["steps"][0].get("applies_to"), "Loaded Cost")
+
+    def test_discount_and_commission_apply_from_sell_price(self):
+        result = apply_discount_and_commission(
+            gross_unit_price=132,
+            qty=1,
+            discount_percent=5,
+            max_discount_percent=15,
+            commission_rate=20,
+        )
+        self.assertAlmostEqual(result["discount_amount"], 6.6, places=4)
+        self.assertAlmostEqual(result["discounted_unit_price"], 125.4, places=4)
+        self.assertAlmostEqual(result["commission_amount"], 1.32, places=4)
+
+    def test_discount_rejects_values_above_allowed_max(self):
+        with self.assertRaisesRegex(ValueError, "cannot exceed 5.0%"):
+            apply_discount_and_commission(
+                gross_unit_price=132,
+                qty=1,
+                discount_percent=6,
+                max_discount_percent=5,
+                commission_rate=20,
+            )
 
 
 if __name__ == "__main__":

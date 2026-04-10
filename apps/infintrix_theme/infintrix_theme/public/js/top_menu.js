@@ -10,6 +10,17 @@ function deleteNavbar() {
   }
 }
 
+function hasRole(role) {
+  const roles = (Array.isArray(frappe.user_roles) && frappe.user_roles.length)
+    ? frappe.user_roles
+    : (frappe.boot?.user?.roles || frappe.boot?.user_roles || []);
+  return Array.isArray(roles) && roles.includes(role);
+}
+
+function isBusinessAdmin() {
+  return hasRole("Orderlift Client User") && !hasRole("System Manager") && !hasRole("Developer");
+}
+
 /**
  * Fetches the card and shortcut information for a given workspace name.
  * @param {string} name - The name of the workspace.
@@ -169,6 +180,9 @@ function renderNavbar(response) {
 
 frappe.router.on("change", async () => {
   deleteNavbar();
+  if (isBusinessAdmin()) {
+    return;
+  }
   const route = frappe.get_route();
   const [type, page] = route;
 
@@ -196,6 +210,14 @@ frappe.router.on("change", async () => {
 // --- Window Load Initialization ---
 
 window.onload = async () => {
+  if (isBusinessAdmin()) {
+    deleteNavbar();
+    const existingDropdown = document.querySelector(".infintrix-workspace-dropdown-container");
+    if (existingDropdown) {
+      existingDropdown.remove();
+    }
+    return;
+  }
 
   // --- 1. Custom Sidebar Toggle Behavior ---
 
@@ -215,9 +237,9 @@ window.onload = async () => {
   let pages = [];
   try {
     const response = await frappe.call({
-      method: "frappe.desk.desktop.get_workspace_sidebar_items",
+      method: "infintrix_theme.infintrix_theme.api.functions.sidebar",
     });
-    pages = response?.message?.pages || [];
+    pages = response?.message || [];
   } catch (error) {
     console.error("Error fetching workspace sidebar items:", error);
     // Proceed with empty pages array if fetch fails

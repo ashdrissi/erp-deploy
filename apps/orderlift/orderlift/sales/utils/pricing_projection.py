@@ -27,7 +27,7 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
 
     for expense in ordered:
         expense_type = (expense.get("type") or "Percentage").strip().title()
-        applies_to = "Base Price"
+        applies_to = (expense.get("applies_to") or "Base Price").strip() or "Base Price"
         scope = (expense.get("scope") or "Per Unit").strip().title()
         value = float(expense.get("value") or 0.0)
         sequence = int(expense.get("sequence") or 0)
@@ -42,6 +42,8 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
         delta_sheet = 0.0
 
         if expense_type == "Percentage":
+            if applies_to != "Base Price":
+                raise ValueError(f"Percentage step '{label}' must apply to Base Price, got '{applies_to}'")
             delta_unit = basis * (value / 100.0)
             running_total += delta_unit
         else:
@@ -84,4 +86,40 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
         "line_fixed_total": line_fixed_total,
         "sheet_fixed_total": sheet_fixed_total,
         "steps": steps,
+    }
+
+
+def apply_discount_and_commission(
+    gross_unit_price: float,
+    qty: float,
+    discount_percent: float,
+    max_discount_percent: float,
+    commission_rate: float,
+) -> dict:
+    gross_unit_price = float(gross_unit_price or 0)
+    qty = float(qty or 0)
+    discount_percent = float(discount_percent or 0)
+    max_discount_percent = float(max_discount_percent or 0)
+    commission_rate = float(commission_rate or 0)
+
+    if discount_percent < 0:
+        raise ValueError("Discount % cannot be negative")
+    if discount_percent > max_discount_percent + 1e-9:
+        raise ValueError(f"Discount % cannot exceed {max_discount_percent:.1f}%")
+
+    gross_total = gross_unit_price * qty
+    discount_amount = gross_total * (discount_percent / 100.0) if discount_percent else 0.0
+    discounted_unit_price = gross_unit_price * (1 - (discount_percent / 100.0)) if discount_percent else gross_unit_price
+    discounted_total = gross_total - discount_amount
+    commission_amount = discount_amount * (commission_rate / 100.0) if discount_amount and commission_rate else 0.0
+
+    return {
+        "gross_total": gross_total,
+        "max_discount_percent": max_discount_percent,
+        "discount_percent": discount_percent,
+        "discount_amount": discount_amount,
+        "discounted_unit_price": discounted_unit_price,
+        "discounted_total": discounted_total,
+        "commission_rate": commission_rate,
+        "commission_amount": commission_amount,
     }

@@ -535,8 +535,8 @@ function renderComparison(state, dynamicData, staticData) {
     state.outputWrap.html(`
             <div class="psim-metrics">
                 ${metricCard(__("Compared Items"), state.lastRows.length || 0, "blue")}
-                ${metricCard(__("Avg Dyn Margin"), `${Number(dynamicData.summary?.global_margin_pct || 0).toFixed(1)}%`, "green")}
-                ${metricCard(__("Static Missing"), staticData.summary?.missing_items || 0, "amber")}
+                ${metricCard(__("Average Dynamic Profit Margin"), `${Number(dynamicData.summary?.global_margin_pct || 0).toFixed(1)}%`, "green")}
+                ${metricCard(__("Missing Static Prices"), staticData.summary?.missing_items || 0, "amber")}
             </div>
             ${renderWarnings(warnings)}
             ${renderResultFilters(state, state.lastRows, "comparison")}
@@ -547,14 +547,14 @@ function renderComparison(state, dynamicData, staticData) {
                             ${thSort("item", __("Item"))}
                             ${thSort("material", __("Material"))}
                             ${thSort("source", __("Buying List"))}
-                            ${thSort("scenario", __("Scenario"))}
-                            ${thSort("buy", __("Dyn Buy"))}
-                            ${thSort("customs", __("Dyn Customs"))}
-                            ${thSort("tier", __("Tier Mod"))}
-                            ${thSort("territory", __("Territory Mod"))}
-                            ${thSort("dynFinal", __("Dyn Final"))}
-                            ${thSort("staticList", __("Static List"))}
-                            ${thSort("staPrice", __("Static Price"))}
+                            ${thSort("scenario", __("Expenses Policy"))}
+                            ${thSort("buy", __("Dynamic Buy Price"))}
+                            ${thSort("customs", __("Dynamic Customs"))}
+                            ${thSort("tier", __("Tier Modifier"))}
+                            ${thSort("territory", __("Territory Modifier"))}
+                            ${thSort("dynFinal", __("Dynamic Sell Price"))}
+                            ${thSort("staticList", __("Sell List"))}
+                            ${thSort("staPrice", __("Static Sell Price"))}
                         </tr>
                     </thead>
                     <tbody id="psim-tbody"></tbody>
@@ -632,16 +632,16 @@ function renderResults(state, data) {
     state.lastSummary = summary;
 
     const cards = mode === "Static"
-        ? `${metricCard(__("Priced"), summary.priced_items || 0, "green")}
-            ${metricCard(__("Missing"), summary.missing_items || 0, "amber")}
-            ${metricCard(__("Loaded Lists"), (summary.selling_lists_count || 0), "blue")}`
+        ? `${metricCard(__("Priced Items"), summary.priced_items || 0, "green")}
+            ${metricCard(__("Missing Prices"), summary.missing_items || 0, "amber")}
+            ${metricCard(__("Sell Lists"), (summary.selling_lists_count || 0), "blue")}`
         : `${metricCard(__("Simulated Items"), rows.length || 0, "indigo")}
             ${metricCard(__("Policies"), summary.policy_count || 0, "amber")}
-            ${metricCard(__("Global Margin"), `${Number(summary.global_margin_pct || 0).toFixed(1)}%`, "green")}`;
+            ${metricCard(__("Average Profit Margin"), `${Number(summary.global_margin_pct || 0).toFixed(1)}%`, "green")}`;
 
     const thead = mode === "Static"
-        ? `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("selected_price_list", __("List"))}${thSort("selected_price", __("Price"))}${thSort("option_count", __("Options"))}</tr>`
-        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("resolved_pricing_scenario", __("Scenario"))}${thSort("buy_price", __("Buy"))}${thSort("customs_applied", __("Customs"))}${thSort("tier_modifier_amount", __("Tier Mod"))}${thSort("zone_modifier_amount", __("Territory Mod"))}${thSort("benchmark_reference", __("Bench Ref"))}${thSort("final_sell_unit_price", __("Final"))}${thSort("margin_pct", __("Margin"))}${thSort("applied_benchmark_policy", __("Policy"))}</tr>`;
+        ? `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("selected_price_list", __("Sell List"))}${thSort("selected_price", __("Sell Price"))}${thSort("option_count", __("Options"))}</tr>`
+        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("resolved_pricing_scenario", __("Expenses Policy"))}${thSort("buy_price", __("Buy Price"))}${thSort("customs_applied", __("Customs"))}${thSort("tier_modifier_amount", __("Tier Modifier"))}${thSort("zone_modifier_amount", __("Territory Modifier"))}${thSort("benchmark_reference", __("Benchmark Price"))}${thSort("final_sell_unit_price", __("Sell Price"))}${thSort("margin_pct", __("Profit Margin %"))}${thSort("applied_benchmark_policy", __("Profit Margin Policy"))}</tr>`;
 
     state.outputWrap.html(`
             <div class="psim-metrics">${cards}</div>
@@ -907,7 +907,7 @@ function exportCsv(state) {
     let headers, rowsFn;
 
     if (state.lastMode === "comparison") {
-        headers = ["Item", "Qty", "Scenario", "Dyn Buy", "Dyn Final", "Dyn Margin %", "Static Price", "Delta", "Winner"];
+        headers = ["Item", "Qty", "Expenses Policy", "Dynamic Buy Price", "Dynamic Sell Price", "Dynamic Profit Margin %", "Static Sell Price", "Delta", "Winner"];
         rowsFn = (r) => [
             r.item,
             r.d?.qty || r.s?.qty || 0,
@@ -920,10 +920,10 @@ function exportCsv(state) {
             r.dynFinal >= r.staPrice ? "Dynamic" : "Static",
         ];
     } else if (state.lastMode === "Static") {
-        headers = ["Item", "Material", "List", "Price", "Options"];
+        headers = ["Item", "Material", "Sell List", "Sell Price", "Options"];
         rowsFn = (r) => [r.item, r.material || "", r.selected_price_list, r.selected_price, r.option_count];
     } else {
-        headers = ["Item", "Material", "Buying List", "Scenario", "Buy", "Customs", "Tier Mod", "Territory Mod", "Bench Ref", "Final", "Margin %", "Policy"];
+        headers = ["Item", "Material", "Buying List", "Expenses Policy", "Buy Price", "Customs", "Tier Modifier", "Territory Modifier", "Benchmark Price", "Sell Price", "Profit Margin %", "Profit Margin Policy"];
         rowsFn = (r) => [
             r.item, r.material || "", r.source_buying_price_list || "",
             r.resolved_pricing_scenario,

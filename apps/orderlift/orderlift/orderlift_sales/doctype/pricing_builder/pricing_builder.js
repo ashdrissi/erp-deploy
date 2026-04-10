@@ -15,7 +15,7 @@ frappe.ui.form.on("Pricing Builder", {
 
         frm.page.set_indicator(indicatorLabel(frm), indicatorColor(frm));
         frm.set_intro(
-            __("Use sourcing rules to map buying lists to expenses, customs, and margin & benchmark policies, then calculate and publish a static selling list without runtime tier modifiers."),
+            __("Use sourcing rules to map buying lists to expenses, customs, and profit margin policies, then calculate and publish a static sell list."),
             "blue"
         );
     },
@@ -56,7 +56,32 @@ function setupGridDisplay(frm) {
     }
 
     if (itemsGrid) {
+        const itemLabels = {
+            item: __("Item"),
+            item_name: __("Item Name"),
+            item_group: __("Item Group"),
+            material: __("Material"),
+            buying_list: __("Buying List"),
+            origin: __("Origin"),
+            base_buy_price: __("Buy Price"),
+            expenses: __("Expenses"),
+            customs_amount: __("Customs"),
+            margin_amount: __("Profit Margin"),
+            avg_benchmark: __("Benchmark Price"),
+            projected_price: __("Sell Price"),
+            override_selling_price: __("Manual Sell Price"),
+            final_margin_pct: __("Profit Margin %"),
+            published_price: __("Published Sell Price"),
+            status: __("Status"),
+            pricing_scenario: __("Expenses Policy"),
+            customs_policy: __("Customs Policy"),
+            benchmark_policy: __("Profit Margin Policy"),
+        };
+        Object.entries(itemLabels).forEach(([fieldname, label]) => {
+            itemsGrid.update_docfield_property(fieldname, "label", label);
+        });
         itemsGrid.wrapper.addClass("pb-native-grid pb-results-grid");
+        itemsGrid.refresh();
     }
 }
 
@@ -149,12 +174,12 @@ function renderBuilderHeader(frm) {
     frm.get_field("builder_header_html").$wrapper.html(`
         <div class="pb-hero">
             <div class="pb-hero-copy">
-                <div class="pb-eyebrow">${__("Static Selling List Builder")}</div>
+                <div class="pb-eyebrow">${__("Static Sell List Builder")}</div>
                 <h2>${name}</h2>
-                <p>${__("Build a clean base sell list from buying prices, expenses policies, customs, and margin benchmarks before runtime tier adjustments.")}</p>
+                <p>${__("Build a clean sell list from buy prices, expenses policies, customs policies, and profit margin policies.")}</p>
                 <div class="pb-hero-stats">
                     <div class="pb-stat-card">
-                    <span>${__("Selling List")}</span>
+                    <span>${__("Sell List")}</span>
                     <strong>${priceList}</strong>
                     </div>
                     <div class="pb-stat-card">
@@ -287,8 +312,8 @@ frappe.ui.form.on("Pricing Builder Item", {
     override_selling_price(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
         const effectivePrice = flt(row.override_selling_price || 0) || flt(row.projected_price || 0);
-        const buyPrice = flt(row.base_buy_price || 0);
-        const marginPct = buyPrice > 0 ? ((effectivePrice - buyPrice) / buyPrice) * 100 : 0;
+        const costBeforeMargin = flt(row.base_buy_price || 0) + flt(row.expenses || 0) + flt(row.customs_amount || 0);
+        const marginPct = costBeforeMargin > 0 ? ((effectivePrice - costBeforeMargin) / costBeforeMargin) * 100 : 0;
         frappe.model.set_value(cdt, cdn, "final_margin_pct", marginPct);
         setTimeout(() => renderBuilderItemFilters(frm), 0);
     },

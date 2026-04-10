@@ -19,6 +19,7 @@ sys.modules.setdefault("frappe.utils", _frappe_utils)
 
 from orderlift.sales.utils.benchmark_policy import (
     compute_margin_step,
+    compute_policy_adjustment_step,
     resolve_benchmark_margin,
     _compute_reference,
     _match_benchmark_rule,
@@ -272,6 +273,53 @@ class TestComputeMarginStep(unittest.TestCase):
     def test_fallback_label_is_used(self):
         step = compute_margin_step(15, "Loaded Cost", base_price=100, loaded_cost=130, is_fallback=True)
         self.assertEqual(step["label"], "Fallback Margin (Loaded Cost)")
+
+
+class TestComputePolicyAdjustmentStep(unittest.TestCase):
+    def test_percentage_modifier_on_base_price_keeps_percentage_step(self):
+        step = compute_policy_adjustment_step(
+            label="Tier Modifier",
+            value=2,
+            adjustment_type="Percentage",
+            adjustment_basis="Base Price",
+            base_price=100,
+            loaded_cost=130,
+            sequence=95,
+            override_source="tier_modifier",
+        )
+        self.assertEqual(step["type"], "Percentage")
+        self.assertEqual(step["value"], 2)
+        self.assertEqual(step["applies_to"], "Base Price")
+
+    def test_percentage_modifier_on_loaded_cost_uses_fixed_amount(self):
+        step = compute_policy_adjustment_step(
+            label="Tier Modifier",
+            value=2,
+            adjustment_type="Percentage",
+            adjustment_basis="Loaded Cost",
+            base_price=100,
+            loaded_cost=130,
+            sequence=95,
+            override_source="tier_modifier",
+        )
+        self.assertEqual(step["type"], "Fixed")
+        self.assertAlmostEqual(step["value"], 2.6)
+        self.assertEqual(step["applies_to"], "Loaded Cost")
+
+    def test_percentage_modifier_on_sale_price_uses_sale_share_formula(self):
+        step = compute_policy_adjustment_step(
+            label="Zone Modifier",
+            value=20,
+            adjustment_type="Percentage",
+            adjustment_basis="Sale Price",
+            base_price=100,
+            loaded_cost=130,
+            sequence=96,
+            override_source="zone_modifier",
+        )
+        self.assertEqual(step["type"], "Fixed")
+        self.assertAlmostEqual(step["value"], 32.5)
+        self.assertEqual(step["applies_to"], "Sale Price")
 
 
 if __name__ == "__main__":

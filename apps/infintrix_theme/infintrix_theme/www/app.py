@@ -15,7 +15,22 @@ from frappe.utils.jinja_globals import is_rtl
 from pprint import pprint
 
 SCRIPT_TAG_PATTERN = re.compile(r"\<script[^<]*\</script\>")
-CLOSING_SCRIPT_TAG_PATTERN = re.compile(r"</script\>")
+CLOSING_SCRIPT_TAG_PATTERN = re.compile(r"</script>")
+BUSINESS_ADMIN_ROLE = "Orderlift Client User"
+BUSINESS_ADMIN_HOME = "/desk/home-page?sidebar=Main+Dashboard"
+
+
+def _redirect_business_admin_workspace_shell():
+	roles = set(frappe.get_roles())
+	if BUSINESS_ADMIN_ROLE not in roles or "System Manager" in roles or "Developer" in roles:
+		return
+
+	path = (frappe.request.path or "").rstrip("/")
+	if path not in {"/desk/workspace", "/app/workspace"}:
+		return
+
+	frappe.local.flags.redirect_location = BUSINESS_ADMIN_HOME
+	raise frappe.Redirect
 
 
 def get_context(context):
@@ -25,6 +40,8 @@ def get_context(context):
 		frappe.redirect(f"/login?{urlencode({'redirect-to': frappe.request.path})}")
 	elif frappe.db.get_value("User", frappe.session.user, "user_type", order_by=None) == "Website User":
 		frappe.throw(_("You are not permitted to access this page."), frappe.PermissionError)
+
+	_redirect_business_admin_workspace_shell()
 
 	hooks = frappe.get_hooks()
 	try:

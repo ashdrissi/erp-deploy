@@ -5,13 +5,17 @@ from time import perf_counter
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, flt, now_datetime, nowdate, getdate, date_diff
+from frappe.utils import cint, cstr, flt, now_datetime, nowdate, getdate, date_diff
 
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
 from orderlift.sales.utils.dimensioning import coerce_dimensioning_value, evaluate_formula
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
-from orderlift.sales.utils.pricing_projection import apply_expenses
-from orderlift.sales.utils.benchmark_policy import compute_margin_step, resolve_benchmark_margin
+from orderlift.sales.utils.pricing_projection import apply_discount_and_commission, apply_expenses
+from orderlift.sales.utils.benchmark_policy import (
+    compute_margin_step,
+    compute_policy_adjustment_step,
+    resolve_benchmark_margin,
+)
 from orderlift.sales.utils.transport_allocation import compute_transport_allocation
 from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules import (
     DYNAMIC_MODE,
@@ -70,6 +74,7 @@ class PricingSheet(Document):
         item_codes = sorted({row.item for row in lines if row.item})
         item_details = get_item_details_map(item_codes)
         item_groups = {code: (item_details.get(code) or {}).get("item_group") for code in item_codes}
+        agent_discount_ctx = self._resolve_agent_discount_context()
         self._set_default_sales_person()
         self.allow_empty_expenses_policy = 1 if self._allow_policy_draft_mode() else 0
         self._apply_agent_dynamic_defaults()
@@ -165,11 +170,12 @@ class PricingSheet(Document):
 
             effective_line_expenses = self._inject_transport_expense(effective_line_expenses, transport_calc)
 
+            row_benchmark_policy = self._resolve_row_benchmark_policy(scenario_rule, benchmark_policy_doc, benchmark_policy_cache)
+            effective_line_expenses = self._strip_scenario_margin_expenses(effective_line_expenses)
+
             # --- Benchmark-driven margin resolution ---
             benchmark_result = None
             margin_source = ""
-
-            row_benchmark_policy = self._resolve_row_benchmark_policy(scenario_rule, benchmark_policy_doc, benchmark_policy_cache)
             row_tier_mod, row_zone_mod = self._resolve_dynamic_modifiers(row_benchmark_policy)
 
             if row_benchmark_policy:
@@ -204,8 +210,14 @@ class PricingSheet(Document):
                     warnings.append(_("Row {0}: no margin & benchmark policy found; margin is 0.").format(row.idx))
 
             # --- Inject dynamic modifiers (Tier & Zone) ---
+            modifier_basis = (getattr(row_benchmark_policy, "margin_application_basis", "") or "Base Price").strip() or "Base Price"
             effective_line_expenses, row_tier_mod, row_zone_mod = self._inject_modifier_expenses(
-                effective_line_expenses, row_tier_mod, row_zone_mod
+                effective_line_expenses,
+                row_tier_mod,
+                row_zone_mod,
+                modifier_basis=modifier_basis,
+                base_unit=base_unit,
+                loaded_cost=landed_cost if row_benchmark_policy else base_unit,
             )
 
             pricing = apply_expenses(base_unit=base_unit, qty=qty, expenses=effective_line_expenses)
@@ -241,9 +253,7 @@ class PricingSheet(Document):
             bucket["base"] += flt(snap["base_amount"])
             bucket["qty"] += flt(snap["qty"])
 
-        min_margin = flt(self.minimum_margin_percent)
         floor_violations = 0
-        margin_violations = 0
         customs_total_applied = 0.0
 
         for snap in line_snapshots:
@@ -325,6 +335,13 @@ class PricingSheet(Document):
             row.transport_basis_total = flt(transport_calc.get("denominator") or 0)
             row.transport_numerator = flt(transport_calc.get("numerator") or 0)
             row.transport_allocated = flt(transport_calc.get("applied") or 0)
+            self._apply_line_discount_and_commission(
+                row,
+                qty=qty,
+                benchmark_result=br,
+                agent_discount_ctx=agent_discount_ctx,
+                steps=steps,
+            )
 
             # Benchmark trace fields
             row.benchmark_reference = flt(br.get("benchmark_reference") or 0)
@@ -339,16 +356,6 @@ class PricingSheet(Document):
             if row.price_floor_violation:
                 floor_violations += 1
                 warnings.append(_("Row {0}: final unit price is below zero.").format(row.idx))
-
-            if min_margin and flt(row.margin_pct) < min_margin:
-                margin_violations += 1
-                warnings.append(
-                    _("Row {0}: margin {1}% is below minimum {2}%.").format(
-                        row.idx,
-                        f"{flt(row.margin_pct):.2f}",
-                        f"{min_margin:.2f}",
-                    )
-                )
 
             # Benchmark status: prefer new policy reference, fall back to old single-source
             br_active = br and flt(br.get("benchmark_reference") or 0) > 0
@@ -382,16 +389,12 @@ class PricingSheet(Document):
 
         logger = frappe.logger("pricing")
         logger.info(
-            "PricingSheet %s recalculated in %.2fms (lines=%s, floor_violations=%s, margin_violations=%s)",
+            "PricingSheet %s recalculated in %.2fms (lines=%s, floor_violations=%s)",
             self.name or "NEW",
             flt(self.calc_runtime_ms),
             len(lines),
             floor_violations,
-            margin_violations,
         )
-
-        if cint(self.strict_margin_guard) and warnings:
-            frappe.throw(_("Strict guard blocked save:\n{0}").format("\n".join(warnings[:10])))
 
     def _recalculate_static(self, static_ctx, started):
         """Price lines from the agent's selling price list instead of the dynamic engine."""
@@ -400,7 +403,8 @@ class PricingSheet(Document):
         warnings = []
         benchmark_policy_doc = self._resolve_benchmark_policy()
         tier_mod, zone_mod = self._resolve_dynamic_modifiers(benchmark_policy_doc)
-        modifier_expenses, _, _ = self._inject_modifier_expenses([], tier_mod, zone_mod)
+        modifier_basis = (getattr(benchmark_policy_doc, "margin_application_basis", "") or "Base Price").strip() or "Base Price"
+        agent_discount_ctx = self._resolve_agent_discount_context()
 
         if not lines:
             self._reset_totals()
@@ -441,6 +445,14 @@ class PricingSheet(Document):
                 list_price = 0.0
 
             row.static_list_price = list_price
+            modifier_expenses, _, _ = self._inject_modifier_expenses(
+                [],
+                tier_mod,
+                zone_mod,
+                modifier_basis=modifier_basis,
+                base_unit=list_price,
+                loaded_cost=list_price,
+            )
             pricing = apply_expenses(base_unit=list_price, qty=qty, expenses=modifier_expenses)
             component_summary = self._summarize_pricing_components(pricing.get("steps") or [], qty)
             projected_unit = flt(pricing.get("projected_unit") or 0)
@@ -480,6 +492,13 @@ class PricingSheet(Document):
             row.customs_by_percent = 0
             row.customs_applied = 0
             row.customs_basis = ""
+            self._apply_line_discount_and_commission(
+                row,
+                qty=qty,
+                benchmark_result=None,
+                agent_discount_ctx=agent_discount_ctx,
+                steps=pricing.get("steps") or [],
+            )
             row.pricing_breakdown_json = json.dumps(pricing.get("steps") or [])
             row.breakdown_preview = self._build_breakdown_preview(pricing.get("steps") or []) or f"List: {price_list}"
             row.price_floor_violation = 0
@@ -1436,7 +1455,7 @@ class PricingSheet(Document):
 
         return tier_mod, zone_mod
 
-    def _inject_modifier_expenses(self, expenses, tier_mod, zone_mod):
+    def _inject_modifier_expenses(self, expenses, tier_mod, zone_mod, *, modifier_basis="Base Price", base_unit=0.0, loaded_cost=0.0):
         """Inject tier and zone modifiers as additional expenses.
 
         Returns (updated_expenses, tier_amount, zone_amount).
@@ -1447,34 +1466,30 @@ class PricingSheet(Document):
 
         if tier_mod and flt(tier_mod["amount"]) != 0:
             tier_amount = flt(tier_mod["amount"])
-            exp_type = "Percentage" if tier_mod["type"] == "Percentage" else "Fixed"
-            tier_expense = {
-                "label": "Tier Modifier ({})".format(tier_mod["label"]),
-                "type": exp_type,
-                "value": tier_amount,
-                "applies_to": "Base Price",
-                "scope": "Per Unit",
-                "sequence": 95,
-                "is_active": 1,
-                "is_overridden": 0,
-                "override_source": "tier_modifier",
-            }
+            tier_expense = compute_policy_adjustment_step(
+                label="Tier Modifier ({})".format(tier_mod["label"]),
+                value=tier_amount,
+                adjustment_type=tier_mod["type"] or "Fixed",
+                adjustment_basis=modifier_basis,
+                base_price=base_unit,
+                loaded_cost=loaded_cost,
+                sequence=95,
+                override_source="tier_modifier",
+            )
             out.append(tier_expense)
 
         if zone_mod and flt(zone_mod["amount"]) != 0:
             zone_amount = flt(zone_mod["amount"])
-            exp_type = "Percentage" if zone_mod["type"] == "Percentage" else "Fixed"
-            zone_expense = {
-                "label": "Zone Modifier ({})".format(zone_mod["label"]),
-                "type": exp_type,
-                "value": zone_amount,
-                "applies_to": "Base Price",
-                "scope": "Per Unit",
-                "sequence": 96,
-                "is_active": 1,
-                "is_overridden": 0,
-                "override_source": "zone_modifier",
-            }
+            zone_expense = compute_policy_adjustment_step(
+                label="Zone Modifier ({})".format(zone_mod["label"]),
+                value=zone_amount,
+                adjustment_type=zone_mod["type"] or "Fixed",
+                adjustment_basis=modifier_basis,
+                base_price=base_unit,
+                loaded_cost=loaded_cost,
+                sequence=96,
+                override_source="zone_modifier",
+            )
             out.append(zone_expense)
 
         out = sorted(out, key=lambda x: (cint(x.get("sequence")), cint(x.get("idx") or 0)))
@@ -1540,6 +1555,7 @@ class PricingSheet(Document):
                 "ratio_min": flt(r.ratio_min),
                 "ratio_max": flt(r.ratio_max),
                 "target_margin_percent": flt(r.target_margin_percent),
+                "max_discount_percent": flt(r.max_discount_percent),
                 "item_group": r.item_group or "",
                 "material": r.material or "",
                 "source_bundle": r.source_bundle or "",
@@ -1580,32 +1596,95 @@ class PricingSheet(Document):
         )
         return self._inject_margin_expense(expenses, margin_step)
 
-    def _inject_fallback_margin_expense(self, expenses, benchmark_result, fallback_margin):
-        """Inject fallback margin when benchmark data insufficient."""
-        margin_pct = flt(
-            (benchmark_result or {}).get("target_margin_percent") or fallback_margin
-        )
-        margin_step = compute_margin_step(
-            margin_pct,
-            "Base Price",
-            base_price=0,
-            loaded_cost=0,
-            sequence=90,
-            is_fallback=True,
-        )
-        return self._inject_margin_expense(expenses, margin_step)
-
     def _format_benchmark_rule(self, rule):
         """Format a benchmark rule for display."""
         if not rule:
             return ""
         scope = rule.get("source_bundle") or rule.get("item_group") or rule.get("material") or "Any"
-        return _("Ratio {0}-{1}: {2}% ({3})").format(
+        return _("Ratio {0}-{1}: {2}% margin, {3}% max discount ({4})").format(
             f"{flt(rule.get('ratio_min')):.2f}",
             f"{flt(rule.get('ratio_max')):.2f}" if flt(rule.get("ratio_max")) > 0 else "∞",
             flt(rule.get("target_margin_percent")),
+            flt(rule.get("max_discount_percent") or 0),
             scope,
         )
+
+    def _resolve_agent_discount_context(self):
+        sales_person = (self.sales_person or "").strip()
+        if not sales_person:
+            return {"max_discount_percent": 0.0, "commission_rate": 0.0}
+
+        agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name")
+        if not agent_name:
+            return {"max_discount_percent": 0.0, "commission_rate": 0.0}
+
+        values = frappe.db.get_value(
+            "Agent Pricing Rules",
+            agent_name,
+            ["max_discount_percent", "commission_rate"],
+            as_dict=True,
+        ) or {}
+        return {
+            "max_discount_percent": flt(values.get("max_discount_percent") or 0),
+            "commission_rate": flt(values.get("commission_rate") or 0),
+        }
+
+    def _apply_line_discount_and_commission(self, row, qty, benchmark_result, agent_discount_ctx, steps):
+        matched_rule = (benchmark_result or {}).get("matched_rule") or {}
+        max_discount = flt(matched_rule.get("max_discount_percent") or agent_discount_ctx.get("max_discount_percent") or 0)
+        requested_discount = flt(row.discount_percent or 0)
+        if requested_discount < 0:
+            frappe.throw(_("Row {0}: Discount % cannot be negative.").format(row.idx))
+        commission_rate = flt(agent_discount_ctx.get("commission_rate") or 0)
+        try:
+            discount_result = apply_discount_and_commission(
+                gross_unit_price=flt(row.final_sell_unit_price),
+                qty=qty,
+                discount_percent=requested_discount,
+                max_discount_percent=max_discount,
+                commission_rate=commission_rate,
+            )
+        except ValueError as exc:
+            frappe.throw(_("Row {0}: {1}").format(row.idx, cstr(exc)))
+
+        row.max_discount_percent_allowed = max_discount
+        row.discount_percent = flt(discount_result.get("discount_percent") or 0)
+        row.discount_amount = flt(discount_result.get("discount_amount") or 0)
+        row.discounted_sell_unit_price = flt(discount_result.get("discounted_unit_price") or 0)
+        row.discounted_sell_total = flt(discount_result.get("discounted_total") or 0)
+        row.commission_rate = flt(discount_result.get("commission_rate") or 0)
+        row.commission_amount = flt(discount_result.get("commission_amount") or 0)
+
+        if requested_discount > 0:
+            steps.append(
+                {
+                    "label": "Agent Discount",
+                    "type": "Percentage",
+                    "value": requested_discount,
+                    "applies_to": "Sell Price",
+                    "scope": "Per Unit",
+                    "sequence": 10010,
+                    "delta_unit": -(flt(row.final_sell_unit_price) * (requested_discount / 100.0)),
+                    "delta_line": 0,
+                    "delta_sheet": 0,
+                    "running_total": flt(discount_result.get("discounted_unit_price") or 0),
+                }
+            )
+        if flt(discount_result.get("commission_amount") or 0) > 0:
+            steps.append(
+                {
+                    "label": "Agent Commission",
+                    "type": "Fixed",
+                    "value": flt(discount_result.get("commission_amount") or 0),
+                    "applies_to": "Discount",
+                    "scope": "Per Line",
+                    "sequence": 10020,
+                    "delta_unit": 0,
+                    "delta_line": 0,
+                    "delta_sheet": 0,
+                    "commission_rate": commission_rate,
+                }
+            )
 
     def _inject_transport_expense(self, expenses, transport_calc):
         applied = flt((transport_calc or {}).get("applied") or 0)
@@ -1770,6 +1849,16 @@ class PricingSheet(Document):
     def _active_expenses(self, scenario):
         as_dicts = [row.as_dict() for row in (scenario.expenses or []) if flt(row.is_active)]
         return sorted(as_dicts, key=lambda x: (cint(x.get("sequence")), cint(x.get("idx"))))
+
+    def _strip_scenario_margin_expenses(self, expenses):
+        filtered = []
+        for expense in expenses or []:
+            label = cstr(expense.get("label") or "").strip().lower()
+            notes = cstr(expense.get("notes") or "").strip().lower()
+            if "margin" in label or "margin" in notes:
+                continue
+            filtered.append(expense)
+        return filtered
 
     def _sheet_fixed_total(self, expenses):
         return sum(
@@ -1990,7 +2079,7 @@ class PricingSheet(Document):
             item_data = {
                 "item_code": row.item,
                 "qty": flt(row.qty),
-                "rate": flt(row.final_sell_unit_price),
+                "rate": flt(row.discounted_sell_unit_price or row.final_sell_unit_price),
             }
             if frappe.db.has_column("Quotation Item", "source_pricing_sheet_line"):
                 item_data["source_pricing_sheet_line"] = row.name
@@ -2016,6 +2105,18 @@ class PricingSheet(Document):
                 item_data["source_customs_applied"] = flt(row.customs_applied)
             if frappe.db.has_column("Quotation Item", "source_customs_basis"):
                 item_data["source_customs_basis"] = row.customs_basis or ""
+            if frappe.db.has_column("Quotation Item", "source_gross_sell_rate"):
+                item_data["source_gross_sell_rate"] = flt(row.final_sell_unit_price)
+            if frappe.db.has_column("Quotation Item", "source_discount_percent"):
+                item_data["source_discount_percent"] = flt(row.discount_percent)
+            if frappe.db.has_column("Quotation Item", "source_discount_amount"):
+                item_data["source_discount_amount"] = flt(row.discount_amount)
+            if frappe.db.has_column("Quotation Item", "source_discounted_sell_rate"):
+                item_data["source_discounted_sell_rate"] = flt(row.discounted_sell_unit_price or row.final_sell_unit_price)
+            if frappe.db.has_column("Quotation Item", "source_commission_rate"):
+                item_data["source_commission_rate"] = flt(row.commission_rate)
+            if frappe.db.has_column("Quotation Item", "source_commission_amount"):
+                item_data["source_commission_amount"] = flt(row.commission_amount)
 
             quotation.append("items", item_data)
 
@@ -2046,7 +2147,8 @@ class PricingSheet(Document):
         }
 
         for row in self.lines or []:
-            if flt(row.final_sell_total) == 0:
+            effective_total = flt(row.discounted_sell_total or row.final_sell_total)
+            if effective_total == 0:
                 continue
             if (row.line_type or "") == "Bundle Component" and row.bundle_group_id in summary_bundle_ids:
                 continue
@@ -2054,7 +2156,7 @@ class PricingSheet(Document):
             fallback_group = row.display_group or "Ungrouped"
             scenario_name = row.resolved_pricing_scenario or row.pricing_scenario or ""
             key = ((fallback_group or "Ungrouped").strip() or "Ungrouped", scenario_name)
-            grouped[key] = grouped.get(key, 0.0) + flt(row.final_sell_total)
+            grouped[key] = grouped.get(key, 0.0) + effective_total
 
         return grouped
 

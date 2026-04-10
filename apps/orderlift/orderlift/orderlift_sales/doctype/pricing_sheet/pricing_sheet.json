@@ -28,7 +28,6 @@
   "heading_scenario_mappings",
   "scenario_mappings",
   "section_projection",
-  "projection_dashboard",
   "heading_lines",
   "lines",
   "heading_totals",
@@ -217,6 +216,7 @@
    "fieldname": "strict_margin_guard",
    "fieldtype": "Check",
    "label": "Strict Margin Guard",
+   "hidden": 1,
    "default": "0"
   },
   {
@@ -283,11 +283,6 @@
    "fieldtype": "Small Text",
    "label": "Projection Warnings",
    "read_only": 1
-  },
-  {
-   "fieldname": "projection_dashboard",
-   "fieldtype": "HTML",
-   "label": "Projection Dashboard"
   },
   {
    "fieldname": "heading_lines",

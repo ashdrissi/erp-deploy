@@ -114,6 +114,68 @@ def resolve_benchmark_margin(
     }
 
 
+def compute_policy_adjustment_step(
+    *,
+    label,
+    value,
+    adjustment_type="Percentage",
+    adjustment_basis="Base Price",
+    base_price,
+    loaded_cost,
+    sequence=90,
+    override_source="pricing_policy",
+):
+    basis = (adjustment_basis or "Base Price").strip() or "Base Price"
+    adjustment_type = (adjustment_type or "Percentage").strip().title()
+    value = flt(value)
+
+    if adjustment_type != "Percentage":
+        return {
+            "label": label,
+            "type": "Fixed",
+            "value": value,
+            "applies_to": basis,
+            "scope": "Per Unit",
+            "sequence": cint(sequence or 90),
+            "is_active": 1,
+            "is_overridden": 0,
+            "override_source": override_source,
+        }
+
+    if basis == "Base Price":
+        return {
+            "label": label,
+            "type": "Percentage",
+            "value": value,
+            "applies_to": "Base Price",
+            "scope": "Per Unit",
+            "sequence": cint(sequence or 90),
+            "is_active": 1,
+            "is_overridden": 0,
+            "override_source": override_source,
+        }
+
+    cost_basis = flt(loaded_cost)
+    if basis == "Sale Price":
+        if value >= 100:
+            raise ValueError(f"{label} with Sale Price basis requires percentage below 100")
+        fixed_value = cost_basis * (value / 100.0) / (1 - (value / 100.0)) if value else 0.0
+    else:
+        fixed_value = cost_basis * (value / 100.0)
+
+    return {
+        "label": label,
+        "type": "Fixed",
+        "value": flt(fixed_value),
+        "applies_to": basis,
+        "scope": "Per Unit",
+        "sequence": cint(sequence or 90),
+        "is_active": 1,
+        "is_overridden": 0,
+        "override_source": override_source,
+    }
+
+
 def compute_margin_step(
     margin_percent,
     margin_application_basis="Base Price",
@@ -123,43 +185,18 @@ def compute_margin_step(
     sequence=90,
     is_fallback=False,
 ):
-    basis = (margin_application_basis or "Base Price").strip() or "Base Price"
-    margin_percent = flt(margin_percent)
     label_prefix = "Fallback Margin" if is_fallback else "Dynamic Margin"
-    label = f"{label_prefix} ({basis})"
-
-    if basis == "Base Price":
-        return {
-            "label": label,
-            "type": "Percentage",
-            "value": margin_percent,
-            "applies_to": "Base Price",
-            "scope": "Per Unit",
-            "sequence": cint(sequence or 90),
-            "is_active": 1,
-            "is_overridden": 0,
-            "override_source": "pricing_policy",
-        }
-
-    cost_basis = flt(loaded_cost)
-    if basis == "Sale Price":
-        if margin_percent >= 100:
-            raise ValueError("Sale Price margin basis requires margin percent below 100")
-        margin_value = cost_basis * (margin_percent / 100.0) / (1 - (margin_percent / 100.0)) if margin_percent else 0.0
-    else:
-        margin_value = cost_basis * (margin_percent / 100.0)
-
-    return {
-        "label": label,
-        "type": "Fixed",
-        "value": flt(margin_value),
-        "applies_to": basis,
-        "scope": "Per Unit",
-        "sequence": cint(sequence or 90),
-        "is_active": 1,
-        "is_overridden": 0,
-        "override_source": "pricing_policy",
-    }
+    basis = (margin_application_basis or "Base Price").strip() or "Base Price"
+    return compute_policy_adjustment_step(
+        label=f"{label_prefix} ({basis})",
+        value=margin_percent,
+        adjustment_type="Percentage",
+        adjustment_basis=basis,
+        base_price=base_price,
+        loaded_cost=loaded_cost,
+        sequence=sequence,
+        override_source="pricing_policy",
+    )
 
 
 # ---------------------------------------------------------------------------
