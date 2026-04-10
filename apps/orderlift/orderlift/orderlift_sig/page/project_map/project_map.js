@@ -6,14 +6,17 @@ frappe.pages["project-map"].on_page_load = function (wrapper) {
     });
     _setSigBreadcrumbs(wrapper.sig_page, __("Project Map"));
     _isolateProjectMapPage(wrapper);
+    _preventPageRefresh(wrapper);
     // Render once on initial load
-    _renderProjectMapOnce(wrapper);
+    if (!wrapper.dataset.projectMapLoaded) {
+        wrapper.dataset.projectMapLoaded = "1";
+        _renderProjectMapOnce(wrapper);
+    }
 };
 
 frappe.pages["project-map"].on_page_show = function (wrapper) {
     _setSigBreadcrumbs(wrapper.sig_page, __("Project Map"));
-    _isolateProjectMapPage(wrapper);
-    // Update breadcrumbs and isolation on every show, but don't re-render (already done in on_page_load)
+    // Don't call _isolateProjectMapPage again, it's already set in on_page_load
 };
 
 function _renderProjectMapOnce(wrapper) {
@@ -105,6 +108,31 @@ function _stretchProjectMapLayout(wrapper, rootId) {
 }
 
 
+function _preventPageRefresh(wrapper) {
+    if (wrapper.dataset.projectMapRefreshPrevented === "1") return;
+    wrapper.dataset.projectMapRefreshPrevented = "1";
+
+    // Prevent any window-level navigation that could cause a refresh
+    const originalHref = Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, "href");
+
+    // Override anchor clicks globally for this page only
+    wrapper.addEventListener("click", (e) => {
+        const target = e.target.closest("a[href], button[onclick]");
+        if (target && !e.defaultPrevented) {
+            const href = target.href || target.getAttribute("href");
+            const isMapLink = target.closest(".leaflet-control-attribution") !== null;
+            const isBlank = target.getAttribute("target") === "_blank";
+
+            if (href && !isMapLink && !isBlank && !href.startsWith("#")) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                return false;
+            }
+        }
+    }, true);
+}
+
 function _isolateProjectMapPage(wrapper) {
     if (wrapper.dataset.projectMapIsolated === "1") return;
     wrapper.dataset.projectMapIsolated = "1";
@@ -112,7 +140,7 @@ function _isolateProjectMapPage(wrapper) {
     ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"].forEach((eventName) => {
         wrapper.addEventListener(eventName, (event) => {
             event.stopPropagation();
-        });
+        }, true);
     });
 
     wrapper.addEventListener("click", (event) => {
@@ -127,10 +155,10 @@ function _isolateProjectMapPage(wrapper) {
         }
 
         event.stopPropagation();
-    });
+    }, true);
 
     wrapper.addEventListener("submit", (event) => {
         event.preventDefault();
         event.stopPropagation();
-    });
+    }, true);
 }
