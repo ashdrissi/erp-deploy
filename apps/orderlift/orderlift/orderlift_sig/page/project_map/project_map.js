@@ -6,17 +6,13 @@ frappe.pages["project-map"].on_page_load = function (wrapper) {
     });
     _setSigBreadcrumbs(wrapper.sig_page, __("Project Map"));
     _isolateProjectMapPage(wrapper);
-    _preventPageRefresh(wrapper);
-    // Render once on initial load
-    if (!wrapper.dataset.projectMapLoaded) {
-        wrapper.dataset.projectMapLoaded = "1";
-        _renderProjectMapOnce(wrapper);
-    }
+    _renderProjectMapOnce(wrapper);
 };
 
 frappe.pages["project-map"].on_page_show = function (wrapper) {
-    _setSigBreadcrumbs(wrapper.sig_page, __("Project Map"));
-    // Don't call _isolateProjectMapPage again, it's already set in on_page_load
+    // Frappe preserves page DOM between navigations — nothing to re-render here.
+    // Breadcrumbs and title are set once in on_page_load.
+    // Re-calling set_title / set_breadcrumbs on every show causes visible flicker.
 };
 
 function _renderProjectMapOnce(wrapper) {
@@ -64,7 +60,6 @@ function _setSigBreadcrumbs(page, title) {
     }
 }
 
-
 function _getPreloadProject() {
     return (frappe.route_options && frappe.route_options.project)
         || new URL(window.location.href).searchParams.get("project")
@@ -107,42 +102,23 @@ function _stretchProjectMapLayout(wrapper, rootId) {
     }
 }
 
-
-function _preventPageRefresh(wrapper) {
-    if (wrapper.dataset.projectMapRefreshPrevented === "1") return;
-    wrapper.dataset.projectMapRefreshPrevented = "1";
-
-    // Prevent any window-level navigation that could cause a refresh
-    const originalHref = Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, "href");
-
-    // Override anchor clicks globally for this page only
-    wrapper.addEventListener("click", (e) => {
-        const target = e.target.closest("a[href], button[onclick]");
-        if (target && !e.defaultPrevented) {
-            const href = target.href || target.getAttribute("href");
-            const isMapLink = target.closest(".leaflet-control-attribution") !== null;
-            const isBlank = target.getAttribute("target") === "_blank";
-
-            if (href && !isMapLink && !isBlank && !href.startsWith("#")) {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                return false;
-            }
-        }
-    }, true);
-}
-
 function _isolateProjectMapPage(wrapper) {
     if (wrapper.dataset.projectMapIsolated === "1") return;
     wrapper.dataset.projectMapIsolated = "1";
 
+    // Bubble-phase stopPropagation keeps mouse/pointer/touch events inside the map
+    // wrapper so they don't leak to Frappe's document-level handlers.
     ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"].forEach((eventName) => {
         wrapper.addEventListener(eventName, (event) => {
             event.stopPropagation();
-        }, true);
+        });
     });
 
+    // For clicks: the workspace's own root-level handler (bubble phase) already
+    // calls frappe.set_route() for data-route/data-page-route/data-form-doctype
+    // elements and also calls stopPropagation(). We add a wrapper-level backup
+    // that prevents any anchor navigation that slipped past the root handler from
+    // reaching Frappe's document-level link interceptor.
     wrapper.addEventListener("click", (event) => {
         const anchor = event.target.closest("a");
         const allowDefault = anchor && (
@@ -155,10 +131,10 @@ function _isolateProjectMapPage(wrapper) {
         }
 
         event.stopPropagation();
-    }, true);
+    });
 
     wrapper.addEventListener("submit", (event) => {
         event.preventDefault();
         event.stopPropagation();
-    }, true);
+    });
 }
