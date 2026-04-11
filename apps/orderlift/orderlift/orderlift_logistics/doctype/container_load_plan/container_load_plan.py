@@ -455,6 +455,27 @@ def get_utilization_trends(days=30):
 
 
 @frappe.whitelist()
+def get_load_plans_list():
+    """Return all Container Load Plans sorted by departure date for the timeline sidebar."""
+    plans = frappe.db.get_all(
+        "Container Load Plan",
+        fields=[
+            "name", "container_label", "container_profile", "destination_zone",
+            "departure_date", "status", "analysis_status",
+            "weight_utilization_pct", "volume_utilization_pct",
+            "total_weight_kg", "total_volume_m3",
+            "max_weight_kg", "max_volume_m3",
+        ],
+        order_by="departure_date asc, creation asc",
+    )
+    for p in plans:
+        p["departure_date"] = str(p["departure_date"]) if p.get("departure_date") else ""
+        p["weight_utilization_pct"] = round(float(p.get("weight_utilization_pct") or 0), 2)
+        p["volume_utilization_pct"] = round(float(p.get("volume_utilization_pct") or 0), 2)
+    return plans
+
+
+@frappe.whitelist()
 def get_cockpit_data(load_plan_name):
     doc = frappe.get_doc("Container Load Plan", load_plan_name)
     doc.recalculate_totals()
