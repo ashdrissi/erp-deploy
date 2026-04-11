@@ -32,7 +32,7 @@
     function esc(s) {
         return (frappe && frappe.utils) ? frappe.utils.escape_html(String(s || "")) : String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
-    function __(s) { return (global.__ || (x => x))(s); }
+    function __(s, r) { return (global.__ || (x => x))(s, r); }
     function flt(v) { return Number(v || 0); }
 
     /* ── Status helpers ───────────────────────────────────────────────────── */

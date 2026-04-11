@@ -464,7 +464,6 @@ def get_load_plans_list():
             "departure_date", "status", "analysis_status",
             "weight_utilization_pct", "volume_utilization_pct",
             "total_weight_kg", "total_volume_m3",
-            "max_weight_kg", "max_volume_m3",
         ],
         order_by="departure_date asc, creation asc",
     )
