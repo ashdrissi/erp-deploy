@@ -1,5 +1,3 @@
-import json
-
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
@@ -247,52 +245,19 @@ def after_migrate():
     frappe.clear_cache(doctype="Purchase Receipt")
     frappe.clear_cache(doctype="Stock Entry")
     frappe.clear_cache(doctype="Delivery Trip")
-    ensure_logistics_workspace()
+    retire_logistics_workspace()
 
 
-def ensure_logistics_workspace():
+def retire_logistics_workspace():
     workspace_name = "Hub Logistique"
-    shortcuts = [
-        {"label": "Logistics Hub Cockpit", "type": "Page", "link_to": "logistics-hub-cockpit"},
-        {"label": "Container Load Plan", "type": "DocType", "link_to": "Container Load Plan"},
-        {"label": "Container Profile", "type": "DocType", "link_to": "Container Profile"},
-        {"label": "Shipment Analysis", "type": "DocType", "link_to": "Shipment Analysis"},
-        {"label": "Delivery Note", "type": "DocType", "link_to": "Delivery Note"},
-    ]
 
-    content = [
-        {
-            "id": "logistics_header",
-            "type": "header",
-            "data": {"text": "<span class=\"h4\"><b>Hub Logistique</b></span>", "col": 12},
-        },
-        {"id": "logistics_spacer", "type": "spacer", "data": {"col": 12}},
-    ]
-
-    for idx, shortcut in enumerate(shortcuts, start=1):
-        content.append(
-            {
-                "id": f"logistics_shortcut_{idx}",
-                "type": "shortcut",
-                "data": {"shortcut_name": shortcut["label"], "col": 4},
-            }
+    if frappe.db.exists("Workspace", workspace_name):
+        frappe.db.set_value(
+            "Workspace",
+            workspace_name,
+            {"public": 0, "is_hidden": 1},
+            update_modified=False,
         )
 
-    workspace = (
-        frappe.get_doc("Workspace", workspace_name)
-        if frappe.db.exists("Workspace", workspace_name)
-        else frappe.new_doc("Workspace")
-    )
-
-    workspace.title = workspace_name
-    workspace.label = workspace_name
-    workspace.module = "Orderlift Logistics"
-    workspace.public = 1
-    workspace.is_hidden = 0
-    workspace.content = json.dumps(content)
-    workspace.set("shortcuts", [])
-
-    for shortcut in shortcuts:
-        workspace.append("shortcuts", shortcut)
-
-    workspace.save(ignore_permissions=True)
+    if frappe.db.exists("Workspace Sidebar", workspace_name):
+        frappe.delete_doc("Workspace Sidebar", workspace_name, ignore_permissions=True)

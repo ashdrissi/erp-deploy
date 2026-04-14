@@ -69,17 +69,20 @@ fixtures = [
 # ---------------------------------------------------------
 doc_events = {
     "Sales Invoice": {
-        # Auto-create Sales Commission records on invoice submission
-        "on_submit": "orderlift.sales.utils.commission_calculator.create_commissions",
+        # Update Sales Commission approval state from invoice payment status
+        "on_submit": "orderlift.sales.utils.commission_calculator.sync_commissions_from_invoice",
+        "on_update_after_submit": "orderlift.sales.utils.commission_calculator.sync_commissions_from_invoice",
         "on_cancel": "orderlift.sales.utils.commission_calculator.cancel_commissions",
     },
     "Sales Order": {
         # Notify stock manager when a sales order is confirmed
         # Also warn if linked installation project has a Blocked QC (SIG)
         "on_submit": [
+            "orderlift.sales.utils.commission_calculator.create_sales_order_commissions",
             "orderlift.sales.utils.stock_notifier.notify_stock_manager",
             "orderlift.orderlift_sig.utils.project_status_guard.on_sales_order_submit",
         ],
+        "on_cancel": "orderlift.sales.utils.commission_calculator.cancel_sales_order_commissions",
     },
     "Item": {
         # Archive cost price into Item Cost History on save when cost changes
@@ -121,6 +124,7 @@ doc_events = {
 }
 
 doctype_js = {
+    "Container Profile": "public/js/container_profile_form_20260411.js",
     "Container Load Plan": "public/js/clp_dashboard_v4.js",
     "Delivery Note": "public/js/delivery_note_logistics.js",
     "Purchase Receipt": "public/js/purchase_receipt_logistics.js",
@@ -130,7 +134,7 @@ doctype_js = {
     # Loaded via doctype_js so setup/refresh fire before the form opens.
     # The file sets window["__orderlift_pricing_sheet_latest_loaded_v6"] = true
     # so the app_include_js global loader skips re-requiring it.
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260409_77.js",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260409_97.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v2.js",
@@ -163,6 +167,7 @@ scheduler_events = {
 
 after_migrate = [
     "orderlift.sales.utils.pricing_setup.after_migrate",
+    "orderlift.sales.utils.commission_dashboard_setup.after_migrate",
     "orderlift.logistics.setup.after_migrate",
     "orderlift.orderlift_logistics.setup.after_migrate",
     "orderlift.orderlift_sig.setup.after_migrate",

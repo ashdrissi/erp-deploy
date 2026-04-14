@@ -1,56 +1,47 @@
-import json
 import frappe
 
 
 def after_migrate():
-    """Setup orderlift_logistics module: create workspace and ensure doctypes are ready."""
-    ensure_logistics_cockpit_workspace()
+    """Setup orderlift_logistics module and retire duplicate logistics workspace shell."""
+    backfill_container_load_plan_defaults()
+    retire_logistics_hub_workspace()
 
 
-def ensure_logistics_cockpit_workspace():
-    """Create or update the Logistics Hub Cockpit workspace."""
-    workspace_name = "Logistics Hub"
-    shortcuts = [
-        {"label": "Logistics Hub Cockpit", "type": "Page", "link_to": "logistics-hub-cockpit"},
-        {"label": "Container Load Plan", "type": "DocType", "link_to": "Container Load Plan"},
-        {"label": "Container Profile", "type": "DocType", "link_to": "Container Profile"},
-        {"label": "Shipment Analysis", "type": "DocType", "link_to": "Shipment Analysis"},
-        {"label": "Load Plan Shipment", "type": "DocType", "link_to": "Load Plan Shipment"},
-    ]
+def backfill_container_load_plan_defaults():
+    """Fill legacy CLP rows created before scenario fields existed."""
+    if not frappe.db.exists("DocType", "Container Load Plan"):
+        return
 
-    content = [
-        {
-            "id": "logistics_header",
-            "type": "header",
-            "data": {"text": "<span class=\"h4\"><b>Logistics Hub</b></span>", "col": 12},
-        },
-        {"id": "logistics_spacer", "type": "spacer", "data": {"col": 12}},
-    ]
-
-    for idx, shortcut in enumerate(shortcuts, start=1):
-        content.append(
-            {
-                "id": f"logistics_shortcut_{idx}",
-                "type": "shortcut",
-                "data": {"shortcut_name": shortcut["label"], "col": 4},
-            }
-        )
-
-    workspace = (
-        frappe.get_doc("Workspace", workspace_name)
-        if frappe.db.exists("Workspace", workspace_name)
-        else frappe.new_doc("Workspace")
+    rows = frappe.get_all(
+        "Container Load Plan",
+        filters={"flow_scope": ["is", "not set"]},
+        fields=["name", "flow_scope", "shipping_responsibility", "source_type"],
+        limit_page_length=0,
     )
 
-    workspace.title = workspace_name
-    workspace.label = workspace_name
-    workspace.module = "Orderlift Logistics"
-    workspace.public = 1
-    workspace.is_hidden = 0
-    workspace.content = json.dumps(content)
-    workspace.set("shortcuts", [])
+    for row in rows:
+        updates = {}
+        if not row.flow_scope:
+            updates["flow_scope"] = "Outbound"
+        if not row.shipping_responsibility:
+            updates["shipping_responsibility"] = "Orderlift"
+        if not row.source_type:
+            updates["source_type"] = "Delivery Note"
+        if updates:
+            frappe.db.set_value("Container Load Plan", row.name, updates, update_modified=False)
 
-    for shortcut in shortcuts:
-        workspace.append("shortcuts", shortcut)
 
-    workspace.save(ignore_permissions=True)
+def retire_logistics_hub_workspace():
+    """Retire the standalone Logistics Hub workspace so Main Dashboard owns logistics routes."""
+    workspace_name = "Logistics Hub"
+
+    if frappe.db.exists("Workspace", workspace_name):
+        frappe.db.set_value(
+            "Workspace",
+            workspace_name,
+            {"public": 0, "is_hidden": 1},
+            update_modified=False,
+        )
+
+    if frappe.db.exists("Workspace Sidebar", workspace_name):
+        frappe.delete_doc("Workspace Sidebar", workspace_name, ignore_permissions=True)

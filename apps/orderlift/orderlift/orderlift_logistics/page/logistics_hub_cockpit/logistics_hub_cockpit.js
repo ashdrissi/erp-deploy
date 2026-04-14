@@ -33,7 +33,7 @@ function _renderCockpitV2Once(wrapper) {
     page.main.html(`<div id="${rootId}"></div>`);
     _stretchCockpitLayout(wrapper, rootId);
 
-    _loadScript("orderlift-cockpit-v2-script", "/assets/orderlift/js/logistics_hub_cockpit_v2.js")
+    _loadScript("orderlift-cockpit-v3-script", "/assets/orderlift/js/logistics_hub_cockpit_v3.js")
         .then(() => window.orderliftCockpitV2.mount(
             page.main[0].querySelector("#" + rootId),
             { preloadPlan: _getPreloadPlan() }

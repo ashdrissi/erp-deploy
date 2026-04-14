@@ -680,6 +680,18 @@ class PricingSheet(Document):
         }
 
     @frappe.whitelist()
+    def recalculate_preview(self):
+        self.recalculate()
+        return {
+            "total_buy": flt(self.total_buy),
+            "total_expenses": flt(self.total_expenses),
+            "total_selling": flt(self.total_selling),
+            "customs_total_applied": flt(self.customs_total_applied),
+            "projection_warnings": self.projection_warnings or "",
+            "resolved_mode": self.resolved_mode or "",
+        }
+
+    @frappe.whitelist()
     def add_dimensioning_items(self, input_values_json=None, replace_existing_generated=1):
         if not self.dimensioning_set:
             frappe.throw(_("Please select a Dimensioning Set."))

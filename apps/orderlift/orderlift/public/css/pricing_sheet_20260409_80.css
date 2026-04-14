@@ -227,8 +227,8 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    min-width: 240px;
-    max-height: 340px;
+    min-width: 420px;
+    max-height: 480px;
     overflow: auto;
     padding: 12px;
     border: 1px solid #d9e3f0;
@@ -244,10 +244,73 @@
     gap: 9px;
 }
 
+.pricing-sheet-form-root .ps-workspace-column-group {
+    display: grid;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #edf2f7;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-group:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-group-title {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-group-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+}
+
 .pricing-sheet-form-root .ps-workspace-column-title {
     font-size: 11px;
     font-weight: 700;
     color: #334155;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-order-title {
+    margin-top: 2px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-order-list {
+    display: grid;
+    gap: 6px;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-order-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #dbe4ef;
+    border-radius: 10px;
+    background: #fff;
+    cursor: grab;
+    font-size: 12px;
+    color: #334155;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-order-item.is-dragging {
+    opacity: 0.55;
+}
+
+.pricing-sheet-form-root .ps-workspace-drag-handle {
+    color: #94a3b8;
+    font-weight: 800;
+    letter-spacing: 0.08em;
 }
 
 .pricing-sheet-form-root .ps-workspace-column-option {
@@ -255,8 +318,17 @@
     align-items: center;
     gap: 8px;
     margin: 0;
-    font-size: 13px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: #f8fbff;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
     color: #334155;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-option:hover {
+    border-color: #cbd5e1;
+    background: #fff;
 }
 
 .pricing-sheet-form-root .ps-workspace-tabs {
@@ -330,14 +402,17 @@
 .pricing-sheet-form-root .ps-workspace-table-wrap {
     border: 1px solid #dbe4ef;
     border-radius: 14px;
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: visible;
     background: #ffffff;
     box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+    position: relative;
+    min-height: 340px;
 }
 
 .pricing-sheet-form-root .ps-workspace-table {
     width: 100%;
-    min-width: 1160px;
+    min-width: 1540px;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 12px;
@@ -359,11 +434,89 @@
     box-shadow: inset 0 -1px 0 #dbe4ef;
 }
 
+.pricing-sheet-form-root .ps-workspace-table thead th.is-sell {
+    background: linear-gradient(180deg, #eef5ff 0%, #f8fbff 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-table thead th.is-landed {
+    background: linear-gradient(180deg, #eefdf6 0%, #f7fffb 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-table thead th.is-margin {
+    background: linear-gradient(180deg, #f7f0ff 0%, #fbf7ff 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-table thead th.is-sell-projected {
+    background: linear-gradient(180deg, #eef5ff 0%, #f5f9ff 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-table thead th.is-sell-final {
+    background: linear-gradient(180deg, #fff3e8 0%, #fffaf5 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-table thead th.is-discount {
+    background: linear-gradient(180deg, #fff8eb 0%, #fffcf4 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-table thead th.is-commission {
+    background: linear-gradient(180deg, #eef8ff 0%, #f8fbff 100%);
+}
+
+.pricing-sheet-form-root .ps-workspace-select-cell,
+.pricing-sheet-form-root .ps-workspace-table thead th.ps-workspace-select-cell {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: inherit;
+}
+
 .pricing-sheet-form-root .ps-workspace-table tbody td {
-    padding: 9px 12px;
+    padding: 7px 10px;
     border-bottom: 1px solid #e8eef6;
     color: #0f172a;
     vertical-align: middle;
+}
+
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-landed .ps-workspace-display-value,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-landed input,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-landed select {
+    color: #0f766e;
+    font-weight: 700;
+}
+
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-margin .ps-workspace-display-value,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-margin input,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-margin select {
+    color: #7c3aed;
+    font-weight: 700;
+}
+
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-sell-projected .ps-workspace-display-value,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-sell-projected input,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-sell-projected select {
+    color: #1d4ed8;
+    font-weight: 700;
+}
+
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-sell-final .ps-workspace-display-value,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-sell-final input,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-sell-final select {
+    color: #c2410c;
+    font-weight: 800;
+}
+
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-discount .ps-workspace-display-value,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-discount input,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-discount select {
+    color: #b45309;
+    font-weight: 700;
+}
+
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-commission .ps-workspace-display-value,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-commission input,
+.pricing-sheet-form-root .ps-workspace-table tbody td.is-commission select {
+    color: #0f766e;
+    font-weight: 700;
 }
 
 .pricing-sheet-form-root .ps-workspace-table tbody tr {
@@ -402,13 +555,41 @@
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
-    margin-top: 4px;
+    margin-top: 2px;
     color: #64748b;
     font-size: 10px;
 }
 
+.pricing-sheet-form-root .ps-workspace-item-meta.is-inline {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pricing-sheet-form-root .ps-workspace-mini-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.pricing-sheet-form-root .ps-workspace-mini-chip.is-discount {
+    background: #fff8eb;
+    border-color: #fbd38d;
+    color: #b45309;
+}
+
 .pricing-sheet-form-root .ps-workspace-item-link {
-    min-width: 220px;
+    min-width: 280px;
+}
+
+.pricing-sheet-form-root .ps-workspace-item-cell {
+    min-width: 300px;
 }
 
 .pricing-sheet-form-root .ps-workspace-link-host,
@@ -418,10 +599,20 @@
     width: 100%;
 }
 
+.pricing-sheet-form-root .ps-workspace-link-host .awesomplete {
+    position: relative;
+}
+
+.pricing-sheet-form-root .ps-workspace-link-host .awesomplete ul {
+    min-width: 300px;
+    max-width: 420px;
+    z-index: 25;
+}
+
 .pricing-sheet-form-root .ps-workspace-cell-input {
     width: 100%;
-    min-height: 30px;
-    padding: 5px 8px;
+    min-height: 28px;
+    padding: 4px 8px;
     border: 1px solid #d6deeb;
     border-radius: 8px;
     background: #ffffff;
@@ -430,11 +621,49 @@
 }
 
 .pricing-sheet-form-root .ps-workspace-cell-input.is-qty {
-    min-width: 72px;
-    width: 88px;
+    min-width: 110px;
+    width: 110px;
     padding-left: 10px;
     padding-right: 10px;
     font-weight: 700;
+}
+
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(3),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(3) {
+    min-width: 105px;
+    width: 105px;
+}
+
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(4),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(4) {
+    min-width: 110px;
+    width: 110px;
+}
+
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(5),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(5),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(6),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(6),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(7),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(7),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(8),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(8),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(9),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(9),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(10),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(10),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(11),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(11),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(12),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(12),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(13),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(13),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(14),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(14),
+.pricing-sheet-form-root .ps-workspace-table th:nth-child(15),
+.pricing-sheet-form-root .ps-workspace-table td:nth-child(15) {
+    min-width: 150px;
+    width: 150px;
 }
 
 .pricing-sheet-form-root .ps-workspace-cell-input:focus {
@@ -585,6 +814,29 @@
     text-align: center;
 }
 
+.pricing-sheet-form-root .ps-workspace-empty-state {
+    display: grid;
+    gap: 10px;
+}
+
+.pricing-sheet-form-root .ps-workspace-empty-state .ps-workspace-footer {
+    padding: 12px 14px;
+    border: 1px solid #dce5f2;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.pricing-sheet-form-root .ps-workspace-empty-state .ps-workspace-footer-actions {
+    width: 100%;
+    justify-content: flex-end;
+}
+
+.pricing-sheet-form-root .ps-workspace-empty-state .ps-workspace-column-menu,
+.pricing-sheet-form-root .ps-workspace-empty-state .ps-workspace-column-menu > button,
+.pricing-sheet-form-root .ps-workspace-empty-state [data-ps-add-line] {
+    display: inline-flex;
+}
+
 .pricing-sheet-form-root .ps-workspace-empty-title {
     font-size: 12px;
     font-weight: 700;
@@ -607,6 +859,10 @@
 
     .pricing-sheet-form-root .ps-workspace-kpi-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .pricing-sheet-form-root .ps-workspace-column-group-grid {
+        grid-template-columns: 1fr;
     }
 
     .pricing-sheet-form-root .ps-workspace-breakdown-grid {

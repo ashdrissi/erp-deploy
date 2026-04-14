@@ -1,86 +1,175 @@
-"""
-Commission Calculator
----------------------
-Creates and cancels Sales Commission records when a Sales Invoice
-is submitted or cancelled.
+"""Commission workflow.
 
-Called via hooks.py doc_events on Sales Invoice.
+Create commission records from submitted Sales Orders using quotation snapshot data.
+Commissions become approved for payment only after linked Sales Invoices are fully paid.
 """
+
+from __future__ import annotations
 
 import frappe
 
 
-def create_commissions(doc, method=None):
-    """Create Sales Commission records on Sales Invoice submission.
-
-    Handles invoices linked to multiple Sales Orders by collecting
-    all unique SOs and creating one commission per salesperson per SO.
-    """
-    # Collect unique Sales Orders referenced in this invoice
-    seen_orders = set()
-    for item in doc.items:
-        so_name = getattr(item, "sales_order", None)
-        if so_name and so_name not in seen_orders:
-            seen_orders.add(so_name)
-
-    if not seen_orders:
+def create_sales_order_commissions(doc, method=None):
+    """Create or refresh Sales Commission records from a submitted Sales Order."""
+    buckets = _build_sales_order_snapshot_commissions(doc)
+    if not buckets:
         return
 
-    for sales_order_name in seen_orders:
-        sales_order = frappe.get_doc("Sales Order", sales_order_name)
-        salesperson = sales_order.get("custom_salesperson") or None
-        if not salesperson:
+    for payload in buckets:
+        existing_name = frappe.db.get_value(
+            "Sales Commission",
+            {"sales_order": payload["sales_order"], "salesperson": payload["salesperson"], "docstatus": ["<", 2]},
+            "name",
+        )
+        if existing_name:
+            commission = frappe.get_doc("Sales Commission", existing_name)
+            if commission.status == "Paid":
+                continue
+            commission.company = payload["company"]
+            commission.customer = payload["customer"]
+            commission.project = payload["project"]
+            commission.commission_rate = payload["commission_rate"]
+            commission.base_amount = payload["base_amount"]
+            commission.commission_amount = payload["commission_amount"]
+            commission.status = "Pending"
+            commission.sales_invoice = ""
+            commission.save(ignore_permissions=True)
+            if commission.docstatus == 0:
+                commission.submit()
             continue
 
-        commission_rate = frappe.db.get_value(
-            "Sales Person", salesperson, "custom_commission_rate"
-        ) or 0
-
-        if not commission_rate:
-            continue
-
-        # Sum only the line totals that belong to this Sales Order
-        so_total = sum(
-            item.net_amount
-            for item in doc.items
-            if getattr(item, "sales_order", None) == sales_order_name
-        )
-        commission_amount = so_total * (commission_rate / 100)
-
-        commission = frappe.get_doc(
-            {
-                "doctype": "Sales Commission",
-                "salesperson": salesperson,
-                "sales_order": sales_order_name,
-                "sales_invoice": doc.name,
-                "project": sales_order.project,
-                "customer": sales_order.customer,
-                "company": doc.company,
-                "commission_rate": commission_rate,
-                "base_amount": so_total,
-                "commission_amount": commission_amount,
-                "status": "Pending",
-            }
-        )
+        commission = frappe.get_doc(payload)
         commission.insert(ignore_permissions=True)
         commission.submit()
 
 
-def cancel_commissions(doc, method=None):
-    """Cancel linked Sales Commission records when invoice is cancelled.
+def sync_commissions_from_invoice(doc, method=None):
+    """Approve commissions only when linked Sales Order invoices are fully paid."""
+    seen_orders = {
+        item.sales_order
+        for item in (doc.items or [])
+        if getattr(item, "sales_order", None)
+    }
+    for sales_order_name in seen_orders:
+        _sync_sales_order_commissions(sales_order_name)
 
-    Only cancels commissions that haven't been paid yet.
-    Uses proper doctype cancel flow for submitted documents.
-    """
+
+def cancel_commissions(doc, method=None):
+    """Re-evaluate linked commissions when an invoice is cancelled."""
+    seen_orders = {
+        item.sales_order
+        for item in (doc.items or [])
+        if getattr(item, "sales_order", None)
+    }
+    for sales_order_name in seen_orders:
+        _sync_sales_order_commissions(sales_order_name)
+
+
+def cancel_sales_order_commissions(doc, method=None):
+    """Cancel unpaid commissions when the Sales Order is cancelled."""
     commissions = frappe.get_all(
         "Sales Commission",
-        filters={
-            "sales_invoice": doc.name,
-            "docstatus": 1,
-            "status": ["!=", "Paid"],
-        },
-        fields=["name"],
+        filters={"sales_order": doc.name, "docstatus": 1, "status": ["!", "Paid"]},
+        pluck="name",
     )
-    for row in commissions:
-        commission = frappe.get_doc("Sales Commission", row.name)
-        commission.cancel()
+    for name in commissions:
+        frappe.get_doc("Sales Commission", name).cancel()
+
+
+def _build_sales_order_snapshot_commissions(sales_order):
+    results = {}
+
+    for item in sales_order.items or []:
+        quotation_item_name = getattr(item, "quotation_item", None)
+        if not quotation_item_name:
+            continue
+
+        qitem = frappe.db.get_value(
+            "Quotation Item",
+            quotation_item_name,
+            [
+                "source_sales_person",
+                "source_commission_rate",
+                "source_commission_amount",
+                "source_discount_amount",
+                "qty",
+            ],
+            as_dict=True,
+        ) or {}
+
+        salesperson = qitem.get("source_sales_person")
+        commission_amount = float(qitem.get("source_commission_amount") or 0)
+        commission_rate = float(qitem.get("source_commission_rate") or 0)
+        discount_amount = float(qitem.get("source_discount_amount") or 0)
+        quotation_qty = float(qitem.get("qty") or 0)
+        order_qty = float(getattr(item, "qty", 0) or 0)
+        denominator = quotation_qty or order_qty or 1.0
+        factor = order_qty / denominator if denominator else 0
+        prorated_commission = commission_amount * factor
+        prorated_discount = discount_amount * factor
+
+        if not salesperson or not prorated_commission:
+            continue
+
+        key = (sales_order.name, salesperson)
+        bucket = results.setdefault(
+            key,
+            {
+                "doctype": "Sales Commission",
+                "salesperson": salesperson,
+                "sales_order": sales_order.name,
+                "sales_invoice": "",
+                "project": sales_order.project,
+                "customer": sales_order.customer,
+                "company": sales_order.company,
+                "commission_rate": commission_rate,
+                "base_amount": 0.0,
+                "commission_amount": 0.0,
+                "status": "Pending",
+            },
+        )
+        bucket["base_amount"] += prorated_discount
+        bucket["commission_amount"] += prorated_commission
+
+    return list(results.values())
+
+
+def _sync_sales_order_commissions(sales_order_name):
+    invoice_names = frappe.get_all(
+        "Sales Invoice Item",
+        filters={"sales_order": sales_order_name, "docstatus": 1},
+        pluck="parent",
+    )
+    invoice_names = list(dict.fromkeys(invoice_names))
+
+    if not invoice_names:
+        _update_commission_status(sales_order_name, status="Pending", sales_invoice="")
+        return
+
+    invoices = frappe.get_all(
+        "Sales Invoice",
+        filters={"name": ["in", invoice_names], "docstatus": 1},
+        fields=["name", "outstanding_amount", "posting_date"],
+        order_by="posting_date desc, modified desc",
+    )
+    fully_paid = invoices and all(float(inv.outstanding_amount or 0) <= 0.0001 for inv in invoices)
+
+    if fully_paid:
+        latest_invoice = invoices[0].name if invoices else ""
+        _update_commission_status(sales_order_name, status="Approved", sales_invoice=latest_invoice)
+        return
+
+    _update_commission_status(sales_order_name, status="Pending", sales_invoice="")
+
+
+def _update_commission_status(sales_order_name, status, sales_invoice):
+    commissions = frappe.get_all(
+        "Sales Commission",
+        filters={"sales_order": sales_order_name, "docstatus": 1, "status": ["!", "Paid"]},
+        pluck="name",
+    )
+    for name in commissions:
+        commission = frappe.get_doc("Sales Commission", name)
+        commission.status = status
+        commission.sales_invoice = sales_invoice or ""
+        commission.save(ignore_permissions=True)

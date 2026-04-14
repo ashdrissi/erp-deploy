@@ -48,6 +48,37 @@ class TestSigSidebarSetup(unittest.TestCase):
         updated = setup_main_dashboard_sidebar._insert_after_label(rows, "Missing", [{"label": "Three"}])
         self.assertEqual([row["label"] for row in updated], ["One", "Two", "Three"])
 
+    def test_logistics_links_use_page_and_doctype_entries(self):
+        logistics_group = next(
+            group for group in setup_main_dashboard_sidebar.SIDEBAR_GROUPS if group["section"] == "Logistics"
+        )
+
+        links = {row["label"]: row for row in logistics_group["links"]}
+
+        self.assertEqual(links["Logistics Dashboard"]["type"], "Link")
+        self.assertEqual(links["Logistics Dashboard"]["link_type"], "Page")
+        self.assertEqual(links["Logistics Dashboard"]["link_to"], "logistics-dashboard")
+        self.assertEqual(links["Logistics Hub Cockpit"]["link_type"], "Page")
+        self.assertEqual(links["Container Planning"]["link_type"], "Page")
+        self.assertEqual(links["Container Load Plan"]["link_type"], "DocType")
+        self.assertEqual(links["Container Profile"]["link_type"], "DocType")
+        self.assertEqual(links["Shipment Analysis"]["link_type"], "DocType")
+        self.assertEqual(links["Load Plan Shipment"]["link_type"], "DocType")
+
+    def test_logistics_workspace_shortcuts_use_page_and_doctype_entries(self):
+        shortcuts = {
+            row["label"]: row for row in setup_main_dashboard_sidebar.WORKSPACE_SHORTCUTS
+        }
+
+        self.assertEqual(shortcuts["Logistics Dashboard"]["type"], "Page")
+        self.assertEqual(shortcuts["Logistics Dashboard"]["link_to"], "logistics-dashboard")
+        self.assertEqual(shortcuts["Logistics Hub Cockpit"]["type"], "Page")
+        self.assertEqual(shortcuts["Container Planning"]["type"], "Page")
+        self.assertEqual(shortcuts["Container Load Plan"]["type"], "DocType")
+        self.assertEqual(shortcuts["Container Profile"]["type"], "DocType")
+        self.assertEqual(shortcuts["Shipment Analysis"]["type"], "DocType")
+        self.assertEqual(shortcuts["Load Plan Shipment"]["type"], "DocType")
+
 
 if __name__ == "__main__":
     unittest.main()

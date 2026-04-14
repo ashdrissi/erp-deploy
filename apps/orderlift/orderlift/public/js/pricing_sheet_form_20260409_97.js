@@ -49,13 +49,17 @@ function applyNativeLinesGridProperties(frm) {
         "buy_price",
         "expense_total",
         "customs_applied",
+        "base_amount",
         "margin_total_amount",
+        "projected_unit_price",
+        "manual_sell_unit_price",
+        "final_sell_unit_price",
         "final_sell_total",
         "max_discount_percent_allowed",
         "discount_percent",
         "discount_amount",
+        "discounted_sell_unit_price",
         "discounted_sell_total",
-        "commission_amount",
     ]);
     const restrictedColumns = new Set([
         "item",
@@ -85,57 +89,183 @@ function applyNativeLinesGridProperties(frm) {
     frm.refresh_field("lines");
 }
 
-const PRICING_SHEET_WORKSPACE_STORAGE_KEY = "orderlift.pricing-sheet.workspace-columns.v3";
+const PRICING_SHEET_WORKSPACE_STORAGE_KEY = "orderlift.pricing-sheet.workspace-columns.v4";
 const PRICING_SHEET_AGENT_VISIBLE_COLUMNS = [
     "qty",
     "final_sell_unit_price",
     "final_sell_total",
     "max_discount_percent_allowed",
     "discount_percent",
+    "discount_amount",
     "discounted_sell_total",
 ];
 const PRICING_SHEET_WORKSPACE_DEFAULT_COLUMNS = [
     "qty",
     "buy_price",
-    "expense_total",
-    "customs_applied",
-    "tier_modifier_total",
-    "zone_modifier_total",
-    "margin_total_amount",
+    "expense_unit_price",
+    "customs_unit_amount",
+    "landed_cost",
+    "margin_unit_amount",
+    "modifier_total",
+    "total_margin",
+    "projected_unit_price",
+    "manual_sell_unit_price",
+    "final_sell_unit_price",
     "final_sell_total",
-    "max_discount_percent_allowed",
     "discount_percent",
-    "discount_amount",
     "discounted_sell_total",
-    "commission_amount",
-    "benchmark_status",
 ];
 const PRICING_SHEET_WORKSPACE_EDITABLE_TYPES = new Set(["Data", "Currency", "Float", "Int", "Percent", "Check", "Select", "Link"]);
-const PRICING_SHEET_WORKSPACE_HIDDEN_FIELDS = new Set(["item"]);
+const PRICING_SHEET_WORKSPACE_HIDDEN_FIELDS = new Set([
+    "item",
+    "source_buying_price_list",
+    "pricing_scenario",
+    "resolved_pricing_scenario",
+    "resolved_scenario_rule",
+    "resolved_margin_rule",
+    "scenario_source",
+    "has_scenario_override",
+    "has_line_override",
+    "source_bundle",
+    "bundle_group_id",
+    "buy_price_missing",
+    "buy_price_message",
+    "show_in_detail",
+    "customs_weight_kg",
+    "customs_rate_per_kg",
+    "customs_rate_percent",
+    "customs_by_kg",
+    "customs_by_percent",
+    "customs_basis",
+    "transport_allocation_mode",
+    "transport_container_type",
+    "transport_basis_total",
+    "transport_numerator",
+    "transport_allocated",
+    "benchmark_note",
+    "benchmark_reference",
+    "benchmark_source_count",
+    "benchmark_ratio",
+    "benchmark_method",
+    "resolved_benchmark_rule",
+    "margin_source",
+    "pricing_breakdown_json",
+    "commission_rate",
+    "commission_amount",
+]);
+const PRICING_SHEET_SYNTHETIC_COLUMNS = [
+    {
+        fieldname: "landed_cost",
+        label: "Cout U",
+        fieldtype: "Currency",
+        read_only: true,
+        in_list_view: 1,
+    },
+    {
+        fieldname: "modifier_total",
+        label: "Modifiers U",
+        fieldtype: "Currency",
+        read_only: true,
+        in_list_view: 1,
+    },
+    {
+        fieldname: "total_margin",
+        label: "Marge U",
+        fieldtype: "Currency",
+        read_only: true,
+        in_list_view: 1,
+    },
+    {
+        fieldname: "net_profit_margin",
+        label: "Net Profit Margin",
+        fieldtype: "Currency",
+        read_only: true,
+        in_list_view: 1,
+    },
+];
+const PRICING_SHEET_COLUMN_GROUPS = [
+    {
+        key: "pricing",
+        label: "Pricing",
+        fields: [
+            "qty",
+            "buy_price",
+            "expense_total",
+            "customs_applied",
+            "landed_cost",
+            "margin_total_amount",
+            "modifier_total",
+            "total_margin",
+            "final_sell_total",
+            "net_profit_margin",
+            "margin_pct",
+        ],
+    },
+    {
+        key: "discount",
+        label: "Discount",
+        fields: [
+            "max_discount_percent_allowed",
+            "discount_percent",
+            "discount_amount",
+            "discounted_sell_total",
+        ],
+    },
+    {
+        key: "benchmark",
+        label: "Benchmark",
+        fields: [
+            "benchmark_status",
+            "benchmark_price",
+            "benchmark_delta_abs",
+            "benchmark_delta_pct",
+            "material",
+        ],
+    },
+    {
+        key: "secondary",
+        label: "Secondary",
+        fields: [
+            "display_group",
+            "line_type",
+            "show_in_detail",
+            "base_amount",
+            "expense_unit_price",
+            "customs_unit_amount",
+            "margin_unit_amount",
+            "projected_total_price",
+            "margin_pct",
+            "tier_modifier_total",
+            "zone_modifier_total",
+            "breakdown_preview",
+            "static_list_price",
+        ],
+    },
+];
 const PRICING_SHEET_WORKSPACE_LABELS = {
-    buy_price: "Buy Price",
+    buy_price: "PU Achat",
     base_amount: "Total Buy Price",
-    expense_unit_price: "Expenses Unit",
+    expense_unit_price: "Charges U",
     expense_total: "Expenses",
-    customs_unit_amount: "Customs Unit",
+    customs_unit_amount: "Dedouan. U",
     customs_applied: "Customs",
     tier_modifier_amount: "Tier Modifier Unit",
     tier_modifier_total: "Tier Modifier",
     zone_modifier_amount: "Territory Modifier Unit",
     zone_modifier_total: "Territory Modifier",
-    margin_unit_amount: "Profit Margin Unit",
-    margin_total_amount: "Profit Margin",
+    margin_unit_amount: "Base Marge U",
+    margin_total_amount: "Base Margin",
     margin_pct: "Profit Margin %",
-    projected_unit_price: "Sell Price Unit",
+    projected_unit_price: "PUV",
     projected_total_price: "Sell Price",
-    manual_sell_unit_price: "Manual Sell Price Unit",
-    final_sell_unit_price: "Sell Price Unit",
-    final_sell_total: "Sell Total Price",
+    manual_sell_unit_price: "PUV Override",
+    final_sell_unit_price: "PUV Final",
+    final_sell_total: "PTV Brut",
     max_discount_percent_allowed: "Max Discount %",
-    discount_percent: "Discount %",
+    discount_percent: "Remise %",
     discount_amount: "Discount Amount",
     discounted_sell_unit_price: "Discounted Sell Price Unit",
-    discounted_sell_total: "Discounted Sell Price",
+    discounted_sell_total: "PTV Net",
     commission_rate: "Commission %",
     commission_amount: "Commission",
 };
@@ -167,12 +297,12 @@ function isManualOverrideActive(row) {
 function getPricingSheetWorkspaceAllColumns(frm) {
     const grid = getPricingSheetGrid(frm);
     if (!grid || !Array.isArray(grid.docfields)) {
-        return [];
+        return PRICING_SHEET_SYNTHETIC_COLUMNS;
     }
     const restrictedAgent = isRestrictedAgentUser();
     const allowed = new Set(PRICING_SHEET_AGENT_VISIBLE_COLUMNS);
 
-    return grid.docfields
+    const docfieldColumns = grid.docfields
         .filter((df) => {
             if (!df || !df.fieldname || PRICING_SHEET_WORKSPACE_HIDDEN_FIELDS.has(df.fieldname)) {
                 return false;
@@ -193,10 +323,32 @@ function getPricingSheetWorkspaceAllColumns(frm) {
             read_only: Number(df.read_only || 0) === 1,
             in_list_view: Number(df.in_list_view || 0) === 1,
         }));
+
+    return [...PRICING_SHEET_SYNTHETIC_COLUMNS, ...docfieldColumns];
 }
 
 function getPricingSheetWorkspaceColumn(frm, fieldname) {
     return getPricingSheetWorkspaceAllColumns(frm).find((column) => column.fieldname === fieldname) || null;
+}
+
+function getPricingSheetWorkspaceGroupedColumns(frm) {
+    const columns = getPricingSheetWorkspaceAllColumns(frm);
+    const byField = new Map(columns.map((column) => [column.fieldname, column]));
+    const grouped = PRICING_SHEET_COLUMN_GROUPS.map((group) => ({
+        ...group,
+        columns: group.fields.map((fieldname) => byField.get(fieldname)).filter(Boolean),
+    })).filter((group) => group.columns.length);
+
+    const assigned = new Set(grouped.flatMap((group) => group.columns.map((column) => column.fieldname)));
+    const ungrouped = columns.filter((column) => !assigned.has(column.fieldname));
+    if (ungrouped.length) {
+        grouped.push({
+            key: "other",
+            label: "Other",
+            columns: ungrouped,
+        });
+    }
+    return grouped;
 }
 
 function canInlineEditPricingSheetWorkspaceColumn(column) {
@@ -250,6 +402,10 @@ function savePricingSheetWorkspaceColumns(fieldnames) {
 }
 
 function getPricingSheetWorkspaceColumns(frm) {
+    if (isRestrictedAgentUser()) {
+        return PRICING_SHEET_AGENT_VISIBLE_COLUMNS.filter((fieldname) => getPricingSheetWorkspaceColumn(frm, fieldname));
+    }
+
     if (!frm.__ps_workspace_columns) {
         const stored = loadPricingSheetWorkspaceColumns();
         const valid = stored.filter((fieldname) => getPricingSheetWorkspaceColumn(frm, fieldname));
@@ -261,7 +417,17 @@ function getPricingSheetWorkspaceColumns(frm) {
     return frm.__ps_workspace_columns;
 }
 
+function getPricingSheetWorkspaceOrderedColumns(frm) {
+    return getPricingSheetWorkspaceColumns(frm)
+        .map((fieldname) => getPricingSheetWorkspaceColumn(frm, fieldname))
+        .filter(Boolean);
+}
+
 function setPricingSheetWorkspaceColumns(frm, fieldnames) {
+    if (isRestrictedAgentUser()) {
+        return;
+    }
+
     const normalized = getPricingSheetWorkspaceAllColumns(frm)
         .map((column) => column.fieldname)
         .filter((fieldname) => fieldnames.includes(fieldname));
@@ -269,6 +435,52 @@ function setPricingSheetWorkspaceColumns(frm, fieldnames) {
         ? normalized
         : getPricingSheetWorkspaceDefaultColumns(frm);
     savePricingSheetWorkspaceColumns(frm.__ps_workspace_columns);
+}
+
+function movePricingSheetWorkspaceColumn(frm, fieldname, targetFieldname) {
+    const columns = [...getPricingSheetWorkspaceColumns(frm)];
+    const fromIndex = columns.indexOf(fieldname);
+    const toIndex = columns.indexOf(targetFieldname);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+    columns.splice(fromIndex, 1);
+    columns.splice(toIndex, 0, fieldname);
+    setPricingSheetWorkspaceColumns(frm, columns);
+}
+
+function renderPricingSheetWorkspaceColumnPopover(frm) {
+    const groupedColumns = getPricingSheetWorkspaceGroupedColumns(frm);
+    const orderedColumns = getPricingSheetWorkspaceOrderedColumns(frm);
+
+    return `
+        <div class="ps-workspace-column-popover ${Boolean(frm.__ps_workspace_columns_open) ? "is-open" : ""}">
+            <div class="ps-workspace-column-title">${__("Columns")}</div>
+            <div class="ps-workspace-column-order-title">${__("Display Order")}</div>
+            <div class="ps-workspace-column-order-list">
+                ${orderedColumns.map((column) => `
+                    <div class="ps-workspace-column-order-item" draggable="true" data-ps-order-item="${column.fieldname}">
+                        <span class="ps-workspace-drag-handle">::</span>
+                        <span>${escapePricingSheetText(__(column.label))}</span>
+                    </div>
+                `).join("")}
+            </div>
+            ${groupedColumns.map((group) => `
+                <div class="ps-workspace-column-group">
+                    <div class="ps-workspace-column-group-title">${escapePricingSheetText(__(group.label))}</div>
+                    <div class="ps-workspace-column-group-grid">
+                        ${group.columns.map((column) => {
+                            const checked = getPricingSheetWorkspaceColumns(frm).includes(column.fieldname) ? "checked" : "";
+                            return `
+                                <label class="ps-workspace-column-option">
+                                    <input type="checkbox" data-ps-column="${column.fieldname}" ${checked}>
+                                    <span>${escapePricingSheetText(__(column.label))}</span>
+                                </label>
+                            `;
+                        }).join("")}
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `;
 }
 
 function getPricingSheetWorkspaceRoot(frm) {
@@ -289,6 +501,28 @@ function getPricingSheetWorkspaceRoot(frm) {
 function schedulePricingSheetWorkspaceRefresh(frm) {
     clearTimeout(frm.__ps_workspace_refresh_timer);
     frm.__ps_workspace_refresh_timer = setTimeout(() => renderPricingSheetWorkspace(frm), 60);
+}
+
+function schedulePricingSheetServerRecalculate(frm, delay = 220) {
+    if (!frm.doc || frm.is_new()) {
+        schedulePricingSheetWorkspaceRefresh(frm);
+        return;
+    }
+
+    clearTimeout(frm.__ps_server_recalc_timer);
+    frm.__ps_server_recalc_timer = setTimeout(async () => {
+        if (frm.__ps_server_recalc_inflight) {
+            return;
+        }
+        frm.__ps_server_recalc_inflight = true;
+        try {
+            await frm.call("recalculate_preview");
+            frm.refresh_field("lines");
+            schedulePricingSheetWorkspaceRefresh(frm);
+        } finally {
+            frm.__ps_server_recalc_inflight = false;
+        }
+    }, delay);
 }
 
 function bindPricingSheetWorkspaceGridSync(frm) {
@@ -351,13 +585,14 @@ function getPricingSheetWorkspaceSummary(frm) {
     const totalCustoms = lines.reduce((sum, row) => sum + Number(row.customs_applied || 0), 0);
     const totalTierModifiers = lines.reduce((sum, row) => sum + Number(row.tier_modifier_total || 0), 0);
     const totalTerritoryModifiers = lines.reduce((sum, row) => sum + Number(row.zone_modifier_total || 0), 0);
-    const totalPolicyMargin = lines.reduce((sum, row) => sum + Number(row.margin_total_amount || 0), 0);
+    const totalBaseMargin = lines.reduce((sum, row) => sum + Number(row.margin_total_amount || 0), 0);
+    const totalModifiers = totalTierModifiers + totalTerritoryModifiers;
+    const totalMargin = totalBaseMargin + totalModifiers;
     const costBeforeMargin = totalBuy + totalExpenses + totalCustoms + totalTierModifiers + totalTerritoryModifiers;
     const finalSell = lines.reduce((sum, row) => sum + Number(row.final_sell_total || 0), 0);
     const totalDiscount = lines.reduce((sum, row) => sum + Number(row.discount_amount || 0), 0);
     const discountedSell = lines.reduce((sum, row) => sum + Number(row.discounted_sell_total || row.final_sell_total || 0), 0);
-    const totalCommission = lines.reduce((sum, row) => sum + Number(row.commission_amount || 0), 0);
-    const effectiveMargin = discountedSell - costBeforeMargin;
+    const netProfitMargin = discountedSell - costBeforeMargin;
     const policyMarginWeightedBase = lines.reduce((sum, row) => sum + (Number(row.base_amount || 0) * Number(row.margin_pct || 0)), 0);
     const totalPolicyBase = lines.reduce((sum, row) => sum + Number(row.base_amount || 0), 0);
     const policyMarginPercent = totalPolicyBase ? (policyMarginWeightedBase / totalPolicyBase) : 0;
@@ -376,36 +611,36 @@ function getPricingSheetWorkspaceSummary(frm) {
             value: formatPricingSheetCurrency(totalCustoms),
         },
         {
-            label: __("Tier Modifier"),
-            value: formatPricingSheetCurrency(totalTierModifiers),
+            label: __("Landed Cost"),
+            value: formatPricingSheetCurrency(totalBuy + totalExpenses + totalCustoms),
         },
         {
-            label: __("Territory Modifier"),
-            value: formatPricingSheetCurrency(totalTerritoryModifiers),
+            label: __("Base Margin"),
+            value: formatPricingSheetCurrency(totalBaseMargin),
         },
         {
-            label: __("Profit Margin"),
-            value: formatPricingSheetCurrency(totalPolicyMargin),
+            label: __("Modifiers"),
+            value: formatPricingSheetCurrency(totalModifiers),
         },
         {
-            label: __("Final Sell Price"),
+            label: __("Total Margin"),
+            value: formatPricingSheetCurrency(totalMargin),
+        },
+        {
+            label: __("Sell Total Price"),
             value: formatPricingSheetCurrency(finalSell),
         },
         {
-            label: __("Total Discount"),
+            label: __("Discount"),
             value: formatPricingSheetCurrency(totalDiscount),
         },
         {
-            label: __("Discounted Sell Price"),
+            label: __("Total After Discount"),
             value: formatPricingSheetCurrency(discountedSell),
         },
         {
-            label: __("Commission"),
-            value: formatPricingSheetCurrency(totalCommission),
-        },
-        {
             label: __("Net Profit Margin"),
-            value: formatPricingSheetCurrency(effectiveMargin),
+            value: formatPricingSheetCurrency(netProfitMargin),
         },
         {
             label: __("Profit Margin %"),
@@ -698,6 +933,32 @@ function getPricingSheetWorkspaceDisplayValue(frm, row, column) {
     }
 
     const value = row[column.fieldname];
+    if (column.fieldname === "landed_cost") {
+        const qty = Number(row.qty || 0) || 1;
+        return formatPricingSheetCurrency(
+            (Number(row.base_amount || 0) + Number(row.expense_total || 0) + Number(row.customs_applied || 0)) / qty
+        );
+    }
+    if (column.fieldname === "modifier_total") {
+        const qty = Number(row.qty || 0) || 1;
+        return formatPricingSheetCurrency((Number(row.tier_modifier_total || 0) + Number(row.zone_modifier_total || 0)) / qty);
+    }
+    if (column.fieldname === "total_margin") {
+        const qty = Number(row.qty || 0) || 1;
+        return formatPricingSheetCurrency(
+            (Number(row.margin_total_amount || 0) + Number(row.tier_modifier_total || 0) + Number(row.zone_modifier_total || 0)) / qty
+        );
+    }
+    if (column.fieldname === "net_profit_margin") {
+        return formatPricingSheetCurrency(
+            Number(row.discounted_sell_total || row.final_sell_total || 0)
+            - Number(row.base_amount || 0)
+            - Number(row.expense_total || 0)
+            - Number(row.customs_applied || 0)
+            - Number(row.tier_modifier_total || 0)
+            - Number(row.zone_modifier_total || 0)
+        );
+    }
     if (column.fieldname === "benchmark_status") {
         return statusBadge(value);
     }
@@ -722,12 +983,32 @@ function getPricingSheetWorkspaceDisplayValue(frm, row, column) {
     return escapePricingSheetText(value || "");
 }
 
+function getPricingSheetWorkspaceColumnTone(fieldname) {
+    if (["landed_cost"].includes(fieldname)) {
+        return "is-landed";
+    }
+    if (["margin_unit_amount", "margin_total_amount", "modifier_total", "total_margin", "net_profit_margin", "margin_pct"].includes(fieldname)) {
+        return "is-margin";
+    }
+    if (["projected_unit_price"].includes(fieldname)) {
+        return "is-sell-projected";
+    }
+    if (["final_sell_unit_price", "final_sell_total", "discounted_sell_unit_price", "discounted_sell_total", "projected_total_price"].includes(fieldname)) {
+        return "is-sell-final";
+    }
+    if (["max_discount_percent_allowed", "discount_percent", "discount_amount", "discounted_sell_unit_price", "discounted_sell_total"].includes(fieldname)) {
+        return "is-discount";
+    }
+    return "";
+}
+
 function getPricingSheetWorkspaceCellHtml(frm, row, column) {
     const value = row[column.fieldname];
     const alignClass = ["Currency", "Float", "Int", "Percent"].includes(column.fieldtype) ? "is-right" : "";
+    const toneClass = getPricingSheetWorkspaceColumnTone(column.fieldname);
     if (!canInlineEditPricingSheetWorkspaceColumn(column)) {
         return `
-            <td class="${alignClass}">
+            <td class="${alignClass} ${toneClass}">
                 <div class="ps-workspace-display-value">${getPricingSheetWorkspaceDisplayValue(frm, row, column)}</div>
             </td>
         `;
@@ -735,7 +1016,7 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
 
     if (column.fieldtype === "Link") {
         return `
-            <td>
+            <td class="${toneClass}">
                 <div class="ps-workspace-link-host" data-ps-link-editor="1" data-row-name="${row.name}" data-fieldname="${column.fieldname}"></div>
             </td>
         `;
@@ -743,7 +1024,7 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
 
     if (column.fieldtype === "Check") {
         return `
-            <td>
+            <td class="${toneClass}">
                 <label class="ps-workspace-inline-check">
                     <input type="checkbox" data-ps-cell-check="1" data-row-name="${row.name}" data-fieldname="${column.fieldname}" ${Number(value || 0) === 1 ? "checked" : ""}>
                 </label>
@@ -757,7 +1038,7 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
             .map((option) => option.trim())
             .filter((option, index, list) => index === 0 || option || list[0] !== "");
         return `
-            <td>
+            <td class="${toneClass}">
                 <select class="ps-workspace-cell-input ${alignClass}" data-ps-cell-select="1" data-row-name="${row.name}" data-fieldname="${column.fieldname}">
                     ${options.map((option) => {
                         const selected = String(value || "") === option ? "selected" : "";
@@ -772,7 +1053,7 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
     const step = column.fieldtype === "Int" ? "1" : "any";
     const fieldClass = column.fieldname === "qty" ? "ps-workspace-cell-input is-qty" : "ps-workspace-cell-input";
     return `
-        <td>
+        <td class="${toneClass}">
             <input
                 class="${fieldClass} ${alignClass}"
                 data-ps-cell-input="1"
@@ -787,24 +1068,47 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
 
 function getPricingSheetWorkspaceTableHtml(frm) {
     const lines = frm.doc.lines || [];
-    const selectedFieldnames = getPricingSheetWorkspaceColumns(frm);
-    const columns = getPricingSheetWorkspaceAllColumns(frm).filter((column) => selectedFieldnames.includes(column.fieldname));
+    const columns = getPricingSheetWorkspaceOrderedColumns(frm);
     const selectedRows = new Set(getPricingSheetWorkspaceSelectedRows(frm));
 
     if (!lines.length) {
         return `
-            <div class="ps-workspace-empty">
-                <div class="ps-workspace-empty-title">${__("No items")}</div>
+            <div class="ps-workspace-empty-state">
+                <div class="ps-workspace-empty">
+                    <div class="ps-workspace-empty-title">${__("No items")}</div>
+                </div>
+                <div class="ps-workspace-footer">
+                    <div class="ps-workspace-footer-meta">${__("Start with your first line")}</div>
+                    <div class="ps-workspace-footer-actions">
+                        <div class="ps-workspace-column-menu">
+                            <button class="btn btn-default btn-xs" type="button" data-ps-toggle-columns>${__("Columns")}</button>
+                            ${renderPricingSheetWorkspaceColumnPopover(frm)}
+                        </div>
+                        <button class="btn btn-primary btn-xs" type="button" data-ps-add-line>${__("Add Row")}</button>
+                    </div>
+                </div>
             </div>
         `;
     }
 
     const headerHtml = columns.map((column) => `
-        <th class="${["Currency", "Float", "Int", "Percent"].includes(column.fieldtype) ? "is-right" : ""}">${escapePricingSheetText(__(column.label))}</th>
+        <th class="${["Currency", "Float", "Int", "Percent"].includes(column.fieldtype) ? "is-right" : ""} ${getPricingSheetWorkspaceColumnTone(column.fieldname)}">${escapePricingSheetText(__(column.label))}</th>
     `).join("");
 
     const bodyHtml = lines.map((row, index) => {
         const cellsHtml = columns.map((column) => getPricingSheetWorkspaceCellHtml(frm, row, column)).join("");
+        const lineMeta = [
+            `#${escapePricingSheetText(row.idx || index + 1)}`,
+            escapePricingSheetText(row.line_type || __("Standard")),
+        ];
+        if (Number(row.discount_percent || 0) > 0) {
+            lineMeta.push(`${formatPricingSheetPercent(row.discount_percent || 0)} ${__("discount")}`);
+        } else if (Number(row.max_discount_percent_allowed || 0) > 0) {
+            lineMeta.push(`${formatPricingSheetPercent(row.max_discount_percent_allowed || 0)} ${__("max")}`);
+        }
+        if (row.benchmark_status) {
+            lineMeta.push(escapePricingSheetText(row.benchmark_status));
+        }
 
         return `
             <tr class="${selectedRows.has(row.name) ? "is-selected" : ""}" data-ps-row-name="${row.name}">
@@ -814,10 +1118,7 @@ function getPricingSheetWorkspaceTableHtml(frm) {
                 <td>
                     <div class="ps-workspace-item-cell">
                         <div class="ps-workspace-link-host ps-workspace-item-link" data-ps-link-editor="1" data-row-name="${row.name}" data-fieldname="item"></div>
-                        <div class="ps-workspace-item-meta">
-                            <span>#${escapePricingSheetText(row.idx || index + 1)}</span>
-                            <span>${escapePricingSheetText(row.line_type || __("Standard"))}</span>
-                        </div>
+                        <div class="ps-workspace-item-meta is-inline">${lineMeta.map((part) => `<span>${part}</span>`).join("")}</div>
                     </div>
                 </td>
                 ${cellsHtml}
@@ -846,18 +1147,7 @@ function getPricingSheetWorkspaceTableHtml(frm) {
             <div class="ps-workspace-footer-actions">
                 <div class="ps-workspace-column-menu">
                     <button class="btn btn-default btn-xs" type="button" data-ps-toggle-columns>${__("Columns")}</button>
-                    <div class="ps-workspace-column-popover ${Boolean(frm.__ps_workspace_columns_open) ? "is-open" : ""}">
-                        <div class="ps-workspace-column-title">${__("Columns")}</div>
-                        ${getPricingSheetWorkspaceAllColumns(frm).map((column) => {
-                            const checked = getPricingSheetWorkspaceColumns(frm).includes(column.fieldname) ? "checked" : "";
-                            return `
-                                <label class="ps-workspace-column-option">
-                                    <input type="checkbox" data-ps-column="${column.fieldname}" ${checked}>
-                                    <span>${escapePricingSheetText(__(column.label))}</span>
-                                </label>
-                            `;
-                        }).join("")}
-                    </div>
+                    ${renderPricingSheetWorkspaceColumnPopover(frm)}
                 </div>
                 <button class="btn btn-default btn-xs" type="button" data-ps-delete-selected ${selectedCount ? "" : "disabled"}>${__("Delete")}</button>
                 <button class="btn btn-primary btn-xs" type="button" data-ps-add-line>${__("Add Row")}</button>
@@ -1019,6 +1309,28 @@ function renderPricingSheetWorkspace(frm) {
         renderPricingSheetWorkspace(frm);
     });
 
+    let draggedFieldname = null;
+    $root.find("[data-ps-order-item]").on("dragstart", (event) => {
+        draggedFieldname = event.currentTarget.getAttribute("data-ps-order-item");
+        event.currentTarget.classList.add("is-dragging");
+    });
+    $root.find("[data-ps-order-item]").on("dragend", (event) => {
+        draggedFieldname = null;
+        event.currentTarget.classList.remove("is-dragging");
+    });
+    $root.find("[data-ps-order-item]").on("dragover", (event) => {
+        event.preventDefault();
+    });
+    $root.find("[data-ps-order-item]").on("drop", (event) => {
+        event.preventDefault();
+        const targetFieldname = event.currentTarget.getAttribute("data-ps-order-item");
+        if (!draggedFieldname || !targetFieldname || draggedFieldname === targetFieldname) {
+            return;
+        }
+        movePricingSheetWorkspaceColumn(frm, draggedFieldname, targetFieldname);
+        renderPricingSheetWorkspace(frm);
+    });
+
     $root.find("[data-ps-add-line]").on("click", () => addPricingSheetLine(frm));
     $root.find("[data-ps-delete-selected]").on("click", () => {
         deletePricingSheetWorkspaceSelectedRows(frm);
@@ -1057,7 +1369,7 @@ function renderPricingSheetWorkspace(frm) {
 
 function ensurePricingSheetStyles(frm) {
     const linkId = "pricing-sheet-ux-css";
-    const version = "v=20260409-77";
+    const version = "v=20260409-97";
     let link = document.getElementById(linkId);
     if (!link) {
         link = document.createElement("link");
@@ -1065,7 +1377,7 @@ function ensurePricingSheetStyles(frm) {
         link.rel = "stylesheet";
         document.head.appendChild(link);
     }
-    const expected = `/assets/orderlift/css/pricing_sheet_20260409_68.css?${version}`;
+    const expected = `/assets/orderlift/css/pricing_sheet_20260409_80.css?${version}`;
     if (link.href !== expected) link.href = expected;
 }
 
@@ -1870,6 +2182,7 @@ frappe.ui.form.on("Pricing Sheet Item", {
                     frappe.model.set_value(cdt, cdn, "display_group", data.item_group || "Ungrouped");
                 }
                 frm.refresh_field("lines");
+                schedulePricingSheetServerRecalculate(frm);
                 schedulePricingSheetWorkspaceRefresh(frm);
             },
         });
@@ -1895,12 +2208,14 @@ frappe.ui.form.on("Pricing Sheet Item", {
                 const data = r.message || {};
                 frappe.model.set_value(cdt, cdn, "buy_price", data.buy_price || 0);
                 frm.refresh_field("lines");
+                schedulePricingSheetServerRecalculate(frm);
                 schedulePricingSheetWorkspaceRefresh(frm);
             },
         });
     },
 
     qty(frm) {
+        schedulePricingSheetServerRecalculate(frm);
         schedulePricingSheetWorkspaceRefresh(frm);
     },
 
@@ -1909,14 +2224,17 @@ frappe.ui.form.on("Pricing Sheet Item", {
     },
 
     pricing_scenario(frm) {
+        schedulePricingSheetServerRecalculate(frm);
         schedulePricingSheetWorkspaceRefresh(frm);
     },
 
     manual_sell_unit_price(frm) {
+        schedulePricingSheetServerRecalculate(frm);
         schedulePricingSheetWorkspaceRefresh(frm);
     },
 
     discount_percent(frm) {
+        schedulePricingSheetServerRecalculate(frm);
         schedulePricingSheetWorkspaceRefresh(frm);
     },
 

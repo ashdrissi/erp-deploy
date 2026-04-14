@@ -70,6 +70,7 @@
         /* ── Zone pills ─── */
         const zonesRaw = String(doc.allowed_zones || "").trim();
         const zones = zonesRaw ? zonesRaw.split(",").map(z => z.trim()).filter(Boolean) : [];
+        const zoneCount = zones.length;
         const zonePillsHtml = zones.length
             ? zones.map(z => `
                 <span class="ol-cp-zone-pill" style="display:inline-flex;align-items:center;background:${theme.bg};color:${theme.accent};border:1px solid ${theme.border};font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.02em;cursor:default;">
@@ -107,6 +108,7 @@
         const weightKg = Number(doc.max_weight_kg || 0);
         const volumeM3 = Number(doc.max_volume_m3 || 0);
         const costRank = Number(doc.cost_rank || 100);
+        const density = weightKg > 0 && volumeM3 > 0 ? (weightKg / volumeM3) : 0;
 
         // Weight: show kg or tonnes
         const weightDisplay = weightKg >= 1000
@@ -130,6 +132,11 @@
                     "Cost Rank", String(costRank), costRank <= 50 ? "preferred" : costRank <= 100 ? "standard" : "fallback",
                     `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>`,
                     costRank <= 50 ? "#10B981" : costRank <= 100 ? "#F59E0B" : "#94A3B8", 120
+                )}
+                ${statCard(
+                    "Density", density ? density.toFixed(0) : "0", "kg / m³",
+                    `<path d="M12 3v18"/><path d="M6 9l6-6 6 6"/><path d="M6 15l6 6 6-6"/>`,
+                    "#EC4899", 180
                 )}
             </div>`;
 
@@ -220,6 +227,25 @@
                         ${zonePillsHtml}
                     </div>
                     ${dateRangeHtml}
+                </div>
+
+                <!-- Bottom insight row -->
+                <div style="padding: 14px 24px; border-top: 1px solid #F8FAFC; background:#FFFCFA; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;">
+                    <div style="background:#fff;border:1px solid #F1F5F9;border-radius:12px;padding:12px 14px;">
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8;">Coverage</div>
+                        <div style="font-size:16px;font-weight:800;color:#0F172A;margin-top:4px;">${zoneCount || "All"}</div>
+                        <div style="font-size:11px;color:#64748B;margin-top:2px;">${zoneCount ? __("allowed zones") : __("all zones allowed")}</div>
+                    </div>
+                    <div style="background:#fff;border:1px solid #F1F5F9;border-radius:12px;padding:12px 14px;">
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8;">Profile Mode</div>
+                        <div style="font-size:16px;font-weight:800;color:#0F172A;margin-top:4px;">${isActive ? __("Dispatch Ready") : __("Standby")}</div>
+                        <div style="font-size:11px;color:#64748B;margin-top:2px;">${isActive ? __("available for recommendation") : __("excluded from planning")}</div>
+                    </div>
+                    <div style="background:#fff;border:1px solid #F1F5F9;border-radius:12px;padding:12px 14px;">
+                        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8;">Quick Action</div>
+                        <div style="font-size:16px;font-weight:800;color:${theme.accent};margin-top:4px;">${__("Review Plans")}</div>
+                        <div style="font-size:11px;color:#64748B;margin-top:2px;">${__("open linked load plans from toolbar")}</div>
+                    </div>
                 </div>
             </div>
         `;

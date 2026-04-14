@@ -115,7 +115,7 @@ function renderWorkbenchResults(frm, payload) {
             </div>
             <div class="pswb-empty">${__("Configure source tables above. Results will refresh automatically when values change.")}</div>
             <div class="pswb-table-wrap"><table class="pswb-table"><thead><tr>
-                <th>${__("Item")}</th><th>${__("Buying List")}</th><th>${__("Expenses Policy")}</th><th>${__("Dyn Buy")}</th><th>${__("Dyn Expenses")}</th><th>${__("Benchmark Price")}</th><th>${__("Dyn Customs")}</th><th>${__("Tier Mod")}</th><th>${__("Territory Mod")}</th><th>${__("Dyn Final")}</th><th>${__("Static List")}</th><th>${__("Static Price")}</th>
+                <th>${__("Item")}</th><th>${__("Buying List")}</th><th>${__("Politique Charges")}</th><th>${__("PU Achat")}</th><th>${__("Charges U")}</th><th>${__("Benchmark")}</th><th>${__("Dedouan. U")}</th><th>${__("Modifiers U")}</th><th>${__("PUV Final")}</th><th>${__("Sell List")}</th><th>${__("PTV Brut")}</th>
             </tr></thead><tbody><tr><td colspan="12">${__("No simulation results yet.")}</td></tr></tbody></table></div>
         `);
         return;
@@ -181,9 +181,9 @@ function renderWorkbenchSingle(frm, data) {
         return `
             ${renderContextBarFromPayload(null, data, "Static", frm)}
             <div class="pswb-metrics">
-                ${metricCard(__("Priced"), data.summary?.priced_items || 0)}
-                ${metricCard(__("Missing"), data.summary?.missing_items || 0)}
-                ${metricCard(__("Loaded Lists"), data.summary?.selling_lists_count || 0)}
+                ${metricCard(__("Priced Items"), data.summary?.priced_items || 0)}
+                ${metricCard(__("Missing Prices"), data.summary?.missing_items || 0)}
+                ${metricCard(__("Sell Lists"), data.summary?.selling_lists_count || 0)}
             </div>
             ${renderWorkbenchWarnings(data.warnings || [])}
             ${renderColumnConfigurator("Static")}
@@ -199,7 +199,7 @@ function renderWorkbenchSingle(frm, data) {
         <div class="pswb-metrics">
             ${metricCard(__("Simulated Items"), data.summary?.item_count || (data.rows || []).length)}
             ${metricCard(__("Policies"), data.summary?.policy_count || 0)}
-            ${metricCard(__("Global Margin"), `${Number(data.summary?.global_margin_pct || 0).toFixed(1)}%`)}
+            ${metricCard(__("Marge %"), `${Number(data.summary?.global_margin_pct || 0).toFixed(1)}%`)}
         </div>
         ${renderWorkbenchWarnings(data.warnings || [])}
         ${renderColumnConfigurator("Dynamic")}
@@ -233,55 +233,52 @@ function collectWorkbenchPayload(frm) {
 }
 
 const DEFAULT_COLUMNS = {
-    Compare: ["item", "material", "buying_list", "expenses_policy", "dyn_buy", "expenses", "benchmark_price", "dyn_customs", "dyn_tier_mod", "dyn_territory_mod", "dyn_margin", "dyn_final", "static_list", "static_price", "static_margin"],
-    Dynamic: ["item", "material", "buying_list", "expenses_policy", "customs_policy", "benchmark_policy", "buy", "expenses", "benchmark_price", "customs", "tier_mod", "territory_mod", "margin_unit", "final", "margin"],
-    Static: ["item", "material", "static_list", "reference_buy", "static_price", "static_margin", "options"],
+    Compare: ["item", "buying_list", "expenses_policy", "dyn_buy", "expenses", "dyn_customs", "benchmark_price", "dyn_tier_mod", "dyn_territory_mod", "dyn_margin", "dyn_final", "static_list", "static_price", "static_margin"],
+    Dynamic: ["item", "buying_list", "expenses_policy", "buy", "expenses", "customs", "benchmark_price", "tier_mod", "territory_mod", "margin_unit", "final", "margin"],
+    Static: ["item", "static_list", "reference_buy", "static_price", "static_margin", "options"],
 };
 
 const COLUMN_DEFS = {
     Compare: [
         { key: "item", label: __("Item") },
-        { key: "material", label: __("Material") },
         { key: "buying_list", label: __("Buying List") },
-        { key: "expenses_policy", label: __("Expenses Policy") },
-        { key: "customs_policy", label: __("Customs Policy") },
-        { key: "benchmark_policy", label: __("Margin & Benchmark Policy") },
-        { key: "dyn_buy", label: __("Dyn Buy") },
-        { key: "expenses", label: __("Dyn Expenses") },
-        { key: "dyn_customs", label: __("Dyn Customs") },
+        { key: "expenses_policy", label: __("Politique Charges") },
+        { key: "customs_policy", label: __("Politique Douane") },
+        { key: "benchmark_policy", label: __("Politique Marge") },
+        { key: "dyn_buy", label: __("PU Achat") },
+        { key: "expenses", label: __("Charges U") },
+        { key: "dyn_customs", label: __("Dedouan. U") },
         { key: "dyn_tier_mod", label: __("Tier Mod") },
         { key: "dyn_territory_mod", label: __("Territory Mod") },
-        { key: "benchmark_price", label: __("Benchmark Price") },
-        { key: "dyn_margin", label: __("Dyn Margin") },
-        { key: "dyn_final", label: __("Dyn Final") },
-        { key: "static_list", label: __("Static List") },
-        { key: "static_price", label: __("Static Price") },
-        { key: "static_margin", label: __("Static Margin") },
+        { key: "benchmark_price", label: __("Benchmark") },
+        { key: "dyn_margin", label: __("Marge U") },
+        { key: "dyn_final", label: __("PUV Final") },
+        { key: "static_list", label: __("Sell List") },
+        { key: "static_price", label: __("PTV Brut") },
+        { key: "static_margin", label: __("Marge % statique") },
     ],
     Dynamic: [
         { key: "item", label: __("Item") },
-        { key: "material", label: __("Material") },
         { key: "buying_list", label: __("Buying List") },
-        { key: "expenses_policy", label: __("Expenses Policy") },
-        { key: "customs_policy", label: __("Customs Policy") },
-        { key: "benchmark_policy", label: __("Margin & Benchmark Policy") },
-        { key: "buy", label: __("Buy") },
-        { key: "expenses", label: __("Expenses") },
-        { key: "customs", label: __("Customs") },
+        { key: "expenses_policy", label: __("Politique Charges") },
+        { key: "customs_policy", label: __("Politique Douane") },
+        { key: "benchmark_policy", label: __("Politique Marge") },
+        { key: "buy", label: __("PU Achat") },
+        { key: "expenses", label: __("Charges U") },
+        { key: "customs", label: __("Dedouan. U") },
         { key: "tier_mod", label: __("Tier Mod") },
         { key: "territory_mod", label: __("Territory Mod") },
-        { key: "benchmark_price", label: __("Benchmark Price") },
-        { key: "margin_unit", label: __("Margin Unit") },
-        { key: "final", label: __("Final") },
-        { key: "margin", label: __("Margin") },
+        { key: "benchmark_price", label: __("Benchmark") },
+        { key: "margin_unit", label: __("Marge U") },
+        { key: "final", label: __("PUV Final") },
+        { key: "margin", label: __("Marge %") },
     ],
     Static: [
         { key: "item", label: __("Item") },
-        { key: "material", label: __("Material") },
-        { key: "static_list", label: __("List") },
-        { key: "reference_buy", label: __("Reference Buy") },
-        { key: "static_price", label: __("Price") },
-        { key: "static_margin", label: __("Margin") },
+        { key: "static_list", label: __("Sell List") },
+        { key: "reference_buy", label: __("PU Achat") },
+        { key: "static_price", label: __("PTV Brut") },
+        { key: "static_margin", label: __("Marge % statique") },
         { key: "options", label: __("Options") },
     ],
 };

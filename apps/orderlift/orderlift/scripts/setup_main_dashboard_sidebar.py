@@ -57,9 +57,15 @@ SIDEBAR_GROUPS = [
     {
         "section": "Logistics",
         "create_after": None,
-        "manage_section": False,
+        "manage_section": True,
         "links": [
             {"type": "Link", "label": "Logistics Dashboard", "link_type": "Page", "link_to": "logistics-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Logistics Hub Cockpit", "link_type": "Page", "link_to": "logistics-hub-cockpit", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Container Planning", "link_type": "Page", "link_to": "forecast-plans", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Container Load Plan", "link_type": "DocType", "link_to": "Container Load Plan", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Container Profile", "link_type": "DocType", "link_to": "Container Profile", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Shipment Analysis", "link_type": "DocType", "link_to": "Shipment Analysis", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Load Plan Shipment", "link_type": "DocType", "link_to": "Load Plan Shipment", "child": 1, "icon": "dot"},
         ],
     },
     {
@@ -88,6 +94,13 @@ SIDEBAR_GROUPS = [
 ]
 
 WORKSPACE_SHORTCUTS = [
+    {"label": "Logistics Dashboard", "type": "Page", "link_to": "logistics-dashboard"},
+    {"label": "Logistics Hub Cockpit", "type": "Page", "link_to": "logistics-hub-cockpit"},
+    {"label": "Container Planning", "type": "Page", "link_to": "forecast-plans"},
+    {"label": "Container Load Plan", "type": "DocType", "link_to": "Container Load Plan"},
+    {"label": "Container Profile", "type": "DocType", "link_to": "Container Profile"},
+    {"label": "Shipment Analysis", "type": "DocType", "link_to": "Shipment Analysis"},
+    {"label": "Load Plan Shipment", "type": "DocType", "link_to": "Load Plan Shipment"},
     {"label": "SIG Dashboard", "type": "Page", "link_to": "sig-dashboard"},
     {"label": "Project Map", "type": "Page", "link_to": "project-map"},
     {"label": "Mobile QC", "type": "Page", "link_to": "sig-qc"},
@@ -221,7 +234,8 @@ def _sync_workspace_shortcuts(workspace_name: str) -> None:
                 "idx": start_idx + offset,
                 "label": shortcut["label"],
                 "type": shortcut["type"],
-                "link_to": shortcut["link_to"],
+                "link_to": shortcut.get("link_to"),
+                "url": shortcut.get("url"),
             }
         )
         doc.db_insert()
@@ -236,9 +250,51 @@ def _sync_workspace_shortcuts(workspace_name: str) -> None:
         block
         for block in content
         if not str(block.get("id", "")).startswith("sig_main_dashboard_")
+        and not str(block.get("id", "")).startswith("logistics_main_dashboard_")
     ]
     content.extend(
         [
+            {
+                "id": "logistics_main_dashboard_header",
+                "type": "header",
+                "data": {"text": '<span class="h4"><b>Logistics</b></span>', "col": 12},
+            },
+            {"id": "logistics_main_dashboard_spacer", "type": "spacer", "data": {"col": 12}},
+            {
+                "id": "logistics_main_dashboard_shortcut_1",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Logistics Dashboard", "col": 4},
+            },
+            {
+                "id": "logistics_main_dashboard_shortcut_2",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Logistics Hub Cockpit", "col": 4},
+            },
+            {
+                "id": "logistics_main_dashboard_shortcut_3",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Container Planning", "col": 4},
+            },
+            {
+                "id": "logistics_main_dashboard_shortcut_4",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Container Load Plan", "col": 4},
+            },
+            {
+                "id": "logistics_main_dashboard_shortcut_5",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Container Profile", "col": 4},
+            },
+            {
+                "id": "logistics_main_dashboard_shortcut_6",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Shipment Analysis", "col": 4},
+            },
+            {
+                "id": "logistics_main_dashboard_shortcut_7",
+                "type": "shortcut",
+                "data": {"shortcut_name": "Load Plan Shipment", "col": 4},
+            },
             {
                 "id": "sig_main_dashboard_header",
                 "type": "header",

@@ -14,10 +14,47 @@ Blocked:
 """
 
 import frappe
+from frappe.contacts.doctype.address.address import get_default_address
+from frappe.utils import now_datetime
+
+
+def _resolve_trip_vehicle(vehicle=None):
+    vehicle = (vehicle or "").strip()
+    if vehicle:
+        return vehicle
+
+    existing = frappe.get_all("Vehicle", pluck="name", limit=1)
+    if existing:
+        return existing[0]
+
+    frappe.throw(
+        "Vehicle is required to create Delivery Trip. Create a Vehicle first or pass one explicitly.",
+        title="Missing Vehicle",
+    )
+
+
+def _resolve_departure_time(departure_time=None):
+    return departure_time or now_datetime()
+
+
+def _resolve_stop_address(customer=None, shipping_address_name=None):
+    return shipping_address_name or (get_default_address("Customer", customer) if customer else None)
+
+
+def _build_stop_payload(source_name, customer, shipping_address_name=None):
+    address_name = _resolve_stop_address(customer=customer, shipping_address_name=shipping_address_name)
+    payload = {
+        "delivery_note": source_name,
+        "customer": customer,
+    }
+    if address_name:
+        payload["address"] = address_name
+        payload["customer_address"] = address_name
+    return payload
 
 
 @frappe.whitelist()
-def create_delivery_trip_from_load_plan(load_plan_name):
+def create_delivery_trip_from_load_plan(load_plan_name, vehicle=None, departure_time=None, driver=None):
     """Create a Delivery Trip from a Domestic or Outbound/Orderlift CLP.
 
     Collects all Delivery Notes from the plan and creates one trip with
@@ -62,20 +99,26 @@ def create_delivery_trip_from_load_plan(load_plan_name):
 
     trip = frappe.new_doc("Delivery Trip")
     trip.company = plan.company
+    trip.vehicle = _resolve_trip_vehicle(vehicle)
+    trip.departure_time = _resolve_departure_time(departure_time)
     trip.custom_flow_scope = plan.flow_scope
     trip.custom_container_load_plan = plan.name
+    if driver and hasattr(trip, "driver"):
+        trip.driver = driver
 
     stops_added = 0
     for row in plan.shipments or []:
         if not row.delivery_note:
             continue
         dn = frappe.get_doc("Delivery Note", row.delivery_note)
-        trip.append("delivery_stops", {
-            "delivery_note": row.delivery_note,
-            "customer": row.customer or dn.customer,
-            "address": dn.shipping_address_name or "",
-            "customer_address": dn.shipping_address_name or "",
-        })
+        trip.append(
+            "delivery_stops",
+            _build_stop_payload(
+                source_name=row.delivery_note,
+                customer=row.customer or dn.customer,
+                shipping_address_name=dn.shipping_address_name,
+            ),
+        )
         stops_added += 1
 
     if not stops_added:
@@ -93,7 +136,7 @@ def create_delivery_trip_from_load_plan(load_plan_name):
 
 
 @frappe.whitelist()
-def create_delivery_trip_from_delivery_note(delivery_note_name):
+def create_delivery_trip_from_delivery_note(delivery_note_name, vehicle=None, departure_time=None, driver=None):
     """Create a Delivery Trip directly from a single Delivery Note.
 
     For domestic DNs or outbound/orderlift DNs that need a local dispatch leg.
@@ -121,13 +164,19 @@ def create_delivery_trip_from_delivery_note(delivery_note_name):
 
     trip = frappe.new_doc("Delivery Trip")
     trip.company = dn.company
+    trip.vehicle = _resolve_trip_vehicle(vehicle)
+    trip.departure_time = _resolve_departure_time(departure_time)
     trip.custom_flow_scope = flow
-    trip.append("delivery_stops", {
-        "delivery_note": dn.name,
-        "customer": dn.customer,
-        "address": dn.shipping_address_name or "",
-        "customer_address": dn.shipping_address_name or "",
-    })
+    if driver and hasattr(trip, "driver"):
+        trip.driver = driver
+    trip.append(
+        "delivery_stops",
+        _build_stop_payload(
+            source_name=dn.name,
+            customer=dn.customer,
+            shipping_address_name=dn.shipping_address_name,
+        ),
+    )
 
     trip.flags.ignore_permissions = True
     trip.insert()
