@@ -1055,29 +1055,132 @@ function advanceStatus(state) {
         "In Transit": `Mark this container as delivered?`,
     };
 
-    frappe.confirm(confirmLabels[status], () => {
+    // For Planning → Ready, run validation first
+    if (nextStatus === "Ready") {
         frappe.call({
-            method: "orderlift.orderlift_logistics.services.forecast_planning.advance_status",
-            args: { plan_name: state.planName, new_status: nextStatus },
+            method: "orderlift.orderlift_logistics.services.forecast_planning.validate_plan_for_confirm",
+            args: { plan_name: state.planName },
             async: true,
-            freeze: true,
-            freeze_message: __("Updating status..."),
             callback: (r) => {
-                applyPlanDetail(state, r.message);
-                state.planDoc.status = nextStatus;
-                refreshPlanning(state);
-                updateTopbar(state);
-                frappe.show_alert({
-                    message: `Container ${state.planDoc.name} → ${nextStatus}`,
-                    indicator: "green"
-                });
-            },
-            error: (r) => {
-                const msg = r?.message || r?.exc || "Status change failed";
-                frappe.show_alert({ message: String(msg).slice(0, 100), indicator: "red" });
+                const result = r.message;
+                if (result && result.has_issues) {
+                    showValidationModal(state, result);
+                } else {
+                    doAdvance(state, status, nextStatus, confirmLabels);
+                }
             },
         });
+    } else {
+        frappe.confirm(confirmLabels[status], () => {
+            doAdvance(state, status, nextStatus, confirmLabels);
+        });
+    }
+}
+
+function doAdvance(state, status, nextStatus, confirmLabels) {
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.advance_status",
+        args: { plan_name: state.planName, new_status: nextStatus, bypass_validation: true },
+        async: true,
+        freeze: true,
+        freeze_message: __("Updating status..."),
+        callback: (r) => {
+            applyPlanDetail(state, r.message);
+            state.planDoc.status = nextStatus;
+            refreshPlanning(state);
+            updateTopbar(state);
+            frappe.show_alert({
+                message: `Container ${state.planDoc.name} → ${nextStatus}`,
+                indicator: "green"
+            });
+        },
+        error: (r) => {
+            const msg = r?.message || r?.exc || "Status change failed";
+            frappe.show_alert({ message: String(msg).slice(0, 100), indicator: "red" });
+        },
     });
+}
+
+function showValidationModal(state, result) {
+    const issueIcons = {
+        draft: "📝",
+        needs_conversion: "🔄",
+        needs_dn: "📦",
+        free_item: "📋",
+        missing: "❌",
+    };
+    const typeLabels = {
+        draft: "Draft — submit",
+        needs_conversion: "Convert to DN",
+        needs_dn: "Create DN",
+        free_item: "Needs procurement",
+        missing: "Document missing",
+    };
+
+    const html = result.issues.map((issue) => {
+        const icon = issueIcons[issue.type] || "⚠️";
+        const label = typeLabels[issue.type] || issue.type;
+        const docRef = issue.docname ? `${issue.docname}` : (issue.item_code || "");
+        const party = issue.party ? ` (${issue.party})` : "";
+        return `
+        <div class="cd-val-issue">
+            <span class="cd-val-icon">${icon}</span>
+            <div class="cd-val-info">
+                <div class="cd-val-title"><strong>${docRef}</strong>${party}</div>
+                <div class="cd-val-type">${label}</div>
+                <div class="cd-val-msg">${issue.message}</div>
+            </div>
+            <button class="cd-val-open" data-action="open-issue" data-doctype="${issue.doctype || ""}" data-docname="${issue.docname || ""}" data-itemcode="${issue.item_code || ""}">
+                Open
+            </button>
+        </div>`;
+    }).join("");
+
+    const summary = [];
+    if (result.draft_count) summary.push(`<span class="cd-val-count">${result.draft_count} draft</span>`);
+    if (result.conversion_count) summary.push(`<span class="cd-val-count">${result.conversion_count} needs conversion</span>`);
+    if (result.free_item_count) summary.push(`<span class="cd-val-count">${result.free_item_count} free items</span>`);
+
+    const modalHtml = `
+    <div class="cd-val-modal-overlay" id="cdValModal">
+        <div class="cd-val-modal">
+            <div class="cd-val-modal-title">⚠️ ${result.issue_count} document${result.issue_count > 1 ? 's' : ''} need${result.issue_count === 1 ? 's' : ''} attention</div>
+            <div class="cd-val-modal-summary">${summary.join(' · ')}</div>
+            <div class="cd-val-modal-body">${html}</div>
+            <div class="cd-val-modal-hint">Fix the documents above, then remove them from the plan and add the resulting Delivery Notes. Then try confirming again.</div>
+            <div class="cd-val-modal-actions">
+                <button class="cd-val-cancel" data-action="close-validation">Back to Planning</button>
+                <button class="cd-val-confirm-anyway" data-action="confirm-anyway">Confirm Anyway</button>
+            </div>
+        </div>
+    </div>`;
+
+    // Inject and show
+    state.root.insertAdjacentHTML('beforeend', modalHtml);
+
+    // Bind events
+    const modal = state.root.querySelector("#cdValModal");
+    modal.onclick = (e) => {
+        const openBtn = e.target.closest(".cd-val-open");
+        if (openBtn) {
+            const dt = openBtn.dataset.doctype;
+            const dn = openBtn.dataset.docname;
+            const ic = openBtn.dataset.itemcode;
+            if (dt && dn) {
+                frappe.set_route("Form", dt, dn);
+            } else if (ic) {
+                frappe.set_route("Form", "Item", ic);
+            }
+            return;
+        }
+        if (e.target.closest("[data-action='close-validation']")) {
+            modal.remove();
+        }
+        if (e.target.closest("[data-action='confirm-anyway']")) {
+            modal.remove();
+            doAdvance(state, "Planning", "Ready", {});
+        }
+    };
 }
 
 function unconfirmStatus(state) {
@@ -1798,6 +1901,28 @@ function injectPlanningStyles() {
         .planning-native-root .already-added-code{font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--muted);}
         .planning-native-root .already-added-name{font-size:10px;color:var(--hint);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .planning-native-root .already-added-check{color:var(--teal);font-size:13px;font-weight:700;}
+
+        /* Validation modal */
+        .planning-native-root .cd-val-modal-overlay{display:flex;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1200;align-items:center;justify-content:center;}
+        .planning-native-root .cd-val-modal{background:var(--surface);border-radius:var(--r-lg);padding:24px;width:520px;max-height:80vh;overflow-y:auto;border:0.5px solid var(--border-md);}
+        .planning-native-root .cd-val-modal-title{font-size:16px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+        .planning-native-root .cd-val-modal-summary{font-size:11px;color:var(--muted);margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;}
+        .planning-native-root .cd-val-count{padding:1px 8px;background:var(--accent-lt);color:#854F0B;border-radius:4px;font-size:10px;font-weight:600;}
+        .planning-native-root .cd-val-modal-body{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;max-height:300px;overflow-y:auto;}
+        .planning-native-root .cd-val-issue{display:flex;align-items:flex-start;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg);}
+        .planning-native-root .cd-val-icon{font-size:18px;flex-shrink:0;margin-top:2px;}
+        .planning-native-root .cd-val-info{flex:1;min-width:0;}
+        .planning-native-root .cd-val-title{font-size:12px;font-weight:600;color:var(--text);}
+        .planning-native-root .cd-val-type{font-size:9.5px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.3px;margin-top:1px;}
+        .planning-native-root .cd-val-msg{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.4;}
+        .planning-native-root .cd-val-open{padding:5px 12px;border-radius:var(--r);border:0.5px solid var(--teal);background:var(--teal);color:white;font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;transition:all .13s;}
+        .planning-native-root .cd-val-open:hover{opacity:.85;}
+        .planning-native-root .cd-val-modal-hint{font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:14px;padding:8px 10px;background:var(--bg);border-radius:var(--r);border-left:3px solid var(--accent);}
+        .planning-native-root .cd-val-modal-actions{display:flex;gap:8px;justify-content:flex-end;}
+        .planning-native-root .cd-val-cancel{padding:8px 16px;border-radius:var(--r);border:0.5px solid var(--border);background:transparent;font-size:13px;color:var(--muted);cursor:pointer;}
+        .planning-native-root .cd-val-cancel:hover{background:var(--bg);}
+        .planning-native-root .cd-val-confirm-anyway{padding:8px 18px;border-radius:var(--r);border:none;background:var(--accent);font-size:13px;font-weight:600;color:white;cursor:pointer;}
+        .planning-native-root .cd-val-confirm-anyway:hover{opacity:.85;}
     `;
 
     document.head.appendChild(style);

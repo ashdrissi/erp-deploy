@@ -534,7 +534,97 @@ def update_item_confidence(plan_name, source_name, confidence):
 
 
 @frappe.whitelist()
-def advance_status(plan_name, new_status):
+def validate_plan_for_confirm(plan_name):
+    """Check every plan item and return a list of issues blocking confirmation.
+
+    Rules:
+    - Quotation (any status) → must be converted to SO then DN
+    - Sales Order (Draft) → must be submitted
+    - Sales Order (Submitted) in Domestic/Outbound → create DN first
+    - Purchase Order (Draft) → must be submitted
+    - Purchase Order (Submitted) in Inbound → OK
+    - Delivery Note (Submitted) → OK
+    - Free items → flagged as needs procurement
+    """
+    doc = frappe.get_doc("Forecast Load Plan", plan_name)
+    doc.check_permission("read")
+
+    issues = []
+    for row in (doc.items or []):
+        if not row.selected:
+            continue
+
+        if row.is_planned:
+            issues.append({
+                "type": "free_item",
+                "item_code": row.item_code or "",
+                "item_name": row.item_name or "",
+                "qty": flt(row.planned_qty),
+                "message": f"Free planning item — needs procurement before loading",
+            })
+            continue
+
+        sd = row.source_doctype or ""
+        if sd == "Quotation":
+            issues.append({
+                "type": "needs_conversion",
+                "doctype": sd,
+                "docname": row.source_name,
+                "party": row.party or "",
+                "message": "Quotation is not a shipping document. Convert to Sales Order, then create Delivery Note.",
+            })
+        elif sd == "Sales Order":
+            try:
+                so = frappe.get_doc("Sales Order", row.source_name)
+            except frappe.DoesNotExistError:
+                issues.append({"type": "missing", "doctype": sd, "docname": row.source_name, "message": f"Sales Order {row.source_name} not found"})
+                continue
+
+            if so.docstatus == 0:
+                issues.append({
+                    "type": "draft",
+                    "doctype": sd,
+                    "docname": row.source_name,
+                    "party": so.customer_name or "",
+                    "message": "Draft Sales Order — must be submitted before shipping.",
+                })
+            else:
+                issues.append({
+                    "type": "needs_dn",
+                    "doctype": sd,
+                    "docname": row.source_name,
+                    "party": so.customer_name or "",
+                    "message": "Sales Order submitted but no Delivery Note. Create DN from this SO.",
+                })
+        elif sd == "Purchase Order":
+            try:
+                po = frappe.get_doc("Purchase Order", row.source_name)
+            except frappe.DoesNotExistError:
+                issues.append({"type": "missing", "doctype": sd, "docname": row.source_name, "message": f"Purchase Order {row.source_name} not found"})
+                continue
+
+            if po.docstatus == 0:
+                issues.append({
+                    "type": "draft",
+                    "doctype": sd,
+                    "docname": row.source_name,
+                    "party": po.supplier_name or "",
+                    "message": "Draft Purchase Order — must be submitted.",
+                })
+        # Delivery Note (Submitted) and other OK types → no issue
+
+    return {
+        "has_issues": len(issues) > 0,
+        "issues": issues,
+        "issue_count": len(issues),
+        "draft_count": sum(1 for i in issues if i["type"] == "draft"),
+        "conversion_count": sum(1 for i in issues if i["type"] in ("needs_conversion", "needs_dn")),
+        "free_item_count": sum(1 for i in issues if i["type"] == "free_item"),
+    }
+
+
+@frappe.whitelist()
+def advance_status(plan_name, new_status, bypass_validation=False):
     """Advance a Forecast Load Plan through its lifecycle.
 
     Status flow: Planning → Ready → Loading → In Transit → Delivered
@@ -572,8 +662,12 @@ def advance_status(plan_name, new_status):
     if new_idx < current_idx:
         frappe.throw(f"Cannot move from {forecast.status} to {new_status}. Status can only move forward. Unconfirm is only available from Ready → Planning.")
 
-    # On Planning → Ready: create/update CLP
+    # On Planning → Ready: validate documents and create/update CLP
     if new_status == "Ready":
+        if not bypass_validation:
+            validation = validate_plan_for_confirm(plan_name)
+            if validation["has_issues"]:
+                return {"validation": validation}
         _sync_clp(forecast)
 
     forecast.status = new_status
