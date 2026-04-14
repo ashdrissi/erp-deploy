@@ -1,0 +1,122 @@
+{
+  "actions": [],
+  "creation": "2026-04-13 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "source_doctype",
+    "source_name",
+    "party_type",
+    "party",
+    "confidence",
+    "docstatus_label",
+    "total_weight_kg",
+    "total_volume_m3",
+    "item_count",
+    "date",
+    "selected",
+    "sequence"
+  ],
+  "fields": [
+    {
+      "fieldname": "source_doctype",
+      "fieldtype": "Select",
+      "label": "Source DocType",
+      "options": "Quotation\nSales Order\nPurchase Order\nDelivery Note",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "source_name",
+      "fieldtype": "Dynamic Link",
+      "label": "Source Document",
+      "options": "source_doctype",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "party_type",
+      "fieldtype": "Select",
+      "label": "Party Type",
+      "options": "Customer\nSupplier",
+      "read_only": 1
+    },
+    {
+      "fieldname": "party",
+      "fieldtype": "Dynamic Link",
+      "label": "Party",
+      "options": "party_type",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "confidence",
+      "fieldtype": "Select",
+      "label": "Confidence",
+      "options": "committed\ntentative\ninquiry\nready",
+      "default": "tentative",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "docstatus_label",
+      "fieldtype": "Data",
+      "label": "Doc Status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_weight_kg",
+      "fieldtype": "Float",
+      "label": "Weight (kg)",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "total_volume_m3",
+      "fieldtype": "Float",
+      "label": "Volume (m3)",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "item_count",
+      "fieldtype": "Int",
+      "label": "Item Count",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "date",
+      "fieldtype": "Date",
+      "label": "Document Date",
+      "read_only": 1
+    },
+    {
+      "fieldname": "selected",
+      "fieldtype": "Check",
+      "label": "Selected",
+      "default": "1",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "default": "0"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-04-13 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Forecast Plan Item",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "sequence",
+  "sort_order": "ASC",
+  "states": []
+}

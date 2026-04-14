@@ -1,0 +1,224 @@
+{
+  "actions": [],
+  "autoname": "naming_series:",
+  "creation": "2026-04-13 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "naming_series",
+    "plan_label",
+    "company",
+    "container_profile",
+    "flow_scope",
+    "shipping_responsibility",
+    "destination_zone",
+    "departure_date",
+    "deadline",
+    "status",
+    "section_capacity",
+    "total_weight_kg",
+    "total_volume_m3",
+    "weight_utilization_pct",
+    "volume_utilization_pct",
+    "section_items",
+    "items",
+    "section_conversion",
+    "container_load_plan",
+    "converted_on",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "FLP-.#####",
+      "default": "FLP-.#####",
+      "reqd": 1,
+      "set_only_once": 1
+    },
+    {
+      "fieldname": "plan_label",
+      "fieldtype": "Data",
+      "label": "Plan Label",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "container_profile",
+      "fieldtype": "Link",
+      "label": "Container Profile",
+      "options": "Container Profile",
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "flow_scope",
+      "fieldtype": "Select",
+      "label": "Flow Scope",
+      "options": "\nInbound\nDomestic\nOutbound",
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "shipping_responsibility",
+      "fieldtype": "Select",
+      "label": "Shipping Responsibility",
+      "options": "\nOrderlift\nCustomer",
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "destination_zone",
+      "fieldtype": "Data",
+      "label": "Destination Zone",
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "departure_date",
+      "fieldtype": "Date",
+      "label": "Departure Date",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "deadline",
+      "fieldtype": "Date",
+      "label": "Deadline"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Planning\nReady\nConverted\nCancelled",
+      "default": "Planning",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "section_capacity",
+      "fieldtype": "Section Break",
+      "label": "Capacity"
+    },
+    {
+      "fieldname": "total_weight_kg",
+      "fieldtype": "Float",
+      "label": "Total Weight (kg)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "total_volume_m3",
+      "fieldtype": "Float",
+      "label": "Total Volume (m3)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "weight_utilization_pct",
+      "fieldtype": "Percent",
+      "label": "Weight Utilization (%)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "volume_utilization_pct",
+      "fieldtype": "Percent",
+      "label": "Volume Utilization (%)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_items",
+      "fieldtype": "Section Break",
+      "label": "Forecast Items"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items",
+      "options": "Forecast Plan Item"
+    },
+    {
+      "fieldname": "section_conversion",
+      "fieldtype": "Section Break",
+      "label": "Conversion"
+    },
+    {
+      "fieldname": "container_load_plan",
+      "fieldtype": "Link",
+      "label": "Container Load Plan",
+      "options": "Container Load Plan",
+      "read_only": 1
+    },
+    {
+      "fieldname": "converted_on",
+      "fieldtype": "Datetime",
+      "label": "Converted On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-04-13 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Forecast Load Plan",
+  "naming_rule": "By \"Naming Series\" field",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Stock Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "report": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "plan_label,destination_zone,company",
+  "show_name_in_global_search": 1,
+  "sort_field": "creation",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "plan_label",
+  "track_changes": 1
+}
