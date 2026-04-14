@@ -6,14 +6,24 @@
   "editable_grid": 1,
   "engine": "InnoDB",
   "field_order": [
+    "is_planned",
+    "item_code",
+    "item_name",
     "source_doctype",
     "source_name",
     "party_type",
     "party",
     "confidence",
     "docstatus_label",
+    "planned_qty",
+    "original_qty",
+    "stock_uom",
+    "purchase_uom",
+    "uom_conversion_factor",
     "total_weight_kg",
     "total_volume_m3",
+    "unit_weight_kg",
+    "unit_volume_m3",
     "item_count",
     "date",
     "selected",
@@ -21,20 +31,40 @@
   ],
   "fields": [
     {
+      "fieldname": "is_planned",
+      "fieldtype": "Check",
+      "label": "Planned Item",
+      "default": "0",
+      "read_only": 1,
+      "description": "1 = free/planning item (not from source doc), 0 = sourced from existing document",
+      "depends_on": "eval:doc.is_planned"
+    },
+    {
+      "fieldname": "item_code",
+      "fieldtype": "Link",
+      "label": "Item Code",
+      "options": "Item",
+      "description": "For planned items; blank if sourced from a document",
+      "depends_on": "eval:doc.is_planned"
+    },
+    {
+      "fieldname": "item_name",
+      "fieldtype": "Data",
+      "label": "Item Name",
+      "read_only": 1
+    },
+    {
       "fieldname": "source_doctype",
       "fieldtype": "Select",
       "label": "Source DocType",
-      "options": "Quotation\nSales Order\nPurchase Order\nDelivery Note",
-      "reqd": 1,
-      "in_list_view": 1
+      "options": "\nQuotation\nSales Order\nPurchase Order\nDelivery Note"
     },
     {
       "fieldname": "source_name",
       "fieldtype": "Dynamic Link",
       "label": "Source Document",
       "options": "source_doctype",
-      "reqd": 1,
-      "in_list_view": 1
+      "depends_on": "eval:!doc.is_planned"
     },
     {
       "fieldname": "party_type",
@@ -66,11 +96,48 @@
       "read_only": 1
     },
     {
+      "fieldname": "planned_qty",
+      "fieldtype": "Float",
+      "label": "Planned Qty",
+      "default": "0",
+      "description": "Quantity to ship in this container (editable for planning)",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "original_qty",
+      "fieldtype": "Float",
+      "label": "Original Qty",
+      "default": "0",
+      "read_only": 1,
+      "description": "Original qty from source document; 0 for planned items"
+    },
+    {
+      "fieldname": "stock_uom",
+      "fieldtype": "Link",
+      "label": "Stock UOM",
+      "options": "UOM",
+      "read_only": 1
+    },
+    {
+      "fieldname": "purchase_uom",
+      "fieldtype": "Link",
+      "label": "Purchase UOM",
+      "options": "UOM",
+      "read_only": 1
+    },
+    {
+      "fieldname": "uom_conversion_factor",
+      "fieldtype": "Float",
+      "label": "UOM Conversion Factor",
+      "default": "1",
+      "description": "Units per purchase UOM (e.g. 100 pcs per Box)",
+      "read_only": 1
+    },
+    {
       "fieldname": "total_weight_kg",
       "fieldtype": "Float",
       "label": "Weight (kg)",
       "default": "0",
-      "read_only": 1,
       "in_list_view": 1
     },
     {
@@ -78,15 +145,29 @@
       "fieldtype": "Float",
       "label": "Volume (m3)",
       "default": "0",
-      "read_only": 1,
       "in_list_view": 1
+    },
+    {
+      "fieldname": "unit_weight_kg",
+      "fieldtype": "Float",
+      "label": "Unit Weight (kg)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "unit_volume_m3",
+      "fieldtype": "Float",
+      "label": "Unit Volume (m3)",
+      "default": "0",
+      "read_only": 1
     },
     {
       "fieldname": "item_count",
       "fieldtype": "Int",
       "label": "Item Count",
       "default": "0",
-      "read_only": 1
+      "read_only": 1,
+      "depends_on": "eval:!doc.is_planned"
     },
     {
       "fieldname": "date",

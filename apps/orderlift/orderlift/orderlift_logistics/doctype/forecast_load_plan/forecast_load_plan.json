@@ -10,6 +10,9 @@
     "plan_label",
     "company",
     "container_profile",
+    "route_section",
+    "route_origin",
+    "route_destination",
     "flow_scope",
     "shipping_responsibility",
     "destination_zone",
@@ -64,6 +67,26 @@
       "in_standard_filter": 1
     },
     {
+      "fieldname": "route_section",
+      "fieldtype": "Section Break",
+      "label": "Route"
+    },
+    {
+      "fieldname": "route_origin",
+      "fieldtype": "Data",
+      "label": "Origin",
+      "description": "e.g. Bangkok, Shanghai, Istanbul",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "route_destination",
+      "fieldtype": "Data",
+      "label": "Destination",
+      "description": "e.g. Casablanca, Paris",
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
       "fieldname": "flow_scope",
       "fieldtype": "Select",
       "label": "Flow Scope",
@@ -99,7 +122,7 @@
       "fieldname": "status",
       "fieldtype": "Select",
       "label": "Status",
-      "options": "Planning\nReady\nConverted\nCancelled",
+      "options": "Planning\nReady\nLoading\nIn Transit\nDelivered\nCancelled",
       "default": "Planning",
       "reqd": 1,
       "in_list_view": 1,

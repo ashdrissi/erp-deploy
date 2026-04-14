@@ -30,17 +30,29 @@ function renderForecastPlansPage(wrapper) {
                     New Forecast Plan
                 </button>
             </div>
+            <div class="fp-summary-bar" id="fpSummary"></div>
             <div class="fp-filters">
                 <div class="fp-filter-group">
                     <button class="fp-status-btn active" data-status="">All</button>
                     <button class="fp-status-btn" data-status="Planning">Planning</button>
                     <button class="fp-status-btn" data-status="Ready">Ready</button>
-                    <button class="fp-status-btn" data-status="Converted">Converted</button>
+                    <button class="fp-status-btn" data-status="Loading">Loading</button>
+                    <button class="fp-status-btn" data-status="In Transit">In Transit</button>
+                    <button class="fp-status-btn" data-status="Delivered">Delivered</button>
+                </div>
+                <div class="fp-view-toggle">
+                    <button class="fp-view-btn active" data-view="lanes">
+                        <svg viewBox="0 0 24 24" width="13" height="13"><rect x="2" y="2" width="5" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="9.5" y="2" width="5" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="17" y="2" width="5" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                        Lanes
+                    </button>
+                    <button class="fp-view-btn" data-view="grid">
+                        <svg viewBox="0 0 24 24" width="13" height="13"><rect x="3" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                        Grid
+                    </button>
                 </div>
             </div>
-            <div class="fp-list" id="fpList">
-                <div class="fp-loading">Loading...</div>
-            </div>
+            <div class="fp-lanes" id="fpLanes"></div>
+            <div class="fp-list" id="fpList"></div>
             <div class="fp-modal-overlay" id="fpModal">
                 <div class="fp-modal">
                     <div class="fp-modal-title">New Forecast Load Plan</div>
@@ -74,16 +86,27 @@ function bindFPEvents(wrapper) {
         };
     });
 
-    root.querySelector("#fpList").onclick = (e) => {
-        const card = e.target.closest(".fp-plan-card[data-name]");
-        if (!card) return;
-        frappe.set_route("planning", card.dataset.name);
-    };
+    root.querySelectorAll(".fp-view-btn").forEach((btn) => {
+        btn.onclick = () => {
+            root.querySelectorAll(".fp-view-btn").forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            wrapper._fpView = btn.dataset.view;
+            loadPlansList(wrapper);
+        };
+    });
+
+    // Card clicks - both lanes and grid
+    root.addEventListener("click", (e) => {
+        const laneCard = e.target.closest(".fp-card[data-name]");
+        const gridCard = e.target.closest(".fp-plan-card[data-name]");
+        const card = laneCard || gridCard;
+        if (card) frappe.set_route("planning", card.dataset.name);
+    });
 }
 
 function loadPlansList(wrapper) {
-    const listEl = wrapper.querySelector("#fpList");
     const statusFilter = wrapper._fpStatusFilter || "";
+    const view = wrapper._fpView || "lanes";
     const filters = {};
     if (statusFilter) filters.status = statusFilter;
 
@@ -94,45 +117,154 @@ function loadPlansList(wrapper) {
             filters: filters,
             fields: [
                 "name", "plan_label", "company", "container_profile",
+                "route_origin", "route_destination",
                 "flow_scope", "destination_zone", "departure_date",
                 "deadline", "status", "total_weight_kg", "total_volume_m3",
                 "creation",
             ],
-            order_by: "creation desc",
-            limit_page_length: 50,
+            order_by: "departure_date asc, creation desc",
+            limit_page_length: 200,
         },
         async: true,
         callback: (r) => {
             const plans = r.message || [];
-            if (!plans.length) {
-                listEl.innerHTML = `
-                    <div class="fp-empty">
-                        <div class="fp-empty-icon">
-                            <svg viewBox="0 0 24 24" width="48" height="48"><rect x="2" y="7" width="20" height="12" rx="2" fill="none" stroke="#C0BFB8" stroke-width="1.5"></rect><path d="M2 11h20" fill="none" stroke="#C0BFB8" stroke-width="1.5"></path></svg>
-                        </div>
-                        <div class="fp-empty-text">No forecast plans yet</div>
-                        <div class="fp-empty-sub">Create one to start planning container loads from quotes, orders, and shipments</div>
-                    </div>
-                `;
-                return;
+            renderSummaryBar(wrapper, plans);
+            if (view === "lanes") {
+                renderKanbanLanes(wrapper, plans);
+            } else {
+                renderGridView(wrapper, plans);
             }
-            listEl.innerHTML = plans.map((p) => planCardHtml(p)).join("");
         },
     });
 }
+
+function renderSummaryBar(wrapper, plans) {
+    const el = wrapper.querySelector("#fpSummary");
+    if (!el) return;
+    const totalVol = plans.reduce((s, p) => s + (p.total_volume_m3 || 0), 0);
+    const totalWt = plans.reduce((s, p) => s + (p.total_weight_kg || 0), 0);
+    const upcoming = plans.filter((p) => ["Planning", "Ready", "Loading"].includes(p.status)).length;
+    const inTransit = plans.filter((p) => p.status === "In Transit").length;
+    const delivered = plans.filter((p) => p.status === "Delivered").length;
+
+    el.innerHTML = `
+        <div class="fp-stat"><span class="fp-stat-val">${plans.length}</span><span class="fp-stat-lbl">Total</span></div>
+        <div class="fp-stat"><span class="fp-stat-val">${upcoming}</span><span class="fp-stat-lbl">Upcoming</span></div>
+        <div class="fp-stat"><span class="fp-stat-val">${inTransit}</span><span class="fp-stat-lbl">In Transit</span></div>
+        <div class="fp-stat"><span class="fp-stat-val">${delivered}</span><span class="fp-stat-lbl">Delivered</span></div>
+        <div class="fp-stat"><span class="fp-stat-val">${totalVol.toFixed(1)}</span><span class="fp-stat-lbl">m³ Total</span></div>
+        <div class="fp-stat"><span class="fp-stat-val">${Math.round(totalWt).toLocaleString()}</span><span class="fp-stat-lbl">kg Total</span></div>
+    `;
+}
+
+function renderKanbanLanes(wrapper, plans) {
+    const lanesEl = wrapper.querySelector("#fpLanes");
+    const listEl = wrapper.querySelector("#fpList");
+    if (lanesEl) lanesEl.style.display = "";
+    if (listEl) listEl.style.display = "none";
+
+    const lanes = [
+        { key: "Planning", icon: "📝", label: "Planning", color: "#FDE8BE", border: "#854F0B" },
+        { key: "Ready", icon: "✅", label: "Confirmed", color: "#D8F2EA", border: "#0D6B50" },
+        { key: "Loading", icon: "📦", label: "Loading", color: "#E0EFFC", border: "#1A5FA3" },
+        { key: "In Transit", icon: "✈️", label: "In Transit", color: "#F0E6FF", border: "#6B3FA0" },
+        { key: "Delivered", icon: "🏁", label: "Delivered", color: "#E8F5E9", border: "#2E7D32" },
+    ];
+
+    const byStatus = {};
+    lanes.forEach((l) => (byStatus[l.key] = []));
+    plans.forEach((p) => { if (byStatus[p.status]) byStatus[p.status].push(p); });
+
+    if (!lanesEl) return;
+    lanesEl.innerHTML = lanes.map((lane) => {
+        const lanePlans = byStatus[lane.key] || [];
+        return `
+        <div class="fp-lane-col" data-status="${lane.key}">
+            <div class="fp-lane-header" style="border-bottom-color:${lane.border}">
+                <span class="fp-lane-icon">${lane.icon}</span>
+                <span class="fp-lane-label">${lane.label}</span>
+                <span class="fp-lane-count" style="background:${lane.color};color:${lane.border}">${lanePlans.length}</span>
+            </div>
+            <div class="fp-lane-body">
+                ${lanePlans.length === 0
+                    ? `<div class="fp-lane-empty">No containers</div>`
+                    : lanePlans.map((p) => laneCardHtml(p, lane)).join("")
+                }
+            </div>
+        </div>`;
+    }).join("");
+}
+
+function renderGridView(wrapper, plans) {
+    const lanesEl = wrapper.querySelector("#fpLanes");
+    const listEl = wrapper.querySelector("#fpList");
+    if (lanesEl) lanesEl.style.display = "none";
+    if (listEl) listEl.style.display = "";
+
+    if (!plans.length) {
+        listEl.innerHTML = `
+            <div class="fp-empty">
+                <div class="fp-empty-icon">
+                    <svg viewBox="0 0 24 24" width="48" height="48"><rect x="2" y="7" width="20" height="12" rx="2" fill="none" stroke="#C0BFB8" stroke-width="1.5"></rect><path d="M2 11h20" fill="none" stroke="#C0BFB8" stroke-width="1.5"></path></svg>
+                </div>
+                <div class="fp-empty-text">No forecast plans yet</div>
+                <div class="fp-empty-sub">Create one to start planning container loads</div>
+            </div>
+        `;
+        return;
+    }
+    listEl.innerHTML = plans.map((p) => planCardHtml(p)).join("");
+}
+
+function laneCardHtml(p, lane) {
+    const route = (p.route_origin && p.route_destination)
+        ? `${esc(p.route_origin)} → ${esc(p.route_destination)}`
+        : "";
+    const dep = p.departure_date ? frappe.datetime.str_to_user(p.departure_date) : "";
+    const vol = (p.total_volume_m3 || 0).toFixed(1);
+    const wt = Math.round(p.total_weight_kg || 0).toLocaleString();
+    const pctVol = p.total_volume_m3 > 0 ? Math.min(100, Math.round((p.total_volume_m3 / 67.7) * 100)) : 0;
+
+    return `
+    <div class="fp-card" data-name="${esc(p.name)}">
+        <div class="fp-card-top">
+            <span class="fp-card-name">${esc(p.plan_label || p.name)}</span>
+            <span class="fp-card-ref" style="color:${lane.border}">${esc(p.name)}</span>
+        </div>
+        ${route ? `<div class="fp-card-route">${route}</div>` : ""}
+        <div class="fp-card-details">
+            ${dep ? `<span class="fp-card-dep">📅 ${dep}</span>` : ""}
+            <span class="fp-card-vol">📦 ${vol} m³</span>
+            <span class="fp-card-wt">⚖️ ${wt} kg</span>
+        </div>
+        <div class="fp-card-bar"><div class="fp-card-bar-fill" style="width:${pctVol}%;background:${lane.border}"></div></div>
+        <div class="fp-card-footer">
+            <span class="fp-card-container">${esc(p.container_profile || "—")}</span>
+            ${p.flow_scope ? `<span class="fp-card-flow">${esc(p.flow_scope)}</span>` : ""}
+        </div>
+    </div>`;
+}
+
+function esc(v) { return frappe.utils.escape_html(v || ""); }
 
 function planCardHtml(p) {
     const statusColors = {
         Planning: { bg: "#FDE8BE", text: "#854F0B" },
         Ready: { bg: "#D8F2EA", text: "#0D6B50" },
-        Converted: { bg: "#E0EFFC", text: "#1A5FA3" },
+        Loading: { bg: "#E0EFFC", text: "#1A5FA3" },
+        "In Transit": { bg: "#F0E6FF", text: "#6B3FA0" },
+        Delivered: { bg: "#D8F2EA", text: "#0D6B50" },
         Cancelled: { bg: "#EEECEA", text: "#5F5E5A" },
+        Converted: { bg: "#E0EFFC", text: "#1A5FA3" }, // backwards compat
     };
     const sc = statusColors[p.status] || statusColors.Planning;
     const depDate = p.departure_date ? frappe.datetime.str_to_user(p.departure_date) : "—";
     const deadlineDate = p.deadline ? frappe.datetime.str_to_user(p.deadline) : "";
     const vol = (p.total_volume_m3 || 0).toFixed(1);
     const wt = Math.round(p.total_weight_kg || 0).toLocaleString();
+    const route = (p.route_origin && p.route_destination)
+        ? `${frappe.utils.escape_html(p.route_origin)} → ${frappe.utils.escape_html(p.route_destination)}`
+        : "";
 
     return `
         <div class="fp-plan-card" data-name="${frappe.utils.escape_html(p.name)}">
@@ -140,6 +272,7 @@ function planCardHtml(p) {
                 <div class="fp-card-label">${frappe.utils.escape_html(p.plan_label || p.name)}</div>
                 <span class="fp-card-status" style="background:${sc.bg};color:${sc.text}">${frappe.utils.escape_html(p.status)}</span>
             </div>
+            ${route ? `<div class="fp-card-route">${route}</div>` : ""}
             <div class="fp-card-meta">
                 <span>${frappe.utils.escape_html(p.name)}</span>
                 <span>${frappe.utils.escape_html(p.company || "")}</span>
@@ -165,9 +298,11 @@ function openCreateModal(wrapper) {
         { key: "plan_label", label: "Plan Label", type: "text", required: true, placeholder: "e.g. Bangkok Export Apr W3" },
         { key: "company", label: "Company", type: "link", options: "Company", required: true },
         { key: "container_profile", label: "Container Profile", type: "link", options: "Container Profile" },
+        { key: "route_origin", label: "Origin", type: "text", placeholder: "e.g. Bangkok, Shanghai" },
+        { key: "route_destination", label: "Destination", type: "text", placeholder: "e.g. Casablanca, Paris" },
         { key: "flow_scope", label: "Flow Scope", type: "select", options: ["", "Inbound", "Domestic", "Outbound"] },
         { key: "shipping_responsibility", label: "Shipping Responsibility", type: "select", options: ["", "Orderlift", "Customer"] },
-        { key: "destination_zone", label: "Destination Zone", type: "text", placeholder: "e.g. Bangkok, Central" },
+        { key: "destination_zone", label: "Destination Zone", type: "text", placeholder: "e.g. Casablanca Central" },
         { key: "departure_date", label: "Departure Date", type: "date" },
         { key: "deadline", label: "Deadline", type: "date" },
     ];
@@ -250,6 +385,8 @@ function createAndOpen(wrapper) {
         plan_label: plan_label,
         company: company,
         container_profile: fields.container_profile.value.trim() || undefined,
+        route_origin: fields.route_origin.value.trim() || undefined,
+        route_destination: fields.route_destination.value.trim() || undefined,
         flow_scope: fields.flow_scope.value || undefined,
         shipping_responsibility: fields.shipping_responsibility.value || undefined,
         destination_zone: fields.destination_zone.value.trim() || undefined,
@@ -305,14 +442,56 @@ function injectFPStyles() {
         .fp-topbar-title{font-size:15px;font-weight:600;}
         .fp-topbar-space{flex:1;}
 
+        .fp-btn-dashboard{padding:7px 14px;border-radius:var(--r);border:0.5px solid var(--border);background:transparent;font-size:12px;font-weight:500;color:var(--muted);display:flex;align-items:center;gap:6px;transition:all .15s;}
+        .fp-btn-dashboard:hover{background:var(--bg);color:var(--text);border-color:var(--border-md);}
+        .fp-btn-dashboard svg{stroke:currentColor;fill:none;stroke-width:2;}
+
         .fp-btn-create{padding:8px 16px;background:var(--teal);color:white;border:none;border-radius:var(--r);font-size:12.5px;font-weight:500;display:flex;align-items:center;gap:6px;transition:opacity .15s;}
         .fp-btn-create:hover{opacity:.84;}
         .fp-btn-create svg{stroke:white;fill:none;stroke-width:2.5;}
 
-        .fp-filters{padding:12px 24px;display:flex;gap:8px;}
+        .fp-filters{padding:8px 24px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
         .fp-filter-group{display:flex;gap:4px;background:var(--surface);padding:3px;border-radius:var(--r);border:0.5px solid var(--border);}
         .fp-status-btn{padding:5px 14px;border-radius:6px;border:none;background:transparent;font-size:12px;font-weight:500;color:var(--muted);transition:all .13s;}
         .fp-status-btn.active{background:var(--text);color:white;}
+
+        /* View toggle */
+        .fp-view-toggle{margin-left:auto;display:flex;gap:2px;background:var(--surface);padding:3px;border-radius:var(--r);border:0.5px solid var(--border);}
+        .fp-view-btn{padding:4px 10px;border-radius:5px;border:none;background:transparent;font-size:11px;font-weight:500;color:var(--muted);transition:all .13s;display:flex;align-items:center;gap:4px;}
+        .fp-view-btn:hover{color:var(--text);}
+        .fp-view-btn.active{background:var(--text);color:white;}
+        .fp-view-btn svg{stroke:currentColor;fill:none;stroke-width:1.5;}
+
+        /* Summary bar */
+        .fp-summary-bar{display:flex;gap:20px;padding:8px 24px;background:var(--surface);border-bottom:0.5px solid var(--border);justify-content:center;}
+        .fp-stat{display:flex;flex-direction:column;align-items:center;min-width:50px;}
+        .fp-stat-val{font-size:18px;font-weight:700;color:var(--text);line-height:1.2;}
+        .fp-stat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--hint);font-weight:600;}
+
+        /* Kanban lanes */
+        .fp-lanes{display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:0 16px 16px;min-height:calc(100vh - 230px);}
+        .fp-lane-col{display:flex;flex-direction:column;border-right:0.5px solid var(--border);}
+        .fp-lane-col:last-child{border-right:none;}
+        .fp-lane-header{display:flex;align-items:center;gap:6px;padding:10px 10px;border-bottom:2px solid;background:var(--surface);position:sticky;top:0;z-index:2;}
+        .fp-lane-icon{font-size:16px;}
+        .fp-lane-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text);flex:1;}
+        .fp-lane-count{font-size:10px;font-family:var(--mono);font-weight:600;padding:1px 7px;border-radius:10px;}
+        .fp-lane-body{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:6px;}
+        .fp-lane-empty{text-align:center;padding:16px 8px;color:var(--hint);font-size:11px;}
+
+        /* Lane cards */
+        .fp-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:10px;cursor:pointer;transition:all .15s;}
+        .fp-card:hover{border-color:var(--border-md);box-shadow:0 4px 12px rgba(0,0,0,.08);transform:translateY(-2px);}
+        .fp-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:5px;}
+        .fp-card-name{font-size:12px;font-weight:600;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .fp-card-ref{font-size:9.5px;font-family:var(--mono);font-weight:500;flex-shrink:0;}
+        .fp-card-route{font-size:10.5px;font-family:var(--mono);color:#0D6B50;font-weight:500;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .fp-card-details{display:flex;gap:8px;font-size:10px;color:var(--muted);margin-bottom:6px;flex-wrap:wrap;}
+        .fp-card-dep{color:var(--text);font-weight:500;}
+        .fp-card-bar{height:3px;background:var(--bg);border-radius:2px;margin-bottom:5px;overflow:hidden;}
+        .fp-card-bar-fill{height:100%;border-radius:2px;}
+        .fp-card-footer{display:flex;align-items:center;justify-content:space-between;font-size:9px;color:var(--hint);}
+        .fp-card-flow{padding:1px 4px;background:var(--bg);border-radius:3px;font-weight:500;}
 
         .fp-list{padding:0 24px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;}
 
@@ -321,6 +500,7 @@ function injectFPStyles() {
         .fp-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
         .fp-card-label{font-size:14px;font-weight:600;color:var(--text);}
         .fp-card-status{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:500;}
+        .fp-card-route{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--teal);margin-bottom:6px;}
         .fp-card-meta{display:flex;gap:12px;font-size:11px;color:var(--muted);margin-bottom:8px;font-family:var(--mono);}
         .fp-card-metrics{display:flex;gap:16px;font-size:11.5px;color:var(--muted);margin-bottom:4px;}
         .fp-card-metrics strong{color:var(--text);font-weight:600;}

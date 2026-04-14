@@ -76,6 +76,14 @@ function renderPlanningPage(wrapper) {
         sourceQueue: [],
         containerProfiles: [],
         loading: true,
+        capacity: null, // capacity status from backend
+        // New: right panel tabs + search
+        activeRightTab: "docs",
+        itemSearchResults: [],
+        reorderSuggestions: [],
+        searchInputValue: "",
+        searchGroupFilter: "All",
+        isLocked: false, // true once status >= Ready
     };
     wrapper._planningState = state;
 
@@ -99,10 +107,10 @@ function loadPlanData(state) {
             state.ready = plan.status === "Ready" || plan.status === "Converted";
 
             state.planItems = (plan.items || []).map((item) => ({
-                id: item.id,
                 row_name: item.row_name,
-                source_doctype: item.source_doctype,
-                type: item.type,
+                id: item.id,
+                source_doctype: item.source_doctype || "",
+                type: item.is_planned ? "PLAN" : (item.type || "??"),
                 party: item.party,
                 party_type: item.party_type,
                 volume: item.volume,
@@ -112,14 +120,27 @@ function loadPlanData(state) {
                 docstatus: item.docstatus_label,
                 itemCount: item.item_count,
                 selected: item.selected,
+                is_planned: item.is_planned || 0,
+                item_code: item.item_code || "",
+                item_name: item.item_name || "",
+                planned_qty: item.planned_qty || 0,
+                original_qty: item.original_qty || 0,
+                stock_uom: item.stock_uom || "",
+                purchase_uom: item.purchase_uom || "",
+                uom_conversion_factor: item.uom_conversion_factor || 1,
                 lineItems: (item.line_items || []).map((li) => ({
                     code: li.item_code,
                     desc: li.item_name || li.item_code,
                     qty: li.qty,
-                    vol: li.line_volume_m3,
-                    wt: li.line_weight_kg,
+                    vol: li.line_volume_m3 || 0,
+                    wt: li.line_weight_kg || 0,
+                    unit_vol: li.unit_volume_m3 || 0,
+                    unit_wt: li.unit_weight_kg || 0,
                 })),
             }));
+
+            // Store capacity status
+            state.capacity = plan.capacity || null;
 
             // Store allowed doctypes for flow scope filtering
             state.allowedDoctypes = plan.allowed_doctypes || [];
@@ -193,8 +214,23 @@ function updateTopbar(state) {
     const plan = state.planDoc;
     if (!plan) return;
 
+    // Lock check
+    const lockedStatuses = ["Ready", "Loading", "In Transit", "Delivered"];
+    state.isLocked = lockedStatuses.includes(plan.status);
+
     const crumb = state.root.querySelector(".topbar-crumb");
     if (crumb) crumb.textContent = plan.plan_label || plan.name;
+
+    // Route display
+    const routeEl = state.root.querySelector(".topbar-route");
+    if (routeEl) {
+        if (plan.route_origin && plan.route_destination) {
+            routeEl.innerHTML = `${escapeHtml(plan.route_origin)} <span class="route-arrow">→</span> ${escapeHtml(plan.route_destination)}`;
+            routeEl.style.display = "";
+        } else {
+            routeEl.style.display = "none";
+        }
+    }
 
     // Flow scope badge
     const flowBadge = state.root.querySelector("#topFlowBadge");
@@ -208,8 +244,21 @@ function updateTopbar(state) {
         flowBadge.style.display = "none";
     }
 
+    // Journey timeline
+    renderJourneyBar(state);
+
     const deadlineInput = state.root.querySelector(".deadline-wrap input[type=date]");
     if (deadlineInput && plan.deadline) deadlineInput.value = plan.deadline;
+
+    // Deadline is editable only in Planning
+    if (deadlineInput) {
+        deadlineInput.disabled = state.isLocked;
+        deadlineInput.style.opacity = state.isLocked ? "0.4" : "1";
+    }
+    const deadlineLabel = state.root.querySelector(".deadline-label");
+    if (deadlineLabel) {
+        deadlineLabel.textContent = state.isLocked ? "Departure" : "Deadline";
+    }
 
     const cap = getCapacity(state);
     setText(state, ".kpi-sub-cap-vol", `of ${cap.maxVol.toFixed(1)} m3 capacity`);
@@ -223,6 +272,57 @@ function updateTopbar(state) {
     const cardMeta = state.root.querySelector(".card-meta-container");
     if (cardMeta) {
         cardMeta.innerHTML = `<span>Cap: <strong>${cap.maxVol.toFixed(1)} m3</strong></span><span>Max: <strong>${cap.maxKg.toLocaleString()} kg</strong></span>${plan.departure_date ? `<span>Dep: <strong>${plan.departure_date}</strong></span>` : ""}`;
+    }
+}
+
+function renderJourneyBar(state) {
+    const steps = ["Planning", "Ready", "Loading", "In Transit", "Delivered"];
+    const stepLabels = {
+        Planning: "Compose",
+        Ready: "Confirmed",
+        Loading: "Loading",
+        "In Transit": "In Transit",
+        Delivered: "Delivered",
+    };
+    const status = state.planDoc?.status || "Planning";
+    const currentIdx = steps.indexOf(status);
+
+    const bar = state.root.querySelector("#journeyBar");
+    if (!bar) return;
+
+    bar.innerHTML = steps.map((s, i) => {
+        const done = i < currentIdx || s === status;
+        const active = s === status;
+        return `<span class="journey-step ${done ? 'done' : ''} ${active ? 'active' : ''}">
+            ${active ? '<span class="journey-dot"></span>' : (done ? '✓' : `<span class="journey-num">${i + 1}</span>`)}
+            <span class="journey-label">${stepLabels[s]}</span>
+        </span>${i < steps.length - 1 ? '<span class="journey-connector"></span>' : ''}`;
+    }).join("");
+
+    // Action buttons
+    const btn = state.root.querySelector("#btnAdvance");
+    if (!btn) return;
+
+    if (status === "Delivered" || status === "Cancelled") {
+        btn.textContent = status === "Delivered" ? "✓ Delivered" : "✗ Cancelled";
+        btn.disabled = true;
+        btn.className = "btn-advance-status";
+        btn.style.opacity = "0.5";
+    } else if (status === "Ready") {
+        // Show both "Start Loading" and "Unconfirm"
+        btn.innerHTML = `<span class="btn-advance-text">Start Loading</span><span class="btn-advance-divider">|</span><span class="btn-unconfirm" data-action="unconfirm">↩ Unconfirm</span>`;
+        btn.disabled = false;
+        btn.style.opacity = "1";
+    } else {
+        const nextLabels = {
+            Planning: "Confirm Container",
+            Ready: "Start Loading",
+            Loading: "Departed",
+            "In Transit": "Arrived",
+        };
+        btn.textContent = nextLabels[status] || "Advance";
+        btn.disabled = false;
+        btn.style.opacity = "1";
     }
 }
 
@@ -248,21 +348,15 @@ function planningShellHtml(state) {
                 <span class="topbar-title">Load Forecast Planner</span>
                 <span class="topbar-sep">/</span>
                 <span class="topbar-crumb">${escapeHtml(planLabel)}</span>
+                <span class="topbar-route" id="topRoute" style="display:none;"></span>
                 <span class="topbar-flow-badge" id="topFlowBadge"></span>
                 <div class="topbar-space"></div>
                 <button class="topbar-back-btn" data-action="back-to-list">
                     <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
                     All Plans
                 </button>
-                <span class="status-pill" id="topStatusPill">PLANNING</span>
-                <div class="deadline-wrap">
-                    <span class="deadline-label">Deadline</span>
-                    <input type="date" value="">
-                </div>
-                <button class="btn-ready" data-action="open-modal">
-                    <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"></path></svg>
-                    Move to Ready
-                </button>
+                <div class="journey-bar" id="journeyBar"></div>
+                <button class="btn-advance-status" id="btnAdvance" data-action="advance-status"></button>
             </div>
 
             <div class="kpi-strip">
@@ -341,21 +435,63 @@ function planningShellHtml(state) {
 
                 <aside class="source-panel">
                     <div class="sp-header">
-                        <div class="sp-title">Source Queue <span class="sp-title-count" id="queueCount"></span></div>
-                        <div class="type-tabs">
-                            ${filterTypeButton("ALL", "All", true)}
-                            ${filterTypeButton("SO", "SO")}
-                            ${filterTypeButton("PO", "PO")}
-                            ${filterTypeButton("QT", "QT")}
-                            ${filterTypeButton("DN", "DN")}
-                        </div>
-                        <div class="status-toggle">
-                            ${filterStatusButton("ALL", "All", true)}
-                            ${filterStatusButton("DRAFT", "Draft")}
-                            ${filterStatusButton("SUBMITTED", "Submitted")}
+                        <div class="sp-tabs">
+                            <button class="sp-tab ${state.activeRightTab === 'docs' ? 'active' : ''}" data-action="switch-tab" data-tab="docs">Docs <span class="sp-tab-count" id="tabCountDocs"></span></button>
+                            ${!state.isLocked ? `<button class="sp-tab ${state.activeRightTab === 'add' ? 'active' : ''}" data-action="switch-tab" data-tab="add">Add</button>` : ""}
+                            ${!state.isLocked ? `<button class="sp-tab ${state.activeRightTab === 'suggest' ? 'active' : ''}" data-action="switch-tab" data-tab="suggest">Suggest <span class="sp-tab-count suggest-badge" id="tabCountSuggest"></span></button>` : ""}
                         </div>
                     </div>
-                    <div class="sp-list" id="sourceList"></div>
+
+                    <!-- DOCS TAB -->
+                    <div class="sp-tab-content" id="spTabDocs" style="display:${state.activeRightTab === 'docs' ? 'flex' : 'none'}">
+                        <div class="sp-tabs-inner">
+                            <div class="type-tabs">
+                                ${filterTypeButton("ALL", "All", true)}
+                                ${filterTypeButton("SO", "SO")}
+                                ${filterTypeButton("PO", "PO")}
+                                ${filterTypeButton("QT", "QT")}
+                                ${filterTypeButton("DN", "DN")}
+                            </div>
+                            <div class="status-toggle">
+                                ${filterStatusButton("ALL", "All", true)}
+                                ${filterStatusButton("DRAFT", "Draft")}
+                                ${filterStatusButton("SUBMITTED", "Submitted")}
+                            </div>
+                        </div>
+                        <div class="sp-list" id="sourceList"></div>
+                    </div>
+
+                    <!-- ADD TAB -->
+                    <div class="sp-tab-content" id="spTabAdd" style="display:${state.activeRightTab === 'add' ? 'flex' : 'none'}">
+                        <div class="add-search-panel">
+                            <div class="add-search-bar">
+                                <input type="text" id="itemSearchInput" placeholder="Search items..." value="${escapeHtml(state.searchInputValue)}">
+                                <button class="btn-search" data-action="search-items">
+                                    <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="11" cy="11" r="8" fill="none" stroke="currentColor" stroke-width="2"/><line x1="21" y1="21" x2="16.65" y2="16.65" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                                </button>
+                            </div>
+                            <div class="add-group-filter">
+                                <select id="itemGroupFilter">
+                                    <option value="All">All Groups</option>
+                                </select>
+                            </div>
+                            <div class="add-results" id="itemSearchResults">
+                                <div class="add-placeholder">Search for items to add as free/planning items</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUGGEST TAB -->
+                    <div class="sp-tab-content" id="spTabSuggest" style="display:${state.activeRightTab === 'suggest' ? 'flex' : 'none'}">
+                        <div class="suggest-panel">
+                            <div class="suggest-section">
+                                <div class="suggest-header">⚠ Below Reorder Level</div>
+                                <div class="suggest-list" id="reorderSuggestions">
+                                    <div class="suggest-placeholder">Loading suggestions...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </aside>
             </div>
 
@@ -397,25 +533,51 @@ function bindPlanningEvents(state) {
         if (!actionNode) return;
 
         const action = actionNode.dataset.action;
-        if (action === "open-modal") openModal(state);
-        if (action === "close-modal") closeModal(state);
-        if (action === "confirm-ready") confirmReady(state);
+        if (action === "advance-status") advanceStatus(state);
+        if (action === "unconfirm") unconfirmStatus(state);
         if (action === "select-ct") selectContainerProfile(state, actionNode);
         if (action === "filter-type") selectTypeFilter(state, actionNode);
         if (action === "filter-status") selectStatusFilter(state, actionNode);
         if (action === "add-to-plan") addToPlan(state, actionNode.dataset.id, actionNode.dataset.doctype);
-        if (action === "remove-item") removeItem(state, actionNode.dataset.id);
+        if (action === "remove-item") removeItem(state, actionNode.dataset.row);
         if (action === "toggle-expand") toggleExpand(state, actionNode.dataset.id);
         if (action === "back-to-list") frappe.set_route("forecast-plans");
+        if (action === "switch-tab") switchTab(state, actionNode.dataset.tab);
+        if (action === "search-items") searchItems(state);
+        if (action === "add-search-item") addFreeItem(state, actionNode.dataset.itemcode);
+        if (action === "add-suggestion") addFreeItem(state, actionNode.dataset.itemcode, parseFloat(actionNode.dataset.qty));
+        if (action === "add-all-suggestions") addAllSuggestions(state);
     };
 
     root.onchange = (event) => {
+        if (state.isLocked) return; // No edits when locked
         if (event.target.matches("input[type='checkbox'][data-action='filter-conf']")) {
             refreshPlanning(state);
         }
+        // New: qty edit input
+        if (event.target.matches("input.qty-edit")) {
+            const rowName = event.target.dataset.row;
+            const newQty = parseFloat(event.target.value) || 0;
+            if (newQty > 0) {
+                updateItemQty(state, rowName, newQty);
+            }
+        }
     };
 
+    // New: Enter key in search input
+    const searchInput = root.querySelector("#itemSearchInput");
+    if (searchInput) {
+        searchInput.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                state.searchInputValue = searchInput.value;
+                searchItems(state);
+            }
+        };
+    }
+
     root.ondragstart = (event) => {
+        if (state.isLocked) { event.preventDefault(); return; }
         const card = event.target.closest(".src-card[data-id]");
         if (!card || card.classList.contains("in-plan")) return;
         state.dragId = card.dataset.id;
@@ -424,19 +586,23 @@ function bindPlanningEvents(state) {
     };
 
     const dropZone = root.querySelector("#dropZone");
-    dropZone.ondragover = (event) => {
-        event.preventDefault();
-        dropZone.classList.add("drag-over");
-    };
-    dropZone.ondragleave = () => dropZone.classList.remove("drag-over");
-    dropZone.ondrop = (event) => {
-        event.preventDefault();
-        dropZone.classList.remove("drag-over");
-        if (state.dragId) {
-            addToPlan(state, state.dragId, state.dragDoctype);
-            state.dragId = null;
-            state.dragDoctype = null;
-        }
+    if (dropZone) {
+        dropZone.ondragover = (event) => {
+            if (state.isLocked) { event.preventDefault(); return; }
+            event.preventDefault();
+            dropZone.classList.add("drag-over");
+        };
+        dropZone.ondragleave = () => dropZone.classList.remove("drag-over");
+        dropZone.ondrop = (event) => {
+            if (state.isLocked) { event.preventDefault(); return; }
+            event.preventDefault();
+            dropZone.classList.remove("drag-over");
+            if (state.dragId) {
+                addToPlan(state, state.dragId, state.dragDoctype);
+                state.dragId = null;
+                state.dragDoctype = null;
+            }
+        };
     };
 }
 
@@ -502,10 +668,26 @@ function renderKpis(state) {
     const committedCount = state.planItems.filter((item) => item.confidence === "committed" || item.confidence === "ready").length;
     const lineTotal = state.planItems.reduce((sum, item) => sum + (item.lineItems || []).length, 0);
 
+    // Check capacity limits
+    const capStatus = state.capacity;
+    const isNearWeightLimit = capStatus && capStatus.near_weight_limit;
+    const isNearVolumeLimit = capStatus && capStatus.near_volume_limit;
+    const isOverWeight = capStatus && capStatus.at_weight_limit;
+
+    const volClass = isNearVolumeLimit ? "warn" : (isOverWeight ? "over" : "accent");
+    const wtClass = isNearWeightLimit ? "warn" : (isOverWeight ? "over" : "");
+
     setText(state, "#kpiFill", `${totals.vol.toFixed(1)} m3`);
+    if (isNearVolumeLimit) {
+        setText(state, "#kpiFill", `${totals.vol.toFixed(1)} m3 ⚠️`);
+    }
     setText(state, "#kpiPct", `${totals.pct.toFixed(1)}%`);
     setText(state, "#kpiFree", `${totals.free.toFixed(1)} m3 free`);
-    setText(state, "#kpiWeight", `${totals.wt.toLocaleString()} kg`);
+    if (isNearWeightLimit) {
+        setText(state, "#kpiWeight", `${totals.wt.toLocaleString()} kg ⚠️`);
+    } else {
+        setText(state, "#kpiWeight", `${totals.wt.toLocaleString()} kg`);
+    }
     setText(state, "#kpiDocs", String(state.planItems.length));
     setText(state, "#kpiCommitted", `${committedCount} committed`);
     if (state.planDoc && state.planDoc.departure_date) {
@@ -518,6 +700,12 @@ function renderKpis(state) {
     setText(state, "#sbWeight", `${((totals.wt / cap.maxKg) * 100).toFixed(1)}%`);
     setText(state, "#sbQueued", `${state.sourceQueue.length} docs`);
     setText(state, "#itemCount", `${state.planItems.length} documents · ${lineTotal} line items`);
+
+    // Update KPI colors based on capacity
+    const volEl = state.root.querySelector("#kpiFill");
+    const wtEl = state.root.querySelector("#kpiWeight");
+    if (volEl) volEl.className = `kpi-value ${volClass}`;
+    if (wtEl) wtEl.className = `kpi-value ${wtClass}`;
 
     // Modal summary
     const eligible = state.planItems.filter((item) =>
@@ -583,52 +771,97 @@ function renderPlanItems(state) {
         list.innerHTML = "";
         return;
     }
-    list.innerHTML = state.planItems.map((item) => {
-        const conf = PLANNING_CONFIDENCE[item.confidence] || PLANNING_CONFIDENCE.inquiry;
-        const expanded = state.expandedItem === item.id;
-        const rows = (item.lineItems || []).map((line) => `
+
+    // Separate sourced docs from free items
+    const sourcedItems = state.planItems.filter((item) => !item.is_planned);
+    const freeItems = state.planItems.filter((item) => item.is_planned);
+
+    let html = "";
+
+    // Sourced documents section
+    if (sourcedItems.length) {
+        html += sourcedItems.map((item) => renderPlanItemHtml(state, item)).join("");
+    }
+
+    // Free items section
+    if (freeItems.length) {
+        html += `<div class="free-items-header">+ Free Items (planning only)</div>`;
+        html += freeItems.map((item) => renderPlanItemHtml(state, item)).join("");
+    }
+
+    list.innerHTML = html;
+}
+
+function renderPlanItemHtml(state, item) {
+    const conf = PLANNING_CONFIDENCE[item.confidence] || PLANNING_CONFIDENCE.inquiry;
+    const expanded = state.expandedItem === item.row_name;
+    const color = item.is_planned ? "#6B6A70" : (PLANNING_COLORS[item.type] || "#999");
+
+    const rows = (item.lineItems || []).map((line, idx) => {
+        const uomLabel = item.stock_uom || "";
+        const isFreeItem = item.is_planned;
+
+        return `
             <tr>
                 <td class="mono">${escapeHtml(line.code)}</td>
                 <td>${escapeHtml(line.desc)}</td>
-                <td class="muted" style="text-align:right">${line.qty}</td>
+                <td style="text-align:right">
+                    ${isFreeItem
+                        ? `<input type="number" class="qty-edit" data-row="${item.row_name}" data-idx="${idx}" value="${line.qty}" min="0" step="1" style="width:60px;padding:2px 4px;border:0.5px solid var(--border);border-radius:4px;font-family:var(--mono);font-size:11px;text-align:right;"> ${escapeHtml(uomLabel)}`
+                        : `<span class="muted" style="text-align:right">${line.qty}</span>`
+                    }
+                </td>
                 <td class="mono" style="text-align:right">${(line.vol || 0).toFixed(3)}</td>
                 <td class="mono" style="text-align:right">${(line.wt || 0).toFixed(1)}</td>
             </tr>
-        `).join("");
-
-        return `
-            <div class="plan-item ${expanded ? "expanded" : ""}" data-action="toggle-expand" data-id="${escapeHtml(item.id)}">
-                <div class="item-bar" style="background:${PLANNING_COLORS[item.type] || "#999"}"></div>
-                <div class="item-info">
-                    <div class="item-docnum">${escapeHtml(item.id)}</div>
-                    <div class="item-party">${escapeHtml(item.party)}</div>
-                </div>
-                <span class="item-conf-badge" style="background:${conf.bg};color:${conf.text}">${escapeHtml(item.confidence)}</span>
-                <div class="item-vol"><div class="item-vol-num">${item.volume.toFixed(1)}</div><div class="item-vol-unit">m3</div></div>
-                <div class="item-expand-icon"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
-                <button class="item-remove" data-action="remove-item" data-id="${escapeHtml(item.id)}">×</button>
-            </div>
-            <div class="item-detail-panel ${expanded ? "show" : ""}" id="detail-${escapeHtml(item.id)}">
-                <div class="detail-header">
-                    <div class="detail-title">${escapeHtml(item.id)} — ${escapeHtml(item.party)}</div>
-                </div>
-                <table class="detail-table">
-                    <thead><tr><th>Code</th><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Vol m3</th><th style="text-align:right">Wt kg</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </div>
         `;
     }).join("");
+
+    // UOM rounding info for free items
+    let uomInfo = "";
+    if (item.is_planned && item.purchase_uom && item.purchase_uom !== item.stock_uom) {
+        const boxesNeeded = Math.ceil(item.planned_qty / (item.uom_conversion_factor || 1));
+        uomInfo = `<div class="uom-hint">⚠ Purchased as ${escapeHtml(item.purchase_uom)} (${item.uom_conversion_factor} ${item.stock_uom}/${escapeHtml(item.purchase_uom).toLowerCase()}) — ${boxesNeeded}× = ${boxesNeeded * (item.uom_conversion_factor || 1)} ${item.stock_uom}</div>`;
+    }
+
+    return `
+        <div class="plan-item ${item.is_planned ? 'free-item' : ''} ${expanded ? 'expanded' : ''}" data-action="toggle-expand" data-id="${escapeHtml(item.row_name)}">
+            <div class="item-bar" style="background:${color}"></div>
+            <div class="item-info">
+                <div class="item-docnum">${item.is_planned ? escapeHtml(item.item_code) : escapeHtml(item.id)}</div>
+                <div class="item-party">${escapeHtml(item.is_planned ? (item.item_name || item.item_code) : item.party)}</div>
+            </div>
+            <span class="item-conf-badge" style="background:${conf.bg};color:${conf.text}">${escapeHtml(item.confidence)}</span>
+            <div class="item-vol"><div class="item-vol-num">${item.volume.toFixed(1)}</div><div class="item-vol-unit">m3</div></div>
+            <div class="item-expand-icon"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+            <button class="item-remove" data-action="remove-item" data-row="${escapeHtml(item.row_name)}">×</button>
+        </div>
+        <div class="item-detail-panel ${expanded ? 'show' : ''}" id="detail-${escapeHtml(item.row_name)}">
+            <div class="detail-header">
+                <div class="detail-title">${item.is_planned ? escapeHtml(item.item_code + " — " + (item.item_name || "")) : (escapeHtml(item.id) + " — " + escapeHtml(item.party))}</div>
+                ${item.is_planned ? `<span class="detail-free-badge">Free Item</span>` : ""}
+            </div>
+            <table class="detail-table">
+                <thead><tr><th>Code</th><th>Description</th><th style="text-align:right">Qty${item.is_planned ? " (edit)" : ""}</th><th style="text-align:right">Vol m3</th><th style="text-align:right">Wt kg</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            ${uomInfo}
+        </div>
+    `;
 }
 
 function renderSourceQueue(state) {
-    const planIds = new Set(state.planItems.map((item) => item.id));
+    const planIds = new Set(state.planItems.filter((item) => !item.is_planned).map((item) => item.id));
     const filtered = state.sourceQueue.filter((doc) => {
         if (state.currentTypeFilter !== "ALL" && doc.type !== state.currentTypeFilter) return false;
         if (state.currentStatusFilter === "DRAFT" && doc.docstatus !== "Draft") return false;
         if (state.currentStatusFilter === "SUBMITTED" && doc.docstatus !== "Submitted") return false;
         return true;
     });
+
+    // Update docs tab count
+    const docsBadge = state.root.querySelector("#tabCountDocs");
+    if (docsBadge) docsBadge.textContent = filtered.length;
 
     setText(state, "#queueCount", `${filtered.length} documents`);
 
@@ -637,7 +870,7 @@ function renderSourceQueue(state) {
         const conf = PLANNING_CONFIDENCE[doc.confidence] || PLANNING_CONFIDENCE.inquiry;
 
         return `
-            <div class="src-card ${inPlan ? "in-plan" : ""}" draggable="true" data-id="${escapeHtml(doc.id)}" data-doctype="${escapeHtml(doc.source_doctype || "")}">
+            <div class="src-card ${inPlan ? "in-plan" : ""} ${state.isLocked ? "locked" : ""}" ${state.isLocked ? "" : 'draggable="true"'} data-id="${escapeHtml(doc.id)}" data-doctype="${escapeHtml(doc.source_doctype || "")}">
                 <div class="drag-hint"><span></span><span></span><span></span></div>
                 <div class="src-card-top">
                     <span class="src-docnum">${escapeHtml(doc.id)}</span>
@@ -653,10 +886,13 @@ function renderSourceQueue(state) {
                     <span class="item-conf-badge" style="background:${conf.bg};color:${conf.text};padding:2px 7px;border-radius:20px;font-size:9.5px;font-weight:500">${escapeHtml(doc.confidence)}</span>
                     <span class="src-date">${escapeHtml(doc.docstatus)} · ${escapeHtml(doc.date)}</span>
                 </div>
-                <button class="btn-add-plan" data-action="add-to-plan" data-id="${escapeHtml(doc.id)}" data-doctype="${escapeHtml(doc.source_doctype || "")}">
-                    <svg viewBox="0 0 24 24" width="12" height="12"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    Add to Plan
-                </button>
+                ${state.isLocked
+                    ? `<div class="src-locked-badge">🔒 Locked</div>`
+                    : `<button class="btn-add-plan" data-action="add-to-plan" data-id="${escapeHtml(doc.id)}" data-doctype="${escapeHtml(doc.source_doctype || "")}">
+                        <svg viewBox="0 0 24 24" width="12" height="12"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        Add to Plan
+                    </button>`
+                }
             </div>
         `;
     }).join("");
@@ -667,6 +903,10 @@ function renderSourceQueue(state) {
 // ---------------------------------------------------------------------------
 
 function addToPlan(state, id, sourceDoctype) {
+    if (state.isLocked) {
+        frappe.show_alert({ message: __("Container is locked — cannot add items"), indicator: "red" });
+        return;
+    }
     if (!id || state.planItems.some((item) => item.id === id)) return;
 
     // Resolve source_doctype from queue if not passed
@@ -698,15 +938,19 @@ function addToPlan(state, id, sourceDoctype) {
     });
 }
 
-function removeItem(state, id) {
+function removeItem(state, rowName) {
+    if (state.isLocked) {
+        frappe.show_alert({ message: __("Container is locked — cannot remove items"), indicator: "red" });
+        return;
+    }
     frappe.call({
-        method: "orderlift.orderlift_logistics.services.forecast_planning.remove_item_from_plan",
-        args: { plan_name: state.planName, source_name: id },
+        method: "orderlift.orderlift_logistics.services.forecast_planning.remove_item_line",
+        args: { plan_name: state.planName, row_name: rowName },
         async: true,
         freeze: true,
         freeze_message: __("Removing..."),
         callback: (r) => {
-            if (state.expandedItem === id) state.expandedItem = null;
+            if (state.expandedItem === rowName) state.expandedItem = null;
             applyPlanDetail(state, r.message);
             refreshPlanning(state);
         },
@@ -717,13 +961,14 @@ function applyPlanDetail(state, plan) {
     if (!plan) return;
     state.planDoc = plan;
     state.container = plan.container;
+    state.capacity = plan.capacity || null;
     state.planItems = (plan.items || []).map((item) => {
         const cfg_abbr = { "Quotation": "QT", "Sales Order": "SO", "Purchase Order": "PO", "Delivery Note": "DN" };
         return {
             id: item.id,
             row_name: item.row_name,
-            source_doctype: item.source_doctype,
-            type: item.type || cfg_abbr[item.source_doctype] || "??",
+            source_doctype: item.source_doctype || "",
+            type: item.is_planned ? "PLAN" : (item.type || cfg_abbr[item.source_doctype] || "??"),
             party: item.party,
             party_type: item.party_type,
             volume: item.volume,
@@ -733,12 +978,22 @@ function applyPlanDetail(state, plan) {
             docstatus: item.docstatus_label,
             itemCount: item.item_count,
             selected: item.selected,
+            is_planned: item.is_planned || 0,
+            item_code: item.item_code || "",
+            item_name: item.item_name || "",
+            planned_qty: item.planned_qty || 0,
+            original_qty: item.original_qty || 0,
+            stock_uom: item.stock_uom || "",
+            purchase_uom: item.purchase_uom || "",
+            uom_conversion_factor: item.uom_conversion_factor || 1,
             lineItems: (item.line_items || []).map((li) => ({
                 code: li.item_code,
                 desc: li.item_name || li.item_code,
                 qty: li.qty,
-                vol: li.line_volume_m3,
-                wt: li.line_weight_kg,
+                vol: li.line_volume_m3 || 0,
+                wt: li.line_weight_kg || 0,
+                unit_vol: li.unit_volume_m3 || 0,
+                unit_wt: li.unit_weight_kg || 0,
             })),
         };
     });
@@ -773,18 +1028,395 @@ function selectStatusFilter(state, node) {
     renderSourceQueue(state);
 }
 
-function toggleExpand(state, id) {
-    state.expandedItem = state.expandedItem === id ? null : id;
+function toggleExpand(state, rowName) {
+    state.expandedItem = state.expandedItem === rowName ? null : rowName;
     renderPlanItems(state);
 }
 
-function openModal(state) {
-    renderKpis(state); // Refresh modal numbers
-    state.root.querySelector("#modalOverlay").classList.add("show");
+// ---------------------------------------------------------------------------
+// Status advancement
+// ---------------------------------------------------------------------------
+
+function advanceStatus(state) {
+    const status = state.planDoc?.status || "Planning";
+    const nextLabels = {
+        Planning: "Ready",
+        Ready: "Loading",
+        Loading: "In Transit",
+        "In Transit": "Delivered",
+    };
+    const nextStatus = nextLabels[status];
+    if (!nextStatus) return;
+
+    const confirmLabels = {
+        Planning: `Confirm this container with ${state.planItems.filter(i => i.selected).length} items and move to Ready?`,
+        Ready: `Start loading this container?`,
+        Loading: `Mark this container as departed (In Transit)?`,
+        "In Transit": `Mark this container as delivered?`,
+    };
+
+    frappe.confirm(confirmLabels[status], () => {
+        frappe.call({
+            method: "orderlift.orderlift_logistics.services.forecast_planning.advance_status",
+            args: { plan_name: state.planName, new_status: nextStatus },
+            async: true,
+            freeze: true,
+            freeze_message: __("Updating status..."),
+            callback: (r) => {
+                applyPlanDetail(state, r.message);
+                state.planDoc.status = nextStatus;
+                refreshPlanning(state);
+                updateTopbar(state);
+                frappe.show_alert({
+                    message: `Container ${state.planDoc.name} → ${nextStatus}`,
+                    indicator: "green"
+                });
+            },
+            error: (r) => {
+                const msg = r?.message || r?.exc || "Status change failed";
+                frappe.show_alert({ message: String(msg).slice(0, 100), indicator: "red" });
+            },
+        });
+    });
 }
 
-function closeModal(state) {
-    state.root.querySelector("#modalOverlay").classList.remove("show");
+function unconfirmStatus(state) {
+    frappe.confirm("Unconfirm this container? You will be able to edit items and adjust the plan again.", () => {
+        frappe.call({
+            method: "orderlift.orderlift_logistics.services.forecast_planning.advance_status",
+            args: { plan_name: state.planName, new_status: "Planning" },
+            async: true,
+            freeze: true,
+            freeze_message: __("Unconfirming..."),
+            callback: (r) => {
+                applyPlanDetail(state, r.message);
+                state.planDoc.status = "Planning";
+                state.isLocked = false;
+                refreshPlanning(state);
+                updateTopbar(state);
+                frappe.show_alert({
+                    message: `Container ${state.planDoc.name} unconfirmed — editing restored`,
+                    indicator: "blue"
+                });
+            },
+            error: (r) => {
+                const msg = r?.message || r?.exc || "Unconfirm failed";
+                frappe.show_alert({ message: String(msg).slice(0, 100), indicator: "red" });
+            },
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Item search (Add tab)
+// ---------------------------------------------------------------------------
+
+function switchTab(state, tab) {
+    state.activeRightTab = tab;
+
+    // Show/hide tab content panels
+    const tabMap = { docs: "spTabDocs", add: "spTabAdd", suggest: "spTabSuggest" };
+    Object.entries(tabMap).forEach(([key, id]) => {
+        const el = state.root.querySelector(`#${id}`);
+        if (el) el.style.display = key === tab ? "flex" : "none";
+    });
+
+    // Update tab buttons
+    state.root.querySelectorAll(".sp-tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === tab);
+    });
+
+    // Load tab content on first visit
+    if (tab === "suggest") {
+        if (!state.reorderSuggestions.length) {
+            loadSuggestions(state);
+        } else {
+            renderSuggestions(state);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Item search (Add tab)
+// ---------------------------------------------------------------------------
+
+function searchItems(state) {
+    const input = state.root.querySelector("#itemSearchInput");
+    const term = input ? input.value.trim() : "";
+    if (!term || term.length < 2) return;
+
+    state.searchInputValue = term;
+    state.itemSearchResults = [];
+
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.get_item_search",
+        args: { search_term: term, item_group: state.searchGroupFilter || null },
+        async: true,
+        callback: (r) => {
+            state.itemSearchResults = r.message || [];
+            renderSearchResults(state);
+        },
+    });
+}
+
+function renderSearchResults(state) {
+    const container = state.root.querySelector("#itemSearchResults");
+    if (!container) return;
+
+    if (!state.itemSearchResults.length) {
+        container.innerHTML = `<div class="add-placeholder">No items found for "${escapeHtml(state.searchInputValue)}"</div>`;
+        return;
+    }
+
+    // Collect item groups for filter dropdown
+    const groups = new Set(state.itemSearchResults.map((i) => i.item_group));
+    const groupSelect = state.root.querySelector("#itemGroupFilter");
+    if (groupSelect && groupSelect.options.length <= 1) {
+        [...groups].sort().forEach((g) => {
+            const opt = document.createElement("option");
+            opt.value = g;
+            opt.textContent = g;
+            groupSelect.appendChild(opt);
+        });
+    }
+
+    container.innerHTML = state.itemSearchResults.map((item) => {
+        const inPlan = state.planItems.some((p) => p.is_planned && p.item_code === item.item_code);
+
+        return `
+        <div class="add-item-row ${inPlan ? 'in-plan' : ''}">
+            <div class="add-item-info">
+                <div class="add-item-code">${escapeHtml(item.item_code)}</div>
+                <div class="add-item-name">${escapeHtml(item.item_name)}${inPlan ? ' <span class="added-label">✓ in plan</span>' : ''}</div>
+                <div class="add-item-meta">${escapeHtml(item.item_group)} · ${escapeHtml(item.stock_uom)} · ${(item.unit_weight_kg || 0).toFixed(2)} kg · ${(item.unit_volume_m3 || 0).toFixed(4)} m³${item.purchase_uom !== item.stock_uom ? ` · Buy in ${item.purchase_uom}` : ""}</div>
+            </div>
+            <div class="add-item-actions">
+                <input type="number" class="add-qty-input" data-qty-for="${escapeHtml(item.item_code)}" value="${item.min_order_qty || 1}" min="1" step="1" style="width:50px;padding:2px 4px;border:0.5px solid var(--border);border-radius:4px;font-size:11px;text-align:right;" ${inPlan ? 'disabled' : ''}>
+                ${inPlan
+                    ? `<button class="btn-add-item-sm disabled" disabled>
+                        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12l5 5L20 7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                       </button>`
+                    : `<button class="btn-add-item-sm" data-action="add-search-item" data-itemcode="${escapeHtml(item.item_code)}">
+                        <svg viewBox="0 0 24 24" width="12" height="12"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                       </button>`
+                }
+            </div>
+        </div>
+    `;
+    }).join("");
+}
+
+function addFreeItem(state, itemCode, qty) {
+    if (state.isLocked) {
+        frappe.show_alert({ message: __("Container is locked — cannot add items"), indicator: "red" });
+        return;
+    }
+
+    // Guard: don't add if already in plan
+    const exists = state.planItems.some((p) => p.is_planned && p.item_code === itemCode);
+    if (exists) {
+        frappe.show_alert({ message: `${itemCode} already in plan`, indicator: "blue" });
+        return;
+    }
+
+    // Find qty input by data attribute (avoids CSS selector issues with dots in item codes)
+    const allInputs = state.root.querySelectorAll(".add-qty-input");
+    let plannedQty = qty || 1;
+    allInputs.forEach((inp) => {
+        if (inp.dataset.qtyFor === itemCode) plannedQty = parseFloat(inp.value) || 1;
+    });
+
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.add_free_item",
+        args: { plan_name: state.planName, item_code: itemCode, planned_qty: plannedQty },
+        async: true,
+        freeze: true,
+        freeze_message: __("Adding item..."),
+        callback: (r) => {
+            applyPlanDetail(state, r.message);
+            refreshPlanning(state);
+            // Instantly update the suggest tab if it's active
+            if (state.activeRightTab === "suggest" && state.reorderSuggestions.length) {
+                renderSuggestions(state);
+            }
+            frappe.show_alert({ message: `${itemCode} added to plan`, indicator: "green" });
+        },
+        error: () => {
+            frappe.show_alert({ message: __("Could not add item"), indicator: "red" });
+        },
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Reorder suggestions (Suggest tab)
+// ---------------------------------------------------------------------------
+
+function loadSuggestions(state) {
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.get_reorder_suggestions",
+        args: { company: state.planDoc?.company || undefined },
+        async: true,
+        callback: (r) => {
+            state.reorderSuggestions = r.message || [];
+            renderSuggestions(state);
+        },
+    });
+}
+
+function renderSuggestions(state) {
+    const container = state.root.querySelector("#reorderSuggestions");
+    if (!container) return;
+
+    // Get item codes already in the plan (free items)
+    const planItemCodes = new Set(
+        state.planItems
+            .filter((item) => item.is_planned && item.item_code)
+            .map((item) => item.item_code)
+    );
+
+    // Filter out already-added items
+    const available = state.reorderSuggestions.filter(
+        (item) => !planItemCodes.has(item.item_code)
+    );
+    const alreadyAdded = state.reorderSuggestions.filter(
+        (item) => planItemCodes.has(item.item_code)
+    );
+
+    // Update tab badge — show count of items NOT yet in plan
+    const badge = state.root.querySelector("#tabCountSuggest");
+    if (badge) {
+        badge.textContent = available.length;
+        badge.style.display = available.length > 0 ? "" : "none";
+    }
+
+    // Context-aware header based on flow scope
+    const flowScope = state.planDoc?.flow_scope || "";
+    const flowContext = {
+        Inbound: { show: true, icon: "📦", label: "Import from Suppliers" },
+        Domestic: { show: true, icon: "🚚", label: "Local Distribution" },
+        Outbound: { show: true, icon: "🌍", label: "Export to Customers" },
+    };
+    const ctx = flowContext[flowScope] || { show: true, icon: "📋", label: "" };
+
+    if (!state.reorderSuggestions.length) {
+        container.innerHTML = `<div class="suggest-placeholder">✓ All items above reorder levels</div>`;
+        return;
+    }
+
+    let html = `<div class="suggest-header">
+        ${ctx.icon} Below Reorder Level — ${ctx.label}
+        <span class="suggest-header-count">${available.length} available</span>
+    </div>`;
+
+    if (!available.length) {
+        html += `<div class="suggest-placeholder">✓ All suggested items already added to plan</div>`;
+    } else {
+        html += available.map((item) => {
+            const deficit = item.reorder_level - item.actual_qty;
+            const severity = deficit > 40 ? "critical" : deficit > 15 ? "high" : deficit > 5 ? "medium" : "low";
+            const severityColors = {
+                critical: { bg: "#FBEAEA", border: "#A02C2C", text: "#A02C2C", label: "🔴 Critical" },
+                high:     { bg: "#FDE8BE", border: "#854F0B", text: "#854F0B", label: "🟠 Low" },
+                medium:   { bg: "#FFF8E1", border: "#D4A017", text: "#854F0B", label: "🟡 Below" },
+                low:      { bg: "#E8F5E9", border: "#2E7D32", text: "#2E7D32", label: "🟢 Slight" },
+            };
+            const sc = severityColors[severity];
+            const pctStock = item.reorder_level > 0 ? Math.round((item.actual_qty / item.reorder_level) * 100) : 0;
+
+            return `
+            <div class="suggest-item" style="border-left:3px solid ${sc.border};">
+                <div class="suggest-info">
+                    <div class="suggest-top-row">
+                        <span class="suggest-code">${escapeHtml(item.item_code)}</span>
+                        <span class="suggest-severity-badge" style="background:${sc.bg};color:${sc.text};border:0.5px solid ${sc.border}40;">${sc.label}</span>
+                    </div>
+                    <div class="suggest-name">${escapeHtml(item.item_name)}</div>
+                    <div class="suggest-stock-bar">
+                        <div class="stock-bar-track"><div class="stock-bar-fill" style="width:${pctStock}%;background:${sc.border};"></div></div>
+                        <span class="suggest-stock-num">${item.actual_qty} / ${item.reorder_level} ${escapeHtml(item.stock_uom)}</span>
+                    </div>
+                    <div class="suggest-meta">Deficit: <strong style="color:${sc.text}">${deficit} ${escapeHtml(item.stock_uom)}</strong> · Reorder qty: ${item.reorder_qty} ${escapeHtml(item.stock_uom)}${item.purchase_uom !== item.stock_uom ? ` · Buy in ${item.purchase_uom}` : ""}</div>
+                </div>
+                <div class="suggest-actions">
+                    <button class="btn-add-suggest" data-action="add-suggestion" data-itemcode="${escapeHtml(item.item_code)}" data-qty="${item.suggested_qty}">
+                        <svg viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        Add ${item.suggested_qty}
+                    </button>
+                </div>
+            </div>
+        `;
+        }).join("") + `<button class="btn-add-all" data-action="add-all-suggestions">+ Add All ${available.length} Items to Plan</button>`;
+    }
+
+    // Show already-added items at bottom (dimmed)
+    if (alreadyAdded.length) {
+        html += `<div class="already-added-section">
+            <div class="already-added-header">Already in plan</div>
+            ${alreadyAdded.map((item) => `
+                <div class="already-added-item">
+                    <span class="already-added-code">${escapeHtml(item.item_code)}</span>
+                    <span class="already-added-name">${escapeHtml(item.item_name)}</span>
+                    <span class="already-added-check">✓</span>
+                </div>
+            `).join("")}
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function addAllSuggestions(state) {
+    const planItemCodes = new Set(
+        state.planItems
+            .filter((item) => item.is_planned && item.item_code)
+            .map((item) => item.item_code)
+    );
+    const available = state.reorderSuggestions.filter(
+        (item) => !planItemCodes.has(item.item_code)
+    );
+
+    if (!available.length) {
+        frappe.show_alert({ message: __("All suggested items already in plan"), indicator: "blue" });
+        return;
+    }
+
+    let idx = 0;
+    const addNext = () => {
+        if (idx >= available.length) {
+            loadSuggestions(state); // Refresh
+            frappe.show_alert({ message: `${available.length} items added to plan`, indicator: "green" });
+            return;
+        }
+        const item = available[idx];
+        idx++;
+        frappe.call({
+            method: "orderlift.orderlift_logistics.services.forecast_planning.add_free_item",
+            args: { plan_name: state.planName, item_code: item.item_code, planned_qty: item.suggested_qty },
+            async: true,
+            callback: () => { addNext(); },
+        });
+    };
+    addNext();
+}
+
+// ---------------------------------------------------------------------------
+// Update item qty (free items)
+// ---------------------------------------------------------------------------
+
+function updateItemQty(state, rowName, newQty) {
+    if (state.isLocked) return;
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.update_item_line_qty",
+        args: { plan_name: state.planName, row_name: rowName, planned_qty: newQty },
+        async: true,
+        callback: (r) => {
+            applyPlanDetail(state, r.message);
+            refreshPlanning(state);
+        },
+        error: () => {
+            frappe.show_alert({ message: __("Could not update qty"), indicator: "red" });
+        },
+    });
 }
 
 function confirmReady(state) {
@@ -907,6 +1539,8 @@ function injectPlanningStyles() {
         .planning-native-root .topbar-title{font-size:14px;font-weight:600;color:var(--text);}
         .planning-native-root .topbar-sep{color:var(--hint);font-size:12px;}
         .planning-native-root .topbar-crumb{font-size:12px;color:var(--muted);}
+        .planning-native-root .topbar-route{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--teal);display:inline-flex;align-items:center;gap:4px;}
+        .planning-native-root .route-arrow{color:var(--accent);font-weight:700;font-size:14px;margin:0 2px;}
         .planning-native-root .topbar-flow-badge{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.3px;display:none;}
         .planning-native-root .topbar-space{flex:1;}
         .planning-native-root .topbar-back-btn{padding:5px 12px;border-radius:var(--r);border:0.5px solid var(--border);background:transparent;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;transition:all .13s;}
@@ -927,6 +1561,8 @@ function injectPlanningStyles() {
         .planning-native-root .kpi-value{font-size:18px;font-weight:600;line-height:1.2;color:var(--text);}
         .planning-native-root .kpi-value.accent{color:var(--accent);}
         .planning-native-root .kpi-value.teal{color:var(--teal);}
+        .planning-native-root .kpi-value.warn{color:#D4A017;}
+        .planning-native-root .kpi-value.over{color:var(--red);}
         .planning-native-root .kpi-sub{font-size:10px;color:var(--hint);margin-top:1px;}
         .planning-native-root .main{display:grid;grid-template-columns:210px 1fr 310px;height:calc(100% - 50px - 52px);overflow:hidden;}
         .planning-native-root .sidebar{background:var(--sidebar-bg);overflow-y:auto;padding:14px 0;}
@@ -1003,7 +1639,17 @@ function injectPlanningStyles() {
         .planning-native-root .drop-zone.drag-over svg{stroke:var(--accent);}
         .planning-native-root .drop-zone-hint{font-size:11px;color:var(--hint);}
         .planning-native-root .source-panel{background:var(--surface);border-left:0.5px solid var(--border-md);display:flex;flex-direction:column;overflow:hidden;}
-        .planning-native-root .sp-header{padding:11px 12px 9px;border-bottom:0.5px solid var(--border);flex-shrink:0;}
+        .planning-native-root .sp-header{padding:0;border-bottom:0.5px solid var(--border);flex-shrink:0;}
+        .planning-native-root .sp-tabs{display:flex;gap:0;border-bottom:0.5px solid var(--border);}
+        .planning-native-root .sp-tab{flex:1;padding:8px 0;border:none;background:transparent;font-family:var(--font);font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .13s;border-bottom:2px solid transparent;position:relative;display:flex;align-items:center;justify-content:center;gap:4px;}
+        .planning-native-root .sp-tab:hover{color:var(--text);background:var(--bg);}
+        .planning-native-root .sp-tab.active{color:var(--teal);border-bottom-color:var(--teal);font-weight:600;}
+        .planning-native-root .sp-tab-count{font-size:9.5px;font-family:var(--mono);font-weight:400;color:var(--hint);background:var(--bg);padding:1px 6px;border-radius:10px;min-width:16px;text-align:center;line-height:1.4;}
+        .planning-native-root .sp-tab.active .sp-tab-count{color:var(--teal);background:rgba(13,107,80,.1);}
+        .planning-native-root .suggest-badge{background:var(--red-lt);color:var(--red);font-weight:600;}
+        .planning-native-root .sp-tab.active .suggest-badge{background:rgba(160,44,44,.15);color:var(--red);}
+        .planning-native-root .sp-tab-content{flex:1;overflow-y:auto;overflow-x:hidden;flex-direction:column;}
+        .planning-native-root .sp-tabs-inner{padding:8px 10px 4px;}
         .planning-native-root .sp-title{font-size:13px;font-weight:600;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;}
         .planning-native-root .sp-title-count{font-size:10px;font-family:var(--mono);color:var(--hint);font-weight:400;}
         .planning-native-root .type-tabs{display:flex;gap:3px;background:var(--bg);padding:3px;border-radius:var(--r);margin-bottom:8px;}
@@ -1055,9 +1701,103 @@ function injectPlanningStyles() {
         .planning-native-root .btn-cancel:hover{background:var(--bg);}
         .planning-native-root .btn-confirm{padding:8px 20px;border-radius:var(--r);border:none;background:var(--teal);font-size:13px;font-weight:500;color:white;}
         .planning-native-root .btn-confirm:hover{opacity:.85;}
+
+        /* Journey bar */
+        .planning-native-root .journey-bar{display:flex;align-items:center;gap:0;margin-right:12px;}
+        .planning-native-root .journey-step{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:500;color:var(--hint);transition:all .2s;}
+        .planning-native-root .journey-step.done{color:var(--teal);}
+        .planning-native-root .journey-step.active{color:var(--text);font-weight:600;}
+        .planning-native-root .journey-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);}
+        .planning-native-root .journey-num{font-size:9px;font-family:var(--mono);color:var(--hint);min-width:14px;text-align:center;}
+        .planning-native-root .journey-connector{width:16px;height:1px;background:var(--border);margin:0 4px;}
+        .planning-native-root .journey-step.done + .journey-connector,.planning-native-root .journey-connector + .journey-step.done .journey-connector{background:var(--teal);}
+
+        /* Advance status button */
+        .planning-native-root .btn-advance-status{padding:7px 15px;border-radius:var(--r);border:none;background:var(--teal);color:white;font-size:12px;font-weight:600;font-family:var(--font);display:flex;align-items:center;gap:5px;transition:all .15s;cursor:pointer;white-space:nowrap;}
+        .planning-native-root .btn-advance-status:hover{opacity:.85;transform:translateY(-1px);}
+        .planning-native-root .btn-advance-text{pointer-events:none;}
+        .planning-native-root .btn-advance-divider{color:rgba(255,255,255,.3);pointer-events:none;padding:0 4px;}
+        .planning-native-root .btn-unconfirm{color:rgba(255,255,255,.7);font-weight:400;font-size:11px;padding:2px 6px;border-radius:4px;transition:all .13s;}
+        .planning-native-root .btn-unconfirm:hover{background:rgba(255,255,255,.15);color:white;}
+
+        /* Locked states */
+        .planning-native-root .src-card.locked{pointer-events:auto;cursor:default;opacity:.55;}
+        .planning-native-root .src-card.locked:hover{border-color:var(--border);transform:none;box-shadow:none;}
+        .planning-native-root .src-locked-badge{position:absolute;top:8px;right:10px;font-size:10px;color:var(--hint);opacity:.6;}
         .planning-native-root .success-toast{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:#17181C;color:white;padding:10px 20px;border-radius:var(--r);font-size:12.5px;font-weight:500;display:none;align-items:center;gap:8px;z-index:300;white-space:nowrap;}
         .planning-native-root .success-toast.show{display:flex;}
         .planning-native-root .toast-icon{width:16px;height:16px;background:var(--teal);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;}
+
+        /* Free items section */
+        .planning-native-root .free-items-header{font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.5px;padding:10px 10px 4px;border-top:1px solid var(--border);margin-top:8px;}
+        .planning-native-root .plan-item.free-item{border-left:2px dashed var(--hint);}
+        .planning-native-root .plan-item.free-item .item-docnum{color:var(--hint);}
+        .planning-native-root .detail-free-badge{font-size:9px;font-weight:600;background:var(--gray-lt);color:var(--muted);padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;}
+        .planning-native-root .uom-hint{font-size:10px;color:var(--accent);padding:6px 12px;background:var(--accent-lt);border-top:0.5px solid rgba(193,127,36,.15);}
+
+        /* Add tab (item search) */
+        .planning-native-root .add-search-panel{display:flex;flex-direction:column;height:100%;}
+        .planning-native-root .add-search-bar{display:flex;gap:4px;padding:8px 10px 4px;}
+        .planning-native-root .add-search-bar input{flex:1;padding:6px 8px;border:0.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font);outline:none;background:var(--bg);}
+        .planning-native-root .add-search-bar input:focus{border-color:var(--teal);background:white;}
+        .planning-native-root .btn-search{padding:6px 8px;border:0.5px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);display:flex;align-items:center;cursor:pointer;transition:all .13s;}
+        .planning-native-root .btn-search:hover{background:var(--teal);border-color:var(--teal);color:white;}
+        .planning-native-root .add-group-filter{padding:4px 10px;}
+        .planning-native-root .add-group-filter select{width:100%;padding:4px 6px;border:0.5px solid var(--border);border-radius:4px;font-size:11px;font-family:var(--font);background:var(--bg);color:var(--text);}
+        .planning-native-root .add-results{flex:1;overflow-y:auto;padding:4px 10px 10px;}
+        .planning-native-root .add-placeholder{text-align:center;color:var(--hint);font-size:11.5px;padding:30px 10px;}
+        .planning-native-root .add-item-row{display:flex;align-items:center;gap:8px;padding:8px;border:0.5px solid var(--border);border-radius:6px;margin-bottom:4px;background:var(--surface);transition:all .13s;}
+        .planning-native-root .add-item-row:hover{border-color:var(--border-md);background:white;}
+        .planning-native-root .add-item-info{flex:1;min-width:0;}
+        .planning-native-root .add-item-code{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text);}
+        .planning-native-root .add-item-name{font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .planning-native-root .add-item-meta{font-size:9.5px;color:var(--hint);margin-top:2px;}
+        .planning-native-root .add-item-actions{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+        .planning-native-root .btn-add-item-sm{padding:5px 8px;border-radius:var(--r);border:0.5px solid var(--border);background:var(--bg);font-size:10px;font-weight:500;color:var(--muted);display:flex;align-items:center;gap:3px;transition:all .14s;}
+        .planning-native-root .btn-add-item-sm:hover{background:var(--teal);border-color:var(--teal);color:white;}
+        .planning-native-root .btn-add-item-sm svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;}
+        .planning-native-root .btn-add-item-sm.disabled{opacity:.35;pointer-events:none;background:var(--gray-lt);border-color:var(--border);}
+        .planning-native-root .add-item-row.in-plan{opacity:.5;background:var(--bg);}
+        .planning-native-root .add-item-row.in-plan .add-item-name{color:var(--hint);}
+        .planning-native-root .added-label{color:var(--teal);font-weight:500;font-size:10px;}
+
+        /* Suggest tab */
+        .planning-native-root .suggest-panel{display:flex;flex-direction:column;height:100%;padding:10px;}
+        .planning-native-root .suggest-section{flex:1;}
+        .planning-native-root .suggest-header{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:10px;padding:6px 0 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+        .planning-native-root .suggest-header-count{font-size:11px;font-weight:400;color:var(--muted);}
+        .planning-native-root .suggest-list{display:flex;flex-direction:column;gap:6px;}
+        .planning-native-root .suggest-placeholder{text-align:center;color:var(--teal);font-size:12px;padding:30px 10px;font-weight:500;}
+        .planning-native-root .suggest-item{display:flex;align-items:stretch;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:8px;background:var(--surface);transition:all .15s;margin-bottom:2px;}
+        .planning-native-root .suggest-item:hover{border-color:var(--border-md);box-shadow:0 2px 8px rgba(0,0,0,.06);}
+        .planning-native-root .suggest-info{flex:1;min-width:0;}
+        .planning-native-root .suggest-top-row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;}
+        .planning-native-root .suggest-code{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text);}
+        .planning-native-root .suggest-severity-badge{font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:4px;letter-spacing:.2px;}
+        .planning-native-root .suggest-name{font-size:11.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .planning-native-root .suggest-stock-bar{display:flex;align-items:center;gap:8px;margin-top:6px;}
+        .planning-native-root .stock-bar-track{flex:1;height:4px;background:var(--bg);border-radius:2px;overflow:hidden;}
+        .planning-native-root .stock-bar-fill{height:100%;border-radius:2px;transition:width .3s;}
+        .planning-native-root .suggest-stock-num{font-size:10px;font-family:var(--mono);color:var(--muted);white-space:nowrap;flex-shrink:0;}
+        .planning-native-root .suggest-meta{font-size:10.5px;color:var(--hint);margin-top:5px;line-height:1.5;}
+        .planning-native-root .suggest-actions{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;}
+        .planning-native-root .btn-add-suggest{padding:8px 12px;border-radius:var(--r);border:0.5px solid var(--teal);background:var(--teal);font-size:11px;font-weight:600;color:white;display:flex;align-items:center;gap:5px;cursor:pointer;transition:all .15s;white-space:nowrap;}
+        .planning-native-root .btn-add-suggest:hover{opacity:.85;transform:scale(1.03);}
+        .planning-native-root .btn-add-suggest svg{width:13px;height:13px;stroke:white;fill:none;stroke-width:2.5;}
+        .planning-native-root .btn-add-all{width:100%;margin-top:10px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--teal);background:var(--teal);font-size:12px;font-weight:600;color:white;cursor:pointer;transition:all .15s;letter-spacing:.2px;}
+        .planning-native-root .btn-add-all:hover{opacity:.88;}
+
+        /* Qty edit input */
+        .planning-native-root .qty-edit{transition:all .13s;}
+        .planning-native-root .qty-edit:focus{border-color:var(--teal) !important;background:white;outline:none;}
+
+        /* Already-added items in suggest tab */
+        .planning-native-root .already-added-section{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);}
+        .planning-native-root .already-added-header{font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+        .planning-native-root .already-added-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;background:var(--bg);opacity:.45;margin-bottom:3px;}
+        .planning-native-root .already-added-code{font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--muted);}
+        .planning-native-root .already-added-name{font-size:10px;color:var(--hint);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .planning-native-root .already-added-check{color:var(--teal);font-size:13px;font-weight:700;}
     `;
 
     document.head.appendChild(style);

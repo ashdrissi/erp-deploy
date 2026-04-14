@@ -1,0 +1,26 @@
+{
+ "actions": [],
+ "creation": "2026-04-14 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["title"],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title"
+  }
+ ],
+ "istable": 0,
+ "issingle": 0,
+ "links": [],
+ "modified": "2026-04-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift Logistics",
+ "name": "Container Dashboard",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
