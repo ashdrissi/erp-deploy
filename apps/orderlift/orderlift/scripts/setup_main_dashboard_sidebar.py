@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import frappe
 
@@ -24,10 +25,11 @@ SIDEBAR_GROUPS = [
     },
     {
         "section": "SAV",
-        "create_after": "Sales",
+        "create_after": "Agent Rules",
         "manage_section": True,
         "links": [
             {"type": "Link", "label": "SAV Dashboard", "link_type": "Page", "link_to": "sav-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "SAV Tickets", "link_type": "DocType", "link_to": "SAV Ticket", "child": 1, "icon": "dot"},
         ],
     },
     {
@@ -59,13 +61,9 @@ SIDEBAR_GROUPS = [
         "create_after": None,
         "manage_section": True,
         "links": [
-            {"type": "Link", "label": "Logistics Dashboard", "link_type": "Page", "link_to": "logistics-dashboard", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Logistics Hub Cockpit", "link_type": "Page", "link_to": "logistics-hub-cockpit", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Container Planning", "link_type": "Page", "link_to": "forecast-plans", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Container Load Plan", "link_type": "DocType", "link_to": "Container Load Plan", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Container Profile", "link_type": "DocType", "link_to": "Container Profile", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Shipment Analysis", "link_type": "DocType", "link_to": "Shipment Analysis", "child": 1, "icon": "dot"},
-            {"type": "Link", "label": "Load Plan Shipment", "link_type": "DocType", "link_to": "Load Plan Shipment", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Container Planning", "link_type": "Page", "link_to": "logistics-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Forecast Plans", "link_type": "Page", "link_to": "forecast-plans", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Container Profiles", "link_type": "DocType", "link_to": "Container Profile", "child": 1, "icon": "dot"},
         ],
     },
     {
@@ -93,19 +91,6 @@ SIDEBAR_GROUPS = [
     },
 ]
 
-WORKSPACE_SHORTCUTS = [
-    {"label": "Logistics Dashboard", "type": "Page", "link_to": "logistics-dashboard"},
-    {"label": "Logistics Hub Cockpit", "type": "Page", "link_to": "logistics-hub-cockpit"},
-    {"label": "Container Planning", "type": "Page", "link_to": "forecast-plans"},
-    {"label": "Container Load Plan", "type": "DocType", "link_to": "Container Load Plan"},
-    {"label": "Container Profile", "type": "DocType", "link_to": "Container Profile"},
-    {"label": "Shipment Analysis", "type": "DocType", "link_to": "Shipment Analysis"},
-    {"label": "Load Plan Shipment", "type": "DocType", "link_to": "Load Plan Shipment"},
-    {"label": "SIG Dashboard", "type": "Page", "link_to": "sig-dashboard"},
-    {"label": "Project Map", "type": "Page", "link_to": "project-map"},
-    {"label": "Mobile QC", "type": "Page", "link_to": "sig-qc"},
-]
-
 REMOVED_SECTION_LABELS = {"Dashboards"}
 
 
@@ -120,7 +105,7 @@ def run(workspace_name: str = "Main Dashboard"):
         sidebar.append("items", item)
     sidebar.save(ignore_permissions=True)
 
-    _sync_workspace_shortcuts(workspace_name)
+    _sync_workspace_shortcuts(workspace_name, updated_items)
     frappe.db.commit()
     frappe.clear_cache()
     return {
@@ -207,8 +192,9 @@ def _insert_after_label(rows: list[dict], after_label: str | None, new_rows: lis
     return rows + list(new_rows)
 
 
-def _sync_workspace_shortcuts(workspace_name: str) -> None:
-    managed_labels = [shortcut["label"] for shortcut in WORKSPACE_SHORTCUTS]
+def _sync_workspace_shortcuts(workspace_name: str, sidebar_items: list[dict]) -> None:
+    workspace_shortcuts = _build_workspace_shortcuts(sidebar_items)
+    managed_labels = [shortcut["label"] for shortcut in workspace_shortcuts]
     frappe.db.delete(
         "Workspace Shortcut",
         {"parent": workspace_name, "label": ["in", managed_labels]},
@@ -223,7 +209,7 @@ def _sync_workspace_shortcuts(workspace_name: str) -> None:
     )
     start_idx = existing_rows[0]["idx"] if existing_rows else 0
 
-    for offset, shortcut in enumerate(WORKSPACE_SHORTCUTS, start=1):
+    for offset, shortcut in enumerate(workspace_shortcuts, start=1):
         doc = frappe.get_doc(
             {
                 "doctype": "Workspace Shortcut",
@@ -249,73 +235,111 @@ def _sync_workspace_shortcuts(workspace_name: str) -> None:
     content = [
         block
         for block in content
-        if not str(block.get("id", "")).startswith("sig_main_dashboard_")
+        if not str(block.get("id", "")).startswith("main_dashboard_shortcuts_")
+        and not str(block.get("id", "")).startswith("sig_main_dashboard_")
         and not str(block.get("id", "")).startswith("logistics_main_dashboard_")
     ]
-    content.extend(
-        [
-            {
-                "id": "logistics_main_dashboard_header",
-                "type": "header",
-                "data": {"text": '<span class="h4"><b>Logistics</b></span>', "col": 12},
-            },
-            {"id": "logistics_main_dashboard_spacer", "type": "spacer", "data": {"col": 12}},
-            {
-                "id": "logistics_main_dashboard_shortcut_1",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Logistics Dashboard", "col": 4},
-            },
-            {
-                "id": "logistics_main_dashboard_shortcut_2",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Logistics Hub Cockpit", "col": 4},
-            },
-            {
-                "id": "logistics_main_dashboard_shortcut_3",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Container Planning", "col": 4},
-            },
-            {
-                "id": "logistics_main_dashboard_shortcut_4",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Container Load Plan", "col": 4},
-            },
-            {
-                "id": "logistics_main_dashboard_shortcut_5",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Container Profile", "col": 4},
-            },
-            {
-                "id": "logistics_main_dashboard_shortcut_6",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Shipment Analysis", "col": 4},
-            },
-            {
-                "id": "logistics_main_dashboard_shortcut_7",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Load Plan Shipment", "col": 4},
-            },
-            {
-                "id": "sig_main_dashboard_header",
-                "type": "header",
-                "data": {"text": '<span class="h4"><b>SIG</b></span>', "col": 12},
-            },
-            {"id": "sig_main_dashboard_spacer", "type": "spacer", "data": {"col": 12}},
-            {
-                "id": "sig_main_dashboard_shortcut_1",
-                "type": "shortcut",
-                "data": {"shortcut_name": "SIG Dashboard", "col": 4},
-            },
-            {
-                "id": "sig_main_dashboard_shortcut_2",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Project Map", "col": 4},
-            },
-            {
-                "id": "sig_main_dashboard_shortcut_3",
-                "type": "shortcut",
-                "data": {"shortcut_name": "Mobile QC", "col": 4},
-            },
-        ]
-    )
+    content.extend(_build_workspace_content_blocks(sidebar_items))
     frappe.db.set_value("Workspace", workspace_name, "content", json.dumps(content), update_modified=False)
+
+
+def _build_workspace_shortcuts(sidebar_items: list[dict]) -> list[dict]:
+    shortcuts = []
+    seen_labels = set()
+
+    for row in sidebar_items:
+        if row.get("type") != "Link":
+            continue
+
+        shortcut = _shortcut_from_sidebar_row(row)
+        if not shortcut or shortcut["label"] in seen_labels:
+            continue
+
+        seen_labels.add(shortcut["label"])
+        shortcuts.append(shortcut)
+
+    return shortcuts
+
+
+def _shortcut_from_sidebar_row(row: dict) -> dict | None:
+    link_type = row.get("link_type")
+    url = row.get("url")
+    link_to = row.get("link_to")
+
+    if link_type and link_to:
+        return {
+            "label": row["label"],
+            "type": link_type,
+            "link_to": link_to,
+        }
+
+    if url:
+        return {
+            "label": row["label"],
+            "type": "URL",
+            "url": url,
+        }
+
+    return None
+
+
+def _build_workspace_content_blocks(sidebar_items: list[dict]) -> list[dict]:
+    blocks = []
+    section_label = "Overview"
+    section_shortcuts = []
+    section_index = 0
+
+    def flush_section() -> None:
+        nonlocal section_shortcuts, section_index
+        if not section_shortcuts:
+            return
+
+        section_slug = _slugify(section_label or f"section-{section_index}")
+        blocks.append(
+            {
+                "id": f"main_dashboard_shortcuts_{section_slug}_header",
+                "type": "header",
+                "data": {"text": f'<span class="h4"><b>{section_label}</b></span>', "col": 12},
+            }
+        )
+        blocks.append(
+            {
+                "id": f"main_dashboard_shortcuts_{section_slug}_spacer",
+                "type": "spacer",
+                "data": {"col": 12},
+            }
+        )
+
+        for shortcut_index, shortcut_name in enumerate(section_shortcuts, start=1):
+            blocks.append(
+                {
+                    "id": f"main_dashboard_shortcuts_{section_slug}_{shortcut_index}",
+                    "type": "shortcut",
+                    "data": {"shortcut_name": shortcut_name, "col": 4},
+                }
+            )
+
+        section_shortcuts = []
+        section_index += 1
+
+    for row in sidebar_items:
+        row_type = row.get("type")
+
+        if row_type == "Section Break":
+            flush_section()
+            section_label = row.get("label") or "Overview"
+            continue
+
+        if row_type != "Link":
+            continue
+
+        shortcut = _shortcut_from_sidebar_row(row)
+        if shortcut:
+            section_shortcuts.append(shortcut["label"])
+
+    flush_section()
+    return blocks
+
+
+def _slugify(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (value or "section").strip().lower()).strip("_") or "section"

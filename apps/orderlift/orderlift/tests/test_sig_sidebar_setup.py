@@ -23,7 +23,6 @@ class TestSigSidebarSetup(unittest.TestCase):
             {"label": "HR", "type": "Section Break", "child": 0},
             {"label": "Warehouse & Stock", "type": "Section Break", "child": 0},
             {"label": "Logistics", "type": "Section Break", "child": 0},
-            {"label": "Settings", "type": "Section Break", "child": 0},
             {"label": "Dashboards", "type": "Section Break", "child": 0},
             {"label": "CRM Dashboard", "type": "Link", "child": 1},
         ]
@@ -35,10 +34,11 @@ class TestSigSidebarSetup(unittest.TestCase):
         self.assertEqual(labels[labels.index("CRM & Customers") + 1], "CRM Dashboard")
         self.assertEqual(labels[labels.index("Sales") + 1], "Pricing Dashboard")
         self.assertEqual(labels[labels.index("SAV") + 1], "SAV Dashboard")
+        self.assertEqual(labels[labels.index("SAV") + 2], "SAV Tickets")
         self.assertEqual(labels[labels.index("Finance") + 1], "Finance Dashboard")
         self.assertEqual(labels[labels.index("HR") + 1], "HR Dashboard")
         self.assertEqual(labels[labels.index("Warehouse & Stock") + 1], "Stock Dashboard")
-        self.assertEqual(labels[labels.index("Logistics") + 1], "Logistics Dashboard")
+        self.assertEqual(labels[labels.index("Logistics") + 1], "Container Planning")
         self.assertEqual(labels[labels.index("B2B Portal") + 1], "B2B Portal Dashboard")
         self.assertEqual(labels[labels.index("SIG") + 1], "SIG Dashboard")
         self.assertNotIn("Dashboards", labels)
@@ -48,36 +48,57 @@ class TestSigSidebarSetup(unittest.TestCase):
         updated = setup_main_dashboard_sidebar._insert_after_label(rows, "Missing", [{"label": "Three"}])
         self.assertEqual([row["label"] for row in updated], ["One", "Two", "Three"])
 
-    def test_logistics_links_use_page_and_doctype_entries(self):
-        logistics_group = next(
-            group for group in setup_main_dashboard_sidebar.SIDEBAR_GROUPS if group["section"] == "Logistics"
-        )
+    def test_build_workspace_shortcuts_preserves_sidebar_link_types(self):
+        rows = [
+            {"label": "Finance", "type": "Section Break", "child": 0},
+            {"label": "Finance Dashboard", "type": "Link", "link_type": "Page", "link_to": "finance-dashboard", "child": 1},
+            {"label": "Sales Invoices", "type": "Link", "link_type": "DocType", "link_to": "Sales Invoice", "child": 1},
+            {"label": "Payments Dashboard", "type": "Link", "link_type": "Dashboard", "link_to": "Payments", "child": 1},
+            {"label": "Sales Payment Summary", "type": "Link", "link_type": "Report", "link_to": "Sales Payment Summary", "child": 1},
+        ]
 
-        links = {row["label"]: row for row in logistics_group["links"]}
+        shortcuts = setup_main_dashboard_sidebar._build_workspace_shortcuts(rows)
+        mapped = {row["label"]: row for row in shortcuts}
 
-        self.assertEqual(links["Logistics Dashboard"]["type"], "Link")
-        self.assertEqual(links["Logistics Dashboard"]["link_type"], "Page")
-        self.assertEqual(links["Logistics Dashboard"]["link_to"], "logistics-dashboard")
-        self.assertEqual(links["Logistics Hub Cockpit"]["link_type"], "Page")
-        self.assertEqual(links["Container Planning"]["link_type"], "Page")
-        self.assertEqual(links["Container Load Plan"]["link_type"], "DocType")
-        self.assertEqual(links["Container Profile"]["link_type"], "DocType")
-        self.assertEqual(links["Shipment Analysis"]["link_type"], "DocType")
-        self.assertEqual(links["Load Plan Shipment"]["link_type"], "DocType")
+        self.assertEqual(mapped["Finance Dashboard"]["type"], "Page")
+        self.assertEqual(mapped["Sales Invoices"]["type"], "DocType")
+        self.assertEqual(mapped["Payments Dashboard"]["type"], "Dashboard")
+        self.assertEqual(mapped["Sales Payment Summary"]["type"], "Report")
 
-    def test_logistics_workspace_shortcuts_use_page_and_doctype_entries(self):
-        shortcuts = {
-            row["label"]: row for row in setup_main_dashboard_sidebar.WORKSPACE_SHORTCUTS
-        }
+    def test_sav_section_moves_above_items_and_price_lists(self):
+        rows = [
+            {"label": "Sales", "type": "Section Break", "child": 0},
+            {"label": "Pricing Sheet", "type": "Link", "child": 1},
+            {"label": "Policies & Configs", "type": "Section Break", "child": 0},
+            {"label": "Agent Rules", "type": "Link", "child": 1},
+            {"label": "Items & Price Lists", "type": "Section Break", "child": 0},
+            {"label": "Item Price", "type": "Link", "child": 1},
+        ]
 
-        self.assertEqual(shortcuts["Logistics Dashboard"]["type"], "Page")
-        self.assertEqual(shortcuts["Logistics Dashboard"]["link_to"], "logistics-dashboard")
-        self.assertEqual(shortcuts["Logistics Hub Cockpit"]["type"], "Page")
-        self.assertEqual(shortcuts["Container Planning"]["type"], "Page")
-        self.assertEqual(shortcuts["Container Load Plan"]["type"], "DocType")
-        self.assertEqual(shortcuts["Container Profile"]["type"], "DocType")
-        self.assertEqual(shortcuts["Shipment Analysis"]["type"], "DocType")
-        self.assertEqual(shortcuts["Load Plan Shipment"]["type"], "DocType")
+        updated = setup_main_dashboard_sidebar._build_sidebar_items(rows)
+        labels = [row["label"] for row in updated]
+
+        self.assertEqual(labels[labels.index("Agent Rules") + 1], "SAV")
+        self.assertEqual(labels[labels.index("SAV") + 1], "SAV Dashboard")
+        self.assertEqual(labels[labels.index("SAV") + 2], "SAV Tickets")
+        self.assertLess(labels.index("SAV"), labels.index("Items & Price Lists"))
+
+    def test_build_workspace_content_blocks_groups_shortcuts_by_section(self):
+        rows = [
+            {"label": "Finance", "type": "Section Break", "child": 0},
+            {"label": "Finance Dashboard", "type": "Link", "link_type": "Page", "link_to": "finance-dashboard", "child": 1},
+            {"label": "Sales Invoices", "type": "Link", "link_type": "DocType", "link_to": "Sales Invoice", "child": 1},
+            {"label": "HR", "type": "Section Break", "child": 0},
+            {"label": "HR Dashboard", "type": "Link", "link_type": "Page", "link_to": "hr-dashboard", "child": 1},
+        ]
+
+        blocks = setup_main_dashboard_sidebar._build_workspace_content_blocks(rows)
+        ids = [block["id"] for block in blocks]
+        shortcut_names = [block["data"].get("shortcut_name") for block in blocks if block["type"] == "shortcut"]
+
+        self.assertIn("main_dashboard_shortcuts_finance_header", ids)
+        self.assertIn("main_dashboard_shortcuts_hr_header", ids)
+        self.assertEqual(shortcut_names, ["Finance Dashboard", "Sales Invoices", "HR Dashboard"])
 
 
 if __name__ == "__main__":

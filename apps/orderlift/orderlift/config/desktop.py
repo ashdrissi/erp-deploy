@@ -21,11 +21,12 @@ def get_data():
         },
         {
             "module_name": "Orderlift Logistics",
-            "label": _("Logistics"),
-            "color": "#3498db",
+            "label": _("Container Planning"),
+            "color": "#027384",
             "icon": "octicon octicon-package",
-            "type": "module",
-            "description": "Container load planning, groupage optimization, and dispatch control",
+            "type": "page",
+            "route": "/app/logistics-dashboard",
+            "description": "Container forecasting, load planning, and dispatch control",
         },
         {
             "module_name": "Orderlift Client Portal",

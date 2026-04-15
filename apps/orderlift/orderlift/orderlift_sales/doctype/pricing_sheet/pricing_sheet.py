@@ -10,7 +10,11 @@ from frappe.utils import cint, cstr, flt, now_datetime, nowdate, getdate, date_d
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
 from orderlift.sales.utils.dimensioning import coerce_dimensioning_value, evaluate_formula
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
-from orderlift.sales.utils.pricing_projection import apply_discount_and_commission, apply_expenses
+from orderlift.sales.utils.pricing_projection import (
+    apply_discount_and_commission,
+    apply_expenses,
+    resolve_max_discount_cap,
+)
 from orderlift.sales.utils.benchmark_policy import (
     compute_margin_step,
     compute_policy_adjustment_step,
@@ -323,7 +327,11 @@ class PricingSheet(Document):
             row.margin_pct = flt((br.get("target_margin_percent") or 0) if br else 0)
             row.resolved_margin_rule = ""
             row.customs_material = customs_calc.get("material") or ""
+            row.customs_tariff_number = customs_calc.get("tariff_number") or ""
             row.customs_weight_kg = flt(customs_calc.get("weight_kg") or 0)
+            row.customs_value_per_kg = flt(customs_calc.get("value_per_kg") or 0)
+            row.customs_base_value = flt(customs_calc.get("base_value") or 0)
+            row.customs_total_percent = flt(customs_calc.get("total_percent") or 0)
             row.customs_rate_per_kg = flt(customs_calc.get("rate_per_kg") or 0)
             row.customs_rate_percent = flt(customs_calc.get("rate_percent") or 0)
             row.customs_by_kg = flt(customs_calc.get("by_kg") or 0)
@@ -339,6 +347,7 @@ class PricingSheet(Document):
                 row,
                 qty=qty,
                 benchmark_result=br,
+                fallback_max_discount_percent=flt(getattr(row_benchmark_policy, "fallback_max_discount_percent", 0) or 0),
                 agent_discount_ctx=agent_discount_ctx,
                 steps=steps,
             )
@@ -485,7 +494,11 @@ class PricingSheet(Document):
             has_modifiers = flt(row.tier_modifier_total) or flt(row.zone_modifier_total)
             row.margin_source = "Price List + Modifiers" if has_modifiers else "Price List"
             row.customs_material = ""
+            row.customs_tariff_number = ""
             row.customs_weight_kg = 0
+            row.customs_value_per_kg = 0
+            row.customs_base_value = 0
+            row.customs_total_percent = 0
             row.customs_rate_per_kg = 0
             row.customs_rate_percent = 0
             row.customs_by_kg = 0
@@ -496,6 +509,7 @@ class PricingSheet(Document):
                 row,
                 qty=qty,
                 benchmark_result=None,
+                fallback_max_discount_percent=0,
                 agent_discount_ctx=agent_discount_ctx,
                 steps=pricing.get("steps") or [],
             )
@@ -1262,32 +1276,45 @@ class PricingSheet(Document):
 
     def _compute_customs_for_row(self, row, base_amount, item_details, customs_policy):
         details = item_details.get(row.item) or {}
+        tariff_number = (details.get("customs_tariff_number") or "").strip().upper()
         material = (details.get("custom_material") or "").strip().upper()
         unit_weight_kg = flt(details.get("custom_weight_kg"))
         qty = flt(row.qty)
 
         out = {
+            "tariff_number": tariff_number,
             "material": material,
             "weight_kg": unit_weight_kg,
+            "value_per_kg": 0.0,
+            "base_value": 0.0,
+            "total_percent": 0.0,
             "rate_per_kg": 0.0,
             "rate_percent": 0.0,
             "by_kg": 0.0,
             "by_percent": 0.0,
             "applied": 0.0,
             "basis": "",
+            "mode": "",
             "warning": "",
         }
 
         if not customs_policy:
             return out
 
-        if not material:
-            out["warning"] = _("item material is missing; customs set to 0")
+        if not tariff_number and not material:
+            out["warning"] = _("item Customs Tariff Number is missing; customs set to 0")
+            return out
+
+        if unit_weight_kg <= 0:
+            out["warning"] = _("item Weight (kg) is missing; customs set to 0")
             return out
 
         rule_dicts = [
             {
+                "tariff_number": getattr(rule, "tariff_number", ""),
                 "material": rule.material,
+                "value_per_kg": flt(getattr(rule, "value_per_kg", 0) or 0),
+                "rate_components": getattr(rule, "rate_components", "") or "",
                 "rate_per_kg": flt(rule.rate_per_kg),
                 "rate_percent": flt(rule.rate_percent),
                 "sequence": cint(rule.sequence),
@@ -1297,11 +1324,14 @@ class PricingSheet(Document):
             }
             for rule in (customs_policy.customs_rules or [])
         ]
-        rule = resolve_customs_rule(rule_dicts, material=material)
+        rule = resolve_customs_rule(rule_dicts, tariff_number=tariff_number, material=material)
         if not rule:
-            out["warning"] = _("no customs rule matched material {0}; customs set to 0").format(material)
+            identifier = tariff_number or material or _("missing tariff")
+            out["warning"] = _("no customs rule matched tariff/material {0}; customs set to 0").format(identifier)
             return out
 
+        value_per_kg = flt(rule.get("value_per_kg") or 0)
+        rate_components = rule.get("rate_components") or ""
         rate_per_kg = flt(rule.get("rate_per_kg"))
         rate_percent = flt(rule.get("rate_percent"))
         amounts = compute_customs_amount(
@@ -1310,10 +1340,16 @@ class PricingSheet(Document):
             unit_weight_kg=unit_weight_kg,
             rate_per_kg=rate_per_kg,
             rate_percent=rate_percent,
+            value_per_kg=value_per_kg,
+            rate_components=rate_components,
         )
 
         out.update(
             {
+                "mode": amounts.get("mode") or "",
+                "value_per_kg": value_per_kg,
+                "base_value": flt(amounts.get("base_value") or 0),
+                "total_percent": flt(amounts.get("total_percent") or 0),
                 "rate_per_kg": rate_per_kg,
                 "rate_percent": rate_percent,
                 "by_kg": flt(amounts.get("by_kg") or 0),
@@ -1329,9 +1365,13 @@ class PricingSheet(Document):
         if applied <= 0:
             return
 
+        label = "Customs (MAX kg vs %)"
+        if (customs_calc or {}).get("mode") == "tariff":
+            label = "Customs (Tariff value x %)"
+
         steps.append(
             {
-                "label": "Customs (MAX kg vs %)",
+                "label": label,
                 "type": "Fixed",
                 "value": applied,
                 "applies_to": "Base Price",
@@ -1342,6 +1382,9 @@ class PricingSheet(Document):
                 "delta_line": applied,
                 "delta_sheet": 0,
                 "running_total": projected_unit,
+                "customs_tariff_number": customs_calc.get("tariff_number") or "",
+                "customs_base_value": flt(customs_calc.get("base_value") or 0),
+                "customs_total_percent": flt(customs_calc.get("total_percent") or 0),
                 "customs_by_kg": flt(customs_calc.get("by_kg") or 0),
                 "customs_by_percent": flt(customs_calc.get("by_percent") or 0),
                 "customs_basis": customs_calc.get("basis") or "",
@@ -1641,9 +1684,14 @@ class PricingSheet(Document):
             "commission_rate": flt(values.get("commission_rate") or 0),
         }
 
-    def _apply_line_discount_and_commission(self, row, qty, benchmark_result, agent_discount_ctx, steps):
+    def _apply_line_discount_and_commission(self, row, qty, benchmark_result, fallback_max_discount_percent, agent_discount_ctx, steps):
         matched_rule = (benchmark_result or {}).get("matched_rule") or {}
-        max_discount = flt(matched_rule.get("max_discount_percent") or agent_discount_ctx.get("max_discount_percent") or 0)
+        max_discount = resolve_max_discount_cap(
+            rule_max_discount_percent=flt(matched_rule.get("max_discount_percent") or 0),
+            fallback_max_discount_percent=fallback_max_discount_percent,
+            agent_max_discount_percent=flt(agent_discount_ctx.get("max_discount_percent") or 0),
+            is_fallback=bool((benchmark_result or {}).get("is_fallback")),
+        )
         requested_discount = flt(row.discount_percent or 0)
         if requested_discount < 0:
             frappe.throw(_("Row {0}: Discount % cannot be negative.").format(row.idx))
@@ -2267,7 +2315,7 @@ def get_item_details_map(item_codes):
     rows = frappe.get_all(
         "Item",
         filters={"name": ["in", item_codes]},
-        fields=["name", "item_group", "custom_material", "custom_weight_kg", "custom_volume_m3"],
+        fields=["name", "item_group", "custom_material", "custom_weight_kg", "custom_volume_m3", "customs_tariff_number"],
         limit_page_length=0,
     )
     return {
@@ -2276,6 +2324,7 @@ def get_item_details_map(item_codes):
             "custom_material": row.custom_material,
             "custom_weight_kg": flt(row.custom_weight_kg),
             "custom_volume_m3": flt(row.custom_volume_m3),
+            "customs_tariff_number": row.customs_tariff_number,
         }
         for row in rows
     }

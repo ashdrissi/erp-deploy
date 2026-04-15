@@ -233,8 +233,8 @@ function collectWorkbenchPayload(frm) {
 }
 
 const DEFAULT_COLUMNS = {
-    Compare: ["item", "buying_list", "expenses_policy", "dyn_buy", "expenses", "dyn_customs", "benchmark_price", "dyn_tier_mod", "dyn_territory_mod", "dyn_margin", "dyn_final", "static_list", "static_price", "static_margin"],
-    Dynamic: ["item", "buying_list", "expenses_policy", "buy", "expenses", "customs", "benchmark_price", "tier_mod", "territory_mod", "margin_unit", "final", "margin"],
+    Compare: ["item", "buying_list", "expenses_policy", "dyn_buy", "expenses", "dyn_customs", "customs_value", "benchmark_price", "dyn_tier_mod", "dyn_territory_mod", "dyn_margin", "dyn_final", "static_list", "static_price", "static_margin"],
+    Dynamic: ["item", "buying_list", "expenses_policy", "buy", "expenses", "customs", "customs_value", "benchmark_price", "tier_mod", "territory_mod", "margin_unit", "final", "margin"],
     Static: ["item", "static_list", "reference_buy", "static_price", "static_margin", "options"],
 };
 
@@ -248,6 +248,7 @@ const COLUMN_DEFS = {
         { key: "dyn_buy", label: __("PU Achat") },
         { key: "expenses", label: __("Charges U") },
         { key: "dyn_customs", label: __("Dedouan. U") },
+        { key: "customs_value", label: __("Customs Value") },
         { key: "dyn_tier_mod", label: __("Tier Mod") },
         { key: "dyn_territory_mod", label: __("Territory Mod") },
         { key: "benchmark_price", label: __("Benchmark") },
@@ -266,6 +267,7 @@ const COLUMN_DEFS = {
         { key: "buy", label: __("PU Achat") },
         { key: "expenses", label: __("Charges U") },
         { key: "customs", label: __("Dedouan. U") },
+        { key: "customs_value", label: __("Customs Value") },
         { key: "tier_mod", label: __("Tier Mod") },
         { key: "territory_mod", label: __("Territory Mod") },
         { key: "benchmark_price", label: __("Benchmark") },
@@ -376,6 +378,7 @@ function renderColumnValue(key, row) {
     if (key === "dyn_buy" || key === "buy") return fmtCurrency(d.buy_price);
     if (key === "expenses") return fmtCurrency(d.expense_unit_price);
     if (key === "dyn_customs" || key === "customs") return fmtCurrency(d.customs_applied);
+    if (key === "customs_value") return fmtCurrency(d.customs_base_value);
     if (key === "dyn_tier_mod" || key === "tier_mod") return fmtCurrency(d.tier_modifier_amount);
     if (key === "dyn_territory_mod" || key === "territory_mod") return fmtCurrency(d.zone_modifier_amount);
     if (key === "dyn_margin") return `${Number(d.margin_pct || 0).toFixed(1)}%`;

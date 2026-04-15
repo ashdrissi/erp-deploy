@@ -7,21 +7,49 @@
   "engine": "InnoDB",
   "field_order": [
     "naming_series",
+    "defect_type",
     "customer",
     "contact",
-    "reported_via",
-    "column_break_1",
+    "site_address",
+    "column_break_origin",
     "status",
     "priority",
+    "severity",
     "sla_breach",
-    "section_break_details",
+    "section_break_origin_documents",
+    "serial_no",
+    "batch",
     "item_concerned",
+    "column_break_items",
+    "sales_order",
+    "delivery_note",
+    "sales_invoice",
+    "purchase_receipt",
+    "section_break_quality",
+    "quality_inspection",
+    "quality_inspection_template",
+    "section_break_installation",
     "installation_project",
+    "column_break_project",
+    "project_qc_status",
+    "section_break_context",
+    "warranty_status",
+    "source_delivery_date",
+    "days_since_delivery",
+    "column_break_derived",
+    "customer_tier",
+    "recurrence_count",
+    "section_break_description",
     "anomaly_description",
+    "section_break_execution_links",
+    "execution_links",
+    "section_break_stock_actions",
+    "stock_actions",
     "section_break_assignment",
     "assigned_technician",
+    "responsible_team",
+    "column_break_assignment",
     "intervention_date",
-    "column_break_2",
     "closed_by",
     "closure_date",
     "section_break_resolution",
@@ -34,7 +62,7 @@
     {
       "fieldname": "naming_series",
       "fieldtype": "Select",
-      "label": "Série",
+      "label": "Series",
       "options": "SAV-.YYYY.-.#####",
       "default": "SAV-.YYYY.-.#####",
       "reqd": 1,
@@ -43,9 +71,19 @@
       "print_hide": 1
     },
     {
+      "fieldname": "defect_type",
+      "fieldtype": "Select",
+      "label": "Defect Type",
+      "options": "\nInstallation Defect\nProduct Defect\nSupplier Defect",
+      "default": "Product Defect",
+      "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
       "fieldname": "customer",
       "fieldtype": "Link",
-      "label": "Client",
+      "label": "Customer",
       "options": "Customer",
       "reqd": 1,
       "in_list_view": 1,
@@ -57,23 +95,24 @@
       "fieldname": "contact",
       "fieldtype": "Link",
       "label": "Contact",
-      "options": "Contact"
+      "options": "Contact",
+      "fetch_from": "customer.customer_primary_contact",
+      "read_only": 1
     },
     {
-      "fieldname": "reported_via",
-      "fieldtype": "Select",
-      "label": "Signalé via",
-      "options": "\nAppel\nPortail\nEmail\nWhatsApp",
-      "default": "Appel"
+      "fieldname": "site_address",
+      "fieldtype": "Small Text",
+      "label": "Site Address",
+      "read_only": 1
     },
     {
-      "fieldname": "column_break_1",
+      "fieldname": "column_break_origin",
       "fieldtype": "Column Break"
     },
     {
       "fieldname": "status",
       "fieldtype": "Select",
-      "label": "Statut",
+      "label": "Status",
       "options": "Open\nAssigned\nIn Progress\nResolved\nClosed",
       "default": "Open",
       "reqd": 1,
@@ -85,7 +124,7 @@
     {
       "fieldname": "priority",
       "fieldtype": "Select",
-      "label": "Priorité",
+      "label": "Priority",
       "options": "Low\nMedium\nHigh\nCritical",
       "default": "Medium",
       "reqd": 1,
@@ -93,62 +132,224 @@
       "in_standard_filter": 1
     },
     {
+      "fieldname": "severity",
+      "fieldtype": "Select",
+      "label": "Severity",
+      "options": "\nLow\nMedium\nHigh\nCritical",
+      "read_only": 1
+    },
+    {
       "fieldname": "sla_breach",
       "fieldtype": "Check",
-      "label": "Dépassement SLA",
+      "label": "SLA Breach",
       "read_only": 1,
       "default": 0
     },
     {
-      "fieldname": "section_break_details",
+      "fieldname": "section_break_origin_documents",
       "fieldtype": "Section Break",
-      "label": "Détails de l'anomalie"
+      "label": "Origin Documents"
+    },
+    {
+      "fieldname": "serial_no",
+      "fieldtype": "Link",
+      "label": "Serial No",
+      "options": "Serial No",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "search_index": 1
+    },
+    {
+      "fieldname": "batch",
+      "fieldtype": "Link",
+      "label": "Batch",
+      "options": "Batch"
     },
     {
       "fieldname": "item_concerned",
       "fieldtype": "Link",
-      "label": "Article concerné",
-      "options": "Item"
+      "label": "Item",
+      "options": "Item",
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "column_break_items",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "sales_order",
+      "fieldtype": "Link",
+      "label": "Sales Order",
+      "options": "Sales Order"
+    },
+    {
+      "fieldname": "delivery_note",
+      "fieldtype": "Link",
+      "label": "Delivery Note",
+      "options": "Delivery Note"
+    },
+    {
+      "fieldname": "sales_invoice",
+      "fieldtype": "Link",
+      "label": "Sales Invoice",
+      "options": "Sales Invoice"
+    },
+    {
+      "fieldname": "purchase_receipt",
+      "fieldtype": "Link",
+      "label": "Purchase Receipt",
+      "options": "Purchase Receipt",
+      "depends_on": "eval:doc.defect_type=='Supplier Defect'"
+    },
+    {
+      "fieldname": "section_break_quality",
+      "fieldtype": "Section Break",
+      "label": "Quality",
+      "collapsible": 1,
+      "depends_on": "eval:['Product Defect','Supplier Defect'].includes(doc.defect_type)"
+    },
+    {
+      "fieldname": "quality_inspection",
+      "fieldtype": "Link",
+      "label": "Quality Inspection",
+      "options": "Quality Inspection"
+    },
+    {
+      "fieldname": "quality_inspection_template",
+      "fieldtype": "Link",
+      "label": "Inspection Template",
+      "options": "Quality Inspection Template"
+    },
+    {
+      "fieldname": "section_break_installation",
+      "fieldtype": "Section Break",
+      "label": "Installation",
+      "collapsible": 1,
+      "depends_on": "eval:doc.defect_type=='Installation Defect'"
     },
     {
       "fieldname": "installation_project",
       "fieldtype": "Link",
-      "label": "Projet d'installation",
+      "label": "Installation Project",
       "options": "Project"
+    },
+    {
+      "fieldname": "column_break_project",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "project_qc_status",
+      "fieldtype": "Read Only",
+      "label": "Project QC Status",
+      "fetch_from": "installation_project.custom_qc_status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_break_context",
+      "fieldtype": "Section Break",
+      "label": "Context (Auto-filled)"
+    },
+    {
+      "fieldname": "warranty_status",
+      "fieldtype": "Data",
+      "label": "Warranty Status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source_delivery_date",
+      "fieldtype": "Date",
+      "label": "Source Delivery Date",
+      "read_only": 1
+    },
+    {
+      "fieldname": "days_since_delivery",
+      "fieldtype": "Int",
+      "label": "Days Since Delivery",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_derived",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "customer_tier",
+      "fieldtype": "Data",
+      "label": "Customer Tier",
+      "read_only": 1
+    },
+    {
+      "fieldname": "recurrence_count",
+      "fieldtype": "Int",
+      "label": "Recurrence Count",
+      "read_only": 1,
+      "description": "Open tickets for the same item/serial/project"
+    },
+    {
+      "fieldname": "section_break_description",
+      "fieldtype": "Section Break",
+      "label": "Anomaly Description"
     },
     {
       "fieldname": "anomaly_description",
       "fieldtype": "Text Editor",
-      "label": "Description de l'anomalie",
+      "label": "Anomaly Description",
       "reqd": 1
+    },
+    {
+      "fieldname": "section_break_execution_links",
+      "fieldtype": "Section Break",
+      "label": "Execution Links"
+    },
+    {
+      "fieldname": "execution_links",
+      "fieldtype": "Table",
+      "label": "Execution Links",
+      "options": "SAV Execution Link"
+    },
+    {
+      "fieldname": "section_break_stock_actions",
+      "fieldtype": "Section Break",
+      "label": "Stock / Return Actions"
+    },
+    {
+      "fieldname": "stock_actions",
+      "fieldtype": "Table",
+      "label": "Stock Actions",
+      "options": "SAV Stock Action"
     },
     {
       "fieldname": "section_break_assignment",
       "fieldtype": "Section Break",
-      "label": "Affectation"
+      "label": "Assignment"
     },
     {
       "fieldname": "assigned_technician",
       "fieldtype": "Link",
-      "label": "Technicien assigné",
+      "label": "Assigned Technician",
       "options": "User",
       "in_list_view": 1,
       "in_standard_filter": 1,
       "search_index": 1
     },
     {
-      "fieldname": "intervention_date",
-      "fieldtype": "Date",
-      "label": "Date d'intervention"
+      "fieldname": "responsible_team",
+      "fieldtype": "Link",
+      "label": "Responsible Team",
+      "options": "Department"
     },
     {
-      "fieldname": "column_break_2",
+      "fieldname": "column_break_assignment",
       "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "intervention_date",
+      "fieldtype": "Date",
+      "label": "Intervention Date"
     },
     {
       "fieldname": "closed_by",
       "fieldtype": "Link",
-      "label": "Clôturé par",
+      "label": "Closed By",
       "options": "User",
       "read_only": 1,
       "no_copy": 1
@@ -156,33 +357,33 @@
     {
       "fieldname": "closure_date",
       "fieldtype": "Datetime",
-      "label": "Date de clôture",
+      "label": "Closure Date",
       "read_only": 1,
       "no_copy": 1
     },
     {
       "fieldname": "section_break_resolution",
       "fieldtype": "Section Break",
-      "label": "Rapport de résolution",
+      "label": "Resolution Report",
       "depends_on": "eval:['Resolved','Closed'].includes(doc.status)"
     },
     {
       "fieldname": "resolution_report",
       "fieldtype": "Text Editor",
-      "label": "Rapport de résolution",
+      "label": "Resolution Report",
       "mandatory_depends_on": "eval:['Resolved','Closed'].includes(doc.status)"
     },
     {
       "fieldname": "section_break_notes",
       "fieldtype": "Section Break",
-      "label": "Notes du responsable",
+      "label": "Manager Notes",
       "collapsible": 1
     },
     {
       "fieldname": "manager_comment",
       "fieldtype": "Small Text",
-      "label": "Commentaire responsable",
-      "description": "Renseigné lors d'un rejet de clôture"
+      "label": "Manager Comment",
+      "description": "Set during closure rejection"
     },
     {
       "fieldname": "amended_from",
@@ -197,7 +398,7 @@
   ],
   "is_submittable": 0,
   "links": [],
-  "modified": "2026-04-01 00:00:00.000000",
+  "modified": "2026-04-15 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "Orderlift SAV",
   "name": "SAV Ticket",
@@ -247,7 +448,7 @@
       "report": 1
     }
   ],
-  "search_fields": "customer,status,priority,assigned_technician",
+  "search_fields": "customer,status,priority,defect_type,assigned_technician",
   "show_name_in_global_search": 1,
   "sort_field": "modified",
   "sort_order": "DESC",

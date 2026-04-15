@@ -145,6 +145,7 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "item": line.item,
             "qty": flt(line.qty),
             "material": getattr(line, "customs_material", "") or "",
+            "customs_tariff_number": getattr(line, "customs_tariff_number", "") or "",
             "source_buying_price_list": getattr(line, "source_buying_price_list", "") or "",
             "expenses_policy": line.resolved_pricing_scenario or doc.pricing_scenario or "",
             "customs_policy": doc.customs_policy or "",
@@ -152,6 +153,9 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "buy_price": flt(line.buy_price),
             "expense_unit_price": flt(getattr(line, "expense_unit_price", 0)),
             "base_amount": flt(line.base_amount),
+            "customs_base_value": flt(getattr(line, "customs_base_value", 0)),
+            "customs_value_per_kg": flt(getattr(line, "customs_value_per_kg", 0)),
+            "customs_total_percent": flt(getattr(line, "customs_total_percent", 0)),
             "final_sell_unit_price": flt(line.final_sell_unit_price),
             "final_sell_total": flt(line.final_sell_total),
             "margin_pct": flt(line.margin_pct),
@@ -227,6 +231,7 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
     for row in items:
         code = row.get("item")
         qty = flt(row.get("qty") or 0)
+        item_meta = frappe.db.get_value("Item", code, ["custom_material", "customs_tariff_number"], as_dict=1) or {}
         options = []
         for pl in requested_lists:
             rate = flt((price_maps.get(pl) or {}).get(code))
@@ -240,7 +245,8 @@ def _run_static_simulation(data, items, agent_doc, resolved_mode):
         out_row = {
             "item": code,
             "qty": qty,
-            "material": frappe.db.get_value("Item", code, "custom_material") or "",
+            "material": item_meta.get("custom_material") or "",
+            "customs_tariff_number": item_meta.get("customs_tariff_number") or "",
             "reference_buy_price": flt(reference_buy_prices.get(code) or 0),
             "selected_price_list": selected.get("price_list") or "",
             "selected_price": flt(selected.get("rate")),

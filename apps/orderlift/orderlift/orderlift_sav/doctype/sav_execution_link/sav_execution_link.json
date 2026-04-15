@@ -1,0 +1,65 @@
+{
+  "actions": [],
+  "creation": "2026-04-15 00:00:00",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "reference_doctype",
+    "reference_name",
+    "type",
+    "assigned_to",
+    "status",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "reference_doctype",
+      "fieldtype": "Select",
+      "label": "Reference Document Type",
+      "options": "\nTask\nEvent\nToDo\nTimesheet\nExpense Claim",
+      "in_list_view": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "reference_name",
+      "fieldtype": "Dynamic Link",
+      "label": "Reference Document",
+      "options": "reference_doctype",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "type",
+      "fieldtype": "Data",
+      "label": "Type",
+      "in_list_view": 1,
+      "description": "Appointment / Work Item / Effort / Expense"
+    },
+    {
+      "fieldname": "assigned_to",
+      "fieldtype": "Link",
+      "label": "Assigned To",
+      "options": "User"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Open\nWorking\nCompleted\nCancelled",
+      "default": "Open",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-04-15 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift SAV",
+  "name": "SAV Execution Link",
+  "owner": "Administrator"
+}

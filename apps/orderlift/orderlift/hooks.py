@@ -17,11 +17,14 @@ required_apps = ["frappe", "erpnext"]
 # ---------------------------------------------------------
 app_include_css = [
     "/assets/orderlift/css/orderlift_bundle.css",
-    "/assets/orderlift/css/orderlift_logistics.css?v=20260410c",
+    "/assets/orderlift/css/orderlift_logistics_v2.css?v=20260415a",
     "/assets/orderlift/css/clp_dashboard_v4.css",
 ]
 app_include_js = [
     "/assets/orderlift/js/orderlift_bundle.js",
+    "/assets/orderlift/js/sidebar_logo_fix_20260415b.js",
+    "/assets/orderlift/js/refresh_stability_fix_20260415.js",
+    "/assets/orderlift/js/desk_entry_redirect_20260415.js",
 ]
 
 # ---------------------------------------------------------
@@ -33,6 +36,10 @@ fixtures = [
     # All our custom fields use the "custom_" prefix per Frappe convention.
     # Filter by name prefix so only our fields are exported.
     {"dt": "Custom Field", "filters": [["name", "like", "%custom_%"]]},
+    # Custom field JSON fixtures
+    {"dt": "Custom Field", "filters": [["name", "=", "Sales Order-custom_forecast_plan"]]},
+    {"dt": "Custom Field", "filters": [["name", "=", "Purchase Order-custom_forecast_plan"]]},
+    {"dt": "Custom Field", "filters": [["name", "=", "Delivery Note-custom_forecast_plan"]]},
     # Property setters (field property overrides on existing doctypes)
     {"dt": "Property Setter", "filters": [["name", "like", "%-custom_%"]]},
     # Workflows on standard doctypes (Sales Order, Stock Entry, etc.)
@@ -134,10 +141,10 @@ doctype_js = {
     # Loaded via doctype_js so setup/refresh fire before the form opens.
     # The file sets window["__orderlift_pricing_sheet_latest_loaded_v6"] = true
     # so the app_include_js global loader skips re-requiring it.
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260409_97.js",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260415_100.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
-    "SAV Ticket": "public/js/sav_ticket_v2.js",
+    "SAV Ticket": "public/js/sav_ticket_v3.js",
     # SIG module — Project form enhancements (QC Template, Geocoding)
     "Project": "public/js/project_sig.js",
     "QC Checklist Template": "orderlift_sig/doctype/qc_checklist_template/qc_checklist_template.js",
@@ -171,16 +178,64 @@ after_migrate = [
     "orderlift.logistics.setup.after_migrate",
     "orderlift.orderlift_logistics.setup.after_migrate",
     "orderlift.orderlift_sig.setup.after_migrate",
+    "orderlift.orderlift_sav.setup.after_migrate",
     "orderlift.scripts.setup_main_dashboard_sidebar.run",
 ]
 
 on_login = [
     "orderlift.orderlift_client_portal.utils.website.sync_b2b_only_user_type_on_login",
+    "orderlift.restricted_user_guard.redirect_on_login",
 ]
 
 before_request = [
+    "orderlift.restricted_user_guard.redirect_bare_desk_route",
     "orderlift.orderlift_client_portal.utils.website.redirect_b2b_only_users_from_desk",
+    "orderlift.restricted_user_guard.guard_restricted_routes",
 ]
+
+# ---------------------------------------------------------
+# Permission guards — block system doctypes for restricted users
+# ---------------------------------------------------------
+has_permission = {
+    "Module Def": "orderlift.restricted_user_guard.block_if_restricted",
+    "DocType": "orderlift.restricted_user_guard.block_if_restricted",
+    "Customize Form": "orderlift.restricted_user_guard.block_if_restricted",
+    "System Settings": "orderlift.restricted_user_guard.block_if_restricted",
+    "Server Script": "orderlift.restricted_user_guard.block_if_restricted",
+    "Data Import": "orderlift.restricted_user_guard.block_if_restricted",
+    "Custom Field": "orderlift.restricted_user_guard.block_if_restricted",
+    "Custom DocPerm": "orderlift.restricted_user_guard.block_if_restricted",
+    "Property Setter": "orderlift.restricted_user_guard.block_if_restricted",
+    "Client Script": "orderlift.restricted_user_guard.block_if_restricted",
+    "Scheduled Job Type": "orderlift.restricted_user_guard.block_if_restricted",
+    "Error Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Activity Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Access Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Route History": "orderlift.restricted_user_guard.block_if_restricted",
+    "Console Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Module Profile": "orderlift.restricted_user_guard.block_if_restricted",
+    "Role Profile": "orderlift.restricted_user_guard.block_if_restricted",
+    "User Permission": "orderlift.restricted_user_guard.block_if_restricted",
+    "Email Account": "orderlift.restricted_user_guard.block_if_restricted",
+    "Email Domain": "orderlift.restricted_user_guard.block_if_restricted",
+    "Website Settings": "orderlift.restricted_user_guard.block_if_restricted",
+    "Web Form": "orderlift.restricted_user_guard.block_if_restricted",
+    "Print Format": "orderlift.restricted_user_guard.block_if_restricted",
+    "Auto Repeat": "orderlift.restricted_user_guard.block_if_restricted",
+    "Prepared Report": "orderlift.restricted_user_guard.block_if_restricted",
+    "Installed Application": "orderlift.restricted_user_guard.block_if_restricted",
+    "Installed Applications": "orderlift.restricted_user_guard.block_if_restricted",
+    "Package": "orderlift.restricted_user_guard.block_if_restricted",
+    "Notification Settings": "orderlift.restricted_user_guard.block_if_restricted",
+    "RQ Worker": "orderlift.restricted_user_guard.block_if_restricted",
+    "RQ Job": "orderlift.restricted_user_guard.block_if_restricted",
+    "Scheduled Job Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Recorder": "orderlift.restricted_user_guard.block_if_restricted",
+    "API Request Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "View Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Patch Log": "orderlift.restricted_user_guard.block_if_restricted",
+    "Log Settings": "orderlift.restricted_user_guard.block_if_restricted",
+}
 
 # ---------------------------------------------------------
 # Portal (B2B web portal pages)

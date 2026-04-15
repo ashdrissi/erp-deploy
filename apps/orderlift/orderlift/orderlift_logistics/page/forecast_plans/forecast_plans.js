@@ -422,7 +422,7 @@ function injectFPStyles() {
     style.id = "fp-styles";
     style.textContent = `
         .fp-root {
-            --bg: #F4F3F0; --surface: #FFFFFF; --accent: #C17F24; --accent-lt: #FDE8BE;
+            --bg: #F4F3F0; --surface: #FFFFFF; --accent: #027384; --accent-lt: #E0F4F6;
             --teal: #0D6B50; --teal-lt: #D8F2EA; --blue: #1A5FA3; --blue-lt: #E0EFFC;
             --border: rgba(0,0,0,0.09); --border-md: rgba(0,0,0,0.15);
             --text: #1A1A1E; --muted: #6B6A70; --hint: #A0A0A8;

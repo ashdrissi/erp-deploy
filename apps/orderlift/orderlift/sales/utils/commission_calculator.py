@@ -1,7 +1,8 @@
 """Commission workflow.
 
 Create commission records from submitted Sales Orders using quotation snapshot data.
-Commissions become approved for payment only after linked Sales Invoices are fully paid.
+Commissions stay Approved after Sales Order confirmation, move to To Pay when linked
+Sales Invoices are fully paid, and become Paid only after payout.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ def create_sales_order_commissions(doc, method=None):
             commission.commission_rate = payload["commission_rate"]
             commission.base_amount = payload["base_amount"]
             commission.commission_amount = payload["commission_amount"]
-            commission.status = "Pending"
+            commission.status = "Approved"
             commission.sales_invoice = ""
             commission.save(ignore_permissions=True)
             if commission.docstatus == 0:
@@ -125,7 +126,7 @@ def _build_sales_order_snapshot_commissions(sales_order):
                 "commission_rate": commission_rate,
                 "base_amount": 0.0,
                 "commission_amount": 0.0,
-                "status": "Pending",
+                "status": "Approved",
             },
         )
         bucket["base_amount"] += prorated_discount
@@ -143,7 +144,7 @@ def _sync_sales_order_commissions(sales_order_name):
     invoice_names = list(dict.fromkeys(invoice_names))
 
     if not invoice_names:
-        _update_commission_status(sales_order_name, status="Pending", sales_invoice="")
+        _update_commission_status(sales_order_name, status="Approved", sales_invoice="")
         return
 
     invoices = frappe.get_all(
@@ -156,10 +157,10 @@ def _sync_sales_order_commissions(sales_order_name):
 
     if fully_paid:
         latest_invoice = invoices[0].name if invoices else ""
-        _update_commission_status(sales_order_name, status="Approved", sales_invoice=latest_invoice)
+        _update_commission_status(sales_order_name, status="To Pay", sales_invoice=latest_invoice)
         return
 
-    _update_commission_status(sales_order_name, status="Pending", sales_invoice="")
+    _update_commission_status(sales_order_name, status="Approved", sales_invoice="")
 
 
 def _update_commission_status(sales_order_name, status, sales_invoice):

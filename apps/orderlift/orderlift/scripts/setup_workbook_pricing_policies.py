@@ -49,12 +49,12 @@ SCENARIOS = [
 ]
 
 CUSTOMS_RULES = [
-    {"material": "STEEL", "rate_per_kg": 13.0 * 0.2025, "rate_percent": 20.25, "sequence": 10, "priority": 10},
-    {"material": "GALVA", "rate_per_kg": 24.0 * 0.2025, "rate_percent": 20.25, "sequence": 20, "priority": 10},
-    {"material": "INOX", "rate_per_kg": 40.0 * 0.2025, "rate_percent": 20.25, "sequence": 30, "priority": 10},
-    {"material": "COPPER", "rate_per_kg": 60.0 * 0.2025, "rate_percent": 20.25, "sequence": 40, "priority": 10},
-    {"material": "ALUM", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 50, "priority": 20},
-    {"material": "OTHER", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 60, "priority": 30},
+    {"material": "STEEL", "value_per_kg": 13.0, "rate_components": "20.25", "rate_per_kg": 13.0 * 0.2025, "rate_percent": 20.25, "sequence": 10, "priority": 10},
+    {"material": "GALVA", "value_per_kg": 24.0, "rate_components": "20.25", "rate_per_kg": 24.0 * 0.2025, "rate_percent": 20.25, "sequence": 20, "priority": 10},
+    {"material": "INOX", "value_per_kg": 40.0, "rate_components": "20.25", "rate_per_kg": 40.0 * 0.2025, "rate_percent": 20.25, "sequence": 30, "priority": 10},
+    {"material": "COPPER", "value_per_kg": 60.0, "rate_components": "20.25", "rate_per_kg": 60.0 * 0.2025, "rate_percent": 20.25, "sequence": 40, "priority": 10},
+    {"material": "ALUM", "value_per_kg": 0.0, "rate_components": "20.25", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 50, "priority": 20},
+    {"material": "OTHER", "value_per_kg": 0.0, "rate_components": "20.25", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 60, "priority": 30},
 ]
 
 
@@ -98,6 +98,7 @@ def _upsert_benchmark_policy(policy_name: str, selling_price_list: str) -> str:
     doc.method = "Median"
     doc.min_sources_required = 1
     doc.fallback_margin_percent = 0
+    doc.fallback_max_discount_percent = 0
     doc.notes = (
         "Passive benchmark reference for workbook parity. Scenario expenses carry workbook margin; "
         "benchmark policy is set to 0% so it does not alter price output."

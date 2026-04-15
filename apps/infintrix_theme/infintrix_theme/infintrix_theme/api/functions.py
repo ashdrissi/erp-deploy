@@ -6,8 +6,15 @@ import json
 
 CACHE_KEY_PREFIX = "custom_workspace_pages_cache"
 CACHE_TTL = 60 * 60  # 1 hour — tune based on your load profile
-BUSINESS_ADMIN_ROLE = "Orderlift Client User"
-BUSINESS_ADMIN_WORKSPACES = {"Main Dashboard"}
+BUSINESS_ADMIN_ROLE = "Orderlift Admin"
+# Workspaces hidden from Orderlift Admin — system/build only
+BLOCKED_WORKSPACES = {
+    "Build",
+    "Welcome Workspace",
+    "ERPNext Settings",
+    "Companies",
+    "Orderlift Ops",
+}
 
 
 def _get_cache_key():
@@ -18,7 +25,7 @@ def _filter_pages(pages):
     if BUSINESS_ADMIN_ROLE not in frappe.get_roles():
         return pages
 
-    return [page for page in pages if page.get("name") in BUSINESS_ADMIN_WORKSPACES]
+    return [page for page in pages if page.get("name") not in BLOCKED_WORKSPACES]
 
 
 @frappe.whitelist()

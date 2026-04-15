@@ -46,11 +46,15 @@
    "commission_rate",
    "commission_amount",
    "margin_pct",
-  "customs_material",
-  "customs_weight_kg",
-  "customs_rate_per_kg",
-  "customs_rate_percent",
-  "customs_by_kg",
+   "customs_material",
+   "customs_tariff_number",
+   "customs_weight_kg",
+   "customs_value_per_kg",
+   "customs_base_value",
+   "customs_total_percent",
+   "customs_rate_per_kg",
+   "customs_rate_percent",
+   "customs_by_kg",
   "customs_by_percent",
    "customs_applied",
    "tier_modifier_total",
@@ -303,18 +307,42 @@
   {
    "fieldname": "customs_material",
    "fieldtype": "Data",
-    "label": "Material",
+     "label": "Material",
    "read_only": 1
   },
-  {
-   "fieldname": "customs_weight_kg",
-   "fieldtype": "Float",
-   "label": "Customs Weight Kg",
-   "read_only": 1
-  },
-  {
-   "fieldname": "customs_rate_per_kg",
-   "fieldtype": "Currency",
+   {
+    "fieldname": "customs_tariff_number",
+    "fieldtype": "Data",
+    "label": "Tariff Number",
+    "read_only": 1
+   },
+   {
+    "fieldname": "customs_weight_kg",
+    "fieldtype": "Float",
+    "label": "Customs Weight Kg",
+    "read_only": 1
+   },
+   {
+    "fieldname": "customs_value_per_kg",
+    "fieldtype": "Currency",
+    "label": "Customs Value Per Kg",
+    "read_only": 1
+   },
+   {
+    "fieldname": "customs_base_value",
+    "fieldtype": "Currency",
+    "label": "Customs Value",
+    "read_only": 1
+   },
+   {
+    "fieldname": "customs_total_percent",
+    "fieldtype": "Percent",
+    "label": "Customs Total Percent",
+    "read_only": 1
+   },
+   {
+    "fieldname": "customs_rate_per_kg",
+    "fieldtype": "Currency",
    "label": "Customs Rate Per Kg",
    "read_only": 1
   },

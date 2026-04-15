@@ -1,6 +1,10 @@
 import unittest
 
-from orderlift.sales.utils.pricing_projection import apply_discount_and_commission, apply_expenses
+from orderlift.sales.utils.pricing_projection import (
+    apply_discount_and_commission,
+    apply_expenses,
+    resolve_max_discount_cap,
+)
 
 
 class TestPricingProjection(unittest.TestCase):
@@ -131,6 +135,39 @@ class TestPricingProjection(unittest.TestCase):
                 max_discount_percent=5,
                 commission_rate=20,
             )
+
+    def test_max_discount_uses_rule_before_agent_when_not_fallback(self):
+        self.assertEqual(
+            resolve_max_discount_cap(
+                rule_max_discount_percent=7,
+                fallback_max_discount_percent=4,
+                agent_max_discount_percent=12,
+                is_fallback=False,
+            ),
+            7,
+        )
+
+    def test_max_discount_uses_stricter_fallback_and_agent_caps(self):
+        self.assertEqual(
+            resolve_max_discount_cap(
+                rule_max_discount_percent=0,
+                fallback_max_discount_percent=6,
+                agent_max_discount_percent=4,
+                is_fallback=True,
+            ),
+            4,
+        )
+
+    def test_max_discount_uses_fallback_cap_when_agent_cap_missing(self):
+        self.assertEqual(
+            resolve_max_discount_cap(
+                rule_max_discount_percent=0,
+                fallback_max_discount_percent=6,
+                agent_max_discount_percent=0,
+                is_fallback=True,
+            ),
+            6,
+        )
 
 
 if __name__ == "__main__":

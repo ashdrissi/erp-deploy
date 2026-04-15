@@ -1,6 +1,6 @@
 const PLANNING_COLORS = {
     SO: "#185FA5",
-    PO: "#C17F24",
+    PO: "#027384",
     QT: "#884DB7",
     DN: "#0D6B50",
 };
@@ -235,7 +235,7 @@ function updateTopbar(state) {
     // Flow scope badge
     const flowBadge = state.root.querySelector("#topFlowBadge");
     if (flowBadge && plan.flow_scope) {
-        const flowColors = { Inbound: "#C17F24", Domestic: "#884DB7", Outbound: "#0D6B50" };
+        const flowColors = { Inbound: "#027384", Domestic: "#884DB7", Outbound: "#0D6B50" };
         flowBadge.textContent = plan.flow_scope;
         flowBadge.style.background = (flowColors[plan.flow_scope] || "#6B6A70") + "22";
         flowBadge.style.color = flowColors[plan.flow_scope] || "#6B6A70";
@@ -1604,8 +1604,8 @@ function injectPlanningStyles() {
           --bg: #F4F3F0;
           --surface: #FFFFFF;
           --sidebar-bg: #17181C;
-          --accent: #C17F24;
-          --accent-lt: #FDE8BE;
+          --accent: #027384;
+          --accent-lt: #E0F4F6;
           --teal: #0D6B50;
           --teal-lt: #D8F2EA;
           --blue: #1A5FA3;
@@ -1771,7 +1771,7 @@ function injectPlanningStyles() {
         .planning-native-root .src-type-badge{padding:2px 6px;border-radius:4px;font-size:9.5px;font-weight:600;letter-spacing:.2px;}
         .planning-native-root .badge-SO{background:var(--blue-lt);color:var(--blue);}
         .planning-native-root .badge-PO{background:#EAF3DE;color:#3B6D11;}
-        .planning-native-root .badge-QT{background:var(--accent-lt);color:#854F0B;}
+        .planning-native-root .badge-QT{background:var(--accent-lt);color:var(--accent);}
         .planning-native-root .badge-DN{background:var(--teal-lt);color:var(--teal);}
         .planning-native-root .src-party{font-size:12px;font-weight:500;color:var(--text);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .planning-native-root .src-metrics{display:flex;gap:14px;margin-bottom:7px;}
@@ -1785,7 +1785,7 @@ function injectPlanningStyles() {
         .planning-native-root .btn-add-plan:hover{background:var(--accent);border-color:var(--accent);color:white;}
         .planning-native-root .btn-add-plan svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5;}
         .planning-native-root .conf-committed{background:var(--teal-lt);color:var(--teal);}
-        .planning-native-root .conf-tentative{background:var(--accent-lt);color:#854F0B;}
+        .planning-native-root .conf-tentative{background:var(--accent-lt);color:var(--accent);}
         .planning-native-root .conf-inquiry{background:var(--gray-lt);color:#5F5E5A;}
         .planning-native-root .conf-ready{background:var(--blue-lt);color:var(--blue);}
         .planning-native-root .modal-overlay{display:none;position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;}
@@ -1836,7 +1836,7 @@ function injectPlanningStyles() {
         .planning-native-root .plan-item.free-item{border-left:2px dashed var(--hint);}
         .planning-native-root .plan-item.free-item .item-docnum{color:var(--hint);}
         .planning-native-root .detail-free-badge{font-size:9px;font-weight:600;background:var(--gray-lt);color:var(--muted);padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px;}
-        .planning-native-root .uom-hint{font-size:10px;color:var(--accent);padding:6px 12px;background:var(--accent-lt);border-top:0.5px solid rgba(193,127,36,.15);}
+        .planning-native-root .uom-hint{font-size:10px;color:var(--accent);padding:6px 12px;background:var(--accent-lt);border-top:0.5px solid rgba(2,115,132,.15);}
 
         /* Add tab (item search) */
         .planning-native-root .add-search-panel{display:flex;flex-direction:column;height:100%;}
@@ -1907,7 +1907,7 @@ function injectPlanningStyles() {
         .planning-native-root .cd-val-modal{background:var(--surface);border-radius:var(--r-lg);padding:24px;width:520px;max-height:80vh;overflow-y:auto;border:0.5px solid var(--border-md);}
         .planning-native-root .cd-val-modal-title{font-size:16px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
         .planning-native-root .cd-val-modal-summary{font-size:11px;color:var(--muted);margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;}
-        .planning-native-root .cd-val-count{padding:1px 8px;background:var(--accent-lt);color:#854F0B;border-radius:4px;font-size:10px;font-weight:600;}
+        .planning-native-root .cd-val-count{padding:1px 8px;background:var(--accent-lt);color:var(--accent);border-radius:4px;font-size:10px;font-weight:600;}
         .planning-native-root .cd-val-modal-body{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;max-height:300px;overflow-y:auto;}
         .planning-native-root .cd-val-issue{display:flex;align-items:flex-start;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg);}
         .planning-native-root .cd-val-icon{font-size:18px;flex-shrink:0;margin-top:2px;}

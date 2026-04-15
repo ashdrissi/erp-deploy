@@ -17,6 +17,7 @@ class PricingBenchmarkPolicy(Document):
         self._validate_sources()
         self._validate_rules()
         self._validate_tier_modifiers()
+        self._validate_fallback_discount()
         self._validate_margin_application_basis()
 
     def _sync_benchmark_basis(self):
@@ -128,6 +129,13 @@ class PricingBenchmarkPolicy(Document):
         for row in self.benchmark_rules or []:
             if cint(row.is_active) and flt(row.target_margin_percent) >= 100:
                 frappe.throw(_("Row {0}: target margin must be below 100 when Margin Application Basis is Sale Price.").format(row.idx))
+
+    def _validate_fallback_discount(self):
+        fallback_max_discount = flt(self.fallback_max_discount_percent)
+        if fallback_max_discount < 0:
+            frappe.throw(_("Fallback Max Discount % cannot be negative."))
+        if fallback_max_discount > 100:
+            frappe.throw(_("Fallback Max Discount % cannot exceed 100%."))
 
     def _validate_tier_modifiers(self):
         seen = set()

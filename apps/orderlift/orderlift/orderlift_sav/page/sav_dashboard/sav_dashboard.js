@@ -22,6 +22,10 @@ const ICONS = {
     plus: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>`,
     arrow: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11,5 16,10 11,15"/></svg>`,
     check: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,10 8,14 16,6"/></svg>`,
+    shield: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L4 5v4c0 4.4 2.5 7.5 6 9.1 3.5-1.6 6-4.7 6-9.1V5L10 2z"/><polyline points="7.5,10 9.5,12 13,8"/></svg>`,
+    repeat: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="14,4 18,4 18,8"/><polyline points="6,16 2,16 2,12"/><line x1="17" y1="5" x2="3" y2="15"/><line x1="3" y1="5" x2="17" y2="15"/></svg>`,
+    box: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6l8-4 8 4v8l-8 4-8-4V6z"/><line x1="2" y1="6" x2="10" y2="10"/><line x1="18" y1="6" x2="10" y2="10"/><line x1="10" y1="10" x2="10" y2="18"/></svg>`,
+    timer: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7"/><polyline points="10,6 10,10 13,12"/><line x1="9" y1="2" x2="11" y2="2"/></svg>`,
 };
 
 function renderSkeleton(page) {
@@ -51,16 +55,17 @@ function renderSkeleton(page) {
                 ${shortcut("ticket", __("All Tickets"), "/app/sav-ticket", "default")}
                 ${shortcut("wrench", __("Technicians"), "/app/user", "default")}
                 ${shortcut("customer", __("Customers"), "/app/customer", "default")}
+                ${shortcut("box", __("Stock Actions"), "/app/sav-ticket", "default")}
             </div>
 
             <div class="svdb-kpi-grid" id="svdb-kpi-grid">
-                ${Array.from({ length: 6 }, () => `<div class="svdb-kpi svdb-kpi--shimmer"></div>`).join("")}
+                ${Array.from({ length: 8 }, () => `<div class="svdb-kpi svdb-kpi--shimmer"></div>`).join("")}
             </div>
 
             <div class="svdb-lower">
                 <div class="svdb-card">
                     <div class="svdb-card-header">
-                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.ticket}</span>${__("Recent SAV Tickets")}</div>
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.ticket}</span>${__("Recent Tickets")}</div>
                         <a href="/app/sav-ticket" class="svdb-view-all">${__("View all")} ${ICONS.arrow}</a>
                     </div>
                     <div id="svdb-recent-table" class="svdb-table-wrap"><div class="svdb-shimmer-block" style="height:220px;margin:16px;border-radius:8px;"></div></div>
@@ -79,14 +84,63 @@ function renderSkeleton(page) {
                     <div class="svdb-card-header">
                         <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.ticket}</span>${__("Status & Priority")}</div>
                     </div>
-                    <div id="svdb-status-breakdown" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div></div>
+                    <div id="svdb-status-breakdown" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
                 </div>
 
                 <div class="svdb-card">
                     <div class="svdb-card-header">
                         <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.wrench}</span>${__("Technician Load")}</div>
                     </div>
-                    <div id="svdb-technician-load" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div></div>
+                    <div id="svdb-technician-load" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+            </div>
+
+            <div class="svdb-lower svdb-lower--secondary">
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.shield}</span>${__("Defect Types")}</div>
+                    </div>
+                    <div id="svdb-defect-types" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.repeat}</span>${__("Recurring Issues")}</div>
+                    </div>
+                    <div id="svdb-recurring" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+            </div>
+
+            <div class="svdb-lower svdb-lower--secondary">
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.shield}</span>${__("Warranty Exposure")}</div>
+                    </div>
+                    <div id="svdb-warranty" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.box}</span>${__("Pending Stock Actions")}</div>
+                        <a href="/app/sav-ticket" class="svdb-view-all">${__("Manage")} ${ICONS.arrow}</a>
+                    </div>
+                    <div id="svdb-stock-actions" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+            </div>
+
+            <div class="svdb-lower svdb-lower--secondary">
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.box}</span>${__("Top Problematic Items")}</div>
+                    </div>
+                    <div id="svdb-problem-items" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.timer}</span>${__("Resolution Times (MTTR)")}</div>
+                    </div>
+                    <div id="svdb-mttr" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:200px;margin:16px;border-radius:8px;"></div></div>
                 </div>
             </div>
 
@@ -103,6 +157,15 @@ function renderSkeleton(page) {
                         <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.communication}</span>${__("Recent Communications")}</div>
                     </div>
                     <div id="svdb-communications" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+            </div>
+
+            <div class="svdb-lower svdb-lower--secondary">
+                <div class="svdb-card">
+                    <div class="svdb-card-header">
+                        <div class="svdb-card-title"><span class="svdb-card-icon">${ICONS.wrench}</span>${__("Execution Links")}</div>
+                    </div>
+                    <div id="svdb-execution" class="svdb-metrics-wrap"><div class="svdb-shimmer-block" style="height:100px;margin:16px;border-radius:8px;"></div></div>
                 </div>
             </div>
         </div>
@@ -127,6 +190,13 @@ async function loadDashboardData(page) {
         renderAlerts(page, data.alerts || []);
         renderStatusBreakdown(page, data.status_breakdown || {});
         renderTechnicianLoad(page, data.technician_load || []);
+        renderDefectTypes(page, data.defect_type_breakdown || []);
+        renderRecurringIssues(page, data.recurring_issues || {});
+        renderWarranty(page, data.warranty_exposure || {});
+        renderStockActions(page, data.pending_stock_actions || []);
+        renderProblemItems(page, data.top_problematic_items || []);
+        renderMttr(page, data.mttr || {});
+        renderExecutionLinks(page, data.linked_executions || {});
         renderUpcoming(page, data.upcoming_interventions || []);
         renderCommunications(page, data.recent_communications || []);
     } catch (e) {
@@ -136,6 +206,13 @@ async function loadDashboardData(page) {
         renderAlerts(page, []);
         renderStatusBreakdown(page, {});
         renderTechnicianLoad(page, []);
+        renderDefectTypes(page, []);
+        renderRecurringIssues(page, {});
+        renderWarranty(page, {});
+        renderStockActions(page, []);
+        renderProblemItems(page, []);
+        renderMttr(page, {});
+        renderExecutionLinks(page, {});
         renderUpcoming(page, []);
         renderCommunications(page, []);
         console.warn("SAV Dashboard: failed to load data", e);
@@ -157,11 +234,13 @@ function shortcut(iconKey, label, url, variant) {
 function renderKpis(page, kpis) {
     const defs = [
         { icon: "ticket", label: __("Total Tickets"), value: kpis.total_tickets ?? "—", sub: __("all SAV incidents") },
+        { icon: "wrench", label: __("Open"), value: kpis.open_tickets ?? "—", sub: __("awaiting assignment") },
         { icon: "wrench", label: __("Assigned"), value: kpis.assigned_tickets ?? "—", sub: __("waiting intervention") },
         { icon: "wrench", label: __("In Progress"), value: kpis.in_progress_tickets ?? "—", sub: __("active interventions") },
-        { icon: "ticket", label: __("Resolved"), value: kpis.resolved_tickets ?? "—", sub: __("pending validation") },
+        { icon: "check", label: __("Resolved"), value: kpis.resolved_tickets ?? "—", sub: __("pending validation") },
         { icon: "check", label: __("Closed"), value: kpis.closed_tickets ?? "—", sub: __("fully completed") },
-        { icon: "alert", label: __("Critical"), value: kpis.critical_tickets ?? "—", sub: __("highest priority incidents") },
+        { icon: "alert", label: __("Critical"), value: kpis.critical_tickets ?? "—", sub: __("highest priority") },
+        { icon: "sla", label: __("SLA Breach"), value: kpis.sla_breach_tickets ?? "—", sub: __("exceeded threshold") },
     ];
 
     page.main.find("#svdb-kpi-grid").html(defs.map((d) => `
@@ -185,7 +264,7 @@ function renderRecentTickets(page, rows) {
             ${rows.map((row) => `
                 <a class="svdb-mini-row" href="/app/sav-ticket/${frappe.utils.escape_html(row.name || "")}">
                     <span class="svdb-mini-label">${frappe.utils.escape_html(row.name || "")}</span>
-                    <span class="svdb-mini-meta">${frappe.utils.escape_html(row.customer || "")} · ${frappe.utils.escape_html(row.status || "")} · ${frappe.utils.escape_html(row.priority || "")}</span>
+                    <span class="svdb-mini-meta">${frappe.utils.escape_html((row.customer || ""))} · ${frappe.utils.escape_html((row.status || ""))} · ${frappe.utils.escape_html((row.priority || ""))}${row.severity ? ` · ${frappe.utils.escape_html(row.severity)}` : ""}${row.sla_breach ? ` · <span style="color:#dc2626;">SLA</span>` : ""}</span>
                 </a>
             `).join("")}
         </div>
@@ -213,6 +292,7 @@ function renderAlerts(page, alerts) {
 function renderStatusBreakdown(page, breakdown) {
     const status = breakdown.status || [];
     const priority = breakdown.priority || [];
+    const defectType = breakdown.defect_type || [];
     if (!status.length && !priority.length) {
         page.main.find("#svdb-status-breakdown").html(`<div class="svdb-empty">${__("No SAV status data yet.")}</div>`);
         return;
@@ -227,6 +307,10 @@ function renderStatusBreakdown(page, breakdown) {
             <div class="svdb-stack-card">
                 <div class="svdb-stack-title">${__("By Priority")}</div>
                 ${priority.map((item) => `<div class="svdb-metric-row"><span>${frappe.utils.escape_html(item.label || "")}</span><strong>${item.value ?? 0}</strong></div>`).join("") || `<div class="svdb-empty-inline">${__("No priority data")}</div>`}
+            </div>
+            <div class="svdb-stack-card">
+                <div class="svdb-stack-title">${__("By Defect Type")}</div>
+                ${defectType.map((item) => `<div class="svdb-metric-row"><span>${frappe.utils.escape_html(item.label || "")}</span><strong>${item.value ?? 0}</strong></div>`).join("") || `<div class="svdb-empty-inline">${__("No defect type data")}</div>`}
             </div>
         </div>
     `);
@@ -244,6 +328,168 @@ function renderTechnicianLoad(page, rows) {
                 <div class="svdb-stack-title">${__("Open Load by Technician")}</div>
                 ${rows.map((item) => `<div class="svdb-metric-row"><span>${frappe.utils.escape_html(item.label || "")}</span><strong>${item.value ?? 0}</strong></div>`).join("")}
             </div>
+        </div>
+    `);
+}
+
+function renderDefectTypes(page, rows) {
+    if (!rows.length) {
+        page.main.find("#svdb-defect-types").html(`<div class="svdb-empty">${__("No defect type data yet.")}</div>`);
+        return;
+    }
+
+    page.main.find("#svdb-defect-types").html(`
+        <div class="svdb-defect-grid">
+            ${rows.map((d) => `
+                <div class="svdb-defect-card">
+                    <div class="svdb-defect-label">${frappe.utils.escape_html(d.defect_type || "")}</div>
+                    <div class="svdb-defect-count">${d.total ?? 0}</div>
+                    <div class="svdb-defect-sub">${d.open ?? 0} ${__("open")}</div>
+                </div>
+            `).join("")}
+        </div>
+    `);
+}
+
+function renderRecurringIssues(page, data) {
+    const items = data.items || [];
+    const serials = data.serials || [];
+    const total = data.total_recurring ?? 0;
+
+    if (!items.length && !serials.length) {
+        page.main.find("#svdb-recurring").html(`<div class="svdb-empty">${__("No recurring issues detected.")}</div>`);
+        return;
+    }
+
+    let html = `<div class="svdb-recurring-summary">${total} ${__("ticket(s) are repeats of known issues")}</div>`;
+    html += `<div class="svdb-stack-grid">`;
+
+    if (items.length) {
+        html += `<div class="svdb-stack-card">
+            <div class="svdb-stack-title">${__("Recurring Items")}</div>
+            ${items.map((i) => `<div class="svdb-metric-row"><span style="font-size:12px;">${frappe.utils.escape_html(i.label || "")}</span><span style="color:#dc2626;font-weight:600;">×${i.count}</span></div>`).join("")}
+        </div>`;
+    }
+
+    if (serials.length) {
+        html += `<div class="svdb-stack-card">
+            <div class="svdb-stack-title">${__("Recurring Serials")}</div>
+            ${serials.map((s) => `<div class="svdb-metric-row"><span style="font-size:12px;">${frappe.utils.escape_html(s.label || "")}</span><span style="color:#dc2626;font-weight:600;">×${s.count}</span></div>`).join("")}
+        </div>`;
+    }
+
+    html += `</div>`;
+    page.main.find("#svdb-recurring").html(html);
+}
+
+function renderWarranty(page, data) {
+    if (!data.in_warranty && !data.expired && !data.no_warranty_data) {
+        page.main.find("#svdb-warranty").html(`<div class="svdb-empty">${__("No warranty data yet.")}</div>`);
+        return;
+    }
+
+    page.main.find("#svdb-warranty").html(`
+        <div class="svdb-warranty-grid">
+            <div class="svdb-warranty-card svdb-warranty--ok">
+                <div class="svdb-warranty-icon">${ICONS.shield}</div>
+                <div class="svdb-warranty-val">${data.in_warranty ?? 0}</div>
+                <div class="svdb-warranty-label">${__("In Warranty")}</div>
+            </div>
+            <div class="svdb-warranty-card svdb-warranty--expired">
+                <div class="svdb-warranty-icon">${ICONS.alert}</div>
+                <div class="svdb-warranty-val">${data.expired ?? 0}</div>
+                <div class="svdb-warranty-label">${__("Warranty Expired")}</div>
+            </div>
+            <div class="svdb-warranty-card svdb-warranty--unknown">
+                <div class="svdb-warranty-icon">${ICONS.sla}</div>
+                <div class="svdb-warranty-val">${data.no_warranty_data ?? 0}</div>
+                <div class="svdb-warranty-label">${__("No Data")}</div>
+            </div>
+        </div>
+    `);
+}
+
+function renderStockActions(page, rows) {
+    if (!rows.length) {
+        page.main.find("#svdb-stock-actions").html(`<div class="svdb-empty">${__("No pending stock actions.")}</div>`);
+        return;
+    }
+
+    page.main.find("#svdb-stock-actions").html(`
+        <div class="svdb-mini-list">
+            ${rows.map((r) => `
+                <a class="svdb-mini-row" href="${frappe.utils.escape_html(r.link || "#")}">
+                    <span class="svdb-mini-label">${frappe.utils.escape_html(r.action_type || "")} · ${frappe.utils.escape_html(r.ticket || "")}</span>
+                    <span class="svdb-mini-meta">${frappe.utils.escape_html(r.customer || "")}${r.notes ? ` · ${frappe.utils.escape_html(r.notes)}` : ""}</span>
+                </a>
+            `).join("")}
+        </div>
+    `);
+}
+
+function renderProblemItems(page, rows) {
+    if (!rows.length) {
+        page.main.find("#svdb-problem-items").html(`<div class="svdb-empty">${__("No problematic items identified yet.")}</div>`);
+        return;
+    }
+
+    page.main.find("#svdb-problem-items").html(`
+        <div class="svdb-problem-grid">
+            ${rows.map((r) => `
+                <div class="svdb-problem-card">
+                    <a href="${r.link}" style="text-decoration:none;color:inherit;">
+                        <div class="svdb-problem-item">${frappe.utils.escape_html(r.item || "")}</div>
+                    </a>
+                    <div class="svdb-problem-stats">
+                        <span>${r.total_tickets ?? 0} ${__("total")}</span>
+                        <span style="color:#dc2626;">${r.open_tickets ?? 0} ${__("open")}</span>
+                        ${r.max_recurrence > 0 ? `<span style="color:#f59e0b;">×${r.max_recurrence} ${__("recurrent")}</span>` : ""}
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `);
+}
+
+function renderMttr(page, data) {
+    if (!data.avg_days) {
+        page.main.find("#svdb-mttr").html(`<div class="svdb-empty">${__("Not enough closed tickets to calculate MTTR.")}</div>`);
+        return;
+    }
+
+    page.main.find("#svdb-mttr").html(`
+        <div class="svdb-mttr-grid">
+            <div class="svdb-mttr-card svdb-mttr--avg">
+                <div class="svdb-mttr-val">${data.avg_days}</div>
+                <div class="svdb-mttr-label">${__("Avg Days")}</div>
+            </div>
+            <div class="svdb-mttr-card svdb-mttr--min">
+                <div class="svdb-mttr-val">${data.min_days ?? 0}</div>
+                <div class="svdb-mttr-label">${__("Min")}</div>
+            </div>
+            <div class="svdb-mttr-card svdb-mttr--max">
+                <div class="svdb-mttr-val">${data.max_days ?? 0}</div>
+                <div class="svdb-mttr-label">${__("Max")}</div>
+            </div>
+            <div class="svdb-mttr-card svdb-mttr--count">
+                <div class="svdb-mttr-val">${data.sample_size ?? 0}</div>
+                <div class="svdb-mttr-label">${__("Sample")}</div>
+            </div>
+        </div>
+    `);
+}
+
+function renderExecutionLinks(page, data) {
+    if (!data.tasks && !data.timesheets && !data.stock_entries) {
+        page.main.find("#svdb-execution").html(`<div class="svdb-empty">${__("No execution links yet.")}</div>`);
+        return;
+    }
+
+    page.main.find("#svdb-execution").html(`
+        <div class="svdb-metrics-wrap">
+            <div class="svdb-metric-row"><span>${__("Linked Tasks")}</span><strong>${data.tasks ?? 0}</strong></div>
+            <div class="svdb-metric-row"><span>${__("Linked Timesheets")}</span><strong>${data.timesheets ?? 0}</strong></div>
+            <div class="svdb-metric-row"><span>${__("Linked Stock Entries")}</span><strong>${data.stock_entries ?? 0}</strong></div>
         </div>
     `);
 }
@@ -303,8 +549,8 @@ function injectDashboardStyles() {
         .svdb-hero-stat-label { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
         .svdb-stat-warn { color: #c2410c; }
         .svdb-shortcuts-grid, .svdb-kpi-grid { display: grid; gap: 14px; margin-bottom: 20px; }
-        .svdb-shortcuts-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-        .svdb-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+        .svdb-shortcuts-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+        .svdb-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
         .svdb-shortcut, .svdb-kpi { border-radius: 18px; padding: 18px; cursor: pointer; }
         .svdb-shortcut { display: flex; align-items: center; gap: 12px; transition: transform .16s ease, box-shadow .16s ease; }
         .svdb-shortcut:hover { transform: translateY(-2px); box-shadow: 0 24px 60px rgba(15,23,42,0.12); }
@@ -340,7 +586,41 @@ function injectDashboardStyles() {
         .svdb-kpi--shimmer, .svdb-shimmer-block { position: relative; overflow: hidden; background: rgba(255,255,255,0.7); }
         .svdb-kpi--shimmer::after, .svdb-shimmer-block::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); animation: svdbShimmer 1.5s infinite; }
         @keyframes svdbShimmer { 100% { transform: translateX(100%); } }
-        @media (max-width: 980px) { .svdb-hero, .svdb-hero-right { flex-direction: column; align-items: flex-start; } .svdb-hero-right { width: 100%; } .svdb-hero-divider { display: none; } .svdb-lower, .svdb-lower--secondary { grid-template-columns: 1fr; } }
+
+        /* Defect Types */
+        .svdb-defect-grid { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .svdb-defect-card { border-radius: 14px; padding: 18px; text-align: center; background: rgba(248,250,252,0.95); border: 1px solid rgba(148,163,184,0.16); }
+        .svdb-defect-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .06em; }
+        .svdb-defect-count { font-size: 28px; font-weight: 700; color: #0f172a; margin: 6px 0 2px; }
+        .svdb-defect-sub { font-size: 12px; color: #94a3b8; }
+
+        /* Warranty */
+        .svdb-warranty-grid { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .svdb-warranty-card { border-radius: 14px; padding: 18px; text-align: center; background: rgba(248,250,252,0.95); border: 1px solid rgba(148,163,184,0.16); }
+        .svdb-warranty-icon { margin-bottom: 8px; }
+        .svdb-warranty-icon svg { width: 24px; height: 24px; }
+        .svdb-warranty-val { font-size: 28px; font-weight: 700; }
+        .svdb-warranty-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .svdb-warranty--ok .svdb-warranty-val { color: #16a34a; }
+        .svdb-warranty--expired .svdb-warranty-val { color: #dc2626; }
+        .svdb-warranty--unknown .svdb-warranty-val { color: #94a3b8; }
+
+        /* Recurring */
+        .svdb-recurring-summary { padding: 12px 16px; font-size: 14px; color: #64748b; border-bottom: 1px solid rgba(148,163,184,0.16); }
+
+        /* Problem Items */
+        .svdb-problem-grid { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .svdb-problem-card { border-radius: 14px; padding: 14px; background: rgba(248,250,252,0.95); border: 1px solid rgba(148,163,184,0.16); }
+        .svdb-problem-item { font-weight: 600; color: #111827; font-size: 13px; margin-bottom: 6px; }
+        .svdb-problem-stats { display: flex; gap: 10px; font-size: 12px; }
+
+        /* MTTR */
+        .svdb-mttr-grid { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .svdb-mttr-card { border-radius: 14px; padding: 18px; text-align: center; background: rgba(248,250,252,0.95); border: 1px solid rgba(148,163,184,0.16); }
+        .svdb-mttr-val { font-size: 28px; font-weight: 700; color: #0f172a; }
+        .svdb-mttr-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+        @media (max-width: 980px) { .svdb-hero, .svdb-hero-right { flex-direction: column; align-items: flex-start; } .svdb-hero-right { width: 100%; } .svdb-hero-divider { display: none; } .svdb-lower, .svdb-lower--secondary { grid-template-columns: 1fr; } .svdb-defect-grid, .svdb-warranty-grid, .svdb-mttr-grid { grid-template-columns: repeat(2, 1fr); } }
     `;
     document.head.appendChild(style);
 }

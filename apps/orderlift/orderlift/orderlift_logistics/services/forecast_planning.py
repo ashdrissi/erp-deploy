@@ -518,6 +518,54 @@ def remove_item_from_plan(plan_name, source_name):
     return get_plan_detail(plan_name)
 
 
+def _link_source_docs(forecast):
+    """Write custom_forecast_plan link to all sourced submitted documents.
+    Uses direct DB write to bypass submit validation.
+    """
+    field = "custom_forecast_plan"
+    linked = []
+
+    for row in forecast.items or []:
+        if row.is_planned or not row.source_doctype or not row.source_name:
+            continue
+        if row.source_doctype not in ("Sales Order", "Purchase Order", "Delivery Note"):
+            continue
+
+        # Check docstatus via DB
+        docstatus = frappe.db.get_value(row.source_doctype, row.source_name, "docstatus")
+        if docstatus != 1:
+            continue
+
+        # Direct DB update to bypass submit validation
+        current = frappe.db.get_value(row.source_doctype, row.source_name, field)
+        if current != forecast.name:
+            frappe.db.set_value(row.source_doctype, row.source_name, field, forecast.name)
+            linked.append(f"{row.source_doctype} {row.source_name}")
+
+    return linked
+
+
+def _unlink_source_docs(forecast):
+    """Clear custom_forecast_plan link from all sourced documents.
+    Uses direct DB write to bypass submit validation.
+    """
+    field = "custom_forecast_plan"
+    unlinked = []
+
+    for row in forecast.items or []:
+        if row.is_planned or not row.source_doctype or not row.source_name:
+            continue
+        if row.source_doctype not in ("Sales Order", "Purchase Order", "Delivery Note"):
+            continue
+
+        current = frappe.db.get_value(row.source_doctype, row.source_name, field)
+        if current == forecast.name:
+            frappe.db.set_value(row.source_doctype, row.source_name, field, None)
+            unlinked.append(f"{row.source_doctype} {row.source_name}")
+
+    return unlinked
+
+
 @frappe.whitelist()
 def update_item_confidence(plan_name, source_name, confidence):
     """Update confidence level for a plan item."""
@@ -668,7 +716,16 @@ def advance_status(plan_name, new_status, bypass_validation=False):
             validation = validate_plan_for_confirm(plan_name)
             if validation["has_issues"]:
                 return {"validation": validation}
+        _link_source_docs(forecast)
         _sync_clp(forecast)
+
+    # On Ready → Planning (unconfirm): release source doc links
+    if new_status == "Planning" and forecast.status == "Ready":
+        _unlink_source_docs(forecast)
+
+    # On Cancel: release source doc links
+    if new_status == "Cancelled" and forecast.status != "Cancelled":
+        _unlink_source_docs(forecast)
 
     forecast.status = new_status
     forecast.save(ignore_permissions=True)

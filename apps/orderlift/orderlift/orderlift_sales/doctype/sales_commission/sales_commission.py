@@ -1,7 +1,7 @@
 """Sales Commission controller.
 
 Handles validation and status transitions for commission records.
-Created automatically via doc_events when a Sales Invoice is submitted.
+Created automatically from submitted Sales Orders.
 """
 
 import frappe
@@ -11,12 +11,13 @@ from frappe.model.document import Document
 
 class SalesCommission(Document):
     def validate(self):
+        self._normalize_legacy_status()
         self._validate_commission_rate()
         self._calculate_commission_amount()
         self._set_customer_from_sales_order()
 
     def before_submit(self):
-        if self.status == "Pending":
+        if not self.status or self.status == "Pending":
             self.status = "Approved"
 
     def on_cancel(self):
@@ -43,6 +44,10 @@ class SalesCommission(Document):
             self.customer = frappe.db.get_value(
                 "Sales Order", self.sales_order, "customer"
             )
+
+    def _normalize_legacy_status(self):
+        if self.status == "Pending":
+            self.status = "Approved"
 
     @frappe.whitelist()
     def mark_as_paid(self, payment_date=None, payment_reference=None):

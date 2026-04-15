@@ -5,8 +5,75 @@
 
 frappe.provide("orderlift");
 
-var ORDERLIFT_CLIENT_SHELL_ROLE = "Orderlift Client User";
+var ORDERLIFT_CLIENT_SHELL_ROLE = "Orderlift Admin";
 var ORDERLIFT_INTERNAL_BYPASS_ROLES = ["System Manager", "Developer"];
+
+// ── Instant boot-flag check (no polling, no flash) ──
+// frappe.boot is available synchronously when app_include_js runs.
+var __orderlift_is_restricted = (function () {
+    try {
+        return !!(frappe.boot && frappe.boot.is_restricted_shell_user);
+    } catch (e) {
+        return false;
+    }
+})();
+
+// ── Jump off bare /desk or /app immediately ──
+// Keeps users from seeing the intermediate desk shell before redirect.
+(function redirectBareDeskImmediately() {
+    var pathname = (window.location.pathname || "").replace(/\/+$/, "");
+    if (pathname !== "/desk" && pathname !== "/app") return;
+
+    var target = "/desk/home-page?sidebar=Main+Dashboard";
+    var current = window.location.pathname + window.location.search + window.location.hash;
+    if (current !== target) {
+        window.location.replace(target);
+    }
+})();
+
+// ── Immediate screen blanker for restricted users ──
+// Hides all page content BEFORE Frappe renders anything visible.
+// Removed once we land on the allowed home page.
+(function instantBlanker() {
+    if (!__orderlift_is_restricted) return;
+
+    // Keep remover for compatibility, but do not inject a full-page overlay.
+    // Server-side and client-side route guards already redirect blocked pages,
+    // and the overlay could strand valid refreshes behind an eternal "Loading…".
+    window.__orderlift_remove_blanker = function () {
+        var el = document.getElementById("orderlift-shell-blanker");
+        if (el) el.remove();
+    };
+})();
+
+// ── Disable fragile sound playback for restricted-shell users ──
+(function stabilizeRestrictedUserSounds() {
+    if (window.__orderlift_sound_stabilizer_installed) return;
+    window.__orderlift_sound_stabilizer_installed = true;
+
+    function patchSounds() {
+        if (!window.frappe || !frappe.utils || !frappe.utils.play_sound) return false;
+        if (frappe.utils.__orderlift_sound_patch_applied) return true;
+
+        var originalPlaySound = frappe.utils.play_sound;
+        frappe.utils.play_sound = function (name) {
+            if (orderliftIsClientShellUser() && name === "numpad-touch") return;
+            return originalPlaySound.apply(this, arguments);
+        };
+
+        frappe.utils.__orderlift_sound_patch_applied = true;
+        return true;
+    }
+
+    orderliftWhenRolesReady(function () {
+        var attempts = 50;
+        (function ensurePatch() {
+            if (patchSounds() || attempts <= 0) return;
+            attempts -= 1;
+            setTimeout(ensurePatch, 100);
+        })();
+    });
+})();
 
 function orderliftGetRoles() {
     if (Array.isArray(frappe.user_roles) && frappe.user_roles.length) return frappe.user_roles;
@@ -29,10 +96,18 @@ function orderliftHasAnyRole(roles) {
 }
 
 function orderliftIsClientShellUser() {
+    // Fast path: boot flag is instant, no polling needed
+    if (__orderlift_is_restricted) return true;
+    // Fallback: role-based check (for edge cases where boot flag wasn't set)
     return orderliftHasRole(ORDERLIFT_CLIENT_SHELL_ROLE) && !orderliftHasAnyRole(ORDERLIFT_INTERNAL_BYPASS_ROLES);
 }
 
 function orderliftWhenRolesReady(callback, attempts) {
+    // If boot flag says restricted, fire immediately — no waiting
+    if (__orderlift_is_restricted) {
+        callback();
+        return;
+    }
     var remaining = typeof attempts === "number" ? attempts : 80;
     if (orderliftGetRoles().length) {
         callback();
@@ -217,6 +292,8 @@ function orderliftWhenRolesReady(callback, attempts) {
 
     function redirectHome() {
         if (window.location.pathname === TARGET_PATH && window.location.search.indexOf("sidebar=Main+Dashboard") !== -1) {
+            // We're on the allowed page — remove blanker
+            if (window.__orderlift_remove_blanker) window.__orderlift_remove_blanker();
             return;
         }
         window.location.replace(TARGET_URL);
@@ -688,6 +765,15 @@ function orderliftWhenRolesReady(callback, attempts) {
     if (window.__orderlift_sidebar_logo_installed) return;
     window.__orderlift_sidebar_logo_installed = true;
 
+    var PUBLIC_FALLBACK_LOGO = "/assets/infintrix_theme/images/erpleaf-logo.png";
+
+    function resolveSidebarLogoUrl(rawUrl) {
+        var logoUrl = rawUrl || "";
+        if (!logoUrl) return PUBLIC_FALLBACK_LOGO;
+        if (logoUrl.indexOf("/private/files/") !== -1) return PUBLIC_FALLBACK_LOGO;
+        return logoUrl;
+    }
+
     function ensureLogo() {
         var sidebar = document.querySelector(".body-sidebar");
         if (!sidebar) return;
@@ -698,14 +784,14 @@ function orderliftWhenRolesReady(callback, attempts) {
             // Get logo URL from Frappe boot data or the navbar brand image
             var logoUrl = "";
             if (window.frappe && frappe.boot) {
-                logoUrl = frappe.boot.app_logo_url || "";
+                logoUrl = resolveSidebarLogoUrl(frappe.boot.app_logo_url || "");
             }
             if (!logoUrl) {
                 var navLogo = document.querySelector(".navbar-brand .app-logo, .brand-logo");
-                if (navLogo) logoUrl = navLogo.src || "";
+                if (navLogo) logoUrl = resolveSidebarLogoUrl(navLogo.src || "");
             }
             if (!logoUrl) {
-                logoUrl = "/assets/infintrix_theme/images/erpleaf-logo.png";
+                logoUrl = PUBLIC_FALLBACK_LOGO;
             }
             if (!logoUrl) return;
 
@@ -722,8 +808,20 @@ function orderliftWhenRolesReady(callback, attempts) {
             img.src = logoUrl;
             img.alt = "Orderlift";
             img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain; cursor: pointer;";
+            img.onerror = function () {
+                if (img.src.indexOf(PUBLIC_FALLBACK_LOGO) !== -1) return;
+                img.src = PUBLIC_FALLBACK_LOGO;
+            };
             link.appendChild(img);
             wrapper.appendChild(link);
+        }
+
+        var existingImg = wrapper.querySelector("img");
+        if (existingImg) {
+            var safeSrc = resolveSidebarLogoUrl(existingImg.getAttribute("src") || existingImg.src || "");
+            if (existingImg.src !== safeSrc) {
+                existingImg.src = safeSrc;
+            }
         }
 
         // Always ensure logo is the FIRST child of .body-sidebar

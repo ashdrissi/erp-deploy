@@ -1,0 +1,58 @@
+{
+  "actions": [],
+  "creation": "2026-04-15 00:00:00",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "action_type",
+    "reference_doctype",
+    "reference_name",
+    "status",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "action_type",
+      "fieldtype": "Select",
+      "label": "Action Type",
+      "options": "\nReplacement\nReturn\nVendor Return\nInternal Move\nCredit Note",
+      "in_list_view": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "reference_doctype",
+      "fieldtype": "Select",
+      "label": "Reference Document Type",
+      "options": "\nStock Entry\nDelivery Note\nPurchase Receipt\nSales Invoice",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "reference_name",
+      "fieldtype": "Dynamic Link",
+      "label": "Reference Document",
+      "options": "reference_doctype",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Status",
+      "options": "Pending\nCompleted\nCancelled",
+      "default": "Pending",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-04-15 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift SAV",
+  "name": "SAV Stock Action",
+  "owner": "Administrator"
+}

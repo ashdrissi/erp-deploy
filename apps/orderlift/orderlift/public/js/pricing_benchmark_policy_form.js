@@ -29,7 +29,7 @@ const RULES_HELP = `
                 <tr><td>0.80 – ∞</td><td>${__("Tight / at-market")}</td><td class="pbp-margin-low">8%</td></tr>
             </tbody>
         </table>
-        <p style="margin-top:8px;font-size:12px;color:#64748b;">${__("Tip: Set Ratio Max to 0 for 'unlimited' (catches everything above Ratio Min). Use scope filters (Customer Group, Material, Territory) to create targeted rules.")}</p>
+        <p style="margin-top:8px;font-size:12px;color:#64748b;">${__("Tip: Set Ratio Max to 0 for 'unlimited' (catches everything above Ratio Min). Use scope filters (Customer Group, Material, Territory) to create targeted rules. Rule rows control normal Max Discount %, while Fallback Max Discount % is used only when the policy falls back.")}</p>
     </div>
 </div>`;
 

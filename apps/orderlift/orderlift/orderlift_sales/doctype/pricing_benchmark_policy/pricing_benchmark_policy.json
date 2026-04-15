@@ -16,6 +16,7 @@
         "min_sources_required",
         "margin_application_basis",
         "fallback_margin_percent",
+        "fallback_max_discount_percent",
         "section_margin_basis_help",
         "margin_basis_help_html",
         "section_notes",
@@ -115,6 +116,13 @@
             "label": "Fallback Margin %",
             "default": "10",
             "description": "Used when benchmark data is insufficient"
+        },
+        {
+            "fieldname": "fallback_max_discount_percent",
+            "fieldtype": "Percent",
+            "label": "Fallback Max Discount %",
+            "default": "0",
+            "description": "Used only when fallback margin is applied because benchmark comparison could not resolve a rule"
         },
         {
             "fieldname": "section_margin_basis_help",

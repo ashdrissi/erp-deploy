@@ -550,6 +550,7 @@ function renderComparison(state, dynamicData, staticData) {
                             ${thSort("scenario", __("Expenses Policy"))}
                             ${thSort("buy", __("Dynamic Buy Price"))}
                             ${thSort("customs", __("Dynamic Customs"))}
+                            ${thSort("customsValue", __("Customs Value"))}
                             ${thSort("tier", __("Tier Modifier"))}
                             ${thSort("territory", __("Territory Modifier"))}
                             ${thSort("dynFinal", __("Dynamic Sell Price"))}
@@ -585,7 +586,7 @@ function renderComparisonRows(state) {
     const tfoot = state.outputWrap.find("#psim-tfoot");
 
     if (!rows.length) {
-        tbody.html(`<tr><td colspan="11" class="psim-muted">${emptyRow()}</td></tr>`);
+        tbody.html(`<tr><td colspan="12" class="psim-muted">${emptyRow()}</td></tr>`);
         tfoot.html("");
         state.rowCount.text("");
         return;
@@ -599,6 +600,7 @@ function renderComparisonRows(state) {
                 <td><span class="psim-pill">${frappe.utils.escape_html(d.resolved_pricing_scenario || "—")}</span></td>
                 <td>${frappe.format(d.buy_price || 0, { fieldtype: "Currency" })}</td>
                 <td>${frappe.format(d.customs_applied || 0, { fieldtype: "Currency" })}</td>
+                <td>${frappe.format(d.customs_base_value || 0, { fieldtype: "Currency" })}</td>
                 <td>${frappe.format(d.tier_modifier_amount || 0, { fieldtype: "Currency" })}</td>
                 <td>${frappe.format(d.zone_modifier_amount || 0, { fieldtype: "Currency" })}</td>
                 <td><strong>${frappe.format(dynFinal, { fieldtype: "Currency" })}</strong></td>
@@ -612,7 +614,7 @@ function renderComparisonRows(state) {
         : 0;
     tfoot.html(`<tr class="psim-tfoot-row">
             <td><strong>${__("Totals")}</strong></td>
-            <td colspan="8"></td>
+            <td colspan="9"></td>
             <td>${marginBadge(avgMargin)}</td>
             <td></td>
         </tr>`);
@@ -641,7 +643,7 @@ function renderResults(state, data) {
 
     const thead = mode === "Static"
         ? `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("selected_price_list", __("Sell List"))}${thSort("selected_price", __("Sell Price"))}${thSort("option_count", __("Options"))}</tr>`
-        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("resolved_pricing_scenario", __("Expenses Policy"))}${thSort("buy_price", __("Buy Price"))}${thSort("customs_applied", __("Customs"))}${thSort("tier_modifier_amount", __("Tier Modifier"))}${thSort("zone_modifier_amount", __("Territory Modifier"))}${thSort("benchmark_reference", __("Benchmark Price"))}${thSort("final_sell_unit_price", __("Sell Price"))}${thSort("margin_pct", __("Profit Margin %"))}${thSort("applied_benchmark_policy", __("Profit Margin Policy"))}</tr>`;
+        : `<tr>${thSort("item", __("Item"))}${thSort("material", __("Material"))}${thSort("source_buying_price_list", __("Buying List"))}${thSort("resolved_pricing_scenario", __("Expenses Policy"))}${thSort("buy_price", __("Buy Price"))}${thSort("customs_applied", __("Customs"))}${thSort("customs_base_value", __("Customs Value"))}${thSort("tier_modifier_amount", __("Tier Modifier"))}${thSort("zone_modifier_amount", __("Territory Modifier"))}${thSort("benchmark_reference", __("Benchmark Price"))}${thSort("final_sell_unit_price", __("Sell Price"))}${thSort("margin_pct", __("Profit Margin %"))}${thSort("applied_benchmark_policy", __("Profit Margin Policy"))}</tr>`;
 
     state.outputWrap.html(`
             <div class="psim-metrics">${cards}</div>
@@ -679,7 +681,7 @@ function renderSingleRows(state) {
     const mode = state.lastMode;
 
     if (!rows.length) {
-        const colspan = mode === "Static" ? 5 : 12;
+        const colspan = mode === "Static" ? 5 : 13;
         tbody.html(`<tr><td colspan="${colspan}" class="psim-muted">${emptyRow(__("No items match your search."))}</td></tr>`);
         tfoot.html("");
         state.rowCount.text("");
@@ -692,7 +694,7 @@ function renderSingleRows(state) {
          const avgMargin = rows.length ? rows.reduce((s, r) => s + Number(r.margin_pct || 0), 0) / rows.length : 0;
          tfoot.html(`<tr class="psim-tfoot-row">
                 <td><strong>${__("Average")}</strong></td>
-                <td colspan="9"></td>
+                <td colspan="10"></td>
                 <td>${marginBadge(avgMargin)}</td>
                 <td></td>
             </tr>`);
@@ -782,6 +784,7 @@ function compSortVal(row, col) {
         scenario: row.d?.resolved_pricing_scenario || "",
         buy: Number(row.d?.buy_price || 0),
         customs: Number(row.d?.customs_applied || 0),
+        customsValue: Number(row.d?.customs_base_value || 0),
         tier: Number(row.d?.tier_modifier_amount || 0),
         territory: Number(row.d?.zone_modifier_amount || 0),
         staticList: row.s?.selected_price_list || "",
@@ -810,6 +813,7 @@ function dynamicRow(row, q) {
             <td>${docLink("Pricing Scenario", row.resolved_pricing_scenario, row.resolved_pricing_scenario, null)}</td>
             <td>${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
             <td>${frappe.format(row.customs_applied || 0, { fieldtype: "Currency" })}</td>
+            <td>${frappe.format(row.customs_base_value || 0, { fieldtype: "Currency" })}</td>
             <td>${frappe.format(row.tier_modifier_amount || 0, { fieldtype: "Currency" })}</td>
             <td>${frappe.format(row.zone_modifier_amount || 0, { fieldtype: "Currency" })}</td>
             <td>${row.benchmark_reference ? frappe.format(row.benchmark_reference, { fieldtype: "Currency" }) : "—"}</td>
@@ -923,11 +927,11 @@ function exportCsv(state) {
         headers = ["Item", "Material", "Sell List", "Sell Price", "Options"];
         rowsFn = (r) => [r.item, r.material || "", r.selected_price_list, r.selected_price, r.option_count];
     } else {
-        headers = ["Item", "Material", "Buying List", "Expenses Policy", "Buy Price", "Customs", "Tier Modifier", "Territory Modifier", "Benchmark Price", "Sell Price", "Profit Margin %", "Profit Margin Policy"];
+        headers = ["Item", "Material", "Buying List", "Expenses Policy", "Buy Price", "Customs", "Customs Value", "Tier Modifier", "Territory Modifier", "Benchmark Price", "Sell Price", "Profit Margin %", "Profit Margin Policy"];
         rowsFn = (r) => [
             r.item, r.material || "", r.source_buying_price_list || "",
             r.resolved_pricing_scenario,
-            r.buy_price, r.customs_applied, r.tier_modifier_amount, r.zone_modifier_amount, r.benchmark_reference,
+            r.buy_price, r.customs_applied, r.customs_base_value, r.tier_modifier_amount, r.zone_modifier_amount, r.benchmark_reference,
             r.final_sell_unit_price,
             Number(r.margin_pct || 0).toFixed(2),
             r.applied_benchmark_policy || "",
