@@ -6,10 +6,26 @@ from orderlift.client_portal.utils.access import INTERNAL_REVIEW_ROLES, PORTAL_R
 
 
 PORTAL_HOME = "b2b-portal"
+SYSTEM_USER_HOME = "main_dashboard_redirect"
+
+
+def _is_system_user(user: str) -> bool:
+    if not user or user == "Guest":
+        return False
+    if user == "Administrator":
+        return True
+    return frappe.db.get_value("User", user, "user_type") == "System User"
 
 
 def get_portal_home_page(user: str) -> str | None:
-    return PORTAL_HOME if is_b2b_only_user(user) else None
+    # System users → redirect page (which redirects to /desk/home-page)
+    if _is_system_user(user):
+        return SYSTEM_USER_HOME
+    # B2B-only users → portal
+    if is_b2b_only_user(user):
+        return PORTAL_HOME
+    # Guests / others → portal (which shows login or portal home)
+    return PORTAL_HOME
 
 
 def sync_b2b_only_user_type_on_login(login_manager=None) -> None:
