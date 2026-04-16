@@ -171,6 +171,64 @@ function bootVue(state) {
         return cleanupTraceTree(treeNodes.get(rootNode.id) || null, rootNode.title || rootNode.id);
     }
 
+    function lineageStepPriority(node) {
+        const priority = {
+            "Lead": 5,
+            "Opportunity": 10,
+            "Quotation": 20,
+            "Sales Order": 30,
+            "Pick List": 35,
+            "Material Request": 36,
+            "Delivery Note": 40,
+            "Purchase Order": 40,
+            "Purchase Receipt": 45,
+            "Sales Invoice": 50,
+            "Purchase Invoice": 50,
+            "Payment Entry": 60,
+        };
+        return priority[node?.doctype] || 0;
+    }
+
+    function resolveLineageRootId(graph, focusedId) {
+        if (!graph?.nodes?.length) return focusedId || null;
+
+        const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+        const incomingFulfillment = new Map();
+
+        (graph.edges || []).forEach((edge) => {
+            if (edge.relation !== "fulfillment") return;
+            if (!nodesById.has(edge.from) || !nodesById.has(edge.to)) return;
+            if (!incomingFulfillment.has(edge.to)) incomingFulfillment.set(edge.to, []);
+            incomingFulfillment.get(edge.to).push(edge.from);
+        });
+
+        let currentId = focusedId || graph.root_node_id || graph.nodes[0]?.id || null;
+        const seen = new Set();
+
+        while (currentId && !seen.has(currentId)) {
+            seen.add(currentId);
+            const predecessors = (incomingFulfillment.get(currentId) || []).filter((nodeId) => !seen.has(nodeId));
+            if (!predecessors.length) break;
+
+            predecessors.sort((leftId, rightId) => {
+                const leftNode = nodesById.get(leftId);
+                const rightNode = nodesById.get(rightId);
+                const priorityDiff = lineageStepPriority(leftNode) - lineageStepPriority(rightNode);
+                if (priorityDiff) return priorityDiff;
+
+                const leftDate = leftNode?.date || "";
+                const rightDate = rightNode?.date || "";
+                if (leftDate !== rightDate) return String(leftDate).localeCompare(String(rightDate));
+
+                return String(leftId).localeCompare(String(rightId));
+            });
+
+            currentId = predecessors[0];
+        }
+
+        return currentId || focusedId || graph.root_node_id || graph.nodes[0]?.id || null;
+    }
+
     function cleanupTraceTree(node, referenceTitle) {
         if (!node) return null;
 
@@ -190,7 +248,8 @@ function bootVue(state) {
     }
 
     function shouldFlattenCustomerBridge(node, referenceTitle) {
-        return node.type === "CUSTOMER" && !!referenceTitle && (node.title || node.id) === referenceTitle;
+        const hasDescendants = (node.children && node.children.length > 0) || (node.subBranches && node.subBranches.length > 0);
+        return node.type === "CUSTOMER" && hasDescendants && !!referenceTitle && (node.title || node.id) === referenceTitle;
     }
 
     function computeStageFromDoc(doctype, status) {
@@ -240,6 +299,7 @@ function bootVue(state) {
         WORK_ORDER: { label: "Work Order", color: "text-amber-600 border-amber-200 bg-amber-50" },
         TASK: { label: "Task", color: "text-slate-500 border-slate-200 bg-slate-50" },
         CUSTOMER: { label: "Customer", color: "text-cyan-700 border-cyan-200 bg-cyan-50" },
+        SUPPLIER: { label: "Supplier", color: "text-orange-700 border-orange-200 bg-orange-50" },
     };
 
     const STAGES = [
@@ -650,18 +710,22 @@ function bootVue(state) {
         props: {
             node: { type: Object, required: true },
             onOpen: { type: Function, default: null },
+            focusedId: { type: String, default: null },
         },
         components: { Badge, StatusIcon },
         template: `
-            <div class="relative">
-                <div class="flex items-start gap-4 group py-3">
+            <div ref="nodeEl" class="relative">
+                <div :class="cn(
+                    'flex items-start gap-4 group py-3 rounded-2xl transition-all duration-200',
+                    isFocused ? 'px-4 bg-cyan-100/80 border border-cyan-300 shadow-[0_12px_32px_rgba(0,176,200,0.18)]' : ''
+                )">
                     <!-- Spine Connector -->
                     <div class="absolute left-[23px] top-0 bottom-0 w-px bg-slate-200 group-last:bottom-1/2"></div>
 
                     <!-- Node Icon -->
                     <div :class="cn(
-                        'relative z-10 w-12 h-12 rounded-xl border flex items-center justify-center bg-white shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:shadow-md',
-                        node.status === 'active' ? 'border-[#00b0c8] ring-4 ring-cyan-50' : 'border-slate-200'
+                        'relative z-10 w-12 h-12 rounded-xl border flex items-center justify-center shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:shadow-md',
+                        isFocused ? 'border-cyan-600 ring-4 ring-cyan-200 bg-cyan-50 shadow-[0_0_0_1px_rgba(8,145,178,0.08)]' : node.status === 'active' ? 'border-[#00b0c8] ring-4 ring-cyan-50 bg-white' : 'border-slate-200 bg-white'
                     )">
                         <span class="opacity-80" v-html="iconSVG"></span>
                         <div class="absolute -bottom-1 -right-1">
@@ -674,15 +738,16 @@ function bootVue(state) {
                         <div class="flex items-center justify-between gap-3 mb-1">
                             <div class="flex items-center gap-2 min-w-0">
                                 <Badge :type="node.type" />
-                                <span class="text-sm font-bold text-slate-900 tracking-tight">{{ node.id }}</span>
+                                <span :class="cn('text-sm font-bold tracking-tight', isFocused ? 'text-cyan-950' : 'text-slate-900')">{{ node.id }}</span>
+                                <span v-if="isFocused" class="px-2 py-0.5 rounded-md text-[9px] font-bold border border-cyan-700 bg-cyan-700 text-white uppercase tracking-wider shadow-sm">Focused</span>
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
                                 <span v-if="node.status_label" :class="cn('px-2 py-0.5 rounded-md text-[9px] font-bold border', statusPillClass(node.status_label, node.status))">{{ node.status_label }}</span>
                                 <span class="text-[10px] font-mono font-medium text-slate-400">{{ node.date }}</span>
                             </div>
                         </div>
-                        <h4 class="text-xs font-semibold text-slate-700 truncate">{{ node.title }}</h4>
-                        <p v-if="node.details" class="text-[10px] text-slate-400 mt-1 leading-relaxed">{{ node.details }}</p>
+                        <h4 :class="cn('text-xs font-semibold truncate', isFocused ? 'text-cyan-900' : 'text-slate-700')">{{ node.title }}</h4>
+                        <p v-if="node.details" :class="cn('text-[10px] mt-1 leading-relaxed', isFocused ? 'text-cyan-800/80' : 'text-slate-400')">{{ node.details }}</p>
 
                         <div v-if="node.assignee" class="flex items-center gap-2 mt-2">
                             <div class="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-[8px] font-bold text-white">
@@ -711,21 +776,30 @@ function bootVue(state) {
                         :key="child.id"
                         :node="child"
                         :on-open="onOpen"
+                        :focused-id="focusedId"
                     />
                 </div>
             </div>
         `,
         setup(props) {
+            const nodeEl = ref(null);
+            const isFocused = computed(() => !!props.focusedId && props.node.id === props.focusedId);
             const iconSVG = computed(() => {
                 const svg = ICONS[props.node.type] || ICONS.SO;
                 const colorClass = props.node.type === "PAYMENT" ? "text-emerald-500" :
                                    props.node.type === "NCR" ? "text-rose-500" : "";
                 return svg.replace("<svg", `<svg class="w-5 h-5 ${colorClass}"`);
             });
+            onMounted(() => {
+                if (!isFocused.value) return;
+                nextTick(() => {
+                    nodeEl.value?.scrollIntoView({ block: "center", behavior: "smooth" });
+                });
+            });
             const openNode = () => {
                 if (props.onOpen) props.onOpen(props.node);
             };
-            return { node: props.node, cn, iconSVG, statusPillClass, openNode, onOpen: props.onOpen };
+            return { node: props.node, cn, nodeEl, isFocused, iconSVG, statusPillClass, openNode, onOpen: props.onOpen, focusedId: props.focusedId };
         }
     };
 
@@ -869,6 +943,7 @@ function bootVue(state) {
                 "Maintenance Schedule": "MAINT_SCHEDULE", "Maintenance Visit": "MAINT_VISIT",
                 "Serial No": "SERIAL_NO", "Stock Entry": "STOCK_ENTRY",
                 "Customer": "CUSTOMER",
+                "Supplier": "SUPPLIER",
                 "Communication": "COMMUNICATION",
             };
             const rootType = computed(() => {
@@ -960,10 +1035,13 @@ function bootVue(state) {
 
             const filteredDeals = computed(() => {
                 return tabScopedDeals.value.filter((deal) => {
-                    if (filters.customer && !normalizeText(deal.customer).includes(normalizeText(filters.customer))) {
+                    if (filters.customer && deal.customer !== filters.customer) {
                         return false;
                     }
                     if ((filters.startDate || filters.endDate) && !isWithinDateRange(deal.date, filters.startDate, filters.endDate)) {
+                        return false;
+                    }
+                    if (filters.hideDraft && isDraftStatus(deal.status)) {
                         return false;
                     }
                     if (filters.attentionOnly && !dealNeedsAttention(deal)) {
@@ -1150,17 +1228,25 @@ function bootVue(state) {
                 return cards.slice(0, 6);
             });
 
+            const focusedTraceNodeId = computed(() => {
+                return (selectedDeal.value && selectedDeal.value.id) || (traceData.value && traceData.value.root_node_id) || null;
+            });
+
             const activeTraceData = computed(() => {
                 if (!traceData.value) return null;
-                const rootNodeId = (selectedDeal.value && selectedDeal.value.rootNodeId) || traceData.value.root_node_id;
+                const rootNodeId = focusedTraceNodeId.value || traceData.value.root_node_id;
                 return filterTraceGraph(traceData.value, rootNodeId, filters);
             });
 
             const activeProjectedTree = computed(() => {
                 if (!activeTraceData.value) return null;
+                const lineageRootId = resolveLineageRootId(
+                    activeTraceData.value,
+                    focusedTraceNodeId.value || activeTraceData.value.root_node_id
+                );
                 return buildTree(
                     { nodes: activeTraceData.value.nodes, edges: activeTraceData.value.edges },
-                    activeTraceData.value.root_node_id
+                    lineageRootId
                 );
             });
 
@@ -1367,8 +1453,8 @@ function bootVue(state) {
                     setTraceState({
                         nodes: deal.graph.nodes,
                         edges: deal.graph.edges,
-                        root_node_id: deal.rootNodeId || deal.id,
-                    }, deal.rootNodeId || deal.id);
+                        root_node_id: deal.id,
+                    }, deal.id);
                 }
             }
 
@@ -1490,7 +1576,7 @@ function bootVue(state) {
 
             return {
                 view, activePipelineTab, searchQuery, showMoreFilters, filters, deals, selectedDeal, loading, traceLoading, traceData, projectedTree,
-                traceRenderNonce, tabScopedDeals, filteredDeals, searchedDeals, visibleDeals, activeTabConfig, columnsWithCounts, flowData, selectedTraceAlerts, selectedTraceMetaCards, activeTraceData, activeProjectedTree, traceRenderKey, moreFiltersCount, greeting, today,
+                traceRenderNonce, tabScopedDeals, filteredDeals, searchedDeals, visibleDeals, activeTabConfig, columnsWithCounts, flowData, selectedTraceAlerts, selectedTraceMetaCards, focusedTraceNodeId, activeTraceData, activeProjectedTree, traceRenderKey, moreFiltersCount, greeting, today,
                 customerOptions, projectOptions, companyOptions, ownerOptions, statusOptions, rootDoctypeOptions,
                 selectDeal, openInERPNext, openDocPreview, selectedOpenLabel, resetFilters,
                 cn, DOC_REGISTRY, icon, STAGES, PIPELINE_TABS, formatCurrency, formatDate, buildTree, statusPillClass, traceAlertClass,
@@ -1560,15 +1646,15 @@ function bootVue(state) {
                             </div>
 
                             <div class="flex flex-wrap items-center justify-end gap-2 xl:ml-auto">
-                                <input
-                                    type="text"
-                                    v-model="filters.customer"
-                                    list="op-customer-options"
-                                    placeholder="Customer"
-                                    class="h-9 min-w-[11rem] bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs outline-none focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
-                                <datalist id="op-customer-options">
-                                    <option v-for="customer in customerOptions" :key="customer" :value="customer"></option>
-                                </datalist>
+                                <div class="relative min-w-[13rem]">
+                                    <select
+                                        v-model="filters.customer"
+                                        class="h-9 w-full appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-9 text-xs font-medium text-slate-700 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                        <option value="">All customers</option>
+                                        <option v-for="customer in customerOptions" :key="customer" :value="customer">{{ customer }}</option>
+                                    </select>
+                                    <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 text-[10px]">▾</span>
+                                </div>
                                 <input
                                     type="date"
                                     v-model="filters.startDate"
@@ -1601,8 +1687,8 @@ function bootVue(state) {
                             </div>
                         </div>
 
-                        <div v-if="showMoreFilters" class="mt-3 flex justify-end">
-                            <div class="w-full xl:max-w-5xl bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
+                        <div v-if="showMoreFilters" class="mt-3 w-full">
+                            <div class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
                                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                                     <div>
                                         <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Project</div>
@@ -1668,12 +1754,15 @@ function bootVue(state) {
                                 </div>
 
                                 <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                                    <div v-if="view === 'trace'" class="flex flex-wrap items-center gap-2">
-                                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Trace</span>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Display</span>
                                         <label class="flex items-center gap-2 h-8 px-3 rounded-full bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 cursor-pointer">
                                             <input type="checkbox" v-model="filters.hideDraft" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
                                             <span>Hide Draft</span>
                                         </label>
+                                    </div>
+                                    <div v-if="view === 'trace'" class="flex flex-wrap items-center gap-2">
+                                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Trace</span>
                                         <label class="flex items-center gap-2 h-8 px-3 rounded-full bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 cursor-pointer">
                                             <input type="checkbox" v-model="filters.hideCancelled" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
                                             <span>Hide Cancelled</span>
@@ -1764,7 +1853,7 @@ function bootVue(state) {
                                             <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lineage Spine</h3>
                                         </div>
                                         <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-                                            <SpineNode v-if="activeProjectedTree" :key="'slide-trace-' + traceRenderKey" :node="activeProjectedTree" :on-open="openDocPreview" />
+                                            <SpineNode v-if="activeProjectedTree" :key="'slide-trace-' + traceRenderKey" :node="activeProjectedTree" :on-open="openDocPreview" :focused-id="focusedTraceNodeId" />
                                         </div>
                                     </div>
 
@@ -1917,7 +2006,7 @@ function bootVue(state) {
                                                     <div class="w-1 h-5 bg-[#00b0c8] rounded-full"></div>
                                                     <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Lineage Spine</h3>
                                                 </div>
-                                                <SpineNode v-if="activeProjectedTree" :key="'full-trace-' + traceRenderKey" :node="activeProjectedTree" :on-open="openDocPreview" />
+                                                <SpineNode v-if="activeProjectedTree" :key="'full-trace-' + traceRenderKey" :node="activeProjectedTree" :on-open="openDocPreview" :focused-id="focusedTraceNodeId" />
                                              </div>
                                      </div>
                                 </div>

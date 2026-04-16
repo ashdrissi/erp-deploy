@@ -37,7 +37,9 @@ LINK_REGISTRY = [
     # ── CRM → Selling ──────────────────────────────────────────────────
     ("Quotation", "party_name", "Lead", "upstream"),
     ("Quotation", "party_name", "Opportunity", "upstream"),
+    ("Quotation", "opportunity", "Opportunity", "upstream"),
     ("Sales Order Item", "prevdoc_docname", "Quotation", "upstream"),
+    ("Sales Order", "items.prevdoc_docname", "Quotation", "upstream"),
 
     # ── Customer (linked via customer_name on selling docs) ────────────
     ("Sales Order", "customer_name", "Customer", "downstream"),
@@ -47,6 +49,9 @@ LINK_REGISTRY = [
     ("SAV Ticket", "customer", "Customer", "downstream"),
     ("Lead", "company_name", "Customer", "related"),
     ("Opportunity", "party_name", "Customer", "related"),
+    ("Purchase Order", "supplier", "Supplier", "downstream"),
+    ("Purchase Invoice", "supplier", "Supplier", "downstream"),
+    ("Purchase Receipt", "supplier", "Supplier", "downstream"),
 
     # ── Fulfillment ────────────────────────────────────────────────────
     ("Delivery Note Item", "against_sales_order", "Sales Order", "upstream"),
@@ -114,7 +119,7 @@ TRACE_DOCTYPES = [
     "Purchase Receipt", "Payment Entry", "Project", "SAV Ticket",
     "Quality Inspection", "Timesheet", "Work Order", "Material Request",
     "Pick List", "Issue", "Maintenance Schedule", "Maintenance Visit",
-    "Serial No", "Stock Entry", "Communication", "Customer",
+    "Serial No", "Stock Entry", "Communication", "Customer", "Supplier",
 ]
 
 # Map doctype → short code for UI
@@ -143,6 +148,7 @@ DOCTYPE_CODE = {
     "Serial No": "SERIAL_NO",
     "Stock Entry": "STOCK_ENTRY",
     "Communication": "COMMUNICATION",
+    "Supplier": "SUPPLIER",
 }
 
 
@@ -220,6 +226,10 @@ def get_trace_data(entity_type, entity_name):
         node = _build_node(doctype, doc)
         nodes.append(node)
 
+        # Customer/Supplier are context leaves in the trace UI.
+        if doctype in {"Customer", "Supplier"}:
+            continue
+
         # Find upstream links (what points TO this doc)
         for link in LINK_REGISTRY:
             from_dt, from_field, to_dt, relation = link
@@ -250,7 +260,11 @@ def get_trace_data(entity_type, entity_name):
                 ref_key = f"{source_dt}::{ref_name}"
                 if ref_key not in visited:
                     edge_relation = "fulfillment" if relation == "upstream" else relation
-                    edges.append({"from": name, "to": ref_name, "relation": edge_relation})
+                    # Fulfillment edges run earlier document -> later document.
+                    if relation == "upstream":
+                        edges.append({"from": name, "to": ref_name, "relation": edge_relation})
+                    else:
+                        edges.append({"from": name, "to": ref_name, "relation": edge_relation})
                     queue.append((source_dt, ref_name, key))
 
         # Find downstream links (what this doc points TO)
@@ -268,8 +282,12 @@ def get_trace_data(entity_type, entity_name):
                     continue
                 ref_key = f"{to_dt}::{ref_name}"
                 if ref_key not in visited:
-                    edge_relation = "sub-branch" if relation == "downstream" else relation
-                    edges.append({"from": name, "to": ref_name, "relation": edge_relation})
+                    if relation == "upstream":
+                        edge_relation = "fulfillment"
+                        edges.append({"from": ref_name, "to": name, "relation": edge_relation})
+                    else:
+                        edge_relation = "sub-branch" if relation == "downstream" else relation
+                        edges.append({"from": name, "to": ref_name, "relation": edge_relation})
                     queue.append((to_dt, ref_name, key))
 
 
@@ -971,6 +989,9 @@ def _get_doc_title(doctype, doc):
         "Quotation": getattr(doc, "customer_name", "") or getattr(doc, "party_name", "") or doc.name,
         "Sales Order": getattr(doc, "customer_name", "") or doc.name,
         "Purchase Order": getattr(doc, "supplier_name", "") or doc.name,
+        "Purchase Receipt": getattr(doc, "supplier_name", "") or doc.name,
+        "Purchase Invoice": getattr(doc, "supplier_name", "") or doc.name,
+        "Supplier": getattr(doc, "supplier_name", "") or doc.name,
         "Delivery Note": getattr(doc, "customer_name", "") or doc.name,
         "Delivery Trip": getattr(doc, "name", "") or doc.name,
         "Sales Invoice": getattr(doc, "customer_name", "") or doc.name,
@@ -1046,6 +1067,7 @@ def _get_doc_date(doctype, doc):
         "Maintenance Schedule": "transaction_date",
         "Maintenance Visit": "mntc_date",
         "Communication": "creation",
+        "Supplier": "creation",
     }
     field = date_fields.get(doctype, "creation")
     val = getattr(doc, field, None) or getattr(doc, "creation", None)
