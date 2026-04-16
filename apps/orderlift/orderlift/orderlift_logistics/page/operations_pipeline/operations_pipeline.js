@@ -69,7 +69,7 @@ function renderSkeleton(state) {
 // ── Vue Boot ─────────────────────────────────────────────────────────────
 
 function bootVue(state) {
-    const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
+    const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
 
     // ── Utilities ───────────────────────────────────────────────────
 
@@ -168,7 +168,29 @@ function bootVue(state) {
             }
         }
 
-        return treeNodes.get(rootNode.id) || null;
+        return cleanupTraceTree(treeNodes.get(rootNode.id) || null, rootNode.title || rootNode.id);
+    }
+
+    function cleanupTraceTree(node, referenceTitle) {
+        if (!node) return null;
+
+        const cleanBranch = (children) => {
+            return (children || []).map((child) => cleanupTraceTree(child, referenceTitle)).flatMap((child) => {
+                if (!child) return [];
+                if (shouldFlattenCustomerBridge(child, referenceTitle)) {
+                    return [...(child.children || []), ...(child.subBranches || [])];
+                }
+                return [child];
+            });
+        };
+
+        node.children = cleanBranch(node.children);
+        node.subBranches = cleanBranch(node.subBranches);
+        return node;
+    }
+
+    function shouldFlattenCustomerBridge(node, referenceTitle) {
+        return node.type === "CUSTOMER" && !!referenceTitle && (node.title || node.id) === referenceTitle;
     }
 
     function computeStageFromDoc(doctype, status) {
@@ -189,7 +211,7 @@ function bootVue(state) {
     // ── DOC_REGISTRY ────────────────────────────────────────────────
 
     const DOC_REGISTRY = {
-        LEAD: { label: "Lead", color: "text-blue-600 border-blue-200 bg-blue-50" },
+        LEAD: { label: "Lead", color: "text-cyan-700 border-cyan-200 bg-cyan-50" },
         OPP: { label: "Opportunity", color: "text-indigo-600 border-indigo-200 bg-indigo-50" },
         QTN: { label: "Quotation", color: "text-slate-600 border-slate-200 bg-slate-50" },
         SO: { label: "Sales Order", color: "text-emerald-600 border-emerald-200 bg-emerald-50" },
@@ -208,7 +230,7 @@ function bootVue(state) {
         CREDIT_NOTE: { label: "Credit Note", color: "text-purple-600 border-purple-200 bg-purple-50" },
         SALES_INVOICE: { label: "Sales Invoice", color: "text-purple-600 border-purple-200 bg-purple-50" },
         PURCHASE_INVOICE: { label: "Purchase Invoice", color: "text-purple-600 border-purple-200 bg-purple-50" },
-        COMMUNICATION: { label: "Communication", color: "text-blue-500 border-blue-100 bg-blue-50" },
+        COMMUNICATION: { label: "Communication", color: "text-cyan-700 border-cyan-200 bg-cyan-50" },
         SERIAL_NO: { label: "Serial Number", color: "text-slate-500 border-slate-200 bg-slate-50" },
         PICK_LIST: { label: "Pick List", color: "text-amber-600 border-amber-200 bg-amber-50" },
         ISSUE: { label: "Issue", color: "text-rose-600 border-rose-200 bg-rose-50" },
@@ -217,7 +239,7 @@ function bootVue(state) {
         STOCK_ENTRY: { label: "Stock Entry", color: "text-slate-500 border-slate-200 bg-slate-50" },
         WORK_ORDER: { label: "Work Order", color: "text-amber-600 border-amber-200 bg-amber-50" },
         TASK: { label: "Task", color: "text-slate-500 border-slate-200 bg-slate-50" },
-        CUSTOMER: { label: "Customer", color: "text-blue-600 border-blue-200 bg-blue-50" },
+        CUSTOMER: { label: "Customer", color: "text-cyan-700 border-cyan-200 bg-cyan-50" },
     };
 
     const STAGES = [
@@ -431,12 +453,115 @@ function bootVue(state) {
         return stageProgress[stageKey] || 30;
     }
 
+    function normalizeText(value) {
+        return String(value || "").trim().toLowerCase();
+    }
+
+    function uniqueSorted(values) {
+        return [...new Set((values || []).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+    }
+
+    function parseFilterDate(value) {
+        if (!value) return null;
+        const parsed = new Date(String(value).replace(" ", "T"));
+        if (Number.isNaN(parsed.getTime())) return null;
+        return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    }
+
+    function isWithinDateRange(value, startDate, endDate) {
+        const current = parseFilterDate(value);
+        if (!current) return false;
+        const start = parseFilterDate(startDate);
+        const end = parseFilterDate(endDate);
+        if (start && current < start) return false;
+        if (end && current > end) return false;
+        return true;
+    }
+
+    function dealNeedsAttention(deal) {
+        return !!(deal.blocked || deal.overdue || deal.status === "Overdue" || deal.openSavCount > 0 || deal.qcFailed);
+    }
+
+    function dealHasPaymentPending(deal) {
+        const status = normalizeText(deal.status);
+        if (deal.doctype === "Payment Entry") return status !== "completed";
+        if (["Sales Invoice", "Purchase Invoice"].includes(deal.doctype)) {
+            return !["paid", "credit note issued", "cancelled"].includes(status);
+        }
+        if (["Sales Order", "Purchase Order"].includes(deal.doctype)) {
+            return ["submitted", "ordered", "to bill", "to deliver and bill", "to receive and bill"].includes(status);
+        }
+        return false;
+    }
+
+    function dealHasQCPending(deal) {
+        if (deal.qcFailed) return true;
+        return deal.doctype === "Quality Inspection" && normalizeText(deal.status) !== "completed";
+    }
+
+    function isDraftStatus(statusLabel) {
+        return normalizeText(statusLabel) === "draft";
+    }
+
+    function isCancelledStatus(statusLabel) {
+        return ["cancelled", "lost"].includes(normalizeText(statusLabel));
+    }
+
+    function filterTraceGraph(graph, rootNodeId, filters) {
+        if (!graph) return null;
+
+        let edges = [...(graph.edges || [])];
+        if (filters.mainSpineOnly) {
+            edges = edges.filter((edge) => edge.relation === "fulfillment");
+        }
+
+        const connectedIds = new Set([rootNodeId || graph.root_node_id]);
+        edges.forEach((edge) => {
+            connectedIds.add(edge.from);
+            connectedIds.add(edge.to);
+        });
+
+        let nodes = (graph.nodes || []).filter((node) => {
+            if (node.id === rootNodeId || node.id === graph.root_node_id) return true;
+            if (filters.hideDraft && isDraftStatus(node.status_label)) return false;
+            if (filters.hideCancelled && isCancelledStatus(node.status_label)) return false;
+            if (filters.mainSpineOnly && !connectedIds.has(node.id)) return false;
+            return true;
+        });
+
+        const nodeIds = new Set(nodes.map((node) => node.id));
+        edges = edges.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to));
+
+        return {
+            nodes,
+            edges,
+            root_node_id: rootNodeId || graph.root_node_id,
+        };
+    }
+
+    function traceAlertClass(tone) {
+        const tones = {
+            cyan: "bg-cyan-50 text-cyan-700 border-cyan-200",
+            amber: "bg-amber-50 text-amber-700 border-amber-200",
+            rose: "bg-rose-50 text-rose-700 border-rose-200",
+            emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
+            slate: "bg-slate-50 text-slate-700 border-slate-200",
+        };
+        return tones[tone] || tones.slate;
+    }
+
     function statusPillClass(statusLabel, statusCode) {
         const value = (statusLabel || "").toLowerCase();
-        if (["paid", "completed", "closed", "converted", "delivered", "resolved", "submitted", "ordered", "received"].includes(value)) {
+        if (["paid", "completed", "closed", "converted", "resolved", "received"].includes(value)) {
             return "bg-emerald-50 text-emerald-700 border-emerald-200";
         }
-        if (["draft", "open", "pending", "initiated", "in progress", "work in progress", "to receive", "to bill", "to deliver and bill", "to receive and bill"].includes(value)) {
+        if (["draft"].includes(value)) {
+            return "bg-slate-50 text-slate-700 border-slate-200";
+        }
+        if (["open", "pending", "initiated"].includes(value)) {
+            return "bg-cyan-50 text-cyan-700 border-cyan-200";
+        }
+        if (["submitted", "ordered", "to receive", "to bill", "to deliver and bill", "to receive and bill", "in progress", "work in progress", "delivered"].includes(value)) {
             return "bg-amber-50 text-amber-700 border-amber-200";
         }
         if (["cancelled", "lost", "rejected", "overdue", "on hold", "blocked"].includes(value)) {
@@ -444,7 +569,7 @@ function bootVue(state) {
         }
         if (statusCode === "completed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
         if (statusCode === "blocked" || statusCode === "warning") return "bg-rose-50 text-rose-700 border-rose-200";
-        if (statusCode === "active") return "bg-blue-50 text-blue-700 border-blue-200";
+        if (statusCode === "active") return "bg-cyan-50 text-cyan-700 border-cyan-200";
         return "bg-slate-50 text-slate-600 border-slate-200";
     }
 
@@ -509,7 +634,7 @@ function bootVue(state) {
         template: `<div :class="cn('w-2 h-2 rounded-full shrink-0', colors[status] || colors.pending)"></div>`,
         setup() {
             const colors = {
-                active: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]",
+                active: "bg-[#00b0c8] shadow-[0_0_8px_rgba(0,176,200,0.45)]",
                 completed: "bg-emerald-500",
                 pending: "bg-slate-300",
                 blocked: "bg-rose-500 animate-pulse",
@@ -536,7 +661,7 @@ function bootVue(state) {
                     <!-- Node Icon -->
                     <div :class="cn(
                         'relative z-10 w-12 h-12 rounded-xl border flex items-center justify-center bg-white shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:shadow-md',
-                        node.status === 'active' ? 'border-blue-400 ring-4 ring-blue-50' : 'border-slate-200'
+                        node.status === 'active' ? 'border-[#00b0c8] ring-4 ring-cyan-50' : 'border-slate-200'
                     )">
                         <span class="opacity-80" v-html="iconSVG"></span>
                         <div class="absolute -bottom-1 -right-1">
@@ -569,7 +694,7 @@ function bootVue(state) {
                         <!-- Sub-branches (Parallel flows) -->
                         <div v-if="node.subBranches && node.subBranches.length > 0" class="mt-3 ml-4 border-l-2 border-slate-100 pl-4 space-y-3">
                             <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Parallel Flows</div>
-                            <div v-for="sub in node.subBranches" :key="sub.id" @click.stop="onOpen && onOpen(sub)" class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 hover:bg-blue-50/40 transition-colors">
+                            <div v-for="sub in node.subBranches" :key="sub.id" @click.stop="onOpen && onOpen(sub)" class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100 cursor-pointer hover:border-cyan-200 hover:bg-cyan-50/40 transition-colors">
                                 <Badge :type="sub.type" />
                                 <span class="text-[10px] font-bold text-slate-600">{{ sub.id }}</span>
                                 <span v-if="sub.status_label" :class="cn('px-2 py-0.5 rounded-md text-[8px] font-bold border ml-auto', statusPillClass(sub.status_label, sub.status))">{{ sub.status_label }}</span>
@@ -682,10 +807,10 @@ function bootVue(state) {
         components: { Badge },
         template: `
             <div :class="cn(
-                'bg-white border border-slate-200 p-4 cursor-pointer relative overflow-hidden group rounded-xl transition-all duration-200 hover:shadow-md hover:border-blue-200',
-                selected && 'ring-2 ring-blue-500 border-transparent shadow-lg'
+                'bg-white border border-slate-200 p-4 cursor-pointer relative overflow-hidden group rounded-xl transition-all duration-200 hover:shadow-md hover:border-cyan-200',
+                selected && 'ring-2 ring-[#00b0c8] border-transparent shadow-lg'
             )" @click="$emit('select', deal)">
-                <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div class="absolute top-0 left-0 w-1 h-full bg-[#00b0c8] opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
                 <div class="flex items-center justify-between mb-3">
                     <Badge :type="rootType" />
@@ -695,7 +820,7 @@ function bootVue(state) {
                     )"></div>
                 </div>
 
-                <h4 class="text-sm font-bold text-slate-900 mb-1 group-hover:text-blue-600 transition-colors truncate">{{ deal.customer }}</h4>
+                <h4 class="text-sm font-bold text-slate-900 mb-1 group-hover:text-cyan-700 transition-colors truncate">{{ deal.customer }}</h4>
                 <div class="text-xs font-medium text-slate-400 mb-3">{{ deal.id }}</div>
 
                 <div class="text-lg font-black font-mono text-slate-900 tracking-tight mb-4" v-html="formattedValue"></div>
@@ -761,17 +886,37 @@ function bootVue(state) {
     // ── Main App ────────────────────────────────────────────────────
 
     createApp({
-        components: { Badge, StatusIcon, SpineNode, HealthSummary, DealCard },
+        components: { Badge, StatusIcon, SpineNode, DealCard },
         setup() {
             const view = ref("pipeline");
             const activePipelineTab = ref("overview");
             const searchQuery = ref("");
+            const showMoreFilters = ref(false);
             const deals = ref([]);
             const selectedDeal = ref(null);
             const loading = ref(true);
             const traceLoading = ref(false);
             const traceData = ref(null);
             const projectedTree = ref(null);
+            const traceRenderNonce = ref(0);
+            const filters = reactive({
+                customer: "",
+                startDate: "",
+                endDate: "",
+                attentionOnly: false,
+                project: "",
+                company: "",
+                flowScope: "",
+                status: "",
+                rootDoctype: "",
+                owner: "",
+                paymentPendingOnly: false,
+                openSavOnly: false,
+                qcPendingOnly: false,
+                hideDraft: false,
+                hideCancelled: false,
+                mainSpineOnly: false,
+            });
 
             // Get state from the wrapper (set in on_page_load)
             function getState() {
@@ -806,10 +951,59 @@ function bootVue(state) {
                 return deals.value.filter((deal) => deal.domain === activePipelineTab.value);
             });
 
+            const customerOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.customer)));
+            const projectOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.project)));
+            const companyOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.company)));
+            const ownerOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.owner)));
+            const statusOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.status)));
+            const rootDoctypeOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.doctype)));
+
+            const filteredDeals = computed(() => {
+                return tabScopedDeals.value.filter((deal) => {
+                    if (filters.customer && !normalizeText(deal.customer).includes(normalizeText(filters.customer))) {
+                        return false;
+                    }
+                    if ((filters.startDate || filters.endDate) && !isWithinDateRange(deal.date, filters.startDate, filters.endDate)) {
+                        return false;
+                    }
+                    if (filters.attentionOnly && !dealNeedsAttention(deal)) {
+                        return false;
+                    }
+                    if (filters.project && !normalizeText(deal.project).includes(normalizeText(filters.project))) {
+                        return false;
+                    }
+                    if (filters.company && deal.company !== filters.company) {
+                        return false;
+                    }
+                    if (filters.flowScope && deal.flowScope !== filters.flowScope) {
+                        return false;
+                    }
+                    if (filters.status && deal.status !== filters.status) {
+                        return false;
+                    }
+                    if (filters.rootDoctype && deal.doctype !== filters.rootDoctype) {
+                        return false;
+                    }
+                    if (filters.owner && deal.owner !== filters.owner) {
+                        return false;
+                    }
+                    if (filters.paymentPendingOnly && !dealHasPaymentPending(deal)) {
+                        return false;
+                    }
+                    if (filters.openSavOnly && !(deal.openSavCount > 0)) {
+                        return false;
+                    }
+                    if (filters.qcPendingOnly && !dealHasQCPending(deal)) {
+                        return false;
+                    }
+                    return true;
+                });
+            });
+
             const searchedDeals = computed(() => {
                 const q = searchQuery.value.toLowerCase();
-                if (!q) return tabScopedDeals.value;
-                return tabScopedDeals.value.filter(d =>
+                if (!q) return filteredDeals.value;
+                return filteredDeals.value.filter(d =>
                     (d.customer || "").toLowerCase().includes(q) ||
                     d.id.toLowerCase().includes(q)
                 );
@@ -840,8 +1034,8 @@ function bootVue(state) {
             });
 
             const flowData = computed(() => {
-                if (!traceData.value || !traceData.value.nodes) return [];
-                return traceData.value.nodes
+                if (!activeTraceData.value || !activeTraceData.value.nodes) return [];
+                return activeTraceData.value.nodes
                     .filter(n => n.value)
                     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                     .map(n => ({
@@ -849,6 +1043,148 @@ function bootVue(state) {
                         value: parseFloat((n.value || "0").toString().replace(/[^0-9.]/g, "")) || 0,
                     }));
             });
+
+            const selectedTraceAlerts = computed(() => {
+                if (!selectedDeal.value || !activeTraceData.value) return [];
+
+                const nodes = activeTraceData.value.nodes || [];
+                const alerts = [];
+
+                const paymentPending = nodes.some((n) => n.type === "PAYMENT" && n.status !== "completed");
+                if (paymentPending) {
+                    alerts.push({ label: __("Payment Pending"), tone: "amber" });
+                }
+
+                const openSavCount = nodes.filter((n) => n.type === "SAV" && n.status !== "completed").length;
+                if (openSavCount > 0) {
+                    alerts.push({ label: __(`Open SAV: ${openSavCount}`), tone: "rose" });
+                }
+
+                const qcNodes = nodes.filter((n) => n.type === "QC");
+                const qcPending = qcNodes.length > 0 && !qcNodes.some((n) => n.status === "completed");
+                if (qcPending) {
+                    alerts.push({ label: __("QC Pending"), tone: "amber" });
+                }
+
+                if (selectedDeal.value.blocked) {
+                    alerts.push({ label: __(selectedDeal.value.blockedReason || "Blocked"), tone: "rose" });
+                }
+
+                if (selectedDeal.value.overdue || selectedDeal.value.status === "Overdue") {
+                    alerts.push({ label: __("Overdue"), tone: "rose" });
+                }
+
+                if (!alerts.length && selectedDeal.value.status) {
+                    alerts.push({ label: __(selectedDeal.value.status), tone: "slate" });
+                }
+
+                return alerts;
+            });
+
+            const selectedTraceMetaCards = computed(() => {
+                if (!selectedDeal.value || !activeTraceData.value) return [];
+
+                const cards = [];
+                const nodes = activeTraceData.value.nodes || [];
+                const doctype = selectedDeal.value.doctype;
+                const hasPayments = nodes.some((n) => n.type === "PAYMENT");
+                const paid = nodes.some((n) => n.type === "PAYMENT" && n.status === "completed");
+                const qcNodes = nodes.filter((n) => n.type === "QC");
+                const qcPassed = qcNodes.some((n) => n.status === "completed");
+                const savCount = nodes.filter((n) => n.type === "SAV" && n.status !== "completed").length;
+
+                if (selectedDeal.value.value) {
+                    cards.push({
+                        label: __("Value"),
+                        value: formatCurrency(selectedDeal.value.value),
+                        tone: "slate",
+                    });
+                }
+
+                cards.push({
+                    label: __("Docs Linked"),
+                    value: String(nodes.length || 0),
+                    tone: "slate",
+                });
+
+                if (selectedDeal.value.date) {
+                    cards.push({
+                        label: __("Date"),
+                        value: selectedDeal.value.date,
+                        tone: "slate",
+                    });
+                }
+
+                if (["Sales Order", "Sales Invoice", "Purchase Order", "Purchase Invoice"].includes(doctype) || hasPayments) {
+                    cards.push({
+                        label: __("Payment"),
+                        value: paid ? __("Settled") : __("Pending"),
+                        tone: paid ? "emerald" : "amber",
+                    });
+                }
+
+                if (qcNodes.length) {
+                    cards.push({
+                        label: __("Quality"),
+                        value: qcPassed ? __("Passed") : __("Pending"),
+                        tone: qcPassed ? "emerald" : "amber",
+                    });
+                }
+
+                if (savCount) {
+                    cards.push({
+                        label: __("Open SAV"),
+                        value: String(savCount),
+                        tone: "rose",
+                    });
+                }
+
+                if (selectedDeal.value.overdue || selectedDeal.value.status === "Overdue") {
+                    cards.push({
+                        label: __("Attention"),
+                        value: __("Overdue"),
+                        tone: "rose",
+                    });
+                }
+
+                return cards.slice(0, 6);
+            });
+
+            const activeTraceData = computed(() => {
+                if (!traceData.value) return null;
+                const rootNodeId = (selectedDeal.value && selectedDeal.value.rootNodeId) || traceData.value.root_node_id;
+                return filterTraceGraph(traceData.value, rootNodeId, filters);
+            });
+
+            const activeProjectedTree = computed(() => {
+                if (!activeTraceData.value) return null;
+                return buildTree(
+                    { nodes: activeTraceData.value.nodes, edges: activeTraceData.value.edges },
+                    activeTraceData.value.root_node_id
+                );
+            });
+
+            const traceRenderKey = computed(() => [
+                traceRenderNonce.value,
+                filters.hideDraft,
+                filters.hideCancelled,
+                filters.mainSpineOnly,
+            ].join("-"));
+
+            const moreFiltersCount = computed(() => [
+                filters.project,
+                filters.company,
+                filters.flowScope,
+                filters.status,
+                filters.rootDoctype,
+                filters.owner,
+                filters.paymentPendingOnly,
+                filters.openSavOnly,
+                filters.qcPendingOnly,
+                filters.hideDraft,
+                filters.hideCancelled,
+                filters.mainSpineOnly,
+            ].filter(Boolean).length);
 
             function loadPipelineData() {
                 loading.value = true;
@@ -877,6 +1213,10 @@ function bootVue(state) {
                                 column: card.column,
                                 value: card.value,
                                 date: card.date,
+                                company: card.company || "",
+                                project: card.project || (card.doctype === "Project" ? card.name : ""),
+                                owner: card.owner || "",
+                                flowScope: card.flow_scope || "",
                                 tags: [card.flow_scope, card.shipping_resp].filter(Boolean),
                                 healthScore: computeHealthScore(card),
                                 slaStatus: computeSLA(card),
@@ -939,9 +1279,8 @@ function bootVue(state) {
                     },
                     callback: (r) => {
                         if (r.message) {
-                            traceData.value = r.message;
-                            projectedTree.value = buildTree(
-                                { nodes: r.message.nodes, edges: r.message.edges },
+                            setTraceState(
+                                { nodes: r.message.nodes, edges: r.message.edges, root_node_id: r.message.root_node_id },
                                 r.message.root_node_id
                             );
                             // Enrich the deal with trace graph
@@ -958,6 +1297,43 @@ function bootVue(state) {
                     },
                     error: () => { traceLoading.value = false; }
                 });
+            }
+
+            function cloneTraceGraph(graph) {
+                return {
+                    nodes: (graph?.nodes || []).map((node) => ({ ...node })),
+                    edges: (graph?.edges || []).map((edge) => ({ ...edge })),
+                    root_node_id: graph?.root_node_id,
+                };
+            }
+
+            function setTraceState(graph, rootNodeId) {
+                const cloned = cloneTraceGraph(graph);
+                traceData.value = cloned;
+                projectedTree.value = buildTree(
+                    { nodes: cloned.nodes, edges: cloned.edges },
+                    rootNodeId || cloned.root_node_id
+                );
+                traceRenderNonce.value += 1;
+            }
+
+            function resetFilters() {
+                filters.customer = "";
+                filters.startDate = "";
+                filters.endDate = "";
+                filters.attentionOnly = false;
+                filters.project = "";
+                filters.company = "";
+                filters.flowScope = "";
+                filters.status = "";
+                filters.rootDoctype = "";
+                filters.owner = "";
+                filters.paymentPendingOnly = false;
+                filters.openSavOnly = false;
+                filters.qcPendingOnly = false;
+                filters.hideDraft = false;
+                filters.hideCancelled = false;
+                filters.mainSpineOnly = false;
             }
 
             function inferDoctype(name) {
@@ -988,12 +1364,11 @@ function bootVue(state) {
                 if (!deal.graph || !deal.graph.nodes || deal.graph.nodes.length === 0) {
                     loadTraceData(deal);
                 } else {
-                    traceData.value = {
+                    setTraceState({
                         nodes: deal.graph.nodes,
                         edges: deal.graph.edges,
                         root_node_id: deal.rootNodeId || deal.id,
-                    };
-                    projectedTree.value = buildTree(deal.graph, deal.rootNodeId || deal.id);
+                    }, deal.rootNodeId || deal.id);
                 }
             }
 
@@ -1114,14 +1489,15 @@ function bootVue(state) {
             });
 
             return {
-                view, activePipelineTab, searchQuery, deals, selectedDeal, loading, traceLoading, traceData, projectedTree,
-                tabScopedDeals, searchedDeals, visibleDeals, activeTabConfig, columnsWithCounts, flowData, greeting, today,
-                selectDeal, openInERPNext, openDocPreview, selectedOpenLabel,
-                cn, DOC_REGISTRY, icon, STAGES, PIPELINE_TABS, formatCurrency, formatDate, buildTree, statusPillClass,
+                view, activePipelineTab, searchQuery, showMoreFilters, filters, deals, selectedDeal, loading, traceLoading, traceData, projectedTree,
+                traceRenderNonce, tabScopedDeals, filteredDeals, searchedDeals, visibleDeals, activeTabConfig, columnsWithCounts, flowData, selectedTraceAlerts, selectedTraceMetaCards, activeTraceData, activeProjectedTree, traceRenderKey, moreFiltersCount, greeting, today,
+                customerOptions, projectOptions, companyOptions, ownerOptions, statusOptions, rootDoctypeOptions,
+                selectDeal, openInERPNext, openDocPreview, selectedOpenLabel, resetFilters,
+                cn, DOC_REGISTRY, icon, STAGES, PIPELINE_TABS, formatCurrency, formatDate, buildTree, statusPillClass, traceAlertClass,
             };
         },
         template: `
-            <div class="min-h-screen bg-bg-app text-slate-900 font-sans antialiased">
+            <div class="min-h-screen bg-[#f5f6fa] text-slate-900 font-sans antialiased">
                 <!-- Topbar -->
                 <header class="h-14 bg-white border-b border-border-mid px-6 flex items-center justify-between sticky top-0 z-50">
                     <div class="w-64"></div>
@@ -1130,13 +1506,13 @@ function bootVue(state) {
                             <button
                                 @click="view = 'pipeline'"
                                 :class="cn('px-4 py-1.5 text-xs font-bold rounded-md transition-all',
-                                    view === 'pipeline' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700')">
+                                    view === 'pipeline' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')">
                                 Pipeline
                             </button>
                             <button
                                 @click="view = 'trace'"
                                 :class="cn('px-4 py-1.5 text-xs font-bold rounded-md transition-all',
-                                    view === 'trace' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700')">
+                                    view === 'trace' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')">
                                 Trace Graph
                             </button>
                         </nav>
@@ -1149,7 +1525,7 @@ function bootVue(state) {
                                 type="text"
                                 v-model="searchQuery"
                                 placeholder="Search deals, docs, customers..."
-                                class="w-64 h-9 bg-slate-100 border border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-xl pl-10 pr-4 text-xs outline-none transition-all">
+                                class="w-64 h-9 bg-slate-100 border border-transparent focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 rounded-xl pl-10 pr-4 text-xs outline-none transition-all">
                         </div>
                     </div>
                 </header>
@@ -1167,29 +1543,163 @@ function bootVue(state) {
                             </div>
                         </div>
 
-                        <div class="flex flex-wrap gap-2">
-                            <button
-                                v-for="tab in PIPELINE_TABS"
-                                :key="tab.key"
-                                @click="activePipelineTab = tab.key"
-                                :class="cn(
-                                    'px-4 py-2 rounded-xl text-xs font-bold border transition-all',
-                                    activePipelineTab === tab.key
-                                        ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-200'
-                                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-200 hover:text-blue-600'
-                                )">
-                                {{ tab.label }}
-                            </button>
+                        <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div class="flex flex-wrap gap-2">
+                                <button
+                                    v-for="tab in PIPELINE_TABS"
+                                    :key="tab.key"
+                                    @click="activePipelineTab = tab.key"
+                                    :class="cn(
+                                        'px-4 py-2 rounded-xl text-xs font-bold border transition-all',
+                                        activePipelineTab === tab.key
+                                            ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-200'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-cyan-200 hover:text-cyan-700'
+                                    )">
+                                    {{ tab.label }}
+                                </button>
+                            </div>
+
+                            <div class="flex flex-wrap items-center justify-end gap-2 xl:ml-auto">
+                                <input
+                                    type="text"
+                                    v-model="filters.customer"
+                                    list="op-customer-options"
+                                    placeholder="Customer"
+                                    class="h-9 min-w-[11rem] bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs outline-none focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                <datalist id="op-customer-options">
+                                    <option v-for="customer in customerOptions" :key="customer" :value="customer"></option>
+                                </datalist>
+                                <input
+                                    type="date"
+                                    v-model="filters.startDate"
+                                    class="h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs outline-none focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                <input
+                                    type="date"
+                                    v-model="filters.endDate"
+                                    class="h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs outline-none focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                <button
+                                    @click="filters.attentionOnly = !filters.attentionOnly"
+                                    :class="cn(
+                                        'h-9 px-3 rounded-xl text-xs font-bold border transition-all',
+                                        filters.attentionOnly
+                                            ? 'bg-[#00b0c8] text-white border-[#00b0c8] shadow-sm'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-cyan-200 hover:text-cyan-700'
+                                    )">
+                                    Attention Only
+                                </button>
+                                <button
+                                    @click="showMoreFilters = !showMoreFilters"
+                                    :class="cn(
+                                        'h-9 px-3 rounded-xl text-xs font-bold border transition-all flex items-center gap-2',
+                                        showMoreFilters
+                                            ? 'bg-slate-900 text-white border-slate-900'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-cyan-200 hover:text-cyan-700'
+                                    )">
+                                    <span>More Filters</span>
+                                    <span v-if="moreFiltersCount" class="px-1.5 py-0.5 rounded-full bg-white/15 text-[10px]">{{ moreFiltersCount }}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-if="showMoreFilters" class="mt-3 flex justify-end">
+                            <div class="w-full xl:max-w-5xl bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                                    <div>
+                                        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Project</div>
+                                        <input
+                                            type="text"
+                                            v-model="filters.project"
+                                            list="op-project-options"
+                                            placeholder="Any project"
+                                            class="w-full h-9 bg-white border border-slate-200 rounded-xl px-3 text-xs outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                        <datalist id="op-project-options">
+                                            <option v-for="project in projectOptions" :key="project" :value="project"></option>
+                                        </datalist>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Company</div>
+                                        <select v-model="filters.company" class="w-full h-9 bg-white border border-slate-200 rounded-xl px-3 text-xs outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                            <option value="">All companies</option>
+                                            <option v-for="company in companyOptions" :key="company" :value="company">{{ company }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Flow Scope</div>
+                                        <select v-model="filters.flowScope" class="w-full h-9 bg-white border border-slate-200 rounded-xl px-3 text-xs outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                            <option value="">All scopes</option>
+                                            <option value="Inbound">Inbound</option>
+                                            <option value="Domestic">Domestic</option>
+                                            <option value="Outbound">Outbound</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Status</div>
+                                        <select v-model="filters.status" class="w-full h-9 bg-white border border-slate-200 rounded-xl px-3 text-xs outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                            <option value="">All statuses</option>
+                                            <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Root Doctype</div>
+                                        <select v-model="filters.rootDoctype" class="w-full h-9 bg-white border border-slate-200 rounded-xl px-3 text-xs outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                            <option value="">All doctypes</option>
+                                            <option v-for="doctype in rootDoctypeOptions" :key="doctype" :value="doctype">{{ doctype }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Owner</div>
+                                        <select v-model="filters.owner" class="w-full h-9 bg-white border border-slate-200 rounded-xl px-3 text-xs outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                            <option value="">All owners</option>
+                                            <option v-for="owner in ownerOptions" :key="owner" :value="owner">{{ owner }}</option>
+                                        </select>
+                                    </div>
+                                    <label class="flex items-center gap-3 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 cursor-pointer">
+                                        <input type="checkbox" v-model="filters.paymentPendingOnly" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                                        <span>Payment Pending</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 cursor-pointer">
+                                        <input type="checkbox" v-model="filters.openSavOnly" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                                        <span>Open SAV</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 cursor-pointer">
+                                        <input type="checkbox" v-model="filters.qcPendingOnly" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                                        <span>QC Pending</span>
+                                    </label>
+                                </div>
+
+                                <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                                    <div v-if="view === 'trace'" class="flex flex-wrap items-center gap-2">
+                                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Trace</span>
+                                        <label class="flex items-center gap-2 h-8 px-3 rounded-full bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                                            <input type="checkbox" v-model="filters.hideDraft" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                                            <span>Hide Draft</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 h-8 px-3 rounded-full bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                                            <input type="checkbox" v-model="filters.hideCancelled" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                                            <span>Hide Cancelled</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 h-8 px-3 rounded-full bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                                            <input type="checkbox" v-model="filters.mainSpineOnly" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500">
+                                            <span>Main Spine Only</span>
+                                        </label>
+                                    </div>
+                                    <div class="flex justify-end">
+                                        <button @click="resetFilters" class="h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:border-cyan-200 hover:text-cyan-700 transition-all">
+                                            Reset Filters
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="flex-1 flex overflow-hidden">
                     <!-- Pipeline View -->
-                    <div v-show="view === 'pipeline'" class="flex-1 flex gap-4 p-6 overflow-x-auto snap-x pb-2">
+                    <div v-show="view === 'pipeline'" class="flex-1 flex gap-4 px-8 py-6 overflow-x-auto snap-x pb-2">
                         <div v-for="stage in columnsWithCounts" :key="stage.key" class="flex-none w-72 snap-start flex flex-col">
                             <div class="flex items-center justify-between mb-4 px-2">
                                 <div class="flex items-center gap-2">
-                                    <div class="w-1 h-4 bg-blue-600 rounded-full"></div>
+                                    <div class="w-1 h-4 bg-[#00b0c8] rounded-full"></div>
                                     <h3 class="text-xs font-black text-slate-500 uppercase tracking-widest">{{ stage.label }}</h3>
                                 </div>
                                 <span :class="cn(
@@ -1227,7 +1737,7 @@ function bootVue(state) {
                                 <div class="flex items-center gap-2">
                                     <button
                                         @click="view = 'trace'"
-                                        class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-lg hover:bg-blue-700 transition-all">
+                                        class="flex items-center gap-2 px-3 py-1.5 bg-[#00b0c8] text-white text-[10px] font-bold rounded-lg hover:bg-[#0097ad] transition-all">
                                         <span>Full Trace</span>
                                     </button>
                                     <button
@@ -1240,44 +1750,21 @@ function bootVue(state) {
 
                             <div class="flex-1 overflow-y-auto p-6 space-y-8">
                                 <div v-if="traceLoading" class="text-center py-12 text-slate-400 text-xs">Loading trace...</div>
-                                <template v-else-if="traceData">
-                                    <!-- Hero Stats -->
-                                    <div class="grid grid-cols-4 gap-2">
-                                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-xl text-center">
-                                            <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Health</div>
-                                            <div class="text-sm font-black font-mono text-blue-600">{{ selectedDeal.healthScore }}%</div>
-                                        </div>
-                                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-xl text-center">
-                                            <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Progress</div>
-                                            <div class="text-sm font-black font-mono text-blue-600">{{ selectedDeal.progress }}%</div>
-                                        </div>
-                                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-xl text-center">
-                                            <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">SLA</div>
-                                            <div :class="cn('text-sm font-black font-mono',
-                                                selectedDeal.slaStatus === 'ok' ? 'text-blue-600' : 'text-rose-600')">
-                                                {{ selectedDeal.slaStatus.toUpperCase() }}
-                                            </div>
-                                        </div>
-                                        <div class="bg-slate-50 border border-slate-100 p-3 rounded-xl text-center">
-                                            <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Docs</div>
-                                            <div class="text-sm font-black font-mono text-blue-600">{{ traceData.nodes ? traceData.nodes.length : 0 }}</div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Health Badges -->
-                                    <div class="space-y-4">
-                                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Operational Health</h3>
-                                        <HealthSummary :deal="selectedDeal" />
+                                <template v-else-if="activeTraceData">
+                                    <div v-if="selectedTraceAlerts.length" class="flex flex-wrap gap-2">
+                                        <span v-for="alert in selectedTraceAlerts" :key="alert.label" :class="cn('px-3 py-1 rounded-full text-[10px] font-bold border', traceAlertClass(alert.tone))">
+                                            {{ alert.label }}
+                                        </span>
                                     </div>
 
                                     <!-- Spine -->
                                     <div class="relative">
                                         <div class="flex items-center gap-3 mb-6">
-                                            <div class="w-1 h-4 bg-blue-600 rounded-full"></div>
+                                            <div class="w-1 h-4 bg-[#00b0c8] rounded-full"></div>
                                             <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lineage Spine</h3>
                                         </div>
                                         <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-                                            <SpineNode v-if="projectedTree" :node="projectedTree" :on-open="openDocPreview" />
+                                            <SpineNode v-if="activeProjectedTree" :key="'slide-trace-' + traceRenderKey" :node="activeProjectedTree" :on-open="openDocPreview" />
                                         </div>
                                     </div>
 
@@ -1287,19 +1774,19 @@ function bootVue(state) {
                                             <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Smart Link Registry</h3>
                                         </div>
                                         <div class="grid grid-cols-1 gap-2">
-                                            <div v-for="(edge, i) in (traceData.edges || []).slice(0, 15)" :key="i"
-                                                class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-blue-200 transition-colors">
+                                            <div v-for="(edge, i) in (activeTraceData.edges || []).slice(0, 15)" :key="i"
+                                                class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-cyan-200 transition-colors">
                                                 <div class="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm">
                                                     <span class="text-slate-400 text-xs">→</span>
                                                 </div>
                                                 <div class="flex-1 min-w-0">
                                                     <div class="flex items-center gap-2">
                                                         <span class="text-[10px] font-bold text-slate-700">
-                                                            {{ DOC_REGISTRY[(traceData.nodes.find(n => n.id === edge.from) || {}).type]?.label || edge.from }}
+                                                            {{ DOC_REGISTRY[(activeTraceData.nodes.find(n => n.id === edge.from) || {}).type]?.label || edge.from }}
                                                         </span>
                                                         <span class="text-slate-300 text-xs">→</span>
                                                         <span class="text-[10px] font-bold text-slate-700">
-                                                            {{ DOC_REGISTRY[(traceData.nodes.find(n => n.id === edge.to) || {}).type]?.label || edge.to }}
+                                                            {{ DOC_REGISTRY[(activeTraceData.nodes.find(n => n.id === edge.to) || {}).type]?.label || edge.to }}
                                                         </span>
                                                     </div>
                                                     <p class="text-[9px] text-slate-400 mt-0.5">{{ edge.relation }}</p>
@@ -1314,11 +1801,11 @@ function bootVue(state) {
                                             <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Communications</h3>
                                         </div>
                                         <div class="space-y-2">
-                                            <template v-if="(traceData.nodes || []).filter(n => n.type === 'COMMUNICATION').length > 0">
-                                                <div v-for="comm in (traceData.nodes || []).filter(n => n.type === 'COMMUNICATION')" :key="comm.id"
+                                            <template v-if="(activeTraceData.nodes || []).filter(n => n.type === 'COMMUNICATION').length > 0">
+                                                <div v-for="comm in (activeTraceData.nodes || []).filter(n => n.type === 'COMMUNICATION')" :key="comm.id"
                                                     class="p-3 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-shadow">
                                                     <div class="flex items-center justify-between mb-1">
-                                                        <span class="text-[8px] font-black text-blue-600 uppercase tracking-widest">Email</span>
+                                                        <span class="text-[8px] font-black text-cyan-700 uppercase tracking-widest">Email</span>
                                                         <span class="text-[9px] text-slate-400">{{ comm.date }}</span>
                                                     </div>
                                                     <div class="text-[10px] font-bold text-slate-800">{{ comm.title }}</div>
@@ -1360,7 +1847,7 @@ function bootVue(state) {
                                             type="text"
                                             v-model="searchQuery"
                                             placeholder="Search deals..."
-                                            class="w-full h-8 bg-slate-50 border border-slate-100 rounded-lg pl-9 pr-3 text-[11px] outline-none focus:ring-2 focus:ring-blue-500/10">
+                                            class="w-full h-8 bg-slate-50 border border-slate-100 rounded-lg pl-9 pr-3 text-[11px] outline-none focus:ring-2 focus:ring-cyan-500/10 focus:border-cyan-500">
                                     </div>
                                 </div>
                                 <div class="flex-1 overflow-y-auto">
@@ -1371,7 +1858,7 @@ function bootVue(state) {
                                         @click="selectDeal(deal)"
                                         :class="cn(
                                             'p-4 border-b border-slate-50 cursor-pointer transition-all hover:bg-slate-50',
-                                            selectedDeal && selectedDeal.id === deal.id && 'bg-blue-50 border-r-4 border-r-blue-600'
+                                            selectedDeal && selectedDeal.id === deal.id && 'bg-cyan-50 border-r-4 border-r-[#00b0c8]'
                                         )">
                                         <div class="flex items-start justify-between gap-3 mb-2">
                                             <div class="flex items-center gap-2 min-w-0">
@@ -1401,57 +1888,38 @@ function bootVue(state) {
                                     <p class="text-sm text-slate-300 max-w-xs">The left panel will automatically open the first matching entity when results exist.</p>
                                 </div>
 
-                                <div v-else-if="!traceLoading && traceData" class="max-w-6xl mx-auto space-y-8">
+                                <div v-else-if="!traceLoading && activeTraceData" class="max-w-6xl mx-auto space-y-8">
                                     <div class="flex items-end justify-between">
                                         <div>
                                             <h2 class="font-semibold text-3xl font-bold tracking-tight text-slate-900">{{ selectedDeal.customer }}</h2>
                                             <div class="flex items-center gap-3 mt-2 flex-wrap">
-                                                <span class="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{{ selectedDeal.id }}</span>
+                                                <span class="text-xs font-mono font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded">{{ selectedDeal.id }}</span>
                                                 <span v-if="selectedDeal.status" :class="cn('px-2 py-0.5 rounded-md text-[10px] font-bold border', statusPillClass(selectedDeal.status))">{{ selectedDeal.status }}</span>
                                                 <span class="text-xs text-slate-400 font-medium">Lineage Trace & Value Flow</span>
                                             </div>
+                                            <div v-if="selectedTraceAlerts.length" class="flex flex-wrap gap-2 mt-4">
+                                                <span v-for="alert in selectedTraceAlerts" :key="alert.label" :class="cn('px-3 py-1 rounded-full text-[10px] font-bold border', traceAlertClass(alert.tone))">
+                                                    {{ alert.label }}
+                                                </span>
+                                            </div>
+                                            <div v-if="selectedTraceMetaCards.length" class="grid grid-cols-2 xl:grid-cols-4 gap-3 mt-4">
+                                                <div v-for="card in selectedTraceMetaCards" :key="card.label" :class="cn('bg-white border rounded-xl px-3 py-2 shadow-sm', traceAlertClass(card.tone))">
+                                                    <div class="text-[9px] font-bold uppercase tracking-widest opacity-70 mb-1">{{ card.label }}</div>
+                                                    <div class="text-sm font-black font-mono text-slate-900">{{ card.value }}</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <!-- KPI Row -->
-                                    <div class="grid grid-cols-4 gap-4">
-                                        <div class="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                                            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Health Score</div>
-                                            <div :class="cn('text-xl font-black font-mono', selectedDeal.healthScore > 80 ? 'text-emerald-600' : 'text-amber-600')">{{ selectedDeal.healthScore }}%</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                                            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pipeline Value</div>
-                                            <div class="text-xl font-black font-mono text-blue-600" v-html="formatCurrency(selectedDeal.value)"></div>
-                                        </div>
-                                        <div class="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                                            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">SLA Status</div>
-                                            <div :class="cn('text-xl font-black font-mono', selectedDeal.slaStatus === 'ok' ? 'text-emerald-600' : 'text-amber-600')">{{ selectedDeal.slaStatus.toUpperCase() }}</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                                            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Docs Linked</div>
-                                            <div class="text-xl font-black font-mono">{{ traceData.nodes ? traceData.nodes.length : 0 }}</div>
-                                        </div>
-                                    </div>
-
-                                    <div class="grid grid-cols-12 gap-8">
-                                        <div class="col-span-8 space-y-8">
-                                            <!-- Large Spine -->
+                                    <div class="space-y-8">
                                             <div class="bg-white border border-slate-100 rounded-3xl p-10 shadow-sm">
                                                 <div class="flex items-center gap-3 mb-8">
-                                                    <div class="w-1 h-5 bg-blue-600 rounded-full"></div>
+                                                    <div class="w-1 h-5 bg-[#00b0c8] rounded-full"></div>
                                                     <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Lineage Spine</h3>
                                                 </div>
-                                                <SpineNode v-if="projectedTree" :node="projectedTree" :on-open="openDocPreview" />
-                                            </div>
-                                        </div>
-
-                                        <div class="col-span-4 space-y-8">
-                                            <div class="space-y-4">
-                                                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Operational Health</h3>
-                                                <HealthSummary :deal="selectedDeal" />
-                                            </div>
-                                        </div>
-                                    </div>
+                                                <SpineNode v-if="activeProjectedTree" :key="'full-trace-' + traceRenderKey" :node="activeProjectedTree" :on-open="openDocPreview" />
+                                             </div>
+                                     </div>
                                 </div>
 
                                 <div v-else-if="traceLoading" class="h-full flex items-center justify-center">

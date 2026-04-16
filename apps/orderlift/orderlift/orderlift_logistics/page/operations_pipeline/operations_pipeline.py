@@ -279,10 +279,19 @@ def get_trace_data(entity_type, entity_name):
     # Compute health summary
     health = _compute_health(nodes)
 
+    deduped_edges = []
+    seen_edges = set()
+    for edge in edges:
+        key = (edge.get("from"), edge.get("to"), edge.get("relation"))
+        if key in seen_edges:
+            continue
+        seen_edges.add(key)
+        deduped_edges.append(edge)
+
     return {
         "focused": focused,
         "nodes": nodes,
-        "edges": edges,
+        "edges": deduped_edges,
         "health": health,
         "root_node_id": entity_name,
     }
@@ -411,7 +420,11 @@ def _get_leads(company, date_filter):
 
     docs = frappe.get_all(
         "Lead", filters=filters,
-        fields=["name", "company_name as customer", "status", "creation as doc_date", "annual_revenue as value"],
+        fields=_query_fields(
+            "Lead",
+            ["name", "company_name as customer", "status", "creation as doc_date", "annual_revenue as value"],
+            ["company", "owner"],
+        ),
         order_by="creation desc", limit_page_length=100,
     )
     return _cards(docs, "Lead", date_filter)
@@ -424,14 +437,18 @@ def _get_opportunities(company, date_filter):
 
     docs = frappe.get_all(
         "Opportunity", filters=filters,
-        fields=[
-            "name",
-            "party_name as customer",
-            "status",
-            "transaction_date as doc_date",
-            "opportunity_amount as value",
-            "expected_closing as deadline",
-        ],
+        fields=_query_fields(
+            "Opportunity",
+            [
+                "name",
+                "party_name as customer",
+                "status",
+                "transaction_date as doc_date",
+                "opportunity_amount as value",
+                "expected_closing as deadline",
+            ],
+            ["company", "owner"],
+        ),
         order_by="transaction_date desc", limit_page_length=100,
     )
     return _cards(docs, "Opportunity", date_filter)
@@ -444,14 +461,18 @@ def _get_quotations(company, date_filter):
 
     docs = frappe.get_all(
         "Quotation", filters=filters,
-        fields=[
-            "name",
-            "party_name as customer",
-            "status",
-            "transaction_date as doc_date",
-            "grand_total as value",
-            "valid_till as deadline",
-        ],
+        fields=_query_fields(
+            "Quotation",
+            [
+                "name",
+                "party_name as customer",
+                "status",
+                "transaction_date as doc_date",
+                "grand_total as value",
+                "valid_till as deadline",
+            ],
+            ["company", "owner"],
+        ),
         order_by="transaction_date desc", limit_page_length=100,
     )
     return _cards(docs, "Quotation", date_filter)
@@ -470,14 +491,18 @@ def _get_sales_orders(company, flow_scope, shipping_resp, date_filter):
 
     docs = frappe.get_all(
         "Sales Order", filters=filters,
-        fields=[
-            "name", "customer_name as customer", "status",
-            "transaction_date as doc_date", "grand_total as value",
-            "delivery_date as deadline",
-            "custom_flow_scope as flow_scope",
-            "custom_shipping_responsibility as shipping_resp",
-            "project",
-        ],
+        fields=_query_fields(
+            "Sales Order",
+            [
+                "name", "customer_name as customer", "status",
+                "transaction_date as doc_date", "grand_total as value",
+                "delivery_date as deadline",
+                "custom_flow_scope as flow_scope",
+                "custom_shipping_responsibility as shipping_resp",
+                "project",
+            ],
+            ["company", "owner"],
+        ),
         order_by="transaction_date desc", limit_page_length=200,
     )
 
@@ -517,14 +542,18 @@ def _get_purchase_orders(company, flow_scope, date_filter):
 
     docs = frappe.get_all(
         "Purchase Order", filters=filters,
-        fields=[
-            "name",
-            "supplier_name as customer",
-            "status",
-            "transaction_date as doc_date",
-            "grand_total as value",
-            "schedule_date as deadline",
-        ],
+        fields=_query_fields(
+            "Purchase Order",
+            [
+                "name",
+                "supplier_name as customer",
+                "status",
+                "transaction_date as doc_date",
+                "grand_total as value",
+                "schedule_date as deadline",
+            ],
+            ["company", "owner", "project"],
+        ),
         order_by="transaction_date desc", limit_page_length=100,
     )
     return _cards(docs, "Purchase Order", date_filter)
@@ -540,7 +569,11 @@ def _get_material_requests(company, date_filter):
 
     docs = frappe.get_all(
         "Material Request", filters=filters,
-        fields=["name", "status", "transaction_date as doc_date"],
+        fields=_query_fields(
+            "Material Request",
+            ["name", "status", "transaction_date as doc_date"],
+            ["company", "owner", "project"],
+        ),
         order_by="transaction_date desc", limit_page_length=100,
     )
     return _cards(docs, "Material Request", date_filter)
@@ -556,7 +589,11 @@ def _get_pick_lists(company, date_filter):
 
     docs = frappe.get_all(
         "Pick List", filters=filters,
-        fields=["name", "status", "creation as doc_date"],
+        fields=_query_fields(
+            "Pick List",
+            ["name", "status", "creation as doc_date"],
+            ["company", "owner", "project"],
+        ),
         order_by="creation desc", limit_page_length=100,
     )
     return _cards(docs, "Pick List", date_filter)
@@ -569,7 +606,11 @@ def _get_delivery_notes(company, date_filter):
 
     docs = frappe.get_all(
         "Delivery Note", filters=filters,
-        fields=["name", "customer_name as customer", "status", "posting_date as doc_date", "grand_total as value"],
+        fields=_query_fields(
+            "Delivery Note",
+            ["name", "customer_name as customer", "status", "posting_date as doc_date", "grand_total as value"],
+            ["company", "owner", "project"],
+        ),
         order_by="posting_date desc", limit_page_length=100,
     )
     return _cards(docs, "Delivery Note", date_filter)
@@ -582,7 +623,11 @@ def _get_delivery_trips(company, date_filter):
 
     docs = frappe.get_all(
         "Delivery Trip", filters=filters,
-        fields=["name", "status", "departure_time as doc_date", "departure_time as deadline"],
+        fields=_query_fields(
+            "Delivery Trip",
+            ["name", "status", "departure_time as doc_date", "departure_time as deadline"],
+            ["company", "owner"],
+        ),
         order_by="departure_time desc", limit_page_length=100,
     )
 
@@ -604,6 +649,9 @@ def _get_delivery_trips(company, date_filter):
             "deadline": dt.get("deadline"),
             "flow_scope": "",
             "shipping_resp": "",
+            "company": dt.get("company") or "",
+            "project": dt.get("project") or "",
+            "owner": dt.get("owner") or "",
             "status": dt.status,
             "items_count": 0,
             "overdue": _is_overdue(dt.get("deadline")),
@@ -624,10 +672,14 @@ def _get_sales_invoices(company, date_filter):
 
     docs = frappe.get_all(
         "Sales Invoice", filters=filters,
-        fields=[
-            "name", "customer_name as customer", "status",
-            "posting_date as doc_date", "grand_total as value", "due_date as deadline",
-        ],
+        fields=_query_fields(
+            "Sales Invoice",
+            [
+                "name", "customer_name as customer", "status",
+                "posting_date as doc_date", "grand_total as value", "due_date as deadline",
+            ],
+            ["company", "owner", "project"],
+        ),
         order_by="posting_date desc", limit_page_length=100,
     )
     return _cards(docs, "Sales Invoice", date_filter)
@@ -643,10 +695,14 @@ def _get_purchase_invoices(company, date_filter):
 
     docs = frappe.get_all(
         "Purchase Invoice", filters=filters,
-        fields=[
-            "name", "supplier_name as customer", "status",
-            "posting_date as doc_date", "grand_total as value", "due_date as deadline",
-        ],
+        fields=_query_fields(
+            "Purchase Invoice",
+            [
+                "name", "supplier_name as customer", "status",
+                "posting_date as doc_date", "grand_total as value", "due_date as deadline",
+            ],
+            ["company", "owner", "project"],
+        ),
         order_by="posting_date desc", limit_page_length=100,
     )
     return _cards(docs, "Purchase Invoice", date_filter)
@@ -662,10 +718,14 @@ def _get_payment_entries(company, date_filter):
 
     docs = frappe.get_all(
         "Payment Entry", filters=filters,
-        fields=[
-            "name", "party as customer", "payment_type", "docstatus",
-            "posting_date as doc_date", "paid_amount as value",
-        ],
+        fields=_query_fields(
+            "Payment Entry",
+            [
+                "name", "party as customer", "payment_type", "docstatus",
+                "posting_date as doc_date", "paid_amount as value",
+            ],
+            ["company", "owner", "project"],
+        ),
         order_by="posting_date desc", limit_page_length=100,
     )
 
@@ -683,6 +743,9 @@ def _get_payment_entries(company, date_filter):
             "deadline": doc.get("deadline"),
             "flow_scope": "",
             "shipping_resp": "",
+            "company": doc.get("company") or "",
+            "project": doc.get("project") or "",
+            "owner": doc.get("owner") or "",
             "status": status,
             "items_count": 0,
             "overdue": False,
@@ -700,14 +763,18 @@ def _get_projects(company, date_filter):
 
     docs = frappe.get_all(
         "Project", filters=filters,
-        fields=[
-            "name",
-            "customer",
-            "status",
-            "expected_start_date as doc_date",
-            "expected_end_date as deadline",
-            "gross_margin as value",
-        ],
+        fields=_query_fields(
+            "Project",
+            [
+                "name",
+                "customer",
+                "status",
+                "expected_start_date as doc_date",
+                "expected_end_date as deadline",
+                "gross_margin as value",
+            ],
+            ["company", "owner"],
+        ),
         order_by="expected_start_date desc", limit_page_length=100,
     )
     return _cards(docs, "Project", date_filter)
@@ -720,8 +787,14 @@ def _get_sav_tickets(company, date_filter):
 
     docs = frappe.get_all(
         "SAV Ticket", filters=filters,
-        fields=["name", "customer", "status", "creation as doc_date",
-                "defect_type", "serial_no", "sales_order", "delivery_note", "sla_breach"],
+        fields=_query_fields(
+            "SAV Ticket",
+            [
+                "name", "customer", "status", "creation as doc_date",
+                "defect_type", "serial_no", "sales_order", "delivery_note", "sla_breach",
+            ],
+            ["company", "owner", ("installation_project", "project")],
+        ),
         order_by="creation desc", limit_page_length=100,
     )
     cards = []
@@ -736,6 +809,9 @@ def _get_sav_tickets(company, date_filter):
             "date": str(s.get("doc_date") or ""),
             "flow_scope": "",
             "shipping_resp": "",
+            "company": s.get("company") or "",
+            "project": s.get("project") or "",
+            "owner": s.get("owner") or "",
             "status": s.status,
             "items_count": 0,
             "overdue": bool(s.get("sla_breach")),
@@ -756,7 +832,11 @@ def _get_issues(company, date_filter):
 
     docs = frappe.get_all(
         "Issue", filters=filters,
-        fields=["name", "subject as customer", "status", "creation as doc_date"],
+        fields=_query_fields(
+            "Issue",
+            ["name", "subject as customer", "status", "creation as doc_date"],
+            ["company", "owner", "project"],
+        ),
         order_by="creation desc", limit_page_length=100,
     )
     return _cards(docs, "Issue", date_filter)
@@ -772,7 +852,11 @@ def _get_maintenance_schedules(company, date_filter):
 
     docs = frappe.get_all(
         "Maintenance Schedule", filters=filters,
-        fields=["name", "status", "transaction_date as doc_date"],
+        fields=_query_fields(
+            "Maintenance Schedule",
+            ["name", "status", "transaction_date as doc_date"],
+            ["company", "owner", "project"],
+        ),
         order_by="transaction_date desc", limit_page_length=100,
     )
     return _cards(docs, "Maintenance Schedule", date_filter)
@@ -788,7 +872,11 @@ def _get_maintenance_visits(company, date_filter):
 
     docs = frappe.get_all(
         "Maintenance Visit", filters=filters,
-        fields=["name", "status", "mntc_date as doc_date"],
+        fields=_query_fields(
+            "Maintenance Visit",
+            ["name", "status", "mntc_date as doc_date"],
+            ["company", "owner", "project"],
+        ),
         order_by="mntc_date desc", limit_page_length=100,
     )
     return _cards(docs, "Maintenance Visit", date_filter)
@@ -810,6 +898,9 @@ def _card(doc, doctype, date_filter, value=None):
         "deadline": doc.get("deadline"),
         "flow_scope": doc.get("flow_scope") or "",
         "shipping_resp": doc.get("shipping_resp") or "",
+        "company": doc.get("company") or "",
+        "project": doc.get("project") or (doc.name if doctype == "Project" else ""),
+        "owner": doc.get("owner") or "",
         "status": doc.get("status") or "",
         "items_count": 0,
         "overdue": bool(doc.get("overdue")) or _is_overdue(doc.get("deadline")),
@@ -829,6 +920,9 @@ def _make_card(doc, doctype, items_count=0, open_sav=0, qc_failed=False):
         "deadline": doc.get("deadline"),
         "flow_scope": doc.get("flow_scope") or "",
         "shipping_resp": doc.get("shipping_resp") or "",
+        "company": doc.get("company") or "",
+        "project": doc.get("project") or (doc.name if doctype == "Project" else ""),
+        "owner": doc.get("owner") or "",
         "status": doc.get("status") or "",
         "items_count": items_count,
         "overdue": _is_overdue(doc.get("deadline")),
@@ -1271,9 +1365,26 @@ def _get_upstream_source_doctype(from_dt, from_field):
 
 def _doctype_has_field(doctype, fieldname):
     try:
-        return bool(frappe.get_meta(doctype).get_field(fieldname))
+        meta = frappe.get_meta(doctype)
+        has_field = getattr(meta, "has_field", None)
+        if callable(has_field) and has_field(fieldname):
+            return True
+        return bool(meta.get_field(fieldname))
     except Exception:
         return False
+
+
+def _query_fields(doctype, fields, optional_fields=None):
+    query_fields = list(fields)
+    for field in optional_fields or []:
+        alias = None
+        fieldname = field
+        if isinstance(field, tuple):
+            fieldname, alias = field
+        if not _doctype_has_field(doctype, fieldname):
+            continue
+        query_fields.append(f"{fieldname} as {alias}" if alias else fieldname)
+    return query_fields
 
 
 def _doctype_exists(doctype):
