@@ -18,6 +18,9 @@ def route_received_stock(doc, method=None):
     if not doc or doc.docstatus != 1:
         return
 
+    if doc.get("custom_qc_routed"):
+        return
+
     # Group items by QC status
     qc_passed = []
     qc_failed = []
@@ -25,6 +28,14 @@ def route_received_stock(doc, method=None):
     for item_row in doc.items or []:
         item_code = item_row.item_code
         qty = item_row.qty
+        source_warehouse = _get_source_warehouse(doc, item_row)
+
+        if not source_warehouse:
+            frappe.log_error(
+                f"Cannot route item {item_code} on Purchase Receipt {doc.name}: missing source warehouse",
+                "Stock Router Error",
+            )
+            continue
 
         # Check quality inspection status
         # In ERPNext, quality_inspection is linked on item row
@@ -35,14 +46,14 @@ def route_received_stock(doc, method=None):
                 qc_failed.append({
                     "item_code": item_code,
                     "qty": qty,
-                    "warehouse": doc.warehouse,
+                    "warehouse": source_warehouse,
                     "inspection": item_row.quality_inspection,
                 })
             else:
                 qc_passed.append({
                     "item_code": item_code,
                     "qty": qty,
-                    "warehouse": doc.warehouse,
+                    "warehouse": source_warehouse,
                     "inspection": item_row.quality_inspection,
                 })
         else:
@@ -50,7 +61,7 @@ def route_received_stock(doc, method=None):
             qc_passed.append({
                 "item_code": item_code,
                 "qty": qty,
-                "warehouse": doc.warehouse,
+                "warehouse": source_warehouse,
                 "inspection": None,
             })
 
@@ -95,9 +106,10 @@ def get_purchase_receipt_routing_summary(purchase_receipt_name: str) -> dict:
         target = failed if inspection.status == "Rejected" else passed
         target.append({"item_code": row.item_code, "qty": row.qty, "inspection": inspection_name})
 
-    source_warehouse = pr.warehouse or ""
-    real_warehouse = _get_destination_warehouse(source_warehouse, "REAL")
-    return_warehouse = _get_destination_warehouse(source_warehouse, "RETURN")
+    source_warehouses = _get_source_warehouses(pr)
+    source_warehouse = source_warehouses[0] if len(source_warehouses) == 1 else ""
+    real_warehouse = [_get_destination_warehouse(wh, "REAL") for wh in source_warehouses]
+    return_warehouse = [_get_destination_warehouse(wh, "RETURN") for wh in source_warehouses]
 
     transfer_fields = ["name", "stock_entry_type", "posting_date", "docstatus", "to_warehouse"]
     if frappe.db.has_column("Stock Entry", "custom_source_pr"):
@@ -114,13 +126,14 @@ def get_purchase_receipt_routing_summary(purchase_receipt_name: str) -> dict:
     return {
         "purchase_receipt": pr.name,
         "warehouse": source_warehouse,
+        "warehouses": source_warehouses,
         "qc_routed": bool(pr.get("custom_qc_routed")),
         "passed": passed,
         "failed": failed,
         "no_qi": no_qi,
         "inspections": inspections,
-        "real_warehouse": real_warehouse,
-        "return_warehouse": return_warehouse,
+        "real_warehouse": real_warehouse[0] if len(real_warehouse) == 1 else real_warehouse,
+        "return_warehouse": return_warehouse[0] if len(return_warehouse) == 1 else return_warehouse,
         "transfers": transfers,
     }
 
@@ -130,42 +143,62 @@ def _create_warehouse_transfer(pr_doc, items, destination_type):
     if not items:
         return
 
-    # Determine destination warehouse
-    source_warehouse = pr_doc.warehouse
-    dest_warehouse = _get_destination_warehouse(source_warehouse, destination_type)
-
-    if not dest_warehouse:
-        frappe.log_error(
-            f"Cannot find {destination_type} warehouse for {source_warehouse}",
-            "Stock Router Error"
-        )
-        return
-
-    # Create Stock Entry (Material Transfer)
-    stock_entry = frappe.new_doc("Stock Entry")
-    stock_entry.doctype = "Stock Entry"
-    stock_entry.stock_entry_type = "Material Transfer"
-    stock_entry.posting_date = nowdate()
-    stock_entry.from_warehouse = source_warehouse
-    stock_entry.to_warehouse = dest_warehouse
-    if frappe.db.has_column("Stock Entry", "custom_source_pr"):
-        stock_entry.custom_source_pr = pr_doc.name
-
+    items_by_source = {}
     for item in items:
-        stock_entry.append("items", {
-            "item_code": item["item_code"],
-            "qty": item["qty"],
-            "s_warehouse": source_warehouse,
-            "t_warehouse": dest_warehouse,
-        })
+        items_by_source.setdefault(item["warehouse"], []).append(item)
 
-    stock_entry.insert(ignore_permissions=True)
-    stock_entry.submit()
+    for source_warehouse, warehouse_items in items_by_source.items():
+        dest_warehouse = _get_destination_warehouse(source_warehouse, destination_type)
 
-    frappe.msgprint(
-        f"Stock Entry {stock_entry.name} created for {destination_type} routing",
-        title="Stock Routed"
-    )
+        if not dest_warehouse:
+            frappe.log_error(
+                f"Cannot find {destination_type} warehouse for {source_warehouse}",
+                "Stock Router Error",
+            )
+            continue
+
+        if dest_warehouse == source_warehouse:
+            continue
+
+        stock_entry = frappe.new_doc("Stock Entry")
+        stock_entry.doctype = "Stock Entry"
+        stock_entry.stock_entry_type = "Material Transfer"
+        stock_entry.posting_date = nowdate()
+        stock_entry.from_warehouse = source_warehouse
+        stock_entry.to_warehouse = dest_warehouse
+        if frappe.db.has_column("Stock Entry", "custom_source_pr"):
+            stock_entry.custom_source_pr = pr_doc.name
+
+        for item in warehouse_items:
+            stock_entry.append("items", {
+                "item_code": item["item_code"],
+                "qty": item["qty"],
+                "s_warehouse": source_warehouse,
+                "t_warehouse": dest_warehouse,
+            })
+
+        stock_entry.insert(ignore_permissions=True)
+        stock_entry.submit()
+
+        frappe.msgprint(
+            f"Stock Entry {stock_entry.name} created for {destination_type} routing",
+            title="Stock Routed",
+        )
+
+
+def _get_source_warehouse(pr_doc, item_row):
+    """Resolve the source warehouse for a Purchase Receipt item row."""
+    return item_row.get("warehouse") or pr_doc.get("set_warehouse") or ""
+
+
+def _get_source_warehouses(pr_doc):
+    """Return the unique source warehouses present on a Purchase Receipt."""
+    warehouses = []
+    for row in pr_doc.items or []:
+        warehouse = _get_source_warehouse(pr_doc, row)
+        if warehouse and warehouse not in warehouses:
+            warehouses.append(warehouse)
+    return warehouses
 
 
 def _get_destination_warehouse(source_warehouse, destination_type):

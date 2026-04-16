@@ -70,7 +70,7 @@ def cancel_sales_order_commissions(doc, method=None):
     """Cancel unpaid commissions when the Sales Order is cancelled."""
     commissions = frappe.get_all(
         "Sales Commission",
-        filters={"sales_order": doc.name, "docstatus": 1, "status": ["!", "Paid"]},
+        filters={"sales_order": doc.name, "docstatus": 1, "status": ["!=", "Paid"]},
         pluck="name",
     )
     for name in commissions:
@@ -166,7 +166,7 @@ def _sync_sales_order_commissions(sales_order_name):
 def _update_commission_status(sales_order_name, status, sales_invoice):
     commissions = frappe.get_all(
         "Sales Commission",
-        filters={"sales_order": sales_order_name, "docstatus": 1, "status": ["!", "Paid"]},
+        filters={"sales_order": sales_order_name, "docstatus": 1, "status": ["!=", "Paid"]},
         pluck="name",
     )
     for name in commissions:

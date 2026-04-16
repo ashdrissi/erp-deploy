@@ -1,6 +1,6 @@
-# Use the Official ERPNext v15 Image
-# ERPNext and Frappe are pre-installed in this image
-FROM frappe/erpnext:version-16
+# Use an exact ERPNext image tag so rebuilds do not drift.
+# ERPNext is pinned by the base image, and Frappe is pinned again below.
+FROM frappe/erpnext:v16.14.0
 
 USER root
 
@@ -27,9 +27,9 @@ USER frappe
 
 WORKDIR /home/frappe/frappe-bench
 
-# Pin Frappe to an exact release tag without triggering bench app builds.
+# Pin Frappe to the matching exact release tag without triggering bench app builds.
 RUN rm -rf /home/frappe/frappe-bench/apps/frappe \
-    && git clone --depth 1 --branch v16.9.0 https://github.com/frappe/frappe.git /home/frappe/frappe-bench/apps/frappe \
+    && git clone --depth 1 --branch v16.14.0 https://github.com/frappe/frappe.git /home/frappe/frappe-bench/apps/frappe \
     && cd /home/frappe/frappe-bench/apps/frappe && yarn install --check-files \
     && /home/frappe/frappe-bench/env/bin/pip install -e /home/frappe/frappe-bench/apps/frappe
 

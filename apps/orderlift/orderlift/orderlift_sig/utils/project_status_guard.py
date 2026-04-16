@@ -70,6 +70,14 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
     """
     so = frappe.get_doc("Sales Order", sales_order_name)
 
+    if not so.company:
+        frappe.throw(
+            _("Sales Order <b>{0}</b> is missing Company, so an installation project cannot be created.").format(
+                so.name
+            ),
+            title=_("Missing Company"),
+        )
+
     # Prevent duplicate projects
     existing = frappe.db.get_value(
         "Sales Order", sales_order_name, "custom_installation_project"
@@ -83,6 +91,7 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
 
     project = frappe.new_doc("Project")
     project.project_name = "Install — {0} — {1}".format(so.customer, so.name)
+    project.company = so.company
     project.customer = so.customer
     project.expected_start_date = so.delivery_date or frappe.utils.today()
     project.status = "Open"
