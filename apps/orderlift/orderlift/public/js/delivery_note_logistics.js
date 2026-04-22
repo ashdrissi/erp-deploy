@@ -72,15 +72,6 @@ function _render_dn_scenario_badge(frm) {
 
     const resp_class = responsibility === "Customer" ? "tag-customer" : "tag-orderlift";
 
-    // CLP link if assigned
-    const clp = frm.doc.custom_assigned_container_load_plan || "";
-    const clp_html = clp
-        ? `<span class="ol-source-indicator">
-             <span class="source-icon">📦</span>
-             <a href="/app/container-load-plan/${clp}" style="color:inherit">${clp}</a>
-           </span>`
-        : "";
-
     const html = `
         <div class="ol-scenario-info-bar" style="margin:0; padding:6px 12px; border-bottom:none; border-radius:8px; margin-bottom:8px;">
             <span class="ol-scenario-badge ${badge_class}">
@@ -90,7 +81,6 @@ function _render_dn_scenario_badge(frm) {
             <span class="ol-responsibility-tag ${resp_class}">
                 ${responsibility}
             </span>
-            ${clp_html}
         </div>
     `;
 

@@ -5,7 +5,6 @@ CLIENT_SHELL_ROLE = "Orderlift Client User"
 ROLE_NAME = "Orderlift Business Admin"
 PROFILE_NAME = "Orderlift Business Admin"
 LANDING_URL = "/desk/home-page?sidebar=Main+Dashboard"
-MODULE_PROFILE = "Orderlift-admin"
 ROLES_TO_REMOVE = [
     "Accounts User",
     "Customer",
@@ -298,7 +297,10 @@ def _ensure_has_role(parenttype, parent, role_name):
 
 def _apply_profile_to_user(user_name):
     user = frappe.get_doc("User", user_name)
-    user.module_profile = MODULE_PROFILE if frappe.db.exists("Module Profile", MODULE_PROFILE) else None
+    # Route guards and docperms enforce the restricted shell. Blocking modules
+    # breaks dashboards and workspace content by emptying allowed_modules.
+    user.module_profile = None
+    user.set("block_modules", [])
     user.default_workspace = "Main Dashboard"
     user.redirect_url = LANDING_URL
     user.search_bar = 1
@@ -312,6 +314,13 @@ def _apply_profile_to_user(user_name):
         user.append("roles", {"role": role, "idx": idx})
 
     user.save(ignore_permissions=True)
+    frappe.db.sql(
+        """
+        delete from `tabBlock Module`
+        where parent=%s and parenttype='User' and parentfield='block_modules'
+        """,
+        (user.name,),
+    )
     user.remove_roles(*ROLES_TO_REMOVE)
     frappe.db.set_value("User", user.name, "role_profile_name", PROFILE_NAME, update_modified=False)
     user.reload()

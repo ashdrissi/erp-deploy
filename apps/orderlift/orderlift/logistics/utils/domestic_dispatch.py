@@ -1,11 +1,11 @@
 """
 Domestic Dispatch
 -----------------
-Create Delivery Trip from domestic/outbound Container Load Plans or
+Create Delivery Trip from domestic/outbound Forecast Load Plans or
 standalone Delivery Notes.
 
 Supports:
-  - Domestic + Orderlift → Delivery Trip from CLP or DN
+  - Domestic + Orderlift → Delivery Trip from Forecast Load Plan or DN
   - Outbound + Orderlift → Delivery Trip for local leg only
 
 Blocked:
@@ -53,20 +53,24 @@ def _build_stop_payload(source_name, customer, shipping_address_name=None):
     return payload
 
 
-@frappe.whitelist()
-def create_delivery_trip_from_load_plan(load_plan_name, vehicle=None, departure_time=None, driver=None):
-    """Create a Delivery Trip from a Domestic or Outbound/Orderlift CLP.
+def _get_forecast_plan(plan_name):
+    return frappe.get_doc("Forecast Load Plan", plan_name)
 
-    Collects all Delivery Notes from the plan and creates one trip with
-    multiple stops.
+
+@frappe.whitelist()
+def create_delivery_trip_from_forecast_plan(plan_name, vehicle=None, departure_time=None, driver=None):
+    """Create a Delivery Trip from a Domestic or Outbound/Orderlift forecast plan.
+
+    Collects all selected Delivery Notes from the plan and creates one trip
+    with multiple stops.
 
     Args:
-        load_plan_name: Name of the Container Load Plan.
+        plan_name: Name of the Forecast Load Plan.
 
     Returns:
         dict with the new Delivery Trip name.
     """
-    plan = frappe.get_doc("Container Load Plan", load_plan_name)
+    plan = _get_forecast_plan(plan_name)
 
     # Validate scenario
     allowed = (
@@ -79,18 +83,20 @@ def create_delivery_trip_from_load_plan(load_plan_name, vehicle=None, departure_
             title="Invalid Scenario",
         )
 
-    if plan.source_type != "Delivery Note":
+    if plan.status not in ("Ready", "Loading", "In Transit", "Delivered"):
         frappe.throw(
-            "Delivery Trip can only be created from plans with Delivery Note as source.",
-            title="Invalid Source Type",
+            "Delivery Trip can only be created after the forecast plan is confirmed.",
+            title="Invalid Status",
         )
 
-    # Check for existing trip linked to this CLP
-    existing = frappe.get_all(
-        "Delivery Trip",
-        filters={"custom_container_load_plan": plan.name, "docstatus": ["!=", 2]},
-        limit=1,
-    )
+    # Check for existing trip linked to this forecast plan.
+    existing = []
+    if frappe.db.has_column("Delivery Trip", "custom_forecast_plan"):
+        existing = frappe.get_all(
+            "Delivery Trip",
+            filters={"custom_forecast_plan": plan.name, "docstatus": ["!=", 2]},
+            limit=1,
+        )
     if existing:
         frappe.throw(
             f"A Delivery Trip already exists for this plan: {existing[0].name}",
@@ -102,20 +108,21 @@ def create_delivery_trip_from_load_plan(load_plan_name, vehicle=None, departure_
     trip.vehicle = _resolve_trip_vehicle(vehicle)
     trip.departure_time = _resolve_departure_time(departure_time)
     trip.custom_flow_scope = plan.flow_scope
-    trip.custom_container_load_plan = plan.name
+    if frappe.db.has_column("Delivery Trip", "custom_forecast_plan"):
+        trip.custom_forecast_plan = plan.name
     if driver and hasattr(trip, "driver"):
         trip.driver = driver
 
     stops_added = 0
-    for row in plan.shipments or []:
-        if not row.delivery_note:
+    for row in plan.items or []:
+        if not row.selected or row.source_doctype != "Delivery Note" or not row.source_name:
             continue
-        dn = frappe.get_doc("Delivery Note", row.delivery_note)
+        dn = frappe.get_doc("Delivery Note", row.source_name)
         trip.append(
             "delivery_stops",
             _build_stop_payload(
-                source_name=row.delivery_note,
-                customer=row.customer or dn.customer,
+                source_name=row.source_name,
+                customer=row.party or dn.customer,
                 shipping_address_name=dn.shipping_address_name,
             ),
         )
@@ -133,6 +140,17 @@ def create_delivery_trip_from_load_plan(load_plan_name, vehicle=None, departure_
         alert=True,
     )
     return {"delivery_trip": trip.name, "stops": stops_added}
+
+
+@frappe.whitelist()
+def create_delivery_trip_from_load_plan(load_plan_name, vehicle=None, departure_time=None, driver=None):
+    """Backward-compatible wrapper for the legacy method name."""
+    return create_delivery_trip_from_forecast_plan(
+        plan_name=load_plan_name,
+        vehicle=vehicle,
+        departure_time=departure_time,
+        driver=driver,
+    )
 
 
 @frappe.whitelist()

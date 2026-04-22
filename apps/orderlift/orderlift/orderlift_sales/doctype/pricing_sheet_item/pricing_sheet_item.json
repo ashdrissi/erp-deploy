@@ -57,7 +57,8 @@
    "customs_by_kg",
   "customs_by_percent",
    "customs_applied",
-   "tier_modifier_total",
+    "packaging_profile_source",
+    "tier_modifier_total",
    "zone_modifier_total",
    "customs_basis",
   "transport_allocation_mode",
@@ -364,14 +365,21 @@
    "label": "Customs By Percent",
    "read_only": 1
   },
-  {
-   "fieldname": "customs_applied",
-   "fieldtype": "Currency",
-    "label": "Customs Total",
-    "read_only": 1
-  },
-  {
-   "fieldname": "customs_basis",
+   {
+    "fieldname": "customs_applied",
+    "fieldtype": "Currency",
+     "label": "Customs Total",
+     "read_only": 1
+   },
+   {
+    "fieldname": "packaging_profile_source",
+    "fieldtype": "Data",
+    "label": "Packaging Source",
+    "read_only": 1,
+    "description": "selected / default / item_fallback"
+   },
+   {
+    "fieldname": "customs_basis",
    "fieldtype": "Data",
    "label": "Customs Basis",
    "read_only": 1

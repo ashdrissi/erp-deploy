@@ -19,6 +19,7 @@
 - `scripts/create-site.sh`: site bootstrap, app install, asset build, and cache clear logic.
 - `scripts/prepare_erpnext_imports.py`: generates ERPNext import CSVs from the pricing workbooks under `docs/data/`.
 - `apps/orderlift/orderlift/scripts/import_generated_catalog.py`: imports generated catalog CSVs into ERPNext in master-data order.
+- `apps/orderlift/orderlift/scripts/import_item_packaging_profiles.py`: imports packaging profiles from `logistique_export.csv`, creates missing UOMs, and updates item HS codes.
 - `apps/orderlift/orderlift/scripts/setup_workbook_pricing_policies.py`: seeds workbook-derived customs, scenario, and passive benchmark policy records and can verify parity against imported price lists.
 - `apps/orderlift`: main business logic app; Python-heavy with `unittest` coverage.
 - `apps/custom_desk_theme`: small Frappe desk theme app with vanilla JS assets.
@@ -50,6 +51,7 @@
 - Use `./scripts/dev.sh` for common local workflows when it matches the task.
 - For pricing workbook import prep, use `python3 scripts/prepare_erpnext_imports.py --dry-run` to verify counts, then rerun without `--dry-run` to write CSVs under `docs/data/generated`.
 - To load the generated catalog into the live site, copy `docs/data/generated` into the app container and run `bench --site <site> execute orderlift.scripts.import_generated_catalog.run --kwargs '{"import_dir": "/tmp/orderlift-import"}'`.
+- To load packaging profiles from `logistique_export.csv` into the live site, copy the CSV into the app container and run `bench --site <site> execute orderlift.scripts.import_item_packaging_profiles.run --kwargs '{"import_file": "/tmp/logistique_export.csv", "dry_run": 1}'`, then rerun with `"dry_run": 0` after reviewing the summary.
 - To seed workbook-derived pricing policy records, run `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.run` and verify with `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.verify`.
 - To seed SIG demo projects and QC data, run `bench --site <site> execute orderlift.orderlift_sig.utils.demo_seed.seed_demo_data`.
 - To seed live logistics demo flows (inbound, domestic, outbound customer-managed, outbound Orderlift-managed), run `bench --site <site> execute orderlift.scripts.seed_logistics_demo_flows.run --kwargs '{"company":"Orderlift","batch_key":"DEMO-LOG-YYYYMMDD"}'` and use `scenarios` to limit reruns, e.g. `{"company":"Orderlift","batch_key":"DEMO-LOG-YYYYMMDD","scenarios":"outbound_customer,outbound_orderlift"}`.

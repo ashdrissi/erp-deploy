@@ -8,6 +8,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, cstr, flt, now_datetime, nowdate, getdate, date_diff
 
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
+from orderlift.orderlift_logistics.utils.packaging_resolver import get_packaging_resolution
 from orderlift.sales.utils.dimensioning import coerce_dimensioning_value, evaluate_formula
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 from orderlift.sales.utils.pricing_projection import (
@@ -1280,11 +1281,33 @@ class PricingSheet(Document):
         material = (details.get("custom_material") or "").strip().upper()
         unit_weight_kg = flt(details.get("custom_weight_kg"))
         qty = flt(row.qty)
+        packaging_profile = getattr(row, "custom_packaging_profile", None) or None
+
+        resolution = get_packaging_resolution(
+            item_code=row.item,
+            packaging_profile=packaging_profile,
+            qty=qty,
+            uom=None,
+        )
+
+        resolved_weight_kg = resolution["weight_kg"]
+        if resolved_weight_kg <= 0:
+            resolved_weight_kg = unit_weight_kg
+            resolution["resolved_source"] = "item_fallback"
+
+        resolved_tariff = resolution["customs_tariff_number"]
+        if not resolved_tariff:
+            resolved_tariff = tariff_number
+
+        packaging_source = resolution.get("resolved_source", "item_fallback")
+        package_count = resolution.get("package_count", qty)
 
         out = {
-            "tariff_number": tariff_number,
+            "tariff_number": resolved_tariff,
             "material": material,
-            "weight_kg": unit_weight_kg,
+            "weight_kg": resolved_weight_kg,
+            "packaging_source": packaging_source,
+            "package_count": package_count,
             "value_per_kg": 0.0,
             "base_value": 0.0,
             "total_percent": 0.0,
@@ -1301,11 +1324,11 @@ class PricingSheet(Document):
         if not customs_policy:
             return out
 
-        if not tariff_number and not material:
+        if not resolved_tariff and not material:
             out["warning"] = _("item Customs Tariff Number is missing; customs set to 0")
             return out
 
-        if unit_weight_kg <= 0:
+        if resolved_weight_kg <= 0:
             out["warning"] = _("item Weight (kg) is missing; customs set to 0")
             return out
 
@@ -1324,9 +1347,9 @@ class PricingSheet(Document):
             }
             for rule in (customs_policy.customs_rules or [])
         ]
-        rule = resolve_customs_rule(rule_dicts, tariff_number=tariff_number, material=material)
+        rule = resolve_customs_rule(rule_dicts, tariff_number=resolved_tariff, material=material)
         if not rule:
-            identifier = tariff_number or material or _("missing tariff")
+            identifier = resolved_tariff or material or _("missing tariff")
             out["warning"] = _("no customs rule matched tariff/material {0}; customs set to 0").format(identifier)
             return out
 
@@ -1334,10 +1357,11 @@ class PricingSheet(Document):
         rate_components = rule.get("rate_components") or ""
         rate_per_kg = flt(rule.get("rate_per_kg"))
         rate_percent = flt(rule.get("rate_percent"))
+        total_weight_kg = package_count * resolved_weight_kg if packaging_source != "item_fallback" else qty * resolved_weight_kg
         amounts = compute_customs_amount(
             base_amount=base_amount,
             qty=qty,
-            unit_weight_kg=unit_weight_kg,
+            unit_weight_kg=total_weight_kg if qty else 0,
             rate_per_kg=rate_per_kg,
             rate_percent=rate_percent,
             value_per_kg=value_per_kg,

@@ -967,6 +967,8 @@ function bootVue(state) {
             const activePipelineTab = ref("overview");
             const searchQuery = ref("");
             const showMoreFilters = ref(false);
+            const showCustomerMenu = ref(false);
+            const customerMenuCloseTimer = ref(null);
             const deals = ref([]);
             const selectedDeal = ref(null);
             const loading = ref(true);
@@ -1032,10 +1034,17 @@ function bootVue(state) {
             const ownerOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.owner)));
             const statusOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.status)));
             const rootDoctypeOptions = computed(() => uniqueSorted(deals.value.map((deal) => deal.doctype)));
+            const filteredCustomerOptions = computed(() => {
+                const query = normalizeText(filters.customer);
+                const matches = !query
+                    ? customerOptions.value
+                    : customerOptions.value.filter((customer) => normalizeText(customer).includes(query));
+                return matches.slice(0, 12);
+            });
 
             const filteredDeals = computed(() => {
                 return tabScopedDeals.value.filter((deal) => {
-                    if (filters.customer && deal.customer !== filters.customer) {
+                    if (filters.customer && !normalizeText(deal.customer).includes(normalizeText(filters.customer))) {
                         return false;
                     }
                     if ((filters.startDate || filters.endDate) && !isWithinDateRange(deal.date, filters.startDate, filters.endDate)) {
@@ -1422,6 +1431,29 @@ function bootVue(state) {
                 filters.mainSpineOnly = false;
             }
 
+            function openCustomerMenu() {
+                if (customerMenuCloseTimer.value) {
+                    clearTimeout(customerMenuCloseTimer.value);
+                    customerMenuCloseTimer.value = null;
+                }
+                showCustomerMenu.value = true;
+            }
+
+            function scheduleCustomerMenuClose() {
+                if (customerMenuCloseTimer.value) {
+                    clearTimeout(customerMenuCloseTimer.value);
+                }
+                customerMenuCloseTimer.value = window.setTimeout(() => {
+                    showCustomerMenu.value = false;
+                    customerMenuCloseTimer.value = null;
+                }, 120);
+            }
+
+            function selectCustomerOption(customer) {
+                filters.customer = customer || "";
+                showCustomerMenu.value = false;
+            }
+
             function inferDoctype(name) {
                 if (name.startsWith("SO-") || name.startsWith("SAL-ORD")) return "Sales Order";
                 if (name.startsWith("QTN-") || name.startsWith("QUT-")) return "Quotation";
@@ -1577,8 +1609,8 @@ function bootVue(state) {
             return {
                 view, activePipelineTab, searchQuery, showMoreFilters, filters, deals, selectedDeal, loading, traceLoading, traceData, projectedTree,
                 traceRenderNonce, tabScopedDeals, filteredDeals, searchedDeals, visibleDeals, activeTabConfig, columnsWithCounts, flowData, selectedTraceAlerts, selectedTraceMetaCards, focusedTraceNodeId, activeTraceData, activeProjectedTree, traceRenderKey, moreFiltersCount, greeting, today,
-                customerOptions, projectOptions, companyOptions, ownerOptions, statusOptions, rootDoctypeOptions,
-                selectDeal, openInERPNext, openDocPreview, selectedOpenLabel, resetFilters,
+                customerOptions, filteredCustomerOptions, projectOptions, companyOptions, ownerOptions, statusOptions, rootDoctypeOptions,
+                selectDeal, openInERPNext, openDocPreview, selectedOpenLabel, resetFilters, openCustomerMenu, scheduleCustomerMenuClose, selectCustomerOption, showCustomerMenu,
                 cn, DOC_REGISTRY, icon, STAGES, PIPELINE_TABS, formatCurrency, formatDate, buildTree, statusPillClass, traceAlertClass,
             };
         },
@@ -1647,13 +1679,45 @@ function bootVue(state) {
 
                             <div class="flex flex-wrap items-center justify-end gap-2 xl:ml-auto">
                                 <div class="relative min-w-[13rem]">
-                                    <select
+                                    <input
+                                        type="text"
                                         v-model="filters.customer"
-                                        class="h-9 w-full appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-9 text-xs font-medium text-slate-700 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
-                                        <option value="">All customers</option>
-                                        <option v-for="customer in customerOptions" :key="customer" :value="customer">{{ customer }}</option>
-                                    </select>
-                                    <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 text-[10px]">▾</span>
+                                        placeholder="Search customer"
+                                        @focus="openCustomerMenu"
+                                        @input="openCustomerMenu"
+                                        @blur="scheduleCustomerMenuClose"
+                                        @keydown.esc="showCustomerMenu = false"
+                                        class="h-9 w-full bg-white border border-slate-200 rounded-xl pl-3 pr-9 text-xs font-medium text-slate-700 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10">
+                                    <button
+                                        type="button"
+                                        @mousedown.prevent="showCustomerMenu ? scheduleCustomerMenuClose() : openCustomerMenu()"
+                                        class="absolute inset-y-0 right-0 px-3 text-slate-400 text-[10px]">
+                                        ▾
+                                    </button>
+                                    <div v-if="showCustomerMenu" class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-30 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+                                        <button
+                                            type="button"
+                                            @mousedown.prevent="selectCustomerOption('')"
+                                            class="w-full px-3 py-2 text-left text-xs font-medium text-slate-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors">
+                                            All customers
+                                        </button>
+                                        <button
+                                            v-for="customer in filteredCustomerOptions"
+                                            :key="customer"
+                                            type="button"
+                                            @mousedown.prevent="selectCustomerOption(customer)"
+                                            :class="cn(
+                                                'w-full px-3 py-2 text-left text-xs transition-colors',
+                                                filters.customer === customer
+                                                    ? 'bg-cyan-50 text-cyan-700 font-semibold'
+                                                    : 'text-slate-700 hover:bg-cyan-50 hover:text-cyan-700'
+                                            )">
+                                            {{ customer }}
+                                        </button>
+                                        <div v-if="!filteredCustomerOptions.length" class="px-3 py-2 text-xs text-slate-400">
+                                            No matching customers
+                                        </div>
+                                    </div>
                                 </div>
                                 <input
                                     type="date"

@@ -14,9 +14,18 @@ def run():
         print("Already has Orderlift Client User role")
 
     # Set landing page
+    user.module_profile = None
+    user.set("block_modules", [])
     user.default_workspace = "Main Dashboard"
     user.redirect_url = "/desk/home-page?sidebar=Main+Dashboard"
     user.save(ignore_permissions=True)
+    frappe.db.sql(
+        """
+        delete from `tabBlock Module`
+        where parent=%s and parenttype='User' and parentfield='block_modules'
+        """,
+        (user.name,),
+    )
     frappe.db.commit()
 
     user.reload()

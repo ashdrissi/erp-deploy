@@ -51,9 +51,11 @@ SIDEBAR_GROUPS = [
     {
         "section": "Warehouse & Stock",
         "create_after": None,
-        "manage_section": False,
+        "manage_section": True,
         "links": [
             {"type": "Link", "label": "Stock Dashboard", "link_type": "Page", "link_to": "stock-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Quality Inspection", "link_type": "DocType", "link_to": "Quality Inspection", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "QI Templates", "link_type": "DocType", "link_to": "Quality Inspection Template", "child": 1, "icon": "dot"},
         ],
     },
     {
@@ -62,6 +64,7 @@ SIDEBAR_GROUPS = [
         "manage_section": True,
         "links": [
             {"type": "Link", "label": "Container Planning", "link_type": "Page", "link_to": "logistics-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "Operations Pipeline", "link_type": "Page", "link_to": "operations-pipeline", "child": 1, "icon": "dot"},
             {"type": "Link", "label": "Forecast Plans", "link_type": "Page", "link_to": "forecast-plans", "child": 1, "icon": "dot"},
             {"type": "Link", "label": "Container Profiles", "link_type": "DocType", "link_to": "Container Profile", "child": 1, "icon": "dot"},
         ],
@@ -92,6 +95,8 @@ SIDEBAR_GROUPS = [
 ]
 
 REMOVED_SECTION_LABELS = {"Dashboards"}
+REMOVED_LINK_LABELS = {"Container Load Plan"}
+REMOVED_LINK_TARGETS = {"Container Load Plan"}
 
 
 @frappe.whitelist()
@@ -145,6 +150,7 @@ def _build_sidebar_items(items: list[dict]) -> list[dict]:
         for row in items
         if row.get("label") not in managed_labels
         and row.get("label") not in REMOVED_SECTION_LABELS
+        and not _is_removed_link(row)
     ]
 
     for group in SIDEBAR_GROUPS:
@@ -195,10 +201,8 @@ def _insert_after_label(rows: list[dict], after_label: str | None, new_rows: lis
 def _sync_workspace_shortcuts(workspace_name: str, sidebar_items: list[dict]) -> None:
     workspace_shortcuts = _build_workspace_shortcuts(sidebar_items)
     managed_labels = [shortcut["label"] for shortcut in workspace_shortcuts]
-    frappe.db.delete(
-        "Workspace Shortcut",
-        {"parent": workspace_name, "label": ["in", managed_labels]},
-    )
+    _delete_workspace_shortcuts(workspace_name, labels=managed_labels + list(REMOVED_LINK_LABELS))
+    _delete_workspace_shortcuts(workspace_name, link_targets=list(REMOVED_LINK_TARGETS))
 
     existing_rows = frappe.get_all(
         "Workspace Shortcut",
@@ -259,6 +263,29 @@ def _build_workspace_shortcuts(sidebar_items: list[dict]) -> list[dict]:
         shortcuts.append(shortcut)
 
     return shortcuts
+
+
+def _is_removed_link(row: dict) -> bool:
+    return row.get("label") in REMOVED_LINK_LABELS or row.get("link_to") in REMOVED_LINK_TARGETS
+
+
+def _delete_workspace_shortcuts(
+    workspace_name: str,
+    *,
+    labels: list[str] | None = None,
+    link_targets: list[str] | None = None,
+) -> None:
+    filters = {"parent": workspace_name}
+    if labels:
+        filters["label"] = ["in", labels]
+    if link_targets:
+        filters["link_to"] = ["in", link_targets]
+
+    names = frappe.get_all("Workspace Shortcut", filters=filters, pluck="name")
+    if not names:
+        return
+
+    frappe.db.delete("Workspace Shortcut", {"name": ["in", names]})
 
 
 def _shortcut_from_sidebar_row(row: dict) -> dict | None:

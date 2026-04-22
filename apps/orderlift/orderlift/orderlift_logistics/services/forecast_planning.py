@@ -1,8 +1,11 @@
+import json
+
 import frappe
-from frappe.utils import flt, now_datetime, getdate
+from frappe.utils import cint, flt
 
 from orderlift.orderlift_logistics.services.load_planning import (
     _get_item_metrics,
+    _get_row_metrics,
 )
 from orderlift.orderlift_logistics.services.capacity_math import round3
 
@@ -76,27 +79,40 @@ DOCTYPE_CONFIG = {
 }
 
 
-def _compute_doc_totals(doctype, doc_name):
+def _compute_doc_totals(doctype, doc_name, packaging_overrides=None):
     """Compute weight/volume totals and line items for any source doc."""
     doc = frappe.get_doc(doctype, doc_name)
     cfg = DOCTYPE_CONFIG.get(doctype, {})
     items_field = cfg.get("items_table", "items")
 
+    packaging_overrides = packaging_overrides or {}
     total_weight = 0.0
     total_volume = 0.0
     line_items = []
 
     for row in getattr(doc, items_field, []) or []:
         qty = flt(row.qty)
-        unit_w, unit_v = _get_item_metrics(row.item_code)
-        line_w = qty * unit_w
-        line_v = qty * unit_v
+        override_profile = packaging_overrides.get(row.name)
+        metrics = _get_row_metrics(row, parent_doctype=doctype, packaging_profile=override_profile)
+        packaging_source = metrics.get("packaging_source") or "item_fallback"
+        if override_profile and packaging_source != "item_fallback":
+            packaging_source = "planner_override"
+        unit_w = flt(metrics["unit_weight_kg"])
+        unit_v = flt(metrics["unit_volume_m3"])
+        line_w = flt(metrics["line_weight_kg"])
+        line_v = flt(metrics["line_volume_m3"])
         total_weight += line_w
         total_volume += line_v
         line_items.append({
             "item_code": row.item_code,
             "item_name": getattr(row, "item_name", row.item_code),
             "qty": qty,
+            "source_row_name": row.name,
+            "package_count": flt(metrics.get("package_count") or 0),
+            "packaging_profile": metrics.get("resolved_profile_name") or "",
+            "packaging_type": metrics.get("packaging_type") or "",
+            "packaging_source": packaging_source,
+            "resolved_uom": metrics.get("resolved_uom") or "",
             "unit_weight_kg": round3(unit_w),
             "unit_volume_m3": round3(unit_v),
             "line_weight_kg": round3(line_w),
@@ -109,6 +125,17 @@ def _compute_doc_totals(doctype, doc_name):
         "item_count": len(line_items),
         "line_items": line_items,
     }
+
+
+def _load_packaging_overrides(row):
+    raw = getattr(row, "packaging_overrides_json", "") or ""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _get_item_uom_data(item_code):
@@ -311,7 +338,8 @@ def get_plan_detail(plan_name):
             })
         else:
             # Sourced document — fetch line items from source doc
-            totals = _compute_doc_totals(row.source_doctype, row.source_name)
+            overrides = _load_packaging_overrides(row)
+            totals = _compute_doc_totals(row.source_doctype, row.source_name, packaging_overrides=overrides)
             cfg = DOCTYPE_CONFIG.get(row.source_doctype, {})
             plan_items.append({
                 "row_name": row.name,
@@ -322,9 +350,9 @@ def get_plan_detail(plan_name):
                 "party_type": row.party_type or "",
                 "confidence": row.confidence or "tentative",
                 "docstatus_label": row.docstatus_label or "",
-                "volume": flt(row.total_volume_m3),
-                "weight": flt(row.total_weight_kg),
-                "item_count": flt(row.item_count),
+                "volume": flt(totals["total_volume_m3"]),
+                "weight": flt(totals["total_weight_kg"]),
+                "item_count": flt(totals["item_count"]),
                 "date": str(row.date or ""),
                 "selected": row.selected,
                 "sequence": row.sequence,
@@ -336,6 +364,7 @@ def get_plan_detail(plan_name):
                 "stock_uom": row.stock_uom or "",
                 "purchase_uom": row.purchase_uom or "",
                 "uom_conversion_factor": flt(row.uom_conversion_factor) or 1,
+                "packaging_overrides_json": getattr(row, "packaging_overrides_json", "") or "",
                 "line_items": totals["line_items"],
             })
 
@@ -356,7 +385,6 @@ def get_plan_detail(plan_name):
         "total_volume_m3": flt(doc.total_volume_m3),
         "weight_utilization_pct": flt(doc.weight_utilization_pct),
         "volume_utilization_pct": flt(doc.volume_utilization_pct),
-        "container_load_plan": doc.container_load_plan,
         "notes": doc.notes,
         "items": plan_items,
         "container": {
@@ -496,6 +524,7 @@ def add_item_to_plan(plan_name, source_doctype, source_name):
         "total_weight_kg": totals["total_weight_kg"],
         "total_volume_m3": totals["total_volume_m3"],
         "item_count": totals["item_count"],
+        "packaging_overrides_json": "",
         "date": getattr(source_doc, cfg.get("date_field", "creation"), None),
         "selected": 1,
         "sequence": len(doc.items),
@@ -677,8 +706,6 @@ def advance_status(plan_name, new_status, bypass_validation=False):
 
     Status flow: Planning → Ready → Loading → In Transit → Delivered
     Also supports: any → Cancelled
-
-    On Planning → Ready: auto-creates/updates the CLP behind the scenes.
     """
     valid_statuses = {"Planning", "Ready", "Loading", "In Transit", "Delivered", "Cancelled"}
     if new_status not in valid_statuses:
@@ -693,12 +720,14 @@ def advance_status(plan_name, new_status, bypass_validation=False):
 
     # Allow Cancel from any status
     if new_status == "Cancelled":
+        _unlink_source_docs(forecast)
         forecast.status = "Cancelled"
         forecast.save(ignore_permissions=True)
         return get_plan_detail(plan_name)
 
     # Allow unconfirm: Ready → Planning (only before Loading)
     if new_status == "Planning" and forecast.status == "Ready":
+        _unlink_source_docs(forecast)
         forecast.status = "Planning"
         forecast.save(ignore_permissions=True)
         return get_plan_detail(plan_name)
@@ -710,110 +739,29 @@ def advance_status(plan_name, new_status, bypass_validation=False):
     if new_idx < current_idx:
         frappe.throw(f"Cannot move from {forecast.status} to {new_status}. Status can only move forward. Unconfirm is only available from Ready → Planning.")
 
-    # On Planning → Ready: validate documents and create/update CLP
+    # On Planning → Ready: validate documents, link sources, and lock the plan.
     if new_status == "Ready":
+        _ensure_ready_transition(forecast)
         if not bypass_validation:
             validation = validate_plan_for_confirm(plan_name)
             if validation["has_issues"]:
                 return {"validation": validation}
         _link_source_docs(forecast)
-        _sync_clp(forecast)
-
-    # On Ready → Planning (unconfirm): release source doc links
-    if new_status == "Planning" and forecast.status == "Ready":
-        _unlink_source_docs(forecast)
-
-    # On Cancel: release source doc links
-    if new_status == "Cancelled" and forecast.status != "Cancelled":
-        _unlink_source_docs(forecast)
+ 
 
     forecast.status = new_status
     forecast.save(ignore_permissions=True)
     return get_plan_detail(plan_name)
 
 
-def _sync_clp(forecast):
-    """Create or update the Container Load Plan from a Forecast Load Plan.
-
-    This runs silently when the user confirms the container.
-    Includes ALL selected plan items (sourced docs + free items).
-    """
+def _ensure_ready_transition(forecast):
+    """Validate the minimum requirements before locking a plan for execution."""
     if not forecast.container_profile:
         frappe.throw("Container Profile is required before confirming.")
 
-    # Get all selected items
     selected_rows = [row for row in (forecast.items or []) if row.selected]
     if not selected_rows:
         frappe.throw("No items selected for this container.")
-
-    # Determine CLP source_type from majority of sourced docs
-    convertible_types = {"Delivery Note", "Purchase Order"}
-    dn_count = sum(1 for r in selected_rows if r.source_doctype == "Delivery Note")
-    po_count = sum(1 for r in selected_rows if r.source_doctype == "Purchase Order")
-    source_type = "Delivery Note" if dn_count >= po_count else "Purchase Order"
-
-    # Check if CLP already exists
-    clp_name = forecast.container_load_plan
-    if clp_name and frappe.db.exists("Container Load Plan", clp_name):
-        clp = frappe.get_doc("Container Load Plan", clp_name)
-        clp.container_profile = forecast.container_profile
-        clp.flow_scope = forecast.flow_scope or "Domestic"
-        clp.shipping_responsibility = forecast.shipping_responsibility or "Orderlift"
-        clp.destination_zone = forecast.destination_zone or ""
-        clp.departure_date = forecast.departure_date or getdate()
-
-        # Replace shipments
-        clp.shipments = []
-        seq = 0
-        for row in selected_rows:
-            shipment = {
-                "shipment_weight_kg": flt(row.total_weight_kg),
-                "shipment_volume_m3": flt(row.total_volume_m3),
-                "selected": 1,
-                "sequence": seq,
-            }
-            if row.source_doctype == "Delivery Note":
-                shipment["delivery_note"] = row.source_name
-                shipment["customer"] = row.party if row.party_type == "Customer" else ""
-            elif row.source_doctype == "Purchase Order":
-                shipment["purchase_order"] = row.source_name
-                shipment["supplier"] = row.party if row.party_type == "Supplier" else ""
-            clp.append("shipments", shipment)
-            seq += 1
-
-        clp.save(ignore_permissions=True)
-    else:
-        clp = frappe.new_doc("Container Load Plan")
-        clp.container_label = forecast.plan_label
-        clp.container_profile = forecast.container_profile
-        clp.company = forecast.company
-        clp.flow_scope = forecast.flow_scope or "Domestic"
-        clp.shipping_responsibility = forecast.shipping_responsibility or "Orderlift"
-        clp.source_type = source_type
-        clp.destination_zone = forecast.destination_zone or ""
-        clp.departure_date = forecast.departure_date or getdate()
-        clp.status = "Planning"
-
-        seq = 0
-        for row in selected_rows:
-            shipment = {
-                "shipment_weight_kg": flt(row.total_weight_kg),
-                "shipment_volume_m3": flt(row.total_volume_m3),
-                "selected": 1,
-                "sequence": seq,
-            }
-            if row.source_doctype == "Delivery Note":
-                shipment["delivery_note"] = row.source_name
-                shipment["customer"] = row.party if row.party_type == "Customer" else ""
-            elif row.source_doctype == "Purchase Order":
-                shipment["purchase_order"] = row.source_name
-                shipment["supplier"] = row.party if row.party_type == "Supplier" else ""
-            clp.append("shipments", shipment)
-            seq += 1
-
-        clp.insert(ignore_permissions=True)
-        forecast.container_load_plan = clp.name
-        forecast.converted_on = now_datetime()
 
 
 @frappe.whitelist()
@@ -907,11 +855,47 @@ def update_item_line_qty(plan_name, row_name, planned_qty):
                 original_qty = flt(row.original_qty) or 1
                 scale = new_qty / original_qty if original_qty > 0 else 1
                 # Recompute from source to get fresh line items
-                totals = _compute_doc_totals(row.source_doctype, row.source_name)
+                overrides = _load_packaging_overrides(row)
+                totals = _compute_doc_totals(row.source_doctype, row.source_name, packaging_overrides=overrides)
                 row.planned_qty = new_qty
                 row.total_weight_kg = round3(flt(totals["total_weight_kg"]) * scale)
                 row.total_volume_m3 = round3(flt(totals["total_volume_m3"]) * scale)
             break
+    else:
+        frappe.throw(f"Row {row_name} not found in plan.")
+
+    doc.save(ignore_permissions=True)
+    return get_plan_detail(plan_name)
+
+
+@frappe.whitelist()
+def update_source_line_packaging_override(plan_name, row_name, source_row_name, packaging_profile=None):
+    """Set or clear a planner-only packaging override for one sourced line item."""
+    doc = frappe.get_doc("Forecast Load Plan", plan_name)
+    doc.check_permission("write")
+
+    if not frappe.get_meta("Forecast Plan Item").get_field("packaging_overrides_json"):
+        frappe.throw("Planner packaging overrides are not installed yet. Reload after migration.")
+
+    for row in doc.items or []:
+        if row.name != row_name:
+            continue
+        if row.is_planned:
+            frappe.throw("Packaging override is only available for sourced document rows.")
+
+        overrides = _load_packaging_overrides(row)
+        profile_name = (packaging_profile or "").strip()
+        if profile_name:
+            overrides[source_row_name] = profile_name
+        else:
+            overrides.pop(source_row_name, None)
+
+        row.packaging_overrides_json = json.dumps(overrides, separators=(",", ":")) if overrides else ""
+        totals = _compute_doc_totals(row.source_doctype, row.source_name, packaging_overrides=overrides)
+        row.total_weight_kg = flt(totals["total_weight_kg"])
+        row.total_volume_m3 = flt(totals["total_volume_m3"])
+        row.item_count = cint(totals["item_count"])
+        break
     else:
         frappe.throw(f"Row {row_name} not found in plan.")
 

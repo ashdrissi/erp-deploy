@@ -289,15 +289,23 @@ function planCardHtml(p) {
     `;
 }
 
-function openCreateModal(wrapper) {
+async function openCreateModal(wrapper) {
     const body = wrapper.querySelector("#fpModalBody");
     body.innerHTML = "";
     wrapper._fpFields = {};
 
+    const containerProfiles = await loadActiveContainerProfiles(wrapper);
+
     const fields = [
         { key: "plan_label", label: "Plan Label", type: "text", required: true, placeholder: "e.g. Bangkok Export Apr W3" },
         { key: "company", label: "Company", type: "link", options: "Company", required: true },
-        { key: "container_profile", label: "Container Profile", type: "link", options: "Container Profile" },
+        {
+            key: "container_profile",
+            label: "Container Profile",
+            type: "select",
+            options: ["", ...containerProfiles.map((cp) => cp.name)],
+            labels: Object.fromEntries(containerProfiles.map((cp) => [cp.name, cp.container_name || cp.container_type || cp.name])),
+        },
         { key: "route_origin", label: "Origin", type: "text", placeholder: "e.g. Bangkok, Shanghai" },
         { key: "route_destination", label: "Destination", type: "text", placeholder: "e.g. Casablanca, Paris" },
         { key: "flow_scope", label: "Flow Scope", type: "select", options: ["", "Inbound", "Domestic", "Outbound"] },
@@ -323,7 +331,7 @@ function openCreateModal(wrapper) {
             f.options.forEach((opt) => {
                 const o = document.createElement("option");
                 o.value = opt;
-                o.textContent = opt || "— Select —";
+                o.textContent = (f.labels && f.labels[opt]) || opt || "— Select —";
                 input.appendChild(o);
             });
         } else if (f.type === "link") {
@@ -366,6 +374,20 @@ function openCreateModal(wrapper) {
     });
 
     wrapper.querySelector("#fpModal").classList.add("show");
+}
+
+async function loadActiveContainerProfiles(wrapper) {
+    if (wrapper._fpContainerProfiles) {
+        return wrapper._fpContainerProfiles;
+    }
+
+    const response = await frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.get_container_profiles",
+        async: true,
+    });
+
+    wrapper._fpContainerProfiles = response.message || [];
+    return wrapper._fpContainerProfiles;
 }
 
 function closeCreateModal(wrapper) {

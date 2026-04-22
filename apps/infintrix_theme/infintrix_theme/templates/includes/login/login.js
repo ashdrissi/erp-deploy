@@ -235,21 +235,24 @@ login.login_handlers = (function () {
 				window.location.href = frappe.utils.sanitise_redirect(data.redirect_to);
 			} else if (data.message == "No App") {
 				login.set_status({{ _("Success") | tojson }}, 'green');
+				var requested_redirect = frappe.utils.sanitise_redirect(frappe.utils.get_url_arg("redirect-to"));
+				var home_page = frappe.utils.sanitise_redirect(data.home_page);
+				var prefer_home_page = home_page && home_page.indexOf("/b2b-portal") !== -1;
 				if (localStorage) {
 					var last_visited =
-						localStorage.getItem("last_visited")
-						|| frappe.utils.sanitise_redirect(frappe.utils.get_url_arg("redirect-to"));
+						requested_redirect
+						|| localStorage.getItem("last_visited");
 					localStorage.removeItem("last_visited");
 				}
 
 				if (data.redirect_to) {
 					window.location.href = frappe.utils.sanitise_redirect(data.redirect_to);
-				}
-
-				if (last_visited && last_visited != "/login") {
+				} else if (prefer_home_page) {
+					window.location.href = home_page;
+				} else if (last_visited && last_visited != "/login") {
 					window.location.href = last_visited;
 				} else {
-					window.location.href = data.home_page;
+					window.location.href = home_page;
 				}
 			} else if (window.location.hash === '#forgot') {
 				if (data.message === 'not found') {

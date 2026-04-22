@@ -4,43 +4,18 @@ Scenario Guard
 Minimum validation rules that prevent invalid document combinations
 per the logistics scenario matrix:
 
-  flow_scope          | shipping_responsibility | source_type      | CLP allowed | Trip allowed
+  flow_scope          | shipping_responsibility | source_type      | FLP allowed | Trip allowed
   --------------------|-------------------------|------------------|-------------|-------------
   Inbound             | Orderlift               | Purchase Order   | YES         | NO
-  Domestic            | Orderlift               | Delivery Note    | YES (opt)   | YES
-  Outbound            | Customer                | —                | NO          | NO
+  Domestic            | Orderlift               | Delivery Note    | YES         | YES
+  Outbound            | Customer                | —                | YES         | NO
   Outbound            | Orderlift               | Delivery Note    | YES         | YES (local)
 
 Called via hooks.py doc_events:
-  - Container Load Plan → validate
   - Delivery Trip → validate (once Delivery Trip custom fields exist in Phase 4)
 """
 
 import frappe
-
-
-# ── Container Load Plan guards ──────────────────────────────────────────
-
-def validate_container_load_plan(doc, method=None):
-    """Block invalid CLP scenario combinations."""
-    if not doc:
-        return
-
-    flow_scope = (doc.get("flow_scope") or "").strip()
-    responsibility = (doc.get("shipping_responsibility") or "").strip()
-    source_type = (doc.get("source_type") or "").strip()
-
-    # Rule 1: Outbound + Customer → no CLP needed
-    if flow_scope == "Outbound" and responsibility == "Customer":
-        frappe.throw(
-            "Container Load Plan is not required when the customer manages shipping. "
-            "Set Shipping Responsibility to 'Orderlift' if Orderlift handles the shipment.",
-            title="Invalid Scenario",
-        )
-
-    # Rule 2: source_type must match flow_scope
-    if source_type and flow_scope:
-        _validate_source_type_consistency(flow_scope, source_type)
 
 
 def _validate_source_type_consistency(flow_scope, source_type):
@@ -73,28 +48,30 @@ def validate_delivery_trip(doc, method=None):
     if not doc:
         return
 
-    # Guard via linked CLP (if present — Phase 4 adds the custom field)
-    clp_name = doc.get("custom_container_load_plan")
-    if not clp_name:
+    forecast_name = doc.get("custom_forecast_plan")
+    if not forecast_name:
         return
 
-    clp_fields = frappe.db.get_value(
-        "Container Load Plan",
-        clp_name,
+    forecast_fields = frappe.db.get_value(
+        "Forecast Load Plan",
+        forecast_name,
         ["flow_scope", "shipping_responsibility"],
         as_dict=True,
     )
-    if not clp_fields:
+    if not forecast_fields:
         return
 
-    if clp_fields.flow_scope == "Inbound":
+    if forecast_fields.flow_scope == "Inbound":
         frappe.throw(
             "Delivery Trip cannot be created for inbound/import plans. "
             "Use Purchase Receipt to receive imported goods after container arrival.",
             title="Invalid Scenario",
         )
 
-    if clp_fields.flow_scope == "Outbound" and clp_fields.shipping_responsibility == "Customer":
+    if (
+        forecast_fields.flow_scope == "Outbound"
+        and forecast_fields.shipping_responsibility == "Customer"
+    ):
         frappe.throw(
             "Delivery Trip is not applicable when the customer manages shipping.",
             title="Invalid Scenario",

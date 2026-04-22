@@ -9,6 +9,15 @@ INTERNAL_REVIEW_ROLES = {"Orderlift Admin", "System Manager", "Sales Manager", "
 DEFAULT_CUSTOMER_GROUP = "All Customer Groups"
 
 
+def _has_b2b_only_roles(user: str | None = None) -> bool:
+    user = user or frappe.session.user
+    if not user or user == "Guest":
+        return False
+
+    roles = set(frappe.get_roles(user))
+    return PORTAL_ROLE in roles and not roles.intersection(INTERNAL_REVIEW_ROLES)
+
+
 def get_portal_user_context(require_policy: bool = True) -> frappe._dict:
     user = frappe.session.user
     if not user or user == "Guest":
@@ -56,16 +65,7 @@ def ensure_internal_reviewer() -> None:
 
 
 def is_b2b_only_user(user: str | None = None) -> bool:
-    user = user or frappe.session.user
-    if not user or user == "Guest":
-        return False
-
-    user_type = frappe.db.get_value("User", user, "user_type")
-    if user_type != "Website User":
-        return False
-
-    roles = set(frappe.get_roles(user))
-    return PORTAL_ROLE in roles and not roles.intersection(INTERNAL_REVIEW_ROLES)
+    return _has_b2b_only_roles(user)
 
 
 def get_catalog_products_for_group(customer_group: str, featured_only: bool = False) -> list[frappe._dict]:

@@ -1041,9 +1041,10 @@
             const res = await frappe.call({ method, args: args||{} });
             return res.message;
         }
+        const csrfToken = getCsrfToken();
         const response = await fetch(`/api/method/${method}`, {
             method:"POST", credentials:"same-origin",
-            headers:{ "Content-Type":"application/json", "X-Frappe-CSRF-Token": window.csrf_token||"" },
+            headers:{ "Content-Type":"application/json", "X-Frappe-CSRF-Token": csrfToken },
             body: JSON.stringify(args||{}),
         });
         const payload = await response.json();
@@ -1055,6 +1056,16 @@
     /* ── Utilities ──────────────────────────────────────────── */
     function pageTitle(page) {
         return ({dashboard:"Dashboard",catalog:"Catalog","request-quote":"Quote Basket",requests:"My Requests",quotations:"My Quotations",request:"Request Detail",item:"Product Detail",bundle:"Bundle Detail",account:"My Account"})[page]||"B2B Portal";
+    }
+    function getCsrfToken() {
+        if (window.frappe && frappe.csrf_token && frappe.csrf_token !== "None") {
+            return frappe.csrf_token;
+        }
+        if (window.csrf_token && window.csrf_token !== "None") {
+            return window.csrf_token;
+        }
+        const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : "";
     }
     function makeInitials(s) { return ((s||"U").match(/\b\w/g)||[]).slice(0,2).join("").toUpperCase()||"U"; }
     function navBtn(target, label, current, icon, badge) {

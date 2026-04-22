@@ -19,6 +19,7 @@ app_include_css = [
     "/assets/orderlift/css/orderlift_bundle.css",
     "/assets/orderlift/css/orderlift_logistics_v2.css?v=20260415a",
     "/assets/orderlift/css/clp_dashboard_v4.css",
+    "/assets/orderlift/css/pricing_sheet_20260414_82.css?v=20260501d",
 ]
 app_include_js = [
     "/assets/orderlift/js/orderlift_bundle.js",
@@ -94,6 +95,12 @@ doc_events = {
     "Item": {
         # Archive cost price into Item Cost History on save when cost changes
         "before_save": "orderlift.sales.utils.cost_history.archive_cost_price",
+        # Validate packaging profiles (single default, active fields, no duplicates)
+        "validate": "orderlift.orderlift_logistics.utils.packaging_validation.validate_item_packaging_profiles",
+    },
+    "Purchase Order": {
+        # Resolve item packaging rows from selected/default packaging profiles.
+        "validate": "orderlift.logistics.utils.purchase_order_packaging.validate_purchase_order_packaging",
     },
     "Purchase Receipt": {
         # Move stock to correct warehouse after quality inspection
@@ -120,10 +127,6 @@ doc_events = {
             "orderlift.orderlift_sig.utils.project_status_guard.before_project_status_change",
         ],
     },
-    "Container Load Plan": {
-        # Validate scenario consistency (flow_scope + source_type + shipping_responsibility)
-        "validate": "orderlift.logistics.utils.scenario_guard.validate_container_load_plan",
-    },
     "Delivery Trip": {
         # Block Delivery Trip creation for inbound or customer-managed scenarios
         "validate": "orderlift.logistics.utils.scenario_guard.validate_delivery_trip",
@@ -132,16 +135,16 @@ doc_events = {
 
 doctype_js = {
     "Container Profile": "public/js/container_profile_form_20260411.js",
-    "Container Load Plan": "public/js/clp_dashboard_v4.js",
     "Delivery Note": "public/js/delivery_note_logistics.js",
+    "Purchase Order": "public/js/purchase_order_pricing_alerts_20260417.js",
     "Purchase Receipt": "public/js/purchase_receipt_logistics.js",
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Sales Order": "public/js/sales_order_logistics.js",
     # Loaded via doctype_js so setup/refresh fire before the form opens.
-    # The file sets window["__orderlift_pricing_sheet_latest_loaded_v6"] = true
-    # so the app_include_js global loader skips re-requiring it.
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260415_100.js",
+    # Use a versioned filename here instead of a query string because Frappe
+    # loads doctype_js assets more reliably as plain paths.
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260501_110.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
     "Customer": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v3.js",
@@ -152,6 +155,10 @@ doctype_js = {
 
 doctype_list_js = {
     "Portal Quote Request": "public/js/portal_quote_request_list.js",
+}
+
+extend_doctype_class = {
+    "Contract": "orderlift.crm.extensions.contract.ContractDateValidationMixin",
 }
 
 # ---------------------------------------------------------
@@ -188,6 +195,7 @@ on_login = [
 ]
 
 before_request = [
+    "orderlift.dashboard_permissions.install_runtime_patches",
     "orderlift.restricted_user_guard.redirect_bare_desk_route",
     "orderlift.orderlift_client_portal.utils.website.redirect_b2b_only_users_from_desk",
     "orderlift.restricted_user_guard.guard_restricted_routes",
@@ -278,6 +286,5 @@ jinja = {
 # for documentation:
 #
 #   SAV Ticket       → SAV-.YYYY.-.#####
-#   Container Load Plan → CLP-.#####
 #   Portal Order     → PO-B2B-.YYYY.-.#####
 #   Sales Commission → COM-.YYYY.-.#####

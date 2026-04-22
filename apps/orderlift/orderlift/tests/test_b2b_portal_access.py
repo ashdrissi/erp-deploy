@@ -45,6 +45,13 @@ class TestB2BPortalAccess(unittest.TestCase):
         mock_get_roles.return_value = ["B2B Portal Client", "Sales Manager"]
         self.assertFalse(access.is_b2b_only_user("hybrid@example.com"))
 
+    @patch("orderlift.client_portal.utils.access.frappe.get_roles")
+    @patch("orderlift.client_portal.utils.access.frappe.db.get_value")
+    def test_is_b2b_only_user_true_even_before_user_type_sync(self, mock_get_value, mock_get_roles):
+        mock_get_value.return_value = "System User"
+        mock_get_roles.return_value = ["B2B Portal Client", "Customer"]
+        self.assertTrue(access.is_b2b_only_user("portal-stale@example.com"))
+
     @patch("orderlift.client_portal.utils.access.frappe.get_all")
     @patch("orderlift.client_portal.utils.access.frappe.db.get_value")
     @patch("orderlift.client_portal.utils.access.frappe.db.sql")

@@ -17,12 +17,31 @@
 
 .pricing-sheet-page .layout-main-section {
     background: #f4f7fc;
+    max-width: none !important;
+    width: 100% !important;
+    margin-right: 0 !important;
+    margin-left: 0 !important;
 }
 
 .pricing-sheet-page .layout-main-section-wrapper {
     padding-top: 12px;
     padding-left: 24px;
     padding-right: 24px;
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+.pricing-sheet-page .std-form-layout,
+.pricing-sheet-page .form-layout,
+.pricing-sheet-page .form-page {
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+.pricing-sheet-page .layout-main-section-wrapper > .page-body,
+.pricing-sheet-page .page-body {
+    max-width: 100% !important;
+    width: 100% !important;
 }
 
 .ps-shell {
@@ -47,6 +66,43 @@
 .pricing-sheet-form-root .form-page {
     max-width: 100% !important;
     width: 100% !important;
+}
+
+.pricing-sheet-form-root.ps-agent-layout .form-section .section-body {
+    display: block;
+}
+
+.pricing-sheet-form-root.ps-agent-layout .form-section .section-body > .form-column {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
+}
+
+.pricing-sheet-form-root.ps-agent-layout .form-section .section-body > .form-column.ps-agent-column-hidden {
+    display: none;
+}
+
+.pricing-sheet-form-root.ps-agent-layout .form-section .grid-field {
+    width: 100%;
+    max-width: 100%;
+}
+
+.pricing-sheet-form-root .ps-native-grid-hidden {
+    display: none !important;
+}
+
+.pricing-sheet-page .ps-native-grid-hidden {
+    display: none !important;
+}
+
+.pricing-sheet-page .ps-lines-section .section-body {
+    display: block;
+}
+
+.pricing-sheet-page .ps-lines-section .section-body > .form-column {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
 }
 
 .pricing-sheet-form-root .form-section {
@@ -157,10 +213,14 @@
     border-color: rgba(245, 158, 11, 0.14);
 }
 
+.pricing-sheet-form-root .ps-lines-section .section-body {
+    display: block;
+}
+
 .pricing-sheet-form-root .ps-lines-section .section-body>.form-column {
-    width: 100%;
-    max-width: 100%;
-    flex: 0 0 100%;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
 }
 
 .pricing-sheet-form-root .ps-lines-section .form-grid,
@@ -196,6 +256,12 @@
 
 .pricing-sheet-form-root .ps-workspace-root {
     margin-bottom: 18px;
+    width: 100%;
+}
+
+.pricing-sheet-page .ps-workspace-root {
+    margin-bottom: 18px;
+    width: 100% !important;
 }
 
 .pricing-sheet-form-root .ps-workspace-shell {
@@ -204,6 +270,11 @@
     background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
     box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
     overflow: visible;
+    width: 100%;
+}
+
+.pricing-sheet-page .ps-workspace-shell {
+    width: 100% !important;
 }
 
 .pricing-sheet-form-root .ps-workspace-header {
@@ -278,16 +349,50 @@
     cursor: grab;
     font-size: 12px;
     color: #334155;
+    user-select: none;
 }
 
 .pricing-sheet-form-root .ps-workspace-column-order-item.is-dragging {
     opacity: 0.55;
+    pointer-events: none;
 }
 
 .pricing-sheet-form-root .ps-workspace-drag-handle {
+    border: 0;
+    background: transparent;
+    padding: 0;
     color: #94a3b8;
     font-weight: 800;
     letter-spacing: 0.08em;
+    cursor: grab;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-order-label {
+    flex: 1 1 auto;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-order-actions {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.pricing-sheet-form-root .ps-workspace-column-move-btn {
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #334155;
+    width: 26px;
+    height: 26px;
+    line-height: 1;
+    padding: 0;
+}
+
+body.ps-workspace-dragging,
+body.ps-workspace-dragging * {
+    cursor: grabbing !important;
 }
 
 .pricing-sheet-form-root .ps-workspace-column-option {
@@ -386,11 +491,21 @@
 }
 
 .pricing-sheet-form-root .ps-workspace-table-wrap {
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: visible;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
     background: #ffffff;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    width: 100%;
+    position: relative;
+}
+
+.pricing-sheet-page .ps-workspace-table-wrap {
+    width: 100% !important;
+    overflow-x: auto;
+    overflow-y: visible !important;
+    position: relative;
 }
 
 .pricing-sheet-form-root .ps-workspace-table {
@@ -574,18 +689,27 @@
 .pricing-sheet-form-root .ps-workspace-link-host,
 .pricing-sheet-form-root .ps-workspace-link-host .control-input-wrapper,
 .pricing-sheet-form-root .ps-workspace-link-host .awesomplete,
+.pricing-sheet-page .ps-workspace-link-host,
+.pricing-sheet-page .ps-workspace-link-host .control-input-wrapper,
+.pricing-sheet-page .ps-workspace-link-host .awesomplete,
 .pricing-sheet-form-root .ps-workspace-link-host input {
     width: 100%;
 }
 
-.pricing-sheet-form-root .ps-workspace-link-host .awesomplete {
+.pricing-sheet-page .ps-workspace-link-host input {
+    width: 100%;
+}
+
+.pricing-sheet-form-root .ps-workspace-link-host .awesomplete,
+.pricing-sheet-page .ps-workspace-link-host .awesomplete {
     position: relative;
 }
 
-.pricing-sheet-form-root .ps-workspace-link-host .awesomplete ul {
+.pricing-sheet-form-root .ps-workspace-link-host .awesomplete ul,
+.pricing-sheet-page .ps-workspace-link-host .awesomplete ul {
     min-width: 300px;
     max-width: 420px;
-    z-index: 25;
+    z-index: 1050;
 }
 
 .pricing-sheet-form-root .ps-workspace-cell-input {

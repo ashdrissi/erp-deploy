@@ -137,6 +137,7 @@ const PRICING_SHEET_WORKSPACE_HIDDEN_FIELDS = new Set([
     "customs_by_kg",
     "customs_by_percent",
     "customs_basis",
+    "packaging_profile_source",
     "transport_allocation_mode",
     "transport_container_type",
     "transport_basis_total",
@@ -1363,7 +1364,7 @@ function renderPricingSheetWorkspace(frm) {
 
 function ensurePricingSheetStyles(frm) {
     const linkId = "pricing-sheet-ux-css";
-    const version = "v=20260414-99";
+    const version = "v=20260416-03";
     let link = document.getElementById(linkId);
     if (!link) {
         link = document.createElement("link");
@@ -1785,6 +1786,7 @@ function applyFormLayoutClass(frm) {
 
     frm.page.wrapper.addClass("pricing-sheet-page");
     frm.$wrapper && frm.$wrapper.addClass("pricing-sheet-form-root");
+    frm.$wrapper && frm.$wrapper.toggleClass("ps-agent-layout", isRestrictedAgentUser());
 
     const $mainSection = frm.$wrapper ? frm.$wrapper.closest(".layout-main-section") : null;
     if ($mainSection && $mainSection.length) {
@@ -1804,6 +1806,56 @@ function applyLinesSectionClass(frm) {
     if ($section && $section.length) {
         $section.addClass("ps-lines-section");
     }
+}
+
+function applyNativeLinesGridVisibility(frm) {
+    const field = frm.fields_dict.lines;
+    if (!field || !field.$wrapper) return;
+
+    field.$wrapper.toggleClass("ps-native-grid-hidden", isRestrictedAgentUser());
+}
+
+function applyRestrictedSectionLayout(frm) {
+    if (!frm || !frm.$wrapper) return;
+
+    const restrictedAgent = isRestrictedAgentUser();
+    const $sections = frm.$wrapper.find(".form-section");
+    $sections.removeClass("ps-agent-section-fullwidth");
+    $sections.find(".form-column").removeClass("ps-agent-column-hidden");
+
+    if (!restrictedAgent) {
+        return;
+    }
+
+    $sections.each((_, section) => {
+        const $section = $(section);
+        const $columns = $section.find("> .section-body > .form-column");
+        if (!$columns.length) {
+            return;
+        }
+
+        let visibleColumns = 0;
+        $columns.each((__, column) => {
+            const $column = $(column);
+            const hasVisibleContent = $column.children().filter((___, child) => {
+                const $child = $(child);
+                if (!$child.length) {
+                    return false;
+                }
+                if ($child.is(":visible")) {
+                    return true;
+                }
+                return $child.find(":visible").length > 0;
+            }).length > 0;
+
+            $column.toggleClass("ps-agent-column-hidden", !hasVisibleContent);
+            if (hasVisibleContent) {
+                visibleColumns += 1;
+            }
+        });
+
+        $section.toggleClass("ps-agent-section-fullwidth", visibleColumns <= 1);
+    });
 }
 
 function applyPricingStrategyVisibility(frm) {
@@ -2064,10 +2116,13 @@ frappe.ui.form.on("Pricing Sheet", {
         sanitizeLineResolutionFields(frm);
         applyFormLayoutClass(frm);
         applyLinesSectionClass(frm);
+        applyNativeLinesGridVisibility(frm);
+        applyRestrictedSectionLayout(frm);
         bindPricingSheetWorkspaceGridSync(frm);
         renderPricingSheetWorkspace(frm);
         applyModeLayout(frm);
         applyPricingStrategyVisibility(frm);
+        applyRestrictedSectionLayout(frm);
         highlightPricingSheetSidebar();
         $(document).off("keydown.psheet");
 

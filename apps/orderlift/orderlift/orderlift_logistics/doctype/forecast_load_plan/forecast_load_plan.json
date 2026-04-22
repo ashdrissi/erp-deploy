@@ -26,9 +26,6 @@
     "volume_utilization_pct",
     "section_items",
     "items",
-    "section_conversion",
-    "container_load_plan",
-    "converted_on",
     "notes"
   ],
   "fields": [
@@ -171,24 +168,6 @@
       "fieldtype": "Table",
       "label": "Items",
       "options": "Forecast Plan Item"
-    },
-    {
-      "fieldname": "section_conversion",
-      "fieldtype": "Section Break",
-      "label": "Conversion"
-    },
-    {
-      "fieldname": "container_load_plan",
-      "fieldtype": "Link",
-      "label": "Container Load Plan",
-      "options": "Container Load Plan",
-      "read_only": 1
-    },
-    {
-      "fieldname": "converted_on",
-      "fieldtype": "Datetime",
-      "label": "Converted On",
-      "read_only": 1
     },
     {
       "fieldname": "notes",

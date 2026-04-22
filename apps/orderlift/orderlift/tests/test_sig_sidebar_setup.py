@@ -65,6 +65,24 @@ class TestSigSidebarSetup(unittest.TestCase):
         self.assertEqual(mapped["Payments Dashboard"]["type"], "Dashboard")
         self.assertEqual(mapped["Sales Payment Summary"]["type"], "Report")
 
+    def test_build_sidebar_items_removes_retired_container_load_plan_link(self):
+        rows = [
+            {"label": "Logistics", "type": "Section Break", "child": 0},
+            {
+                "label": "Container Load Plan",
+                "type": "Link",
+                "link_type": "DocType",
+                "link_to": "Container Load Plan",
+                "child": 1,
+            },
+        ]
+
+        updated = setup_main_dashboard_sidebar._build_sidebar_items(rows)
+        labels = [row["label"] for row in updated]
+
+        self.assertNotIn("Container Load Plan", labels)
+        self.assertEqual(labels[labels.index("Logistics") + 1], "Container Planning")
+
     def test_sav_section_moves_above_items_and_price_lists(self):
         rows = [
             {"label": "Sales", "type": "Section Break", "child": 0},

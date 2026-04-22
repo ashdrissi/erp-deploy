@@ -128,7 +128,7 @@ function orderliftWhenRolesReady(callback, attempts) {
     window.__orderlift_sidebar_url_injector_installed = true;
 
     var TARGET_SIDEBAR = "Main Dashboard";
-    var EXCLUDED_PREFIXES = ["/desk/workspace", "/desk/workspace-sidebar"];
+    var EXCLUDED_PREFIXES = ["/desk/workspace", "/desk/workspace-sidebar", "/desk/user"];
     var EXCLUDED_SLUGS = ["build"];
 
     function isExcluded(pathname) {
@@ -214,6 +214,47 @@ function orderliftWhenRolesReady(callback, attempts) {
 
     ensureSidebarOnCurrentUrl();
     decorateDeskLinks(document.body);
+})();
+
+// ── Guard form switching when a grid missed pagination setup ──
+(function hardenFormSwitchDoc() {
+    if (window.__orderlift_form_switch_doc_guard_installed) return;
+    window.__orderlift_form_switch_doc_guard_installed = true;
+
+    function patch() {
+        if (!frappe.ui || !frappe.ui.form || !frappe.ui.form.Form) return false;
+        if (frappe.ui.form.Form.__orderliftSwitchDocGuardPatched) return true;
+
+        var proto = frappe.ui.form.Form.prototype;
+        proto.switch_doc = function (docname) {
+            (this.grids || []).forEach(function (grid_obj) {
+                if (!grid_obj || !grid_obj.grid) return;
+
+                grid_obj.grid.visible_columns = null;
+                if (
+                    grid_obj.grid.grid_pagination &&
+                    typeof grid_obj.grid.grid_pagination.go_to_page === "function"
+                ) {
+                    grid_obj.grid.grid_pagination.go_to_page(1, true);
+                }
+            });
+
+            frappe.ui.form.close_grid_form();
+            this.viewers && this.viewers.parent.empty();
+            this.docname = docname;
+            this.setup_docinfo_change_listener();
+        };
+
+        frappe.ui.form.Form.__orderliftSwitchDocGuardPatched = true;
+        return true;
+    }
+
+    var attempts = 80;
+    (function ensurePatch() {
+        if (patch() || attempts <= 0) return;
+        attempts -= 1;
+        setTimeout(ensurePatch, 100);
+    })();
 })();
 
 // ── Lock business admin users into Main Dashboard shell ──
@@ -458,8 +499,8 @@ function orderliftWhenRolesReady(callback, attempts) {
     });
 })();
 
-// ── Disable sidebar header dropdown for business admin users ──
-(function disableBusinessAdminSidebarDropdown() {
+// ── Filter sidebar header dropdown for business admin users ──
+(function filterBusinessAdminSidebarDropdown() {
     if (window.__orderlift_business_admin_dropdown_patch_installed) return;
     window.__orderlift_business_admin_dropdown_patch_installed = true;
 
@@ -467,27 +508,46 @@ function orderliftWhenRolesReady(callback, attempts) {
         return orderliftIsClientShellUser();
     }
 
-    function hideHeaderDropdown(instance) {
-        if (!instance) return;
+    var BLOCKED_DROPDOWN_ITEMS = {
+        desktop: true,
+        workspaces: true,
+        website: true,
+    };
 
-        try {
-            instance.sibling_workspaces = [];
-            instance.dropdown_items = [];
+    function normalizeDropdownKey(value) {
+        return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
 
-            if (instance.$drop_icon && instance.$drop_icon.length) {
-                instance.$drop_icon.hide();
+    function filterDropdownItems(instance) {
+        if (!instance || !Array.isArray(instance.dropdown_items)) return;
+
+        var filtered = [];
+        for (var i = 0; i < instance.dropdown_items.length; i++) {
+            var item = instance.dropdown_items[i];
+            if (!item) continue;
+
+            if (item.is_divider) {
+                if (filtered.length && !filtered[filtered.length - 1].is_divider) {
+                    filtered.push(item);
+                }
+                continue;
             }
 
-            if (instance.dropdown_menu && instance.dropdown_menu.length) {
-                instance.dropdown_menu.empty().hide();
+            var nameKey = normalizeDropdownKey(item.name);
+            var labelKey = normalizeDropdownKey(item.label);
+            if (BLOCKED_DROPDOWN_ITEMS[nameKey] || BLOCKED_DROPDOWN_ITEMS[labelKey]) {
+                continue;
             }
 
-            if (instance.wrapper && instance.wrapper.length) {
-                instance.wrapper.find(".drop-icon, .sidebar-header-menu").hide();
-            }
-        } catch (e) {
-            // no-op
+            filtered.push(item);
         }
+
+        while (filtered.length && filtered[filtered.length - 1].is_divider) {
+            filtered.pop();
+        }
+
+        instance.dropdown_items = filtered;
+        instance.sibling_workspaces = [];
     }
 
     function patchSidebarHeaderClass() {
@@ -497,7 +557,8 @@ function orderliftWhenRolesReady(callback, attempts) {
 
         var proto = frappe.ui.SidebarHeader.prototype;
         var originalMake = proto.make;
-        var originalToggle = proto.toggle_dropdown_menu;
+        var originalSetupAppSwitcher = proto.setup_app_switcher;
+        var originalPopulate = proto.populate_dropdown_menu;
 
         proto.fetch_related_icons = function () {
             if (shouldDisable()) return [];
@@ -510,31 +571,27 @@ function orderliftWhenRolesReady(callback, attempts) {
         };
 
         proto.setup_app_switcher = function () {
-            if (shouldDisable()) return;
+            if (shouldDisable()) {
+                filterDropdownItems(this);
+            }
+            return originalSetupAppSwitcher ? originalSetupAppSwitcher.apply(this, arguments) : undefined;
         };
 
         proto.populate_dropdown_menu = function () {
             if (shouldDisable()) {
-                hideHeaderDropdown(this);
-                return;
+                filterDropdownItems(this);
+                if (this.dropdown_menu && this.dropdown_menu.length) {
+                    this.dropdown_menu.empty();
+                }
             }
-        };
-
-        proto.toggle_dropdown_menu = function () {
-            if (shouldDisable()) {
-                hideHeaderDropdown(this);
-                return;
-            }
-            if (originalToggle) {
-                return originalToggle.apply(this, arguments);
-            }
+            return originalPopulate ? originalPopulate.apply(this, arguments) : undefined;
         };
 
         proto.make = function () {
-            var result = originalMake ? originalMake.apply(this, arguments) : undefined;
             if (shouldDisable()) {
-                hideHeaderDropdown(this);
+                filterDropdownItems(this);
             }
+            var result = originalMake ? originalMake.apply(this, arguments) : undefined;
             return result;
         };
 
@@ -545,12 +602,16 @@ function orderliftWhenRolesReady(callback, attempts) {
     function patchLiveSidebar() {
         var sidebarHeader = frappe.app && frappe.app.sidebar && frappe.app.sidebar.sidebar_header;
         if (sidebarHeader) {
-            hideHeaderDropdown(sidebarHeader);
-        }
-
-        var liveNodes = document.querySelectorAll(".sidebar-header .drop-icon, .sidebar-header-menu");
-        for (var i = 0; i < liveNodes.length; i++) {
-            liveNodes[i].style.display = "none";
+            filterDropdownItems(sidebarHeader);
+            if (sidebarHeader.dropdown_menu && sidebarHeader.dropdown_menu.length) {
+                sidebarHeader.dropdown_menu.empty();
+            }
+            if (typeof sidebarHeader.populate_dropdown_menu === "function") {
+                sidebarHeader.populate_dropdown_menu();
+            }
+            if (typeof sidebarHeader.setup_select_options === "function") {
+                sidebarHeader.setup_select_options();
+            }
         }
     }
 

@@ -2,10 +2,25 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+RETIRED_CUSTOM_FIELDS = [
+    "Delivery Note-custom_assigned_container_load_plan",
+    "Delivery Trip-custom_container_load_plan",
+]
+
+
 def after_migrate():
+    remove_retired_custom_fields()
+
     create_custom_fields(
         {
             "Item": [
+                {
+                    "fieldname": "custom_packaging_profiles",
+                    "label": "Packaging Profiles",
+                    "fieldtype": "Table",
+                    "options": "Item Packaging Profile",
+                    "insert_after": "uoms",
+                },
                 {
                     "fieldname": "custom_volume_m3",
                     "label": "Volume (m3)",
@@ -50,6 +65,18 @@ def after_migrate():
             ],
             # ── Purchase Order: scenario classification ──
             "Purchase Order": [
+                {
+                    "fieldname": "custom_pricing_alerts_section",
+                    "label": "Pricing Alerts",
+                    "fieldtype": "Section Break",
+                    "insert_after": "items",
+                },
+                {
+                    "fieldname": "custom_pricing_alerts_html",
+                    "label": "Pricing Alerts HTML",
+                    "fieldtype": "HTML",
+                    "insert_after": "custom_pricing_alerts_section",
+                },
                 {
                     "fieldname": "custom_logistics_section",
                     "label": "Logistics",
@@ -169,20 +196,81 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
-                    "fieldname": "custom_assigned_container_load_plan",
-                    "label": "Assigned Container Load Plan",
-                    "fieldtype": "Link",
-                    "options": "Container Load Plan",
-                    "insert_after": "custom_logistics_status",
-                    "read_only": 1,
-                },
-                {
                     "fieldname": "custom_logistics_locked",
                     "label": "Logistics Locked",
                     "fieldtype": "Check",
-                    "insert_after": "custom_assigned_container_load_plan",
+                    "insert_after": "custom_logistics_status",
                     "read_only": 1,
                     "default": "0",
+                },
+            ],
+            "Purchase Order Item": [
+                {
+                    "fieldname": "custom_packaging_profile",
+                    "label": "Packaging Profile",
+                    "fieldtype": "Link",
+                    "options": "Item Packaging Profile",
+                    "insert_after": "item_code",
+                    "in_list_view": 1,
+                    "description": "Selected packaging format for purchasing and import. Defaults to item default profile.",
+                },
+                {
+                    "fieldname": "custom_packaging_profile_source",
+                    "label": "Packaging Source",
+                    "fieldtype": "Select",
+                    "options": "\nselected\ndefault\nitem_fallback",
+                    "insert_after": "custom_packaging_profile",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "description": "How the packaging was resolved for this row.",
+                },
+                {
+                    "fieldname": "custom_packaging_type",
+                    "label": "Packaging Type",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_packaging_uom",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_packaging_uom",
+                    "label": "Packaging UOM",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_packaging_profile_source",
+                    "read_only": 1,
+                    "fetch_from": "custom_packaging_profile.uom",
+                },
+                {
+                    "fieldname": "custom_units_per_package",
+                    "label": "Units Per Package",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_packaging_uom",
+                    "read_only": 1,
+                    "fetch_from": "custom_packaging_profile.units_per_package",
+                    "default": "1",
+                },
+                {
+                    "fieldname": "custom_package_count",
+                    "label": "Package Count",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_units_per_package",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                },
+                {
+                    "fieldname": "custom_package_weight_kg",
+                    "label": "Weight Per Package (kg)",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_package_count",
+                    "read_only": 1,
+                    "fetch_from": "custom_packaging_profile.weight_kg",
+                },
+                {
+                    "fieldname": "custom_package_volume_m3",
+                    "label": "Volume Per Package (m3)",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_package_weight_kg",
+                    "read_only": 1,
+                    "fetch_from": "custom_packaging_profile.volume_m3",
                 },
             ],
             "Purchase Receipt": [
@@ -196,6 +284,38 @@ def after_migrate():
                     "description": "Items have been routed to correct warehouse based on QC results",
                 },
             ],
+            "Buying Settings": [
+                {
+                    "fieldname": "custom_po_alerts_section",
+                    "label": "Purchase Pricing Alerts",
+                    "fieldtype": "Section Break",
+                    "insert_after": "disable_last_purchase_rate",
+                },
+                {
+                    "fieldname": "custom_stale_purchase_threshold_days",
+                    "label": "Stale Purchase Threshold (days)",
+                    "fieldtype": "Int",
+                    "insert_after": "custom_po_alerts_section",
+                    "default": "90",
+                    "description": "Days after which a last purchase reference is considered stale.",
+                },
+                {
+                    "fieldname": "custom_supplier_price_lookback_days",
+                    "label": "Supplier Price Lookback (days)",
+                    "fieldtype": "Int",
+                    "insert_after": "custom_stale_purchase_threshold_days",
+                    "default": "180",
+                    "description": "Only compare other-supplier purchase history within this lookback window.",
+                },
+                {
+                    "fieldname": "custom_better_supplier_min_savings_percent",
+                    "label": "Better Supplier Min Savings (%)",
+                    "fieldtype": "Percent",
+                    "insert_after": "custom_supplier_price_lookback_days",
+                    "default": "5",
+                    "description": "Minimum savings needed before showing a better supplier alert.",
+                },
+            ],
             "Stock Entry": [
                 {
                     "fieldname": "custom_source_pr",
@@ -206,7 +326,7 @@ def after_migrate():
                     "read_only": 1,
                 },
             ],
-            # ── Delivery Trip: scenario classification + CLP link ──
+            # ── Delivery Trip: scenario classification + forecast plan link ──
             "Delivery Trip": [
                 {
                     "fieldname": "custom_logistics_section",
@@ -222,16 +342,16 @@ def after_migrate():
                     "options": "\nDomestic\nOutbound",
                     "insert_after": "custom_logistics_section",
                     "in_standard_filter": 1,
-                    "description": "Set automatically when created from a Container Load Plan or Delivery Note.",
+                    "description": "Set automatically from the source delivery flow.",
                 },
                 {
-                    "fieldname": "custom_container_load_plan",
-                    "label": "Container Load Plan",
+                    "fieldname": "custom_forecast_plan",
+                    "label": "Forecast Plan",
                     "fieldtype": "Link",
-                    "options": "Container Load Plan",
+                    "options": "Forecast Load Plan",
                     "insert_after": "custom_flow_scope",
                     "read_only": 1,
-                    "description": "The plan this trip was created from (if any).",
+                    "in_standard_filter": 1,
                 },
             ],
         },
@@ -239,6 +359,7 @@ def after_migrate():
     )
 
     frappe.clear_cache(doctype="Item")
+    frappe.clear_cache(doctype="Buying Settings")
     frappe.clear_cache(doctype="Purchase Order")
     frappe.clear_cache(doctype="Sales Order")
     frappe.clear_cache(doctype="Delivery Note")
@@ -261,3 +382,9 @@ def retire_logistics_workspace():
 
     if frappe.db.exists("Workspace Sidebar", workspace_name):
         frappe.delete_doc("Workspace Sidebar", workspace_name, ignore_permissions=True)
+
+
+def remove_retired_custom_fields():
+    for custom_field_name in RETIRED_CUSTOM_FIELDS:
+        if frappe.db.exists("Custom Field", custom_field_name):
+            frappe.delete_doc("Custom Field", custom_field_name, ignore_permissions=True)

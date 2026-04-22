@@ -81,6 +81,7 @@ function renderPlanningPage(wrapper) {
         activeRightTab: "docs",
         itemSearchResults: [],
         reorderSuggestions: [],
+        packagingProfileCache: {},
         searchInputValue: "",
         searchGroupFilter: "All",
         isLocked: false, // true once status >= Ready
@@ -129,9 +130,15 @@ function loadPlanData(state) {
                 purchase_uom: item.purchase_uom || "",
                 uom_conversion_factor: item.uom_conversion_factor || 1,
                 lineItems: (item.line_items || []).map((li) => ({
+                    source_row_name: li.source_row_name || "",
                     code: li.item_code,
                     desc: li.item_name || li.item_code,
                     qty: li.qty,
+                    package_count: li.package_count || 0,
+                    packaging_profile: li.packaging_profile || "",
+                    packaging_type: li.packaging_type || "",
+                    packaging_source: li.packaging_source || "item_fallback",
+                    resolved_uom: li.resolved_uom || "",
                     vol: li.line_volume_m3 || 0,
                     wt: li.line_weight_kg || 0,
                     unit_vol: li.unit_volume_m3 || 0,
@@ -495,33 +502,6 @@ function planningShellHtml(state) {
                 </aside>
             </div>
 
-            <div class="modal-overlay" id="modalOverlay">
-                <div class="modal">
-                    <div class="modal-title">
-                        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-                        Move to Ready - Create CLP
-                    </div>
-                    <div class="modal-desc">This will generate a Container Load Plan from all committed and ready Delivery Notes / Purchase Orders in this forecast. Draft and inquiry-only items will be excluded.</div>
-                    <div class="modal-summary">
-                        <div class="modal-row"><span>Container</span><strong id="mContainer"></strong></div>
-                        <div class="modal-row"><span>Eligible documents</span><strong id="mDocs"></strong></div>
-                        <div class="modal-row"><span>Total volume</span><strong id="mVol"></strong></div>
-                        <div class="modal-row"><span>Total weight</span><strong id="mWeight"></strong></div>
-                        <hr class="modal-divider">
-                        <div class="modal-row"><span>Planned departure</span><strong id="mDeparture"></strong></div>
-                        <div class="modal-row"><span>Deadline</span><strong id="mDeadline"></strong></div>
-                    </div>
-                    <div class="modal-actions">
-                        <button class="btn-cancel" data-action="close-modal">Keep Planning</button>
-                        <button class="btn-confirm" data-action="confirm-ready">Create Container Load Plan →</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="success-toast" id="toast">
-                <div class="toast-icon">✓</div>
-                <span id="toastMsg">CLP created successfully</span>
-            </div>
         </div>
     `;
 }
@@ -547,6 +527,7 @@ function bindPlanningEvents(state) {
         if (action === "add-search-item") addFreeItem(state, actionNode.dataset.itemcode);
         if (action === "add-suggestion") addFreeItem(state, actionNode.dataset.itemcode, parseFloat(actionNode.dataset.qty));
         if (action === "add-all-suggestions") addAllSuggestions(state);
+        if (action === "change-line-packaging") openPackagingOverrideDialog(state, actionNode.dataset.row, actionNode.dataset.sourcerow, actionNode.dataset.itemcode);
     };
 
     root.onchange = (event) => {
@@ -800,6 +781,11 @@ function renderPlanItemHtml(state, item) {
     const rows = (item.lineItems || []).map((line, idx) => {
         const uomLabel = item.stock_uom || "";
         const isFreeItem = item.is_planned;
+        const packagingMeta = line.packaging_profile
+            ? `${escapeHtml(line.packaging_profile)}${line.packaging_type ? ` · ${escapeHtml(line.packaging_type)}` : ""}`
+            : (line.resolved_uom ? `${escapeHtml(line.resolved_uom)}${line.packaging_type ? ` · ${escapeHtml(line.packaging_type)}` : ""}` : "—");
+        const packagingSource = formatPackagingSource(line.packaging_source);
+        const packagesText = line.package_count ? `${line.package_count} pkg` : "—";
 
         return `
             <tr>
@@ -809,6 +795,14 @@ function renderPlanItemHtml(state, item) {
                     ${isFreeItem
                         ? `<input type="number" class="qty-edit" data-row="${item.row_name}" data-idx="${idx}" value="${line.qty}" min="0" step="1" style="width:60px;padding:2px 4px;border:0.5px solid var(--border);border-radius:4px;font-family:var(--mono);font-size:11px;text-align:right;"> ${escapeHtml(uomLabel)}`
                         : `<span class="muted" style="text-align:right">${line.qty}</span>`
+                    }
+                </td>
+                <td>
+                    <div class="pack-meta-main">${packagingMeta}</div>
+                    <div class="pack-meta-sub">${escapeHtml(packagingSource)} · ${escapeHtml(packagesText)}</div>
+                    ${!isFreeItem
+                        ? `<button class="line-packaging-btn" data-action="change-line-packaging" data-row="${escapeHtml(item.row_name)}" data-sourcerow="${escapeHtml(line.source_row_name || "")}" data-itemcode="${escapeHtml(line.code)}">Packaging</button>`
+                        : ""
                     }
                 </td>
                 <td class="mono" style="text-align:right">${(line.vol || 0).toFixed(3)}</td>
@@ -842,12 +836,22 @@ function renderPlanItemHtml(state, item) {
                 ${item.is_planned ? `<span class="detail-free-badge">Free Item</span>` : ""}
             </div>
             <table class="detail-table">
-                <thead><tr><th>Code</th><th>Description</th><th style="text-align:right">Qty${item.is_planned ? " (edit)" : ""}</th><th style="text-align:right">Vol m3</th><th style="text-align:right">Wt kg</th></tr></thead>
+                <thead><tr><th>Code</th><th>Description</th><th style="text-align:right">Qty${item.is_planned ? " (edit)" : ""}</th><th>Packaging</th><th style="text-align:right">Vol m3</th><th style="text-align:right">Wt kg</th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
             ${uomInfo}
         </div>
     `;
+}
+
+function formatPackagingSource(source) {
+    const labels = {
+        selected: "PO selected",
+        default: "Item default",
+        item_fallback: "Item fallback",
+        planner_override: "Planner override",
+    };
+    return labels[source] || source || "Item fallback";
 }
 
 function renderSourceQueue(state) {
@@ -987,9 +991,15 @@ function applyPlanDetail(state, plan) {
             purchase_uom: item.purchase_uom || "",
             uom_conversion_factor: item.uom_conversion_factor || 1,
             lineItems: (item.line_items || []).map((li) => ({
+                source_row_name: li.source_row_name || "",
                 code: li.item_code,
                 desc: li.item_name || li.item_code,
                 qty: li.qty,
+                package_count: li.package_count || 0,
+                packaging_profile: li.packaging_profile || "",
+                packaging_type: li.packaging_type || "",
+                packaging_source: li.packaging_source || "item_fallback",
+                resolved_uom: li.resolved_uom || "",
                 vol: li.line_volume_m3 || 0,
                 wt: li.line_weight_kg || 0,
                 unit_vol: li.unit_volume_m3 || 0,
@@ -1522,27 +1532,100 @@ function updateItemQty(state, rowName, newQty) {
     });
 }
 
-function confirmReady(state) {
-    closeModal(state);
+
+async function getPackagingProfilesForItem(state, itemCode) {
+    if (!itemCode) {
+        return [];
+    }
+    if (state.packagingProfileCache[itemCode]) {
+        return state.packagingProfileCache[itemCode];
+    }
+
+    const response = await frappe.call({
+        method: "orderlift.orderlift_logistics.utils.packaging_resolver.get_item_packaging_profiles",
+        args: { item_code: itemCode },
+        async: true,
+    });
+    state.packagingProfileCache[itemCode] = response.message || [];
+    return state.packagingProfileCache[itemCode];
+}
+
+
+async function openPackagingOverrideDialog(state, rowName, sourceRowName, itemCode) {
+    if (state.isLocked) {
+        frappe.show_alert({ message: __("Container is locked — cannot override packaging"), indicator: "red" });
+        return;
+    }
+    if (!rowName || !sourceRowName || !itemCode) {
+        return;
+    }
+
+    const planRow = state.planItems.find((item) => item.row_name === rowName);
+    const line = (planRow?.lineItems || []).find((entry) => entry.source_row_name === sourceRowName);
+    const profiles = await getPackagingProfilesForItem(state, itemCode);
+
+    if (!profiles.length) {
+        frappe.show_alert({ message: __("No active packaging profiles found for {0}", [itemCode]), indicator: "orange" });
+        return;
+    }
+
+    const options = [
+        { label: __("Use inherited/default packaging"), value: "" },
+        ...profiles.map((profile) => ({
+            label: `${profile.name}${profile.packaging_type ? ` · ${profile.packaging_type}` : ""}${profile.uom ? ` · ${profile.uom}` : ""}`,
+            value: profile.name,
+        })),
+    ];
+
+    const currentOverride = line?.packaging_source === "planner_override" ? (line.packaging_profile || "") : "";
+
+    const dialog = new frappe.ui.Dialog({
+        title: __("Packaging Override") + ` · ${itemCode}`,
+        fields: [
+            {
+                fieldname: "packaging_profile",
+                fieldtype: "Select",
+                label: __("Packaging Profile"),
+                options: options.map((option) => option.value).join("\n"),
+                default: currentOverride,
+                description: __("Blank keeps the inherited Purchase Order or item-default packaging."),
+            },
+            {
+                fieldname: "helper_html",
+                fieldtype: "HTML",
+                options: `<div class="packaging-override-help">${options.map((option) => `<div><strong>${escapeHtml(option.value || "—")}</strong> ${option.label && option.value ? `· ${escapeHtml(option.label.replace(`${option.value}`, "").replace(/^\s*·\s*/, ""))}` : ""}</div>`).join("")}</div>`,
+            },
+        ],
+        primary_action_label: __("Apply"),
+        primary_action(values) {
+            dialog.hide();
+            applyPackagingOverride(state, rowName, sourceRowName, values.packaging_profile || "");
+        },
+    });
+
+    dialog.show();
+}
+
+
+function applyPackagingOverride(state, rowName, sourceRowName, packagingProfile) {
     frappe.call({
-        method: "orderlift.orderlift_logistics.services.forecast_planning.convert_to_clp",
-        args: { plan_name: state.planName },
+        method: "orderlift.orderlift_logistics.services.forecast_planning.update_source_line_packaging_override",
+        args: {
+            plan_name: state.planName,
+            row_name: rowName,
+            source_row_name: sourceRowName,
+            packaging_profile: packagingProfile || undefined,
+        },
         async: true,
         freeze: true,
-        freeze_message: __("Creating Container Load Plan..."),
+        freeze_message: __("Updating packaging..."),
         callback: (r) => {
-            const result = r.message;
-            state.ready = true;
-            renderKpis(state);
-
-            const toast = state.root.querySelector("#toast");
-            const toastMsg = state.root.querySelector("#toastMsg");
-            if (toastMsg) toastMsg.textContent = `${result.clp_name} created successfully — status moved to Converted`;
-            toast.classList.add("show");
-            window.setTimeout(() => toast.classList.remove("show"), 4500);
+            applyPlanDetail(state, r.message);
+            refreshPlanning(state);
+            frappe.show_alert({ message: __("Packaging override updated"), indicator: "green" });
         },
         error: () => {
-            frappe.show_alert({ message: __("Conversion failed — check eligible documents"), indicator: "red" });
+            frappe.show_alert({ message: __("Could not update packaging override"), indicator: "red" });
         },
     });
 }
@@ -1736,6 +1819,10 @@ function injectPlanningStyles() {
         .planning-native-root .detail-table tr:last-child td{border-bottom:none;}
         .planning-native-root .detail-table .mono{font-family:var(--mono);font-size:11px;}
         .planning-native-root .detail-table .muted{color:var(--muted);}
+        .planning-native-root .pack-meta-main{font-size:11px;font-weight:600;color:var(--text);}
+        .planning-native-root .pack-meta-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+        .planning-native-root .line-packaging-btn{margin-top:5px;padding:3px 7px;border-radius:999px;border:0.5px solid var(--border);background:var(--bg);font-size:10px;font-weight:500;color:var(--muted);transition:all .13s;}
+        .planning-native-root .line-packaging-btn:hover{background:var(--accent);border-color:var(--accent);color:white;}
         .planning-native-root .drop-zone{border:1.5px dashed var(--border-md);border-radius:var(--r-lg);padding:22px;text-align:center;color:var(--hint);font-size:12.5px;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:7px;}
         .planning-native-root .drop-zone svg{width:24px;height:24px;stroke:var(--hint);fill:none;stroke-width:1.5;}
         .planning-native-root .drop-zone.drag-over{border-color:var(--accent);background:var(--accent-lt);color:var(--accent);}

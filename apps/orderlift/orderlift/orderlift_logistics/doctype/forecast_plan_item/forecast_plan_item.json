@@ -20,6 +20,7 @@
     "stock_uom",
     "purchase_uom",
     "uom_conversion_factor",
+    "packaging_overrides_json",
     "total_weight_kg",
     "total_volume_m3",
     "unit_weight_kg",
@@ -131,6 +132,13 @@
       "label": "UOM Conversion Factor",
       "default": "1",
       "description": "Units per purchase UOM (e.g. 100 pcs per Box)",
+      "read_only": 1
+    },
+    {
+      "fieldname": "packaging_overrides_json",
+      "fieldtype": "Long Text",
+      "label": "Packaging Overrides JSON",
+      "hidden": 1,
       "read_only": 1
     },
     {

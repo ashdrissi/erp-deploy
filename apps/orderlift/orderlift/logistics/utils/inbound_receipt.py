@@ -1,9 +1,9 @@
 """
 Inbound Receipt
 ---------------
-Manual draft Purchase Receipt creation from an inbound Container Load Plan.
+Manual draft Purchase Receipt creation from an inbound Forecast Load Plan.
 
-Triggered via a button on the CLP form. Creates one draft PR per PO
+Triggered from a confirmed inbound forecast plan. Creates one draft PR per PO
 in the plan. Does NOT auto-submit — user must review and submit each PR.
 
 Called via whitelisted method:
@@ -16,37 +16,37 @@ from frappe.utils import flt
 
 @frappe.whitelist()
 def create_draft_purchase_receipts(load_plan_name):
-    """Create draft Purchase Receipts from an inbound CLP.
+    """Create draft Purchase Receipts from an inbound forecast plan.
 
-    One PR per unique Purchase Order in the plan. Skips POs that already
-    have a non-cancelled PR. Does NOT auto-submit.
+    One PR per unique selected Purchase Order in the plan. Skips POs that
+    already have a non-cancelled PR. Does NOT auto-submit.
 
     Args:
-        load_plan_name: Name of the Container Load Plan.
+        load_plan_name: Name of the Forecast Load Plan.
 
     Returns:
         dict with 'created' list of PR names and 'skipped' count.
     """
-    plan = frappe.get_doc("Container Load Plan", load_plan_name)
+    plan = frappe.get_doc("Forecast Load Plan", load_plan_name)
 
     # Safety checks
     if plan.flow_scope != "Inbound":
         frappe.throw("Purchase Receipt creation is only for inbound plans.")
-    if plan.source_type != "Purchase Order":
-        frappe.throw("This plan does not use Purchase Orders as source.")
     if plan.status not in ("Loading", "Delivered", "In Transit"):
         frappe.throw(
-            f"Container must be Loading, In Transit, or Delivered to create receipts. "
+            f"Forecast plan must be Loading, In Transit, or Delivered to create receipts. "
             f"Current status: {plan.status}"
         )
 
     created = []
     skipped = 0
 
-    # Collect unique POs from the plan
+    # Collect unique Purchase Orders from the selected plan rows.
     processed_pos = set()
-    for row in plan.shipments or []:
-        po_name = row.get("purchase_order")
+    for row in plan.items or []:
+        if not row.selected or row.source_doctype != "Purchase Order":
+            continue
+        po_name = row.source_name
         if not po_name or po_name in processed_pos:
             continue
         processed_pos.add(po_name)
