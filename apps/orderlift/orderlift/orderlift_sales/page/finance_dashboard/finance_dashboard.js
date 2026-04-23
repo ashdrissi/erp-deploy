@@ -46,12 +46,12 @@ function renderSkeleton(page) {
             </div>
 
             <div class="fdb-shortcuts-grid">
-                ${shortcutUrl("plus", __("New Sales Invoice"), "/app/sales-invoice/new-sales-invoice-1?sidebar=Main+Dashboard", "primary")}
-                ${shortcutUrl("payment", __("Payments"), "/app/payment-entry?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("invoice", __("Purchase Invoices"), "/app/purchase-invoice?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("ledger", __("Journal Entries"), "/app/journal-entry?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("ledger", __("General Ledger"), "/app/query-report/General%20Ledger?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("receivable", __("Sales Invoices"), "/app/sales-invoice?sidebar=Main+Dashboard", "default")}
+                ${shortcutUrl("plus", __("New Sales Invoice"), "/app/sales-invoice/new-sales-invoice-1", "primary")}
+                ${shortcutUrl("payment", __("Payments"), "/app/payment-entry", "default")}
+                ${shortcutUrl("invoice", __("Purchase Invoices"), "/app/purchase-invoice", "default")}
+                ${shortcutUrl("ledger", __("Journal Entries"), "/app/journal-entry", "default")}
+                ${shortcutUrl("ledger", __("General Ledger"), "/app/query-report/General%20Ledger", "default")}
+                ${shortcutUrl("receivable", __("Sales Invoices"), "/app/sales-invoice", "default")}
             </div>
 
             <div class="fdb-kpi-grid" id="fdb-kpi-grid">

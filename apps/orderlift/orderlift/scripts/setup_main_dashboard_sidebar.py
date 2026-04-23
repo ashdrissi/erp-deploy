@@ -13,6 +13,7 @@ SIDEBAR_GROUPS = [
         "manage_section": False,
         "links": [
             {"type": "Link", "label": "CRM Dashboard", "link_type": "Page", "link_to": "crm-dashboard", "child": 1, "icon": "dot"},
+            {"type": "Link", "label": "CRM-Orderlift", "url": "/desk/dashboard-view/CRM-Orderlift", "child": 1, "icon": "dot"},
         ],
     },
     {

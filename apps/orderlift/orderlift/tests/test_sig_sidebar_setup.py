@@ -32,6 +32,7 @@ class TestSigSidebarSetup(unittest.TestCase):
 
         self.assertLess(labels.index("CRM & Customers"), labels.index("CRM Dashboard"))
         self.assertEqual(labels[labels.index("CRM & Customers") + 1], "CRM Dashboard")
+        self.assertEqual(labels[labels.index("CRM & Customers") + 2], "CRM-Orderlift")
         self.assertEqual(labels[labels.index("Sales") + 1], "Pricing Dashboard")
         self.assertEqual(labels[labels.index("SAV") + 1], "SAV Dashboard")
         self.assertEqual(labels[labels.index("SAV") + 2], "SAV Tickets")
@@ -117,6 +118,16 @@ class TestSigSidebarSetup(unittest.TestCase):
         self.assertIn("main_dashboard_shortcuts_finance_header", ids)
         self.assertIn("main_dashboard_shortcuts_hr_header", ids)
         self.assertEqual(shortcut_names, ["Finance Dashboard", "Sales Invoices", "HR Dashboard"])
+
+    def test_build_workspace_shortcuts_preserves_url_links(self):
+        rows = [
+            {"label": "CRM & Customers", "type": "Section Break", "child": 0},
+            {"label": "CRM-Orderlift", "type": "Link", "url": "/desk/dashboard-view/CRM-Orderlift", "child": 1},
+        ]
+
+        shortcuts = setup_main_dashboard_sidebar._build_workspace_shortcuts(rows)
+
+        self.assertEqual(shortcuts, [{"label": "CRM-Orderlift", "type": "URL", "url": "/desk/dashboard-view/CRM-Orderlift"}])
 
 
 if __name__ == "__main__":

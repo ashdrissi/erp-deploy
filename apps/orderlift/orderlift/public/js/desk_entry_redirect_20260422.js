@@ -5,7 +5,7 @@
     var pathname = (window.location.pathname || "").replace(/\/+$/, "");
     if (pathname !== "/desk" && pathname !== "/app") return;
 
-    var target = "/desk/home-page?sidebar=Main+Dashboard";
+    var target = "/desk/home-page";
     var current = window.location.pathname + window.location.search + window.location.hash;
     if (current !== target) {
         window.location.replace(target);

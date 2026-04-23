@@ -22,10 +22,10 @@ app_include_css = [
     "/assets/orderlift/css/pricing_sheet_20260414_82.css?v=20260501d",
 ]
 app_include_js = [
-    "/assets/orderlift/js/orderlift_bundle.js",
+    "/assets/orderlift/js/orderlift_bundle_20260422.js",
     "/assets/orderlift/js/sidebar_logo_fix_20260415b.js",
     "/assets/orderlift/js/refresh_stability_fix_20260415.js",
-    "/assets/orderlift/js/desk_entry_redirect_20260415.js",
+    "/assets/orderlift/js/desk_entry_redirect_20260422.js",
 ]
 
 # ---------------------------------------------------------

@@ -15,7 +15,7 @@ from werkzeug.wrappers import Response
 
 # The role that triggers all restrictions
 RESTRICTED_ROLE = "Orderlift Admin"
-TARGET_URL = "/desk/home-page?sidebar=Main+Dashboard"
+TARGET_URL = "/desk/home-page"
 
 # Roles that bypass all restrictions (superadmins)
 BYPASS_ROLES = frozenset(["System Manager", "Administrator", "Developer"])

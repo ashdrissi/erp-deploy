@@ -42,12 +42,12 @@ function renderSkeleton(page) {
             </div>
 
             <div class="hdb-shortcuts-grid">
-                ${shortcutUrl("plus", __("New Employee"), "/desk/employee/new-employee-1?sidebar=Main+Dashboard", "primary")}
-                ${shortcutUrl("employee", __("Employees"), "/desk/employee?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("leave", __("Leave Applications"), "/desk/leave-application?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("attendance", __("Attendance"), "/desk/attendance?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("payroll", __("Payroll"), "/desk/payroll-entry?sidebar=Main+Dashboard", "default")}
-                ${shortcutUrl("expense", __("Expense Claims"), "/desk/expense-claim?sidebar=Main+Dashboard", "default")}
+                ${shortcutUrl("plus", __("New Employee"), "/desk/employee/new-employee-1", "primary")}
+                ${shortcutUrl("employee", __("Employees"), "/desk/employee", "default")}
+                ${shortcutUrl("leave", __("Leave Applications"), "/desk/leave-application", "default")}
+                ${shortcutUrl("attendance", __("Attendance"), "/desk/attendance", "default")}
+                ${shortcutUrl("payroll", __("Payroll"), "/desk/payroll-entry", "default")}
+                ${shortcutUrl("expense", __("Expense Claims"), "/desk/expense-claim", "default")}
             </div>
 
             <div class="hdb-kpi-grid" id="hdb-kpi-grid">${Array.from({ length: 6 }, () => `<div class="hdb-kpi hdb-kpi--shimmer"></div>`).join("")}</div>

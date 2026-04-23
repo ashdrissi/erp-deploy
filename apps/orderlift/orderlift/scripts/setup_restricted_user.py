@@ -17,7 +17,7 @@ def run():
     user.module_profile = None
     user.set("block_modules", [])
     user.default_workspace = "Main Dashboard"
-    user.redirect_url = "/desk/home-page?sidebar=Main+Dashboard"
+    user.redirect_url = "/desk/home-page"
     user.save(ignore_permissions=True)
     frappe.db.sql(
         """

@@ -1,7 +1,7 @@
 frappe.pages["crm-dashboard"].on_page_load = function (wrapper) {
     const page = frappe.ui.make_app_page({
         parent: wrapper,
-        title: __("CRM"),
+        title: __("CRM Dashboard"),
         single_column: true,
     });
 
@@ -9,7 +9,28 @@ frappe.pages["crm-dashboard"].on_page_load = function (wrapper) {
     injectDashboardStyles();
     renderSkeleton(page);
     loadDashboardData(page);
+    applyCrmDashboardHeader(page);
 };
+
+frappe.pages["crm-dashboard"].on_page_show = function (wrapper) {
+    const page = wrapper.page;
+    if (!page) return;
+    applyCrmDashboardHeader(page);
+};
+
+function applyCrmDashboardHeader(page) {
+    if (page && page.set_title) {
+        page.set_title(__("CRM Dashboard"));
+    }
+
+    setTimeout(() => {
+        if (!frappe.breadcrumbs) return;
+        frappe.breadcrumbs.clear();
+        frappe.breadcrumbs.append_breadcrumb_element("/desk/dashboard-view/CRM", __("CRM"), "title-text");
+        frappe.breadcrumbs.append_breadcrumb_element("", __("CRM Dashboard"), "title-text");
+        frappe.breadcrumbs.toggle(true);
+    }, 0);
+}
 
 const ICONS = {
     lead: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6.5" r="3.5"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>`,

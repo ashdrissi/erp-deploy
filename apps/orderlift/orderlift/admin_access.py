@@ -4,7 +4,7 @@ import frappe
 CLIENT_SHELL_ROLE = "Orderlift Client User"
 ROLE_NAME = "Orderlift Business Admin"
 PROFILE_NAME = "Orderlift Business Admin"
-LANDING_URL = "/desk/home-page?sidebar=Main+Dashboard"
+LANDING_URL = "/desk/home-page"
 ROLES_TO_REMOVE = [
     "Accounts User",
     "Customer",
