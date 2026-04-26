@@ -1,0 +1,33 @@
+{
+  "actions": [],
+  "allow_import": 1,
+  "autoname": "field:segment_name",
+  "creation": "2026-04-25 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": ["segment_name", "business_type", "sequence", "is_active", "description"],
+  "fields": [
+    {"fieldname": "segment_name", "fieldtype": "Data", "label": "Segment Name", "reqd": 1, "unique": 1, "in_list_view": 1, "search_index": 1},
+    {"fieldname": "business_type", "fieldtype": "Link", "label": "Business Type", "options": "CRM Business Type", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
+    {"fieldname": "sequence", "fieldtype": "Int", "label": "Sequence", "default": "100", "in_list_view": 1},
+    {"fieldname": "is_active", "fieldtype": "Check", "label": "Is Active", "default": "1", "in_list_view": 1},
+    {"fieldname": "description", "fieldtype": "Small Text", "label": "Description"}
+  ],
+  "links": [],
+  "modified": "2026-04-25 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift CRM",
+  "name": "CRM Segment",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1},
+    {"role": "Sales Manager", "read": 1, "write": 1, "create": 1, "report": 1},
+    {"role": "Orderlift Commercial", "read": 1, "report": 1}
+  ],
+  "sort_field": "sequence",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "segment_name"
+}

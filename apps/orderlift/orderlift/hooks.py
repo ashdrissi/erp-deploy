@@ -23,6 +23,7 @@ app_include_css = [
 ]
 app_include_js = [
     "/assets/orderlift/js/orderlift_bundle_20260422.js",
+    "/assets/orderlift/js/crm_classification.js?v=20260425d",
     "/assets/orderlift/js/sidebar_logo_fix_20260415b.js",
     "/assets/orderlift/js/refresh_stability_fix_20260415.js",
     "/assets/orderlift/js/desk_entry_redirect_20260422.js",
@@ -83,14 +84,29 @@ doc_events = {
         "on_cancel": "orderlift.sales.utils.commission_calculator.cancel_commissions",
     },
     "Sales Order": {
+        "validate": [
+            "orderlift.orderlift_crm.api.campaign.inherit_campaign_from_links",
+            "orderlift.orderlift_crm.status_workflow.ensure_primary_status",
+        ],
         # Notify stock manager when a sales order is confirmed
         # Also warn if linked installation project has a Blocked QC (SIG)
         "on_submit": [
+            "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
             "orderlift.sales.utils.commission_calculator.create_sales_order_commissions",
             "orderlift.sales.utils.stock_notifier.notify_stock_manager",
             "orderlift.orderlift_sig.utils.project_status_guard.on_sales_order_submit",
         ],
+        "on_update": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
         "on_cancel": "orderlift.sales.utils.commission_calculator.cancel_sales_order_commissions",
+    },
+    "Opportunity": {
+        "before_save": "orderlift.orderlift_crm.status_workflow.ensure_primary_status",
+        "on_update": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
+    },
+    "Quotation": {
+        "validate": "orderlift.orderlift_crm.api.campaign.inherit_campaign_from_links",
+        "on_update": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
+        "on_submit": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
     },
     "Item": {
         # Archive cost price into Item Cost History on save when cost changes
@@ -123,6 +139,7 @@ doc_events = {
     "Project": {
         # Recalculate QC status + enforce completion guard (SIG module)
         "before_save": [
+            "orderlift.orderlift_crm.status_workflow.ensure_primary_status",
             "orderlift.orderlift_sig.utils.project_qc.on_project_save",
             "orderlift.orderlift_sig.utils.project_status_guard.before_project_status_change",
         ],
@@ -140,7 +157,7 @@ doctype_js = {
     "Purchase Receipt": "public/js/purchase_receipt_logistics.js",
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
-    "Sales Order": "public/js/sales_order_logistics.js",
+    "Sales Order": "public/js/sales_order_logistics_20260425d.js",
     # Loaded via doctype_js so setup/refresh fire before the form opens.
     # Use a versioned filename here instead of a query string because Frappe
     # loads doctype_js assets more reliably as plain paths.
@@ -185,6 +202,7 @@ after_migrate = [
     "orderlift.logistics.setup.after_migrate",
     "orderlift.orderlift_logistics.setup.after_migrate",
     "orderlift.orderlift_sig.setup.after_migrate",
+    "orderlift.orderlift_crm.setup.after_migrate",
     "orderlift.orderlift_sav.setup.after_migrate",
     "orderlift.scripts.setup_main_dashboard_sidebar.run",
 ]

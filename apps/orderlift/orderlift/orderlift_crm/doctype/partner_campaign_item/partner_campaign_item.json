@@ -1,0 +1,33 @@
+{
+  "actions": [],
+  "creation": "2026-04-25 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["item_code", "item_name", "container", "supplier_payment_mode", "sold_qty_period", "available_qty_snapshot", "price_snapshot", "currency", "display_price", "display_available_qty", "source_item_price"],
+  "fields": [
+    {"fieldname": "item_code", "fieldtype": "Link", "label": "Item", "options": "Item", "reqd": 1, "in_list_view": 1},
+    {"fieldname": "item_name", "fieldtype": "Data", "label": "Item Name", "fetch_from": "item_code.item_name", "fetch_if_empty": 1, "in_list_view": 1},
+    {"fieldname": "container", "fieldtype": "Link", "label": "Container", "options": "Forecast Load Plan", "in_list_view": 1},
+    {"fieldname": "supplier_payment_mode", "fieldtype": "Select", "label": "Supplier Payment Mode", "options": "\nPaid Before Delivery\nSupplier Payment Delay", "in_list_view": 1},
+    {"fieldname": "sold_qty_period", "fieldtype": "Float", "label": "Sold Qty Period", "read_only": 1, "in_list_view": 1},
+    {"fieldname": "available_qty_snapshot", "fieldtype": "Float", "label": "Available Qty", "read_only": 1, "in_list_view": 1},
+    {"fieldname": "price_snapshot", "fieldtype": "Currency", "label": "Price", "options": "currency", "read_only": 1},
+    {"fieldname": "currency", "fieldtype": "Link", "label": "Currency", "options": "Currency"},
+    {"fieldname": "display_price", "fieldtype": "Check", "label": "Display Price", "default": "1", "in_list_view": 1},
+    {"fieldname": "display_available_qty", "fieldtype": "Check", "label": "Display Available Qty", "default": "1", "in_list_view": 1},
+    {"fieldname": "source_item_price", "fieldtype": "Link", "label": "Source Item Price", "options": "Item Price"}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-04-25 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift CRM",
+  "name": "Partner Campaign Item",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

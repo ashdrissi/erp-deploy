@@ -77,6 +77,12 @@ function renderSkeleton(page) {
                 ${shortcut("contact", __("Contacts"), "/app/contact", "default")}
                 ${shortcut("quote", __("Quotations"), "/app/quotation", "default")}
                 ${shortcut("segment", __("Segmentation"), "/app/customer-segmentation-engine", "default")}
+                ${shortcut("communication", __("Campaign Manager"), "/app/campaign-manager", "default")}
+                ${shortcut("plus", __("Campaign Builder"), "/app/campaign-editor", "default")}
+                ${shortcut("calendar", __("Opportunity Pipeline"), "/app/opportunity-pipeline", "default")}
+                ${shortcut("calendar", __("Project Pipeline"), "/app/project-pipeline", "default")}
+                ${shortcut("quote", __("Sales Order Pipeline"), "/app/sales-order-pipeline", "default")}
+                ${shortcut("segment", __("Status Control"), "/app/status-control", "default")}
             </div>
 
             <div class="cdb-kpi-grid" id="cdb-kpi-grid">
@@ -137,6 +143,11 @@ function renderSkeleton(page) {
     page.main.find(".cdb-shortcut").on("click", function () {
         const url = $(this).data("url");
         if (!url) return;
+        if (url === "/app/campaign-editor") {
+            frappe.route_options = null;
+            frappe.set_route("campaign-editor");
+            return;
+        }
         frappe.set_route(url.replace(/^\/app\//, "").split("/"));
     });
 }

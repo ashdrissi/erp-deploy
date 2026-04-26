@@ -1,0 +1,26 @@
+{
+    "content": null,
+    "creation": "2026-04-25 00:00:00.000000",
+    "docstatus": 0,
+    "doctype": "Page",
+    "idx": 0,
+    "modified": "2026-04-25 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift CRM",
+    "name": "installation-pipeline",
+    "owner": "Administrator",
+    "page_name": "installation-pipeline",
+    "roles": [
+        {"role": "Orderlift Admin"},
+        {"role": "System Manager"},
+        {"role": "Sales Manager"},
+        {"role": "Orderlift Commercial"},
+        {"role": "Projects Manager"},
+        {"role": "Projects User"}
+    ],
+    "script": null,
+    "standard": "Yes",
+    "style": null,
+    "system_page": 0,
+    "title": "Installation Pipeline"
+}
