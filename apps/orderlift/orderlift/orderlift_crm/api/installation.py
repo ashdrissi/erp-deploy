@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from orderlift.menu_access import resolve_current_company
+
 
 @frappe.whitelist()
 def get_pipeline_data(search: str | None = None, owner: str | None = None, source: str | None = None) -> dict:
@@ -74,6 +76,13 @@ def _installation_stages() -> list[dict]:
 
 def _opportunity_cards(search=None, owner=None, source=None, stage_names=None) -> list[dict]:
     filters = {"status": ["not in", ["Lost", "Closed"]]}
+    company = ""
+    try:
+        company = resolve_current_company() or ""
+    except Exception:
+        company = ""
+    if company and _has_field("Opportunity", "company"):
+        filters["company"] = company
     if owner and owner != "All":
         filters["opportunity_owner"] = owner
     if source and source != "All" and _has_field("Opportunity", "custom_source_channel"):
@@ -181,18 +190,6 @@ def _resolve_stage(row, docs: list[dict], stage_names: list[str] | None) -> str 
     stage = row.get("custom_installation_stage") or row.get("sales_stage")
     if stage_names and stage in stage_names:
         return stage
-
-    status = row.get("status") or ""
-    labels = {doc.get("label") for doc in docs}
-
-    if status == "Converted" and stage_names and "Won / Project" in stage_names:
-        return "Won / Project"
-    if "Sales Order" in labels and stage_names and "Won / Project" in stage_names:
-        return "Won / Project"
-    if "Quotation" in labels and stage_names and "Quotation Sent" in stage_names:
-        return "Quotation Sent"
-    if status == "Lost" and stage_names and "Lost" in stage_names:
-        return "Lost"
     if stage_names:
         return stage_names[0]
     return stage

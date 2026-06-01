@@ -36,13 +36,19 @@ def get_portal_user_context(require_policy: bool = True) -> frappe._dict:
         frappe.throw(_("No Customer is linked to this portal user."), frappe.PermissionError)
 
     customer_doc = frappe.get_doc("Customer", customer)
-    customer_group = (customer_doc.customer_group or "").strip()
-    if not customer_group:
-        frappe.throw(_("The linked customer has no Customer Group."), frappe.PermissionError)
+    customer_group = (customer_doc.customer_group or "").strip() or DEFAULT_CUSTOMER_GROUP
+    company = (customer_doc.get("custom_company") or "").strip()
+    crm_segments = _customer_crm_segments(customer)
+    primary_crm = _primary_crm_segment(crm_segments)
 
-    policy_name = _get_policy_name(customer_group)
+    policy_name = _get_policy_name(
+        customer_group,
+        business_type=primary_crm.get("business_type"),
+        crm_segment=primary_crm.get("crm_segment"),
+        company=company,
+    )
     if require_policy and not policy_name:
-        frappe.throw(_("No active portal policy exists for customer group {0}." ).format(customer_group), frappe.PermissionError)
+        frappe.throw(_("No active portal policy exists for this customer's CRM segment."), frappe.PermissionError)
 
     policy = frappe.get_doc("Portal Customer Group Policy", policy_name) if policy_name else None
 
@@ -53,6 +59,10 @@ def get_portal_user_context(require_policy: bool = True) -> frappe._dict:
         customer=customer,
         customer_name=customer_doc.customer_name,
         customer_group=customer_group,
+        company=company,
+        business_type=primary_crm.get("business_type") or "",
+        crm_segment=primary_crm.get("crm_segment") or "",
+        crm_segments=crm_segments,
         policy=policy,
         email=frappe.db.get_value("Contact", contact, "email_id") or frappe.db.get_value("User", user, "email") or user,
     )
@@ -69,7 +79,19 @@ def is_b2b_only_user(user: str | None = None) -> bool:
 
 
 def get_catalog_products_for_group(customer_group: str, featured_only: bool = False) -> list[frappe._dict]:
-    policy_name = _get_policy_name(customer_group)
+    return get_catalog_products_for_context(customer_group=customer_group, featured_only=featured_only)
+
+
+def get_catalog_products_for_context(
+    customer_group: str = DEFAULT_CUSTOMER_GROUP,
+    business_type: str | None = None,
+    crm_segment: str | None = None,
+    featured_only: bool = False,
+    company: str | None = None,
+) -> list[frappe._dict]:
+    policy_name = _get_policy_name(
+        customer_group, business_type=business_type, crm_segment=crm_segment, company=company
+    )
     if not policy_name:
         return []
 
@@ -84,6 +106,8 @@ def get_catalog_products_for_group(customer_group: str, featured_only: bool = Fa
             frappe._dict(
                 name=row.name,
                 customer_group=customer_group,
+                business_type=business_type or "",
+                crm_segment=crm_segment or "",
                 item_code=row.item_code,
                 product_bundle=row.product_bundle,
                 portal_title=row.portal_title,
@@ -97,21 +121,74 @@ def get_catalog_products_for_group(customer_group: str, featured_only: bool = Fa
     return rows
 
 
-def _get_policy_name(customer_group: str) -> str | None:
-    if customer_group:
-        exact = frappe.db.get_value(
-            "Portal Customer Group Policy",
-            {"customer_group": customer_group, "enabled": 1},
-            "name",
-        )
-        if exact:
-            return exact
+def _get_policy_name(
+    customer_group: str | None = None,
+    business_type: str | None = None,
+    crm_segment: str | None = None,
+    company: str | None = None,
+) -> str | None:
+    business_type = (business_type or "").strip()
+    crm_segment = (crm_segment or "").strip()
+    company = (company or "").strip()
+    has_company = bool(company) and _has_column("Portal Customer Group Policy", "custom_company")
 
-    return frappe.db.get_value(
-        "Portal Customer Group Policy",
-        {"customer_group": DEFAULT_CUSTOMER_GROUP, "enabled": 1},
-        "name",
+    if _has_column("Portal Customer Group Policy", "business_type"):
+        # Prefer a policy owned by the customer's company, then a company-agnostic one.
+        for scope_company in ([company] if has_company else []) + [None]:
+            for filters in _crm_policy_filters(business_type, crm_segment):
+                if scope_company:
+                    filters = {**filters, "custom_company": scope_company}
+                policy = frappe.db.get_value("Portal Customer Group Policy", filters, "name")
+                if policy:
+                    return policy
+
+    default_filters = {"customer_group": DEFAULT_CUSTOMER_GROUP, "enabled": 1}
+    if has_company:
+        scoped = frappe.db.get_value(
+            "Portal Customer Group Policy", {**default_filters, "custom_company": company}, "name"
+        )
+        if scoped:
+            return scoped
+    return frappe.db.get_value("Portal Customer Group Policy", default_filters, "name")
+
+
+def _crm_policy_filters(business_type: str, crm_segment: str) -> list[dict]:
+    filters = []
+    if business_type and crm_segment:
+        filters.append({"business_type": business_type, "crm_segment": crm_segment, "enabled": 1})
+    if business_type:
+        filters.append({"business_type": business_type, "crm_segment": ["in", ["", None]], "enabled": 1})
+    filters.append({"business_type": ["in", ["", None]], "crm_segment": ["in", ["", None]], "enabled": 1})
+    return filters
+
+
+def _customer_crm_segments(customer: str) -> list[dict]:
+    if not customer or not frappe.db.exists("DocType", "CRM Segment Assignment"):
+        return []
+    rows = frappe.get_all(
+        "CRM Segment Assignment",
+        filters={"parenttype": "Customer", "parent": customer},
+        fields=["business_type", "segment", "is_primary"],
+        order_by="is_primary desc, idx asc",
+        limit_page_length=0,
     )
+    return [
+        {
+            "business_type": row.get("business_type") or "",
+            "crm_segment": row.get("segment") or "",
+            "is_primary": int(row.get("is_primary") or 0),
+        }
+        for row in rows
+    ]
+
+
+def _primary_crm_segment(rows: list[dict]) -> dict:
+    return (rows or [{}])[0]
+
+
+def _has_column(doctype: str, fieldname: str) -> bool:
+    has_column = getattr(frappe.db, "has_column", None)
+    return bool(has_column and has_column(doctype, fieldname))
 
 
 def resolve_portal_price(item_code: str, price_list: str) -> frappe._dict:

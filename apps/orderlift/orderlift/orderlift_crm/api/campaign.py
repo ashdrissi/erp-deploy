@@ -1,31 +1,116 @@
 from __future__ import annotations
 
 import json
+import html
+import re
 from typing import Any
+from urllib.parse import quote, urlparse
 
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, nowdate, today
 
+try:
+    from frappe.utils import now
+except ImportError:  # Unit tests use a small frappe.utils stub.
+    now = nowdate
+
+try:
+    import requests
+except ImportError:  # pragma: no cover - Frappe images include requests.
+    requests = None
+
+from orderlift.company_scope import company_field_for
+from orderlift.menu_access import resolve_current_company
 from orderlift.orderlift_crm.status_workflow import get_default_status_name
 from orderlift.orderlift_crm.doctype.partner_campaign.partner_campaign import (
+    clean_date_value,
     get_default_target_status,
     resolve_party_snapshot,
     validate_target_status,
 )
+from orderlift.orderlift_crm.todo_priority import DEFAULT_TODO_PRIORITY
+
+
+def _scope_company() -> str:
+    """Active company to focus custom-page queries on (empty = no focus)."""
+    try:
+        return resolve_current_company() or ""
+    except Exception:
+        return ""
+
+
+def _apply_company_filter(filters: dict, doctype: str) -> dict:
+    """Focus a query on the active company when the doctype carries one."""
+    company = _scope_company()
+    if not company:
+        return filters
+    field = company_field_for(doctype)
+    if _has_field(doctype, field):
+        filters[field] = company
+    return filters
+
+
+def _campaign_company_in_scope(campaign: str) -> bool:
+    field = company_field_for("Partner Campaign")
+    if not _has_field("Partner Campaign", field):
+        return True
+    company = _scope_company()
+    if not company:
+        return True
+    campaign_company = frappe.db.get_value("Partner Campaign", campaign, field)
+    return not campaign_company or campaign_company == company
+
+
+CAMPAIGN_ACTION_TYPES = {"Email", "WhatsApp", "Call", "Visit", "Other"}
+WHATSAPP_MANUAL_MODE = "Manual Click-to-Chat"
+WHATSAPP_TWILIO_MODE = "Twilio"
+WHATSAPP_WEBHOOK_MODE = "Custom Webhook"
+WHATSAPP_LEGACY_API_MODE = "Automated API"
+WHATSAPP_AUTOMATED_MODES = {WHATSAPP_TWILIO_MODE, WHATSAPP_WEBHOOK_MODE, WHATSAPP_LEGACY_API_MODE}
+VISIT_TODO_MARKER = "[Orderlift Campaign Visit]"
+PLACEHOLDER_RE = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+ALLOWED_TEMPLATE_KEYS = {
+    "first_name",
+    "contact_name",
+    "company",
+    "party_name",
+    "campaign_name",
+    "campaign_code",
+    "business_type",
+    "crm_segment",
+    "city",
+    "visit_date",
+    "selected_articles",
+}
 
 
 @frappe.whitelist()
 def get_manager_data(campaign: str | None = None) -> dict:
-    selected_campaign = campaign or _latest_campaign_name()
+    selected_campaign = campaign if campaign and _campaign_is_visible(campaign) else _latest_campaign_name()
     return {
         "kpis": _global_campaign_kpis(),
         "campaigns": _campaign_rows(),
         "selected_campaign": selected_campaign,
+        "selected_campaign_doc": _campaign_doc_dict(selected_campaign) if selected_campaign else {},
         "targets": _campaign_targets(selected_campaign) if selected_campaign else [],
         "statuses": get_target_statuses(),
         "segments": get_partner_segments(),
     }
+
+
+@frappe.whitelist()
+def archive_campaign(campaign: str) -> dict:
+    if not campaign or not frappe.db.exists("Partner Campaign", campaign):
+        frappe.throw(_("Campaign was not found."))
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    if not doc.meta.get_field("archived"):
+        frappe.throw(_("Campaign archive field is not available. Run migration and try again."))
+    doc.archived = 1
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    return {"name": doc.name, "archived": 1}
 
 
 @frappe.whitelist()
@@ -40,7 +125,11 @@ def get_editor_data(campaign: str | None = None) -> dict:
         supplier_payment_mode=doc.get("supplier_payment_mode_filter"),
         limit=80,
     )
-    target_page = get_target_candidate_page(limit=80)
+    target_page = get_target_candidate_page(
+        business_type=doc.get("business_type_filter"),
+        segment=_campaign_crm_segment_filter(doc),
+        limit=80,
+    )
     return {
         "campaign": doc,
         "statuses": get_target_statuses(),
@@ -111,12 +200,15 @@ def get_target_candidate_page(
 @frappe.whitelist()
 def save_campaign(payload: str | dict) -> dict:
     data = _loads(payload)
+    _normalize_campaign_action_payload(data)
     name = data.get("name")
     doc = frappe.get_doc("Partner Campaign", name) if name else frappe.new_doc("Partner Campaign")
+    _ensure_campaign_action_field(doc, data.get("campaign_action_type"))
 
     for fieldname in [
         "campaign_name",
         "status",
+        "campaign_action_type",
         "campaign_owner",
         "default_channel",
         "campaign_date",
@@ -125,7 +217,6 @@ def save_campaign(payload: str | dict) -> dict:
         "target_family",
         "business_type_filter",
         "crm_segment_filter",
-        "partner_segment_filter",
         "description",
         "sales_history_from_date",
         "sales_history_to_date",
@@ -136,11 +227,33 @@ def save_campaign(payload: str | dict) -> dict:
         "email_subject",
         "email_mode",
         "email_body",
+        "whatsapp_mode",
+        "whatsapp_template",
+        "whatsapp_template_language",
+        "whatsapp_template_variables",
         "whatsapp_text",
         "call_script",
+        "visit_subject",
+        "visit_default_date",
+        "visit_agenda",
+        "other_subject",
+        "other_notes",
+        "visit_email_subject",
+        "visit_email_mode",
+        "visit_email_body",
+        "visit_whatsapp_text",
+        "visit_call_script",
     ]:
         if fieldname in data:
             setattr(doc, fieldname, data.get(fieldname))
+
+    legacy_segment = (data.get("partner_segment_filter") or "").strip()
+    if legacy_segment and not (doc.crm_segment_filter or "").strip():
+        business_type, crm_segment = _resolve_legacy_segment(legacy_segment)
+        doc.business_type_filter = doc.business_type_filter or business_type
+        doc.crm_segment_filter = crm_segment
+    if doc.meta.get_field("partner_segment_filter"):
+        doc.partner_segment_filter = ""
 
     doc.set("items", [])
     for row in data.get("items") or []:
@@ -154,10 +267,217 @@ def save_campaign(payload: str | dict) -> dict:
             continue
         doc.append("targets", _campaign_target_payload(row))
 
+    _sync_default_channel_from_action_type(doc)
     _validate_campaign_ready_state(doc)
     doc.save(ignore_permissions=False)
     frappe.db.commit()
     return {"name": doc.name, "campaign": _campaign_doc_dict(doc.name)}
+
+
+@frappe.whitelist()
+def render_campaign_content(campaign: str, target_row: str | None = None, action_type: str | None = None) -> dict:
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    row = _find_target_row(doc, target_row) if target_row else None
+    return _render_campaign_content_for_doc(doc, row, action_type)
+
+
+@frappe.whitelist()
+def render_campaign_content_from_payload(payload: str | dict, target_row: str | None = None, action_type: str | None = None) -> dict:
+    doc = _campaign_doc_from_payload(_loads(payload))
+    row = _find_payload_target_row(doc, target_row) if target_row else _first_payload_target(doc)
+    return _render_campaign_content_for_doc(doc, row, action_type)
+
+
+@frappe.whitelist()
+def get_campaign_send_preflight(
+    campaign: str | None = None,
+    payload: str | dict | None = None,
+    target_rows: str | list | None = None,
+    action_type: str | None = None,
+) -> dict:
+    if payload:
+        doc = _campaign_doc_from_payload(_loads(payload))
+    elif campaign:
+        doc = frappe.get_doc("Partner Campaign", campaign)
+    else:
+        frappe.throw(_("Campaign or payload is required."))
+    return _campaign_send_preflight(doc, target_rows=target_rows, action_type=action_type)
+
+
+def _render_campaign_content_for_doc(doc, row=None, action_type: str | None = None) -> dict:
+    action_type = _normalize_action_type(action_type or _campaign_action_type(doc))
+    context = _render_context(doc, row)
+
+    if action_type == "Email":
+        return {
+            "action_type": action_type,
+            "subject": _render_template(doc.email_subject or doc.campaign_name or doc.name, context),
+            "body": _render_template(doc.email_body or "", context),
+            "mode": doc.email_mode or "HTML",
+        }
+    if action_type == "WhatsApp":
+        whatsapp_mode = _normalize_whatsapp_mode(doc.whatsapp_mode)
+        return {
+            "action_type": action_type,
+            "mode": whatsapp_mode,
+            "text": _render_template(doc.whatsapp_text or "", context),
+            "template": _render_template(doc.whatsapp_template or "", context),
+            "language": doc.whatsapp_template_language or "fr",
+            "variables": _whatsapp_template_variables(doc, context),
+        }
+    if action_type == "Call":
+        return {"action_type": action_type, "script": _render_template(doc.call_script or "", context)}
+    if action_type == "Visit":
+        return {
+            "action_type": action_type,
+            "subject": _render_template(doc.visit_subject or doc.campaign_name or doc.name, context),
+            "agenda": _render_template(doc.visit_agenda or "", context),
+            "visit_date": row.visit_date if row else doc.visit_default_date,
+        }
+    return {
+        "action_type": "Other",
+        "subject": _render_template(doc.other_subject or doc.campaign_name or doc.name, context),
+        "notes": _render_template(doc.other_notes or "", context),
+    }
+
+
+@frappe.whitelist()
+def get_email_preview(campaign: str, target_row: str) -> dict:
+    return render_campaign_content(campaign, target_row, "Email")
+
+
+@frappe.whitelist()
+def send_campaign_email(campaign: str, target_row: str, scheduled_at: str | None = None) -> dict:
+    doc, row = _get_campaign_and_target(campaign, target_row)
+    _ensure_campaign_can_send(doc, [row.name], "Email", scheduled_at=scheduled_at)
+    recipient = (row.email or "").strip()
+    if not recipient:
+        frappe.throw(_("Target {0} has no email address.").format(row.display_name or row.party_name))
+
+    content = render_campaign_content(campaign, target_row, "Email")
+    subject = content.get("subject") or doc.campaign_name or doc.name
+    message = content.get("body") or ""
+    kwargs = {
+        "recipients": [recipient],
+        "subject": subject,
+        "message": message,
+        "delayed": True,
+        "reference_doctype": row.party_type,
+        "reference_name": row.party_name,
+    }
+    if scheduled_at:
+        kwargs["send_after"] = scheduled_at
+    frappe.sendmail(**kwargs)
+
+    doc, row = _reload_campaign_target(campaign, target_row)
+    row.last_email_queue = _latest_email_queue(row.party_type, row.party_name, subject)
+    _mark_row_outreach(row, "Email")
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    _log_campaign_event(doc.name, "Email Scheduled" if scheduled_at else "Email Queued", f"{recipient}: {subject}")
+    return {"recipient": recipient, "subject": subject, "email_queue": row.last_email_queue or ""}
+
+
+@frappe.whitelist()
+def bulk_schedule_campaign_email(campaign: str, target_rows: str | list | None = None, scheduled_at: str | None = None) -> dict:
+    rows = _loads(target_rows) if isinstance(target_rows, str) else target_rows
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    _ensure_campaign_can_send(doc, rows, "Email", scheduled_at=scheduled_at)
+    target_names = set(rows or [row.name for row in doc.targets or []])
+    return _bulk_target_action(doc, target_names, lambda row: send_campaign_email(campaign, row.name, scheduled_at))
+
+
+@frappe.whitelist()
+def get_whatsapp_click_to_chat(campaign: str, target_row: str) -> dict:
+    doc, row = _get_campaign_and_target(campaign, target_row)
+    _ensure_campaign_can_send(doc, [row.name], "WhatsApp")
+    phone = normalize_whatsapp_phone(row.mobile_no)
+    if not phone:
+        frappe.throw(_("Target {0} has no valid WhatsApp phone number.").format(row.display_name or row.party_name))
+    content = render_campaign_content(campaign, target_row, "WhatsApp")
+    message = content.get("text") or ""
+    return {"phone": phone, "message": message, "url": f"https://wa.me/{phone}?text={quote(message)}"}
+
+
+@frappe.whitelist()
+def send_campaign_whatsapp_template(campaign: str, target_row: str) -> dict:
+    doc, row = _get_campaign_and_target(campaign, target_row)
+    _ensure_campaign_can_send(doc, [row.name], "WhatsApp")
+    whatsapp_mode = _normalize_whatsapp_mode(doc.whatsapp_mode)
+    if whatsapp_mode == WHATSAPP_MANUAL_MODE:
+        frappe.throw(_("Manual WhatsApp mode uses click-to-chat. Select Twilio or Custom Webhook for automated templates."))
+    phone = normalize_whatsapp_phone(row.mobile_no)
+    if not phone:
+        frappe.throw(_("Target {0} has no valid WhatsApp phone number.").format(row.display_name or row.party_name))
+    content = render_campaign_content(campaign, target_row, "WhatsApp")
+    template = content.get("template") or doc.whatsapp_template
+    message = content.get("text") or doc.whatsapp_text
+    if whatsapp_mode == WHATSAPP_TWILIO_MODE and not template:
+        frappe.throw(_("Select a Meta-approved WhatsApp template before automated sending."))
+    if whatsapp_mode == WHATSAPP_WEBHOOK_MODE and not (template or message):
+        frappe.throw(_("Add a webhook message or approved template before automated WhatsApp sending."))
+    response = _send_whatsapp_api(phone, content, doc, row)
+
+    doc, row = _reload_campaign_target(campaign, target_row)
+    row.last_whatsapp_mode = whatsapp_mode
+    _mark_row_outreach(row, "WhatsApp")
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    _log_campaign_event(doc.name, "WhatsApp Template Sent", f"{row.display_name or row.party_name}: {template}")
+    return response
+
+
+@frappe.whitelist()
+def mark_target_outreach(campaign: str, target_row: str, outreach_type: str, note: str | None = None, status: str | None = None) -> dict:
+    doc, row = _get_campaign_and_target(campaign, target_row)
+    outreach_type = _normalize_action_type(outreach_type)
+    if outreach_type == "Email":
+        frappe.throw(_("Use Send Email for email outreach so the Email Queue stays linked."))
+    if note is not None:
+        row.target_note = (note or "").strip()
+    if status:
+        row.target_status = validate_target_status(status)
+    if outreach_type == "WhatsApp":
+        row.last_whatsapp_mode = row.last_whatsapp_mode or _normalize_whatsapp_mode(doc.whatsapp_mode)
+    _mark_row_outreach(row, outreach_type)
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    _log_campaign_event(doc.name, f"{outreach_type} Marked", row.display_name or row.party_name)
+    return _target_row_dict(row)
+
+
+@frappe.whitelist()
+def update_target_visit(campaign: str, target_row: str, visit_date: str | None = None, visit_status: str | None = None) -> dict:
+    doc, row = _get_campaign_and_target(campaign, target_row)
+    row.visit_date = clean_date_value(visit_date)
+    if visit_status is not None:
+        row.visit_status = visit_status
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    return _target_row_dict(row)
+
+
+@frappe.whitelist()
+def create_visit_todo(campaign: str, target_row: str) -> dict:
+    doc, row = _get_campaign_and_target(campaign, target_row)
+    if not row.visit_date:
+        frappe.throw(_("Set a visit date for {0} before creating a ToDo.").format(row.display_name or row.party_name))
+    content = render_campaign_content(campaign, target_row, "Visit")
+    todo = _upsert_visit_todo(doc, row, content)
+    row.visit_todo = todo.name
+    row.visit_status = row.visit_status or "Planned"
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    _log_campaign_event(doc.name, "Visit ToDo Created", f"{row.display_name or row.party_name}: {todo.name}")
+    return {"name": todo.name, "target": _target_row_dict(row)}
+
+
+@frappe.whitelist()
+def bulk_create_visit_todos(campaign: str, target_rows: str | list | None = None) -> dict:
+    rows = _loads(target_rows) if isinstance(target_rows, str) else target_rows
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    target_names = set(rows or [row.name for row in doc.targets or [] if row.visit_date])
+    return _bulk_target_action(doc, target_names, lambda row: create_visit_todo(campaign, row.name))
 
 
 @frappe.whitelist()
@@ -170,6 +490,16 @@ def update_target_status(campaign: str, target_row: str, status: str) -> dict:
     doc.save(ignore_permissions=False)
     frappe.db.commit()
     _log_campaign_event(doc.name, "Target Status Changed", f"{row.display_name or row.party_name}: {status}")
+    return _target_row_dict(row)
+
+
+@frappe.whitelist()
+def update_target_note(campaign: str, target_row: str, note: str | None = None) -> dict:
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    row = _find_target_row(doc, target_row)
+    row.target_note = (note or "").strip()
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
     return _target_row_dict(row)
 
 
@@ -230,7 +560,7 @@ def create_opportunity_from_target(campaign: str, target_row: str) -> dict:
     opportunity.opportunity_type = _default_opportunity_type()
     opportunity.opportunity_amount = _campaign_offer_amount(doc)
     opportunity.probability = 20
-    opportunity.title = doc.campaign_name
+    opportunity.title = _opportunity_title_for_campaign_target(doc, row)
     _set_if_field(opportunity, "custom_partner_campaign", doc.name)
     _set_if_field(opportunity, "custom_partner_campaign_target", row.name)
     _set_if_field(opportunity, "custom_crm_business_type", row.business_type)
@@ -269,6 +599,8 @@ def create_quotation_from_target(campaign: str, target_row: str) -> dict:
         quotation.opportunity = row.opportunity
     _set_if_field(quotation, "custom_partner_campaign", doc.name)
     _set_if_field(quotation, "custom_partner_campaign_target", row.name)
+    _set_if_field(quotation, "custom_crm_business_type", row.business_type)
+    _set_if_field(quotation, "custom_crm_segment", row.crm_segment)
     _append_quotation_items(quotation, doc)
     quotation.insert(ignore_permissions=False)
 
@@ -471,7 +803,7 @@ def inherit_campaign_from_links(doc, method=None):
             as_dict=True,
         ) or {}
     elif doc.doctype == "Sales Order":
-        quotation_names = [row.prevdoc_docname for row in doc.get("items", []) if row.prevdoc_doctype == "Quotation" and row.prevdoc_docname]
+        quotation_names = _linked_quotation_names_from_sales_order(doc)
         if quotation_names:
             context = frappe.db.get_value(
                 "Quotation",
@@ -486,14 +818,29 @@ def inherit_campaign_from_links(doc, method=None):
         doc.custom_partner_campaign_target = context.get("custom_partner_campaign_target")
 
 
+def _linked_quotation_names_from_sales_order(doc) -> list[str]:
+    quotation_names = []
+    for row in doc.get("items", []) or []:
+        quotation = row.get("prevdoc_docname") if hasattr(row, "get") else getattr(row, "prevdoc_docname", None)
+        if not quotation or quotation in quotation_names:
+            continue
+        if frappe.db.exists("Quotation", quotation):
+            quotation_names.append(quotation)
+    return quotation_names
+
+
 def _campaign_rows() -> list[dict]:
     if not frappe.db.exists("DocType", "Partner Campaign"):
         return []
+    filters = {"archived": 0} if _campaign_archive_available() else {}
+    _apply_company_filter(filters, "Partner Campaign")
     rows = frappe.get_all(
         "Partner Campaign",
+        filters=filters,
         fields=[
             "name",
             "campaign_name",
+            "campaign_action_type",
             "status",
             "campaign_owner",
             "default_channel",
@@ -512,6 +859,7 @@ def _campaign_rows() -> list[dict]:
     target_counts = _campaign_target_counts([row.name for row in rows])
     for row in rows:
         row["target_count"] = target_counts.get(row.name, 0)
+        row["campaign_action_type"] = _normalize_action_type(row.get("campaign_action_type") or row.get("default_channel"))
     return rows
 
 
@@ -547,9 +895,19 @@ def _target_row_dict(row) -> dict:
         "city": row.city,
         "contact": row.contact,
         "contact_person_name": row.contact_person_name,
+        "email": getattr(row, "email", None) or "",
+        "mobile_no": getattr(row, "mobile_no", None) or "",
         "target_status": row.target_status,
         "assigned_to": row.assigned_to,
+        "target_note": getattr(row, "target_note", None) or "",
         "last_contact_date": row.last_contact_date,
+        "last_outreach_type": getattr(row, "last_outreach_type", None) or "",
+        "last_outreach_date": getattr(row, "last_outreach_date", None) or "",
+        "last_email_queue": getattr(row, "last_email_queue", None) or "",
+        "last_whatsapp_mode": getattr(row, "last_whatsapp_mode", None) or "",
+        "visit_date": getattr(row, "visit_date", None) or "",
+        "visit_status": getattr(row, "visit_status", None) or "",
+        "visit_todo": getattr(row, "visit_todo", None) or "",
         "prospect": row.prospect,
         "opportunity": row.opportunity,
         "quotation": row.quotation,
@@ -561,21 +919,35 @@ def _target_row_dict(row) -> dict:
 def _campaign_doc_dict(campaign: str) -> dict:
     doc = frappe.get_doc("Partner Campaign", campaign)
     data = doc.as_dict()
+    data["crm_segment_filter"] = _campaign_crm_segment_filter(data)
+    data["partner_segment_filter"] = ""
     data["items"] = [row.as_dict() for row in doc.items or []]
     data["targets"] = [_target_row_dict(row) for row in doc.targets or []]
     return data
+
+
+def _campaign_crm_segment_filter(campaign: dict) -> str | None:
+    crm_segment = (campaign.get("crm_segment_filter") or "").strip()
+    if crm_segment:
+        return crm_segment
+    _business_type, legacy_segment = _resolve_legacy_segment(campaign.get("partner_segment_filter"))
+    return legacy_segment
 
 
 def _new_campaign_defaults() -> dict:
     return {
         "campaign_name": "",
         "status": "Draft",
+        "campaign_action_type": "WhatsApp",
         "campaign_owner": frappe.session.user,
         "default_channel": "WhatsApp",
         "campaign_date": today(),
         "sales_history_from_date": today(),
         "sales_history_to_date": today(),
         "email_mode": "HTML",
+        "whatsapp_mode": WHATSAPP_MANUAL_MODE,
+        "whatsapp_template_language": "fr",
+        "visit_default_date": today(),
         "items": [],
         "targets": [],
     }
@@ -594,7 +966,25 @@ def _global_campaign_kpis() -> dict:
 
 
 def _latest_campaign_name() -> str | None:
-    return frappe.db.get_value("Partner Campaign", {}, "name", order_by="modified desc") if frappe.db.exists("DocType", "Partner Campaign") else None
+    if not frappe.db.exists("DocType", "Partner Campaign"):
+        return None
+    filters = {"archived": 0} if _campaign_archive_available() else {}
+    _apply_company_filter(filters, "Partner Campaign")
+    return frappe.db.get_value("Partner Campaign", filters, "name", order_by="modified desc")
+
+
+def _campaign_is_visible(campaign: str) -> bool:
+    if not campaign or not frappe.db.exists("Partner Campaign", campaign):
+        return False
+    if not _campaign_company_in_scope(campaign):
+        return False
+    if not _campaign_archive_available():
+        return True
+    return not cint(frappe.db.get_value("Partner Campaign", campaign, "archived"))
+
+
+def _campaign_archive_available() -> bool:
+    return bool(frappe.get_meta("Partner Campaign").get_field("archived")) if frappe.db.exists("DocType", "Partner Campaign") else False
 
 
 def _campaign_item_payload(row: dict) -> dict:
@@ -617,23 +1007,73 @@ def _campaign_target_payload(row: dict) -> dict:
     party_type = row.get("party_type") or row.get("type")
     party_name = row.get("party_name") or row.get("name")
     snapshot = resolve_party_snapshot(party_type, party_name)
-    crm_segment = row.get("crm_segment") or row.get("partner_segment") or row.get("className") or snapshot.get("crm_segment")
-    business_type = row.get("business_type") or snapshot.get("business_type") or _segment_business_type(crm_segment)
+    raw_crm_segment = row.get("crm_segment") or snapshot.get("crm_segment")
+    raw_legacy_segment = row.get("partner_segment") or row.get("className") or snapshot.get("partner_segment")
+    business_type = row.get("business_type") or snapshot.get("business_type")
+    crm_segment = raw_crm_segment
+    if not crm_segment and raw_legacy_segment:
+        resolved_business_type, resolved_crm_segment = _resolve_legacy_segment(raw_legacy_segment)
+        business_type = business_type or resolved_business_type
+        crm_segment = resolved_crm_segment
+    business_type = business_type or _segment_business_type(crm_segment)
     return {
         "party_type": party_type,
         "party_name": party_name,
         "display_name": row.get("display_name") or snapshot.get("display_name"),
         "business_type": business_type,
         "crm_segment": crm_segment,
-        "partner_segment": snapshot.get("partner_segment") or row.get("partner_segment") or row.get("className"),
+        "partner_segment": raw_legacy_segment,
         "city": row.get("city") or snapshot.get("city"),
-        "contact": row.get("contact"),
-        "contact_person_name": row.get("contact_person_name") or row.get("contact_name"),
+        "contact": row.get("contact") or snapshot.get("contact"),
+        "contact_person_name": row.get("contact_person_name") or row.get("contact_name") or snapshot.get("contact_person_name"),
+        "email": row.get("email") or snapshot.get("email"),
+        "mobile_no": row.get("mobile_no") or row.get("phone") or snapshot.get("mobile_no"),
         "target_status": row.get("target_status") or row.get("status") or get_default_target_status(),
         "assigned_to": row.get("assigned_to"),
-        "last_contact_date": row.get("last_contact_date"),
-        "last_order_date": row.get("last_order_date") or snapshot.get("last_order_date"),
+        "target_note": row.get("target_note") or row.get("note") or "",
+        "last_contact_date": clean_date_value(row.get("last_contact_date")),
+        "last_outreach_type": row.get("last_outreach_type"),
+        "last_outreach_date": clean_date_value(row.get("last_outreach_date")),
+        "last_email_queue": row.get("last_email_queue"),
+        "last_whatsapp_mode": row.get("last_whatsapp_mode"),
+        "visit_date": clean_date_value(row.get("visit_date")),
+        "visit_status": row.get("visit_status"),
+        "visit_todo": row.get("visit_todo"),
+        "last_order_date": clean_date_value(row.get("last_order_date")) or clean_date_value(snapshot.get("last_order_date")),
     }
+
+
+def _campaign_doc_from_payload(data: dict):
+    _normalize_campaign_action_payload(data)
+    doc = frappe._dict(data)
+    doc.name = doc.get("name") or "Draft Campaign"
+    doc["items"] = [frappe._dict(_campaign_item_payload(row)) for row in data.get("items") or []]
+    doc["targets"] = []
+    for row in data.get("targets") or []:
+        target = _campaign_target_payload(row)
+        target["name"] = row.get("name") or row.get("id") or row.get("party_name")
+        target["id"] = row.get("id") or target["name"]
+        doc["targets"].append(frappe._dict(target))
+    return doc
+
+
+def _find_payload_target_row(doc, target_row: str | None):
+    target_row = (target_row or "").strip()
+    for row in doc.targets or []:
+        identifiers = {
+            (row.get("name") or "").strip(),
+            (row.get("id") or "").strip(),
+            (row.get("party_name") or "").strip(),
+            f"{row.get('party_type') or ''}::{row.get('party_name') or ''}",
+        }
+        if target_row in identifiers:
+            return row
+    return _first_payload_target(doc)
+
+
+def _first_payload_target(doc):
+    rows = [row for row in doc.targets or [] if row.get("party_type") and row.get("party_name")]
+    return rows[0] if rows else None
 
 
 def _article_candidate(row, from_date=None, to_date=None, price_list=None, container=None, supplier_payment_mode=None) -> dict:
@@ -726,6 +1166,7 @@ def _party_filters(party_type: str, segment=None, business_type=None, search=Non
         filters["name"] = ["in", matching_parties or ["__none__"]]
     if party_type == "Customer":
         filters["disabled"] = 0
+    _apply_company_filter(filters, party_type)
     return filters
 
 
@@ -745,9 +1186,9 @@ def _party_fields(party_type: str) -> list[str]:
     if party_type == "Lead":
         fields += ["lead_name", "company_name", "city", "lead_owner"]
     elif party_type == "Prospect":
-        fields += ["company_name", "territory", "prospect_owner", "customer_group"]
+        fields += ["company_name", "territory", "prospect_owner"]
     else:
-        fields += ["customer_name", "territory", "customer_group"]
+        fields += ["customer_name", "territory"]
     if _has_field(party_type, "custom_partner_segment"):
         fields.append("custom_partner_segment")
     return fields
@@ -766,9 +1207,10 @@ def _candidate_row(party_type: str, row: dict) -> dict:
         display_name = row.get("customer_name") or row.name
         city = row.get("territory")
         owner = None
-    crm_info = _party_primary_crm_segment(party_type, row.name, row.get("custom_partner_segment") or row.get("customer_group"))
+    crm_info = _party_primary_crm_segment(party_type, row.name)
     crm_segments = _party_crm_segments(party_type, row.name)
-    partner_segment = crm_info.get("crm_segment") or row.get("custom_partner_segment") or row.get("customer_group")
+    partner_segment = crm_info.get("crm_segment") or row.get("custom_partner_segment")
+    snapshot = resolve_party_snapshot(party_type, row.name)
     return {
         "selected": False,
         "party_type": party_type,
@@ -779,6 +1221,10 @@ def _candidate_row(party_type: str, row: dict) -> dict:
         "crm_segments": crm_segments,
         "partner_segment": partner_segment,
         "city": city,
+        "contact": snapshot.get("contact"),
+        "contact_person_name": snapshot.get("contact_person_name"),
+        "email": snapshot.get("email"),
+        "mobile_no": snapshot.get("mobile_no"),
         "assigned_to": owner,
         "target_status": get_default_target_status(),
     }
@@ -796,8 +1242,14 @@ def _reload_campaign_target(campaign: str, target_row: str):
     return doc, _find_target_row(doc, target_row)
 
 
+def _child_rows(doc, fieldname: str) -> list:
+    if hasattr(doc, "get"):
+        return doc.get(fieldname) or []
+    return getattr(doc, fieldname, None) or []
+
+
 def _append_opportunity_items(opportunity, campaign_doc):
-    for item in campaign_doc.items or []:
+    for item in _child_rows(campaign_doc, "items"):
         if not item.item_code:
             continue
         opportunity.append(
@@ -814,7 +1266,7 @@ def _append_opportunity_items(opportunity, campaign_doc):
 
 
 def _append_quotation_items(quotation, campaign_doc):
-    for item in campaign_doc.items or []:
+    for item in _child_rows(campaign_doc, "items"):
         if not item.item_code:
             continue
         quotation.append(
@@ -833,7 +1285,486 @@ def _append_quotation_items(quotation, campaign_doc):
 
 
 def _campaign_offer_amount(campaign_doc) -> float:
-    return flt(sum(flt(item.price_snapshot) for item in campaign_doc.items or [] if item.display_price))
+    return flt(sum(flt(item.price_snapshot) for item in _child_rows(campaign_doc, "items") if item.display_price))
+
+
+def _campaign_action_type(campaign_doc) -> str:
+    get_value = campaign_doc.get if hasattr(campaign_doc, "get") else lambda fieldname: getattr(campaign_doc, fieldname, None)
+    return _normalize_action_type(get_value("campaign_action_type") or get_value("default_channel"))
+
+
+def _campaign_send_preflight(
+    doc,
+    target_rows: str | list | None = None,
+    action_type: str | None = None,
+) -> dict:
+    action_type = _normalize_action_type(action_type or _campaign_action_type(doc))
+    rows = _target_rows_for_preflight(doc, target_rows)
+    campaign_blockers, campaign_warnings = _campaign_preflight_messages(doc, action_type)
+    target_results = [_target_preflight(doc, row, action_type) for row in rows]
+    blocker_count = len(campaign_blockers) + sum(len(row["blockers"]) for row in target_results)
+    warning_count = len(campaign_warnings) + sum(len(row["warnings"]) for row in target_results)
+    ready_count = sum(1 for row in target_results if row["ready"])
+    return {
+        "campaign": doc.get("name") or "",
+        "action_type": action_type,
+        "target_count": len(rows),
+        "ready_count": ready_count,
+        "blocker_count": blocker_count,
+        "warning_count": warning_count,
+        "campaign_blockers": campaign_blockers,
+        "campaign_warnings": campaign_warnings,
+        "targets": target_results,
+        "ok": blocker_count == 0 and bool(rows),
+    }
+
+
+def _ensure_campaign_can_send(doc, target_rows: str | list | None, action_type: str, scheduled_at: str | None = None) -> dict:
+    if scheduled_at and str(scheduled_at) <= str(now()):
+        frappe.throw(_("Schedule time must be in the future."))
+    preflight = _campaign_send_preflight(doc, target_rows=target_rows, action_type=action_type)
+    if preflight["blocker_count"]:
+        messages = list(preflight["campaign_blockers"])
+        for row in preflight["targets"]:
+            messages.extend([f"{row['label']}: {message}" for message in row["blockers"]])
+        frappe.throw("<br>".join(messages[:12]))
+    return preflight
+
+
+def _target_rows_for_preflight(doc, target_rows: str | list | None) -> list:
+    if isinstance(target_rows, str):
+        target_rows = _loads(target_rows)
+    names = {str(name) for name in target_rows or [] if name}
+    rows = list(doc.get("targets") or [])
+    if not names:
+        return rows
+    return [row for row in rows if str(row.get("name") or row.get("id") or row.get("party_name")) in names]
+
+
+def _campaign_preflight_messages(doc, action_type: str) -> tuple[list[str], list[str]]:
+    blockers = []
+    warnings = []
+    configured_action = _campaign_action_type(doc)
+    if action_type != configured_action:
+        blockers.append(_("Campaign type is {0}, not {1}.").format(configured_action, action_type))
+    if cint(doc.get("archived")):
+        blockers.append(_("Archived campaigns cannot send outreach."))
+    status = (doc.get("status") or "Draft").strip()
+    if status in {"Closed", "Paused"}:
+        blockers.append(_("Campaign status is {0}.").format(status))
+    elif status not in {"Ready", "Running"}:
+        warnings.append(_("Campaign status is {0}. Set it to Ready or Running before operational sending.").format(status))
+    if not _campaign_has_content(doc):
+        blockers.append(_("Campaign is missing {0} content.").format(action_type))
+    unknown = _unknown_placeholders_for_action(doc, action_type)
+    if unknown:
+        warnings.append(_("Unknown placeholders: {0}").format(", ".join(sorted(unknown))))
+    if action_type == "WhatsApp":
+        blockers.extend(_whatsapp_settings_blockers(doc))
+    return blockers, warnings
+
+
+def _target_preflight(doc, row, action_type: str) -> dict:
+    blockers = []
+    warnings = []
+    label = row.get("display_name") or row.get("party_name") or row.get("name") or _("Target")
+    if action_type == "Email":
+        email_address = (row.get("email") or "").strip()
+        if not email_address:
+            blockers.append(_("Missing email address."))
+        elif not EMAIL_RE.match(email_address):
+            blockers.append(_("Invalid email address: {0}").format(email_address))
+    if action_type == "WhatsApp":
+        phone = normalize_whatsapp_phone(row.get("mobile_no"))
+        if not phone:
+            blockers.append(_("Missing valid WhatsApp phone number."))
+    return {
+        "id": row.get("name") or row.get("id") or row.get("party_name") or "",
+        "label": label,
+        "party_type": row.get("party_type") or "",
+        "party_name": row.get("party_name") or "",
+        "ready": not blockers,
+        "blockers": blockers,
+        "warnings": warnings,
+    }
+
+
+def _unknown_placeholders_for_action(doc, action_type: str) -> set[str]:
+    values = []
+    if action_type == "Email":
+        values.extend([doc.get("email_subject"), doc.get("email_body")])
+    elif action_type == "WhatsApp":
+        values.extend([doc.get("whatsapp_text"), doc.get("whatsapp_template"), doc.get("whatsapp_template_variables")])
+    elif action_type == "Call":
+        values.append(doc.get("call_script"))
+    elif action_type == "Visit":
+        values.extend([doc.get("visit_subject"), doc.get("visit_agenda")])
+    elif action_type == "Other":
+        values.extend([doc.get("other_subject"), doc.get("other_notes")])
+    found = {match.group(1) for value in values for match in PLACEHOLDER_RE.finditer(value or "")}
+    return found - ALLOWED_TEMPLATE_KEYS
+
+
+def _whatsapp_settings_blockers(doc) -> list[str]:
+    whatsapp_mode = _normalize_whatsapp_mode(doc.get("whatsapp_mode"))
+    if whatsapp_mode == WHATSAPP_MANUAL_MODE:
+        return []
+    if not frappe.db.exists("DocType", "Orderlift WhatsApp Settings"):
+        return [_('Orderlift WhatsApp Settings doctype is missing.')]
+    settings = frappe.get_single("Orderlift WhatsApp Settings")
+    blockers = []
+    if not cint(settings.enabled):
+        blockers.append(_("Orderlift WhatsApp Settings is disabled."))
+    if whatsapp_mode == WHATSAPP_TWILIO_MODE:
+        if not (settings.twilio_account_sid or "").strip():
+            blockers.append(_("Twilio Account SID is missing."))
+        if not _settings_password(settings, "twilio_auth_token"):
+            blockers.append(_("Twilio Auth Token is missing."))
+        if not normalize_whatsapp_phone(settings.twilio_from_number, ""):
+            blockers.append(_("Twilio From Number is missing."))
+        template = (doc.get("whatsapp_template") or "").strip()
+        if template and not template.startswith("HX"):
+            blockers.append(_("Twilio Content SID should start with HX."))
+    if whatsapp_mode == WHATSAPP_WEBHOOK_MODE:
+        webhook_url = (settings.custom_webhook_url or "").strip()
+        if not webhook_url:
+            blockers.append(_("Custom Webhook URL is missing."))
+        elif not _webhook_url_is_allowed(webhook_url):
+            blockers.append(_("Custom Webhook URL must be a public http(s) URL."))
+    return blockers
+
+
+def _webhook_url_is_allowed(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    if hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return False
+    return True
+
+
+def _normalize_campaign_action_payload(data: dict) -> None:
+    action_type = _normalize_action_type(data.get("campaign_action_type") or data.get("default_channel"))
+    data["campaign_action_type"] = action_type
+    data["default_channel"] = action_type if action_type in {"Email", "WhatsApp", "Call"} else ""
+
+
+def _ensure_campaign_action_field(doc, action_type: str | None) -> None:
+    if not action_type or action_type in {"Email", "WhatsApp", "Call"}:
+        return
+    if doc.meta.get_field("campaign_action_type"):
+        return
+    frappe.throw(_("Run bench migrate before saving {0} campaigns. The campaign_action_type field is missing.").format(action_type))
+
+
+def _sync_default_channel_from_action_type(campaign_doc) -> None:
+    action_type = _campaign_action_type(campaign_doc)
+    campaign_doc.campaign_action_type = action_type
+    campaign_doc.default_channel = action_type if action_type in {"Email", "WhatsApp", "Call"} else ""
+
+
+def _opportunity_title_for_campaign_target(campaign_doc, target_row) -> str:
+    target_name = (target_row.display_name or target_row.party_name or "").strip()
+    if not target_name:
+        target_name = campaign_doc.campaign_name or campaign_doc.name
+    return f"{target_name} [{_campaign_short_code(campaign_doc.name)}]"
+
+
+def _campaign_short_code(campaign: str | None) -> str:
+    parts = [part for part in str(campaign or "").split("-") if part]
+    if len(parts) >= 2 and parts[0] == "PC":
+        return f"PC-{parts[-1]}"
+    if len(parts) >= 2:
+        return f"{parts[0]}-{parts[-1]}"
+    return str(campaign or "")
+
+
+def _normalize_action_type(action_type: str | None) -> str:
+    clean = (action_type or "").strip()
+    return clean if clean in CAMPAIGN_ACTION_TYPES else "WhatsApp"
+
+
+def _normalize_whatsapp_mode(mode: str | None) -> str:
+    clean = (mode or "").strip()
+    if clean in {WHATSAPP_MANUAL_MODE, WHATSAPP_TWILIO_MODE, WHATSAPP_WEBHOOK_MODE}:
+        return clean
+    if clean == WHATSAPP_LEGACY_API_MODE:
+        return WHATSAPP_WEBHOOK_MODE
+    return WHATSAPP_MANUAL_MODE
+
+
+def _get_campaign_and_target(campaign: str, target_row: str):
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    return doc, _find_target_row(doc, target_row)
+
+
+def _render_context(campaign_doc, target_row=None) -> dict:
+    contact_name = (getattr(target_row, "contact_person_name", None) or "").strip() if target_row else ""
+    company = (getattr(target_row, "display_name", None) or getattr(target_row, "party_name", None) or "").strip() if target_row else ""
+    first_name = contact_name.split(" ", 1)[0] if contact_name else company.split(" ", 1)[0]
+    return {
+        "first_name": first_name,
+        "contact_name": contact_name,
+        "company": company,
+        "party_name": getattr(target_row, "party_name", "") if target_row else "",
+        "campaign_name": campaign_doc.campaign_name or campaign_doc.name,
+        "campaign_code": _campaign_short_code(campaign_doc.name),
+        "business_type": getattr(target_row, "business_type", "") if target_row else campaign_doc.business_type_filter,
+        "crm_segment": getattr(target_row, "crm_segment", "") if target_row else campaign_doc.crm_segment_filter,
+        "city": getattr(target_row, "city", "") if target_row else "",
+        "visit_date": getattr(target_row, "visit_date", "") if target_row else campaign_doc.visit_default_date,
+        "selected_articles": _selected_articles_text(campaign_doc),
+    }
+
+
+def _render_template(template: str | None, context: dict) -> str:
+    def replace(match):
+        key = match.group(1)
+        value = context.get(key)
+        return "" if value is None else str(value)
+
+    return PLACEHOLDER_RE.sub(replace, template or "")
+
+
+def _selected_articles_text(campaign_doc) -> str:
+    lines = []
+    for item in _child_rows(campaign_doc, "items"):
+        if not item.item_code:
+            continue
+        parts = [item.item_code]
+        if item.item_name:
+            parts.append(item.item_name)
+        if item.display_available_qty:
+            parts.append(_("Available: {0}").format(flt(item.available_qty_snapshot)))
+        if item.display_price:
+            parts.append(_("Price: {0} {1}").format(flt(item.price_snapshot), item.currency or "DH"))
+        lines.append(" - ".join(str(part) for part in parts if part is not None))
+    return "\n".join(lines)
+
+
+def _whatsapp_template_variables(campaign_doc, context: dict) -> dict:
+    raw = (campaign_doc.whatsapp_template_variables or "").strip()
+    if not raw:
+        return {"1": context.get("contact_name") or context.get("company"), "2": context.get("campaign_name")}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
+        return {str(key): _render_template(str(value), context) for key, value in parsed.items()}
+    if isinstance(parsed, list):
+        return {str(index + 1): _render_template(str(value), context) for index, value in enumerate(parsed)}
+
+    values = {}
+    for line in raw.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key:
+            values[key] = _render_template(value.strip(), context)
+    return values or {"1": _render_template(raw, context)}
+
+
+def normalize_whatsapp_phone(phone: str | None, default_country_code: str | None = None) -> str:
+    digits = re.sub(r"\D+", "", phone or "")
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if not digits:
+        return ""
+    default_country_code = re.sub(r"\D+", "", default_country_code or _default_country_code() or "212")
+    if digits.startswith("0") and default_country_code:
+        return default_country_code + digits.lstrip("0")
+    if default_country_code and len(digits) <= 9 and not digits.startswith(default_country_code):
+        return default_country_code + digits
+    return digits
+
+
+def _default_country_code() -> str:
+    try:
+        if frappe.db.exists("DocType", "Orderlift WhatsApp Settings"):
+            return frappe.db.get_single_value("Orderlift WhatsApp Settings", "default_country_code") or "212"
+    except Exception:
+        pass
+    return "212"
+
+
+def _latest_email_queue(reference_doctype: str, reference_name: str, subject: str) -> str:
+    try:
+        if not frappe.db.exists("DocType", "Email Queue"):
+            return ""
+        filters = {}
+        if _has_field("Email Queue", "reference_doctype"):
+            filters["reference_doctype"] = reference_doctype
+        if _has_field("Email Queue", "reference_name"):
+            filters["reference_name"] = reference_name
+        if _has_field("Email Queue", "subject") and subject:
+            filters["subject"] = subject
+        rows = frappe.get_all("Email Queue", filters=filters, fields=["name"], order_by="creation desc", limit_page_length=1)
+        return rows[0].name if rows else ""
+    except Exception:
+        return ""
+
+
+def _send_whatsapp_api(phone: str, content: dict, campaign_doc, target_row) -> dict:
+    if requests is None:
+        frappe.throw(_("Python requests is required for WhatsApp API sending."))
+    if not frappe.db.exists("DocType", "Orderlift WhatsApp Settings"):
+        frappe.throw(_("Create Orderlift WhatsApp Settings before automated WhatsApp sending."))
+    settings = frappe.get_single("Orderlift WhatsApp Settings")
+    if not cint(settings.enabled):
+        frappe.throw(_("Enable Orderlift WhatsApp Settings before automated WhatsApp sending."))
+
+    provider = _whatsapp_provider_for_campaign(campaign_doc, settings)
+    if provider == "Twilio":
+        return _send_twilio_whatsapp(phone, content, settings)
+    return _send_custom_webhook_whatsapp(phone, content, campaign_doc, target_row, settings)
+
+
+def _whatsapp_provider_for_campaign(campaign_doc, settings) -> str:
+    whatsapp_mode = _normalize_whatsapp_mode(campaign_doc.whatsapp_mode)
+    if whatsapp_mode in {WHATSAPP_TWILIO_MODE, WHATSAPP_WEBHOOK_MODE}:
+        return whatsapp_mode
+    provider = (settings.provider or WHATSAPP_WEBHOOK_MODE).strip()
+    return WHATSAPP_TWILIO_MODE if provider == WHATSAPP_TWILIO_MODE else WHATSAPP_WEBHOOK_MODE
+
+
+def _send_twilio_whatsapp(phone: str, content: dict, settings) -> dict:
+    sid = (settings.twilio_account_sid or "").strip()
+    token = _settings_password(settings, "twilio_auth_token")
+    from_number = normalize_whatsapp_phone(settings.twilio_from_number, "")
+    template = content.get("template")
+    if not sid or not token or not from_number or not template:
+        frappe.throw(_("Twilio WhatsApp requires Account SID, Auth Token, From Number, and Template."))
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
+    response = requests.post(
+        url,
+        data={
+            "From": f"whatsapp:+{from_number}",
+            "To": f"whatsapp:+{phone}",
+            "ContentSid": template,
+            "ContentVariables": json.dumps(content.get("variables") or {}),
+        },
+        auth=(sid, token),
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        frappe.throw(_("Twilio WhatsApp send failed: {0}").format(response.text[:300]))
+    data = response.json() if response.content else {}
+    return {"provider": "Twilio", "message_id": data.get("sid") or "", "status": data.get("status") or "queued"}
+
+
+def _send_custom_webhook_whatsapp(phone: str, content: dict, campaign_doc, target_row, settings) -> dict:
+    webhook_url = (settings.custom_webhook_url or "").strip()
+    if not webhook_url:
+        frappe.throw(_("Custom webhook URL is required for WhatsApp automated sending."))
+    secret = _settings_password(settings, "custom_webhook_secret")
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
+    payload = {
+        "phone": phone,
+        "template": content.get("template"),
+        "language": content.get("language"),
+        "variables": content.get("variables") or {},
+        "message": content.get("text") or "",
+        "campaign": campaign_doc.name,
+        "campaign_name": campaign_doc.campaign_name,
+        "target_row": target_row.name,
+        "party_type": target_row.party_type,
+        "party_name": target_row.party_name,
+    }
+    response = requests.post(webhook_url, json=payload, headers=headers, timeout=20)
+    if response.status_code >= 400:
+        frappe.throw(_("WhatsApp webhook failed: {0}").format(response.text[:300]))
+    data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+    return {"provider": "Custom Webhook", "message_id": data.get("id") or data.get("message_id") or "", "status": data.get("status") or "sent"}
+
+
+def _settings_password(settings, fieldname: str) -> str:
+    try:
+        return settings.get_password(fieldname) or ""
+    except Exception:
+        return settings.get(fieldname) or ""
+
+
+def _mark_row_outreach(row, outreach_type: str) -> None:
+    row.last_outreach_type = outreach_type
+    row.last_outreach_date = nowdate()
+    row.last_contact_date = nowdate()
+
+
+def _upsert_visit_todo(campaign_doc, target_row, content: dict):
+    allocated_to = target_row.assigned_to or campaign_doc.campaign_owner or frappe.session.user
+    description = _visit_todo_description(campaign_doc, target_row, content)
+    todo = None
+    if target_row.visit_todo and frappe.db.exists("ToDo", target_row.visit_todo):
+        existing = frappe.get_doc("ToDo", target_row.visit_todo)
+        if existing.status == "Open":
+            todo = existing
+    if not todo:
+        existing_name = _find_open_visit_todo(target_row.party_type, target_row.party_name, campaign_doc.name)
+        todo = frappe.get_doc("ToDo", existing_name) if existing_name else None
+    if todo:
+        todo.allocated_to = allocated_to
+        todo.date = target_row.visit_date
+        todo.description = description
+        todo.status = "Open"
+        todo.save(ignore_permissions=True)
+        return todo
+    return frappe.get_doc(
+        {
+            "doctype": "ToDo",
+            "allocated_to": allocated_to,
+            "reference_type": target_row.party_type,
+            "reference_name": target_row.party_name,
+            "description": description,
+            "status": "Open",
+            "priority": DEFAULT_TODO_PRIORITY,
+            "date": target_row.visit_date,
+        }
+    ).insert(ignore_permissions=True)
+
+
+def _visit_todo_description(campaign_doc, target_row, content: dict) -> str:
+    subject = content.get("subject") or campaign_doc.visit_subject or campaign_doc.campaign_name or campaign_doc.name
+    agenda = content.get("agenda") or campaign_doc.visit_agenda or ""
+    return "\n".join(
+        part
+        for part in [
+            f"{VISIT_TODO_MARKER} {_campaign_short_code(campaign_doc.name)} - {subject}",
+            target_row.display_name or target_row.party_name,
+            agenda,
+        ]
+        if part
+    )
+
+
+def _find_open_visit_todo(reference_type: str, reference_name: str, campaign: str) -> str | None:
+    rows = frappe.get_all(
+        "ToDo",
+        filters={"reference_type": reference_type, "reference_name": reference_name, "status": "Open"},
+        fields=["name", "description"],
+        limit_page_length=20,
+    )
+    for row in rows:
+        description = row.get("description") or ""
+        if VISIT_TODO_MARKER in description and _campaign_short_code(campaign) in description:
+            return row.name
+    return None
+
+
+def _bulk_target_action(campaign_doc, target_names: set[str], action) -> dict:
+    result = {"success": [], "warnings": [], "errors": []}
+    for row in campaign_doc.targets or []:
+        if row.name not in target_names:
+            continue
+        try:
+            result["success"].append({"target": row.name, "result": action(row)})
+        except Exception as exc:
+            result["errors"].append({"target": row.name, "label": row.display_name or row.party_name, "error": str(exc)})
+    return result
 
 
 def _validate_campaign_ready_state(doc) -> None:
@@ -843,22 +1774,39 @@ def _validate_campaign_ready_state(doc) -> None:
     missing = []
     if not (doc.campaign_name or "").strip():
         missing.append(_("campaign name"))
-    if not [row for row in doc.items or [] if row.item_code]:
+    if not [row for row in _child_rows(doc, "items") if row.item_code]:
         missing.append(_("at least one article"))
     if not [row for row in doc.targets or [] if row.party_type and row.party_name]:
         missing.append(_("at least one target"))
     if not _campaign_has_content(doc):
-        missing.append(_("email, WhatsApp, or call content"))
+        missing.append(_("{0} content").format(_campaign_action_type(doc)))
 
     if missing:
         frappe.throw(_("Campaign cannot be {0} until it has {1}.").format(doc.status, ", ".join(missing)))
 
 
 def _campaign_has_content(doc) -> bool:
-    return any(
-        (doc.get(fieldname) or "").strip()
-        for fieldname in ["email_subject", "email_body", "whatsapp_text", "call_script"]
-    )
+    action_type = _campaign_action_type(doc)
+    fields_by_action = {
+        "Call": ["call_script"],
+        "Visit": ["visit_subject", "visit_agenda"],
+        "Other": ["other_subject", "other_notes"],
+    }
+    if action_type == "Email":
+        return bool(_plain_content(doc.get("email_body")))
+    if action_type == "WhatsApp":
+        whatsapp_mode = _normalize_whatsapp_mode(doc.get("whatsapp_mode"))
+        if whatsapp_mode == WHATSAPP_TWILIO_MODE:
+            return bool((doc.get("whatsapp_template") or "").strip())
+        if whatsapp_mode == WHATSAPP_WEBHOOK_MODE:
+            return bool((doc.get("whatsapp_template") or "").strip() or (doc.get("whatsapp_text") or "").strip())
+        return bool((doc.get("whatsapp_text") or "").strip())
+    return any((doc.get(fieldname) or "").strip() for fieldname in fields_by_action.get(action_type, []))
+
+
+def _plain_content(value: str | None) -> str:
+    without_tags = re.sub(r"<[^>]+>", " ", value or "")
+    return html.unescape(without_tags).strip()
 
 
 def _log_campaign_event(campaign: str, event: str, detail: str) -> None:
@@ -963,8 +1911,7 @@ def _party_primary_crm_segment(party_type: str, party_name: str, fallback_segmen
     rows = _party_crm_segments(party_type, party_name)
     if rows:
         return {"business_type": rows[0].business_type, "crm_segment": rows[0].segment}
-    business_type, crm_segment = _resolve_legacy_segment(fallback_segment)
-    return {"business_type": business_type, "crm_segment": crm_segment}
+    return {"business_type": None, "crm_segment": None}
 
 
 def _copy_party_segments(source_doc, target_doc):

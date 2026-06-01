@@ -9,7 +9,7 @@ from frappe.utils.print_format import download_pdf
 
 from orderlift.client_portal.utils.access import (
     ensure_internal_reviewer,
-    get_catalog_products_for_group,
+    get_catalog_products_for_context,
     INTERNAL_REVIEW_ROLES,
     get_portal_user_context,
     resolve_portal_price,
@@ -36,7 +36,9 @@ def get_bootstrap() -> dict:
             "email": ctx.email,
             "customer": ctx.customer,
             "customer_name": ctx.customer_name,
-            "customer_group": ctx.customer_group,
+            "business_type": ctx.business_type,
+            "crm_segment": ctx.crm_segment,
+            "crm_segments": ctx.crm_segments,
         },
         "policy": {
             "currency": (ctx.policy.currency if ctx.policy and hasattr(ctx.policy, "currency") else "") or "",
@@ -57,7 +59,12 @@ def get_bootstrap() -> dict:
 @frappe.whitelist(allow_guest=False)
 def get_catalog(search: str = "", featured: int = 0, limit: int = 60) -> list[dict]:
     ctx = get_portal_user_context()
-    rules = get_catalog_products_for_group(ctx.customer_group, featured_only=bool(int(featured or 0)))
+    rules = get_catalog_products_for_context(
+        business_type=ctx.business_type,
+        crm_segment=ctx.crm_segment,
+        featured_only=bool(int(featured or 0)),
+        company=ctx.get("company"),
+    )
     search_norm = (search or "").strip().lower()
     out = []
 
@@ -75,12 +82,14 @@ def get_catalog(search: str = "", featured: int = 0, limit: int = 60) -> list[di
 @frappe.whitelist(allow_guest=False)
 def get_catalog_entry(kind: str, code: str) -> dict:
     ctx = get_portal_user_context()
-    rules = get_catalog_products_for_group(ctx.customer_group)
+    rules = get_catalog_products_for_context(
+        business_type=ctx.business_type, crm_segment=ctx.crm_segment, company=ctx.get("company")
+    )
     for rule in rules:
         entry = _catalog_entry_from_rule(rule, ctx.policy.portal_price_list if ctx.policy else "")
         if entry.get("kind") == kind and entry.get("code") == code:
             return entry
-    frappe.throw(_("Catalog entry not available for your customer group."), frappe.PermissionError)
+    frappe.throw(_("Catalog entry not available for your CRM segment."), frappe.PermissionError)
 
 
 @frappe.whitelist(allow_guest=False)
@@ -88,7 +97,7 @@ def submit_quote_request(payload: str) -> dict:
     ctx = get_portal_user_context()
     policy = ctx.policy
     if not policy or not policy.quote_request_allowed:
-        frappe.throw(_("Quotation requests are not enabled for your customer group."), frappe.PermissionError)
+        frappe.throw(_("Quotation requests are not enabled for your CRM segment."), frappe.PermissionError)
 
     data = json.loads(payload or "{}") if isinstance(payload, str) else (payload or {})
     lines = data.get("items") or []
@@ -98,6 +107,10 @@ def submit_quote_request(payload: str) -> dict:
     request = frappe.new_doc("Portal Quote Request")
     request.customer = ctx.customer
     request.customer_group = ctx.customer_group
+    if request.meta.get_field("business_type"):
+        request.business_type = ctx.business_type
+    if request.meta.get_field("crm_segment"):
+        request.crm_segment = ctx.crm_segment
     request.contact = ctx.contact
     request.portal_user = ctx.user
     request.currency = policy.currency or frappe.db.get_value("Price List", policy.portal_price_list, "currency") or "MAD"
@@ -105,7 +118,12 @@ def submit_quote_request(payload: str) -> dict:
     request.request_notes = (data.get("request_notes") or "").strip()
     request.submitted_on = now()
 
-    allowed_rules = {row.name: row for row in get_catalog_products_for_group(ctx.customer_group)}
+    allowed_rules = {
+        row.name: row
+        for row in get_catalog_products_for_context(
+            business_type=ctx.business_type, crm_segment=ctx.crm_segment, company=ctx.get("company")
+        )
+    }
     total_qty = 0.0
     total_amount = 0.0
 
@@ -116,7 +134,7 @@ def submit_quote_request(payload: str) -> dict:
         rule_name = raw_line.get("rule_name")
         rule = allowed_rules.get(rule_name)
         if not rule:
-            frappe.throw(_("One of the requested products is not allowed for your customer group."), frappe.PermissionError)
+            frappe.throw(_("One of the requested products is not allowed for your CRM segment."), frappe.PermissionError)
 
         entry = _catalog_entry_from_rule(rule, policy.portal_price_list)
         rate = flt(entry.get("price_rate") or 0)
@@ -208,7 +226,7 @@ def get_review_queue() -> list[dict]:
     return frappe.get_all(
         "Portal Quote Request",
         filters={"status": ["in", ["Submitted", "Under Review", "Approved"]]},
-        fields=["name", "customer", "customer_group", "portal_user", "status", "total_amount", "currency", "modified", "linked_quotation"],
+        fields=["name", "customer", "business_type", "crm_segment", "portal_user", "status", "total_amount", "currency", "modified", "linked_quotation"],
         order_by="modified desc",
         limit_page_length=100,
     )
@@ -221,7 +239,8 @@ def get_review_request_detail(name: str) -> dict:
     return {
         "name": request.name,
         "customer": request.customer,
-        "customer_group": request.customer_group,
+        "business_type": request.get("business_type") or "",
+        "crm_segment": request.get("crm_segment") or "",
         "portal_user": request.portal_user,
         "status": request.status,
         "currency": request.currency,
