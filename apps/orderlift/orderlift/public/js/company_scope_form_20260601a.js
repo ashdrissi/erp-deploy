@@ -55,10 +55,25 @@ frappe.provide("orderlift.company_scope");
             const company = activeCompany();
             if (company) frm.set_value(field, company);
         }
-        // Lock the owning company for everyone except all-company admins.
-        if (!isUnrestricted()) {
+        // Lock the owning company for EVERYONE so records stay strictly on the
+        // active company. Admins get an explicit unlock button for intentional
+        // reassignment (e.g. fixing backfilled records); non-admins stay locked.
+        if (frm._orderlift_company_unlocked) {
+            frm.set_df_property(field, "read_only", 0);
+        } else {
             frm.set_df_property(field, "read_only", 1);
+            if (isUnrestricted()) addUnlockButton(frm, config);
         }
+    }
+
+    function addUnlockButton(frm, config) {
+        // add_custom_button dedupes by label and Frappe clears custom buttons on
+        // each refresh, so it is safe to call this on every apply().
+        frm.add_custom_button(__("Change company"), () => {
+            frm._orderlift_company_unlocked = true;
+            frm.set_df_property(config.company, "read_only", 0);
+            frappe.show_alert({ message: __("Company is now editable for this record."), indicator: "blue" });
+        });
     }
 
     async function applyBusinessType(frm, config) {

@@ -31,8 +31,8 @@ app_include_js = [
     "/assets/orderlift/js/orderlift_section_break_guard_20260423d.js",
     "/assets/orderlift/js/orderlift_main_dashboard_section_state_20260423g.js",
     "/assets/orderlift/js/crm_classification.js?v=20260601a",
-    "/assets/orderlift/js/company_scope_form_20260601a.js?v=20260601a",
-    "/assets/orderlift/js/company_scope_list_focus_20260601a.js?v=20260601a",
+    "/assets/orderlift/js/company_scope_form_20260601a.js?v=20260602a",
+    "/assets/orderlift/js/company_scope_list_focus_20260601a.js?v=20260602a",
     "/assets/orderlift/js/sidebar_logo_fix_20260415b.js",
     "/assets/orderlift/js/refresh_stability_fix_20260415.js",
     "/assets/orderlift/js/desk_entry_redirect_20260427b.js",
@@ -159,6 +159,10 @@ doc_events = {
             # Normalize dynamic French specification attributes and search text.
             "orderlift.orderlift_logistics.utils.item_specifications.validate_item_specifications",
         ],
+    },
+    "Item Price": {
+        "after_insert": "orderlift.orderlift_sales.utils.price_list_auto_rebuild.on_item_price_change",
+        "on_update": "orderlift.orderlift_sales.utils.price_list_auto_rebuild.on_item_price_change",
     },
     "Purchase Order": {
         # Resolve item packaging rows from selected/default packaging profiles.

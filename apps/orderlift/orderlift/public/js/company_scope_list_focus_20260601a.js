@@ -1,11 +1,11 @@
 /**
  * Orderlift — company focus for list views.
  *
- * Each scoped doctype list defaults to a filter on the active company so users
- * focus on one company at a time. The filter is REMOVABLE: the hard isolation
- * stays in the server permission query (allowed companies), so clearing the
- * filter only widens to companies the user may already access. Switching the
- * active company via the sidebar switcher reloads and re-applies the focus.
+ * Each scoped doctype list is STRICTLY focused on the active company: every load
+ * forces the company filter to the active company, overriding any stale/different
+ * value (e.g. a saved filter holding the previously-active company after a switch).
+ * To view another company, switch via the sidebar switcher — the single source of
+ * truth. The server permission query (allowed companies) remains the hard backstop.
  */
 
 (function () {
@@ -39,24 +39,38 @@
         return ctx.current_company || ctx.user_default_company || (ctx.companies || [])[0] || "";
     }
 
-    function alreadyFiltered(listview, field) {
-        try {
-            const filters = listview.filter_area.get() || [];
-            return filters.some((row) => row[1] === field);
-        } catch (error) {
-            return false;
-        }
+    function isCorrect(row, field, company) {
+        return Array.isArray(row) && row[1] === field && row[2] === "=" && row[3] === company;
     }
 
-    function applyFocus(listview, field) {
+    function enforceFocus(listview, field) {
         const company = activeCompany();
-        if (!company || !listview || !listview.filter_area) return;
-        // Respect a route/user-supplied filter (e.g. drill-down from a report).
-        if (alreadyFiltered(listview, field)) return;
+        if (!company || !listview) return;
+
+        // 1) Correct the seed array applied on first render. onload runs before
+        //    filter_area is populated from listview.filters (base_list.js), so
+        //    rewriting the seed here makes the active company win over any saved
+        //    (possibly stale) company filter.
+        if (Array.isArray(listview.filters)) {
+            listview.filters = listview.filters.filter((row) => !(Array.isArray(row) && row[1] === field));
+            listview.filters.push([listview.doctype, field, "=", company]);
+        }
+
+        // 2) If filter_area is already populated (re-entry / soft route), override
+        //    a stale value: add() alone won't replace an existing one (exists()),
+        //    so remove then add.
+        if (!listview.filter_area) return;
         try {
-            listview.filter_area.add([[listview.doctype, field, "=", company]]);
+            const live = (listview.filter_area.get() || []).find((row) => row[1] === field);
+            if (live && !isCorrect(live, field, company)) {
+                Promise.resolve(listview.filter_area.remove(field)).then(() => {
+                    listview.filter_area.add([[listview.doctype, field, "=", company]]);
+                });
+            } else if (!live) {
+                listview.filter_area.add([[listview.doctype, field, "=", company]]);
+            }
         } catch (error) {
-            console.error("company_scope: unable to apply list focus", error);
+            console.error("company_scope: unable to enforce list focus", error);
         }
     }
 
@@ -68,7 +82,7 @@
         const previousOnload = existing.onload;
         existing.onload = function (listview) {
             if (typeof previousOnload === "function") previousOnload(listview);
-            applyFocus(listview, field);
+            enforceFocus(listview, field);
         };
         frappe.listview_settings[doctype] = existing;
     });
