@@ -1,3 +1,5 @@
+import json
+
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
@@ -14,6 +16,76 @@ def after_migrate():
     create_custom_fields(
         {
             "Item": [
+                {
+                    "fieldname": "custom_item_category",
+                    "label": "Catégorie article",
+                    "fieldtype": "Link",
+                    "options": "Item Category",
+                    "insert_after": "item_group",
+                    "in_list_view": 1,
+                    "in_standard_filter": 1,
+                    "allow_in_quick_entry": 1,
+                    "description": "Détermine l'abréviation utilisée pour la séquence du code article.",
+                },
+                {
+                    "fieldname": "custom_category_abbreviation",
+                    "label": "Abréviation catégorie",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_item_category",
+                    "fetch_from": "custom_item_category.abbreviation",
+                    "read_only": 1,
+                    "in_standard_filter": 1,
+                    "allow_in_quick_entry": 1,
+                },
+                {
+                    "fieldname": "custom_specifications_section",
+                    "label": "Spécifications",
+                    "fieldtype": "Section Break",
+                    "insert_after": "custom_category_abbreviation",
+                    "collapsible": 1,
+                    "collapsed": 1,
+                },
+                {
+                    "fieldname": "custom_item_name_language",
+                    "label": "Main Item Name Language",
+                    "fieldtype": "Link",
+                    "options": "Language",
+                    "insert_after": "item_name",
+                    "default": "fr",
+                    "hidden": 1,
+                    "description": "Hidden because the main Item Name is the default catalog language.",
+                },
+                {
+                    "fieldname": "custom_secondary_item_name",
+                    "label": "Second Language Name",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_item_name_language",
+                    "in_global_search": 1,
+                    "search_index": 1,
+                },
+                {
+                    "fieldname": "custom_secondary_item_name_language",
+                    "label": "Second Name Language",
+                    "fieldtype": "Link",
+                    "options": "Language",
+                    "insert_after": "custom_secondary_item_name",
+                    "default": "en",
+                },
+                {
+                    "fieldname": "custom_item_add_guide_section",
+                    "label": "Guide ajout article",
+                    "fieldtype": "Section Break",
+                    "insert_after": "brand",
+                    "collapsible": 1,
+                    "collapsed": 1,
+                },
+                {
+                    "fieldname": "custom_item_add_guide_html",
+                    "label": "Guide ajout article",
+                    "fieldtype": "HTML",
+                    "insert_after": "custom_item_add_guide_section",
+                    "options": "<div style=\"padding:8px 0 4px;line-height:1.55;\"><p><strong>Création d'article Orderlift.</strong></p><p><strong>Détails</strong>: choisir la Catégorie article. Si le code article est vide, le système génère un code avec l'abréviation de la catégorie, par exemple <code>ARM-00001</code>.</p><p><strong>Dimensions</strong>: renseigner poids, volume, longueur, largeur et hauteur dans la section Spécifications. Ces champs servent aux calculs logistiques, planning de chargement, transport et douane.</p><p><strong>Spécifications</strong>: utiliser le tableau Attribut/Valeur pour les données commerciales filtrables comme Taille, Capacité, Finition, Tension, Ampérage, Puissance et Type.</p><p><strong>UOM</strong>: l'unité principale reste le champ Default Unit of Measure. Les conversions restent dans la table UOMs.</p><p><strong>Packaging Profile</strong>: renseigner les formats réels d'achat/expédition dans Packaging Profiles. Ces profils alimentent les commandes d'achat et le planning logistique.</p><p><strong>HS code</strong>: renseigner Customs Tariff Number (HS code) pour appliquer la bonne politique douane dans les Pricing Sheets.</p></div>",
+                },
                 {
                     "fieldname": "custom_packaging_profiles",
                     "label": "Packaging Profiles",
@@ -61,6 +133,26 @@ def after_migrate():
                     "insert_after": "custom_height_cm",
                     "read_only": 1,
                     "in_standard_filter": 1,
+                },
+                {
+                    "fieldname": "custom_specifications",
+                    "label": "Spécifications",
+                    "fieldtype": "Table",
+                    "options": "Item Specification Value",
+                    "insert_after": "custom_inventory_flag",
+                    "description": "Attributs techniques dynamiques de l'article.",
+                },
+                {
+                    "fieldname": "custom_specification_search_text",
+                    "label": "Recherche spécifications",
+                    "fieldtype": "Data",
+                    "length": 500,
+                    "insert_after": "custom_specifications",
+                    "hidden": 1,
+                    "read_only": 1,
+                    "in_global_search": 1,
+                    "in_standard_filter": 1,
+                    "search_index": 1,
                 },
             ],
             # ── Purchase Order: scenario classification ──
@@ -357,6 +449,11 @@ def after_migrate():
         },
         update=True,
     )
+    seed_item_categories()
+    seed_item_specification_attributes()
+    arrange_item_specification_fields()
+    label_item_specifications_section()
+    apply_item_field_order()
 
     frappe.clear_cache(doctype="Item")
     frappe.clear_cache(doctype="Buying Settings")
@@ -367,6 +464,253 @@ def after_migrate():
     frappe.clear_cache(doctype="Stock Entry")
     frappe.clear_cache(doctype="Delivery Trip")
     retire_logistics_workspace()
+
+
+def seed_item_specification_attributes():
+    rows = [
+        {"attribute_name": "Taille", "value_type": "Texte", "unit": "", "sequence": 10},
+        {"attribute_name": "Capacité", "value_type": "Texte", "unit": "", "sequence": 20},
+        {"attribute_name": "Finition", "value_type": "Texte", "unit": "", "sequence": 30},
+        {"attribute_name": "Tension", "value_type": "Nombre", "unit": "V", "sequence": 40},
+        {"attribute_name": "Ampérage", "value_type": "Nombre", "unit": "A", "sequence": 50},
+        {"attribute_name": "Puissance", "value_type": "Nombre", "unit": "kW", "sequence": 60},
+        {"attribute_name": "Type", "value_type": "Texte", "unit": "", "sequence": 70},
+    ]
+
+    for row in rows:
+        existing = frappe.db.get_value("Item Specification Attribute", {"attribute_name": row["attribute_name"]}, "name")
+        doc = frappe.get_doc("Item Specification Attribute", existing) if existing else frappe.new_doc("Item Specification Attribute")
+        doc.update(
+            {
+                **row,
+                "is_filterable": 1,
+                "is_active": 1,
+            }
+        )
+        if existing:
+            doc.save(ignore_permissions=True)
+        else:
+            doc.insert(ignore_permissions=True)
+
+
+def seed_item_categories():
+    rows = [
+        {"category_name": "Armoire", "abbreviation": "ARM", "sequence_digits": 5},
+        {"category_name": "Autres", "abbreviation": "AUT", "sequence_digits": 5},
+        {"category_name": "Boutons", "abbreviation": "BTN", "sequence_digits": 5},
+        {"category_name": "Cabine & Arcade", "abbreviation": "CAB", "sequence_digits": 5},
+        {"category_name": "Cables & Accessoires", "abbreviation": "CABL", "sequence_digits": 5},
+        {"category_name": "Cables Electriques & Accessoires", "abbreviation": "CELEC", "sequence_digits": 5},
+        {"category_name": "Gose", "abbreviation": "GOSE", "sequence_digits": 5},
+        {"category_name": "Moteur", "abbreviation": "MOT", "sequence_digits": 5},
+        {"category_name": "Operateur", "abbreviation": "OPR", "sequence_digits": 5},
+        {"category_name": "Porte", "abbreviation": "POR", "sequence_digits": 5},
+        {"category_name": "Rails & Accessoires", "abbreviation": "RAIL", "sequence_digits": 5},
+    ]
+
+    for row in rows:
+        existing = frappe.db.get_value("Item Category", {"category_name": row["category_name"]}, "name")
+        doc = frappe.get_doc("Item Category", existing) if existing else frappe.new_doc("Item Category")
+        current_sequence = doc.current_sequence if existing else 0
+        doc.update({**row, "is_active": 1, "current_sequence": current_sequence or 0})
+        if existing:
+            doc.save(ignore_permissions=True)
+        else:
+            doc.insert(ignore_permissions=True)
+
+
+def arrange_item_specification_fields():
+    for fieldname in ["Item-custom_import_key", "Item-custom_legacy_item_code", "Item-custom_item_settings_section"]:
+        if frappe.db.exists("Custom Field", fieldname):
+            frappe.delete_doc("Custom Field", fieldname, ignore_permissions=True, force=True)
+
+    ordering = [
+        ("Item-custom_item_category", "item_group", 6),
+        ("Item-custom_category_abbreviation", "custom_item_category", 7),
+        ("Item-custom_item_name_language", "item_name", 8),
+        ("Item-custom_secondary_item_name", "custom_item_name_language", 9),
+        ("Item-custom_secondary_item_name_language", "custom_secondary_item_name", 10),
+        ("Item-custom_specifications_section", "asset_naming_series", 17),
+        ("Item-custom_material", "custom_specifications_section", 18),
+        ("Item-custom_customs_material", "custom_material", 19),
+        ("Item-custom_weight_kg", "custom_customs_material", 20),
+        ("Item-custom_volume_m3", "custom_weight_kg", 21),
+        ("Item-custom_length_cm", "custom_volume_m3", 22),
+        ("Item-custom_width_cm", "custom_length_cm", 23),
+        ("Item-custom_height_cm", "custom_width_cm", 24),
+        ("Item-custom_inventory_flag", "custom_height_cm", 25),
+        ("Item-custom_specifications", "custom_inventory_flag", 26),
+        ("Item-custom_specification_search_text", "custom_specifications", 27),
+        ("Item-custom_packaging_profiles", "uoms", 30),
+        ("Item-custom_item_add_guide_section", "brand", 34),
+        ("Item-custom_item_add_guide_html", "custom_item_add_guide_section", 35),
+    ]
+
+    for name, insert_after, idx in ordering:
+        if frappe.db.exists("Custom Field", name):
+            frappe.db.set_value(
+                "Custom Field",
+                name,
+                {"insert_after": insert_after, "idx": idx},
+                update_modified=False,
+            )
+
+
+def label_item_specifications_section():
+    for property_name in ["label", "collapsible", "collapsed", "insert_after"]:
+        _delete_property_setter("Item", "section_break_gjns", property_name)
+
+    _upsert_property_setter("Item", "unit_of_measure_conversion", "label", "UOM", "Data")
+    _upsert_property_setter(
+        "Item", "unit_of_measure_conversion", "insert_after", "custom_specification_search_text", "Data"
+    )
+    _upsert_property_setter("Item", "stock_uom", "insert_after", "unit_of_measure_conversion", "Data")
+    _upsert_property_setter("Item", "uoms", "insert_after", "stock_uom", "Data")
+    _upsert_property_setter("Item", "section_break_11", "insert_after", "custom_packaging_profiles", "Data")
+    _upsert_property_setter("Item", "description", "insert_after", "section_break_11", "Data")
+    _upsert_property_setter("Item", "brand", "insert_after", "description", "Data")
+
+    standard_ordering = [
+        ("disabled", 8),
+        ("allow_alternative_item", 9),
+        ("is_stock_item", 10),
+        ("has_variants", 11),
+        ("is_fixed_asset", 12),
+        ("auto_create_assets", 13),
+        ("is_grouped_asset", 14),
+        ("asset_category", 15),
+        ("asset_naming_series", 16),
+        ("unit_of_measure_conversion", 27),
+        ("stock_uom", 28),
+        ("uoms", 29),
+        ("section_break_11", 31),
+        ("description", 32),
+        ("brand", 33),
+        ("section_break_gjns", 36),
+        ("opening_stock", 37),
+        ("standard_rate", 38),
+        ("section_break_znra", 39),
+    ]
+    for fieldname, idx in standard_ordering:
+        _upsert_property_setter("Item", fieldname, "idx", idx, "Int")
+
+    _upsert_property_setter("Item", "section_break_gjns", "hidden", "1", "Check")
+    _upsert_property_setter("Item", "section_break_znra", "hidden", "1", "Check")
+    _upsert_property_setter("Item", "item_code", "read_only", "1", "Check")
+    _upsert_property_setter("Item", "item_code", "default", "AUTO", "Data")
+    _upsert_property_setter(
+        "Item",
+        "item_code",
+        "description",
+        "Generated from Catégorie article sequence when the Item is saved.",
+        "Text",
+    )
+    _upsert_property_setter("Item", "custom_specifications_section", "collapsible", "1", "Check")
+    _upsert_property_setter("Item", "custom_specifications_section", "collapsed", "1", "Check")
+    _upsert_property_setter("Item", "custom_item_add_guide_section", "collapsed", "1", "Check")
+    for fieldname in ["allow_alternative_item", "is_stock_item", "has_variants", "is_fixed_asset"]:
+        _upsert_property_setter("Item", fieldname, "hidden", "1", "Check")
+    _upsert_property_setter("Item", "opening_stock", "hidden", "1", "Check")
+    _upsert_property_setter("Item", "standard_rate", "hidden", "1", "Check")
+
+
+def apply_item_field_order():
+    meta = frappe.get_meta("Item")
+    existing = [df.fieldname for df in meta.fields]
+    desired_start = [
+        "details",
+        "naming_series",
+        "item_code",
+        "item_name",
+        "custom_item_name_language",
+        "custom_secondary_item_name",
+        "custom_secondary_item_name_language",
+        "item_group",
+        "custom_item_category",
+        "custom_category_abbreviation",
+        "disabled",
+        "allow_alternative_item",
+        "is_stock_item",
+        "has_variants",
+        "is_fixed_asset",
+        "auto_create_assets",
+        "is_grouped_asset",
+        "asset_category",
+        "asset_naming_series",
+        "custom_specifications_section",
+        "custom_material",
+        "custom_customs_material",
+        "custom_weight_kg",
+        "custom_volume_m3",
+        "custom_length_cm",
+        "custom_width_cm",
+        "custom_height_cm",
+        "custom_inventory_flag",
+        "custom_specifications",
+        "custom_specification_search_text",
+        "unit_of_measure_conversion",
+        "stock_uom",
+        "uoms",
+        "custom_packaging_profiles",
+        "section_break_11",
+        "description",
+        "brand",
+        "custom_item_add_guide_section",
+        "custom_item_add_guide_html",
+    ]
+
+    ordered = [fieldname for fieldname in desired_start if fieldname in existing]
+    ordered_set = set(ordered)
+    ordered.extend(fieldname for fieldname in existing if fieldname not in ordered_set)
+    _upsert_doctype_property_setter("Item", "field_order", json.dumps(ordered), "Text")
+
+
+def _delete_property_setter(doctype: str, fieldname: str, property_name: str):
+    existing = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": doctype, "field_name": fieldname, "property": property_name},
+        "name",
+    )
+    if existing:
+        frappe.delete_doc("Property Setter", existing, ignore_permissions=True, force=True)
+
+
+def _upsert_doctype_property_setter(doctype: str, property_name: str, value, property_type: str):
+    existing = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": doctype, "doctype_or_field": "DocType", "property": property_name},
+        "name",
+    )
+    setter = frappe.get_doc("Property Setter", existing) if existing else frappe.new_doc("Property Setter")
+    setter.doc_type = doctype
+    setter.doctype_or_field = "DocType"
+    setter.field_name = None
+    setter.property = property_name
+    setter.property_type = property_type
+    setter.value = str(value)
+    if existing:
+        setter.save(ignore_permissions=True)
+    else:
+        setter.insert(ignore_permissions=True)
+
+
+def _upsert_property_setter(doctype: str, fieldname: str, property_name: str, value, property_type: str):
+    existing = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": doctype, "field_name": fieldname, "property": property_name},
+        "name",
+    )
+    setter = frappe.get_doc("Property Setter", existing) if existing else frappe.new_doc("Property Setter")
+    setter.doc_type = doctype
+    setter.doctype_or_field = "DocField"
+    setter.field_name = fieldname
+    setter.property = property_name
+    setter.property_type = property_type
+    setter.value = str(value)
+    if existing:
+        setter.save(ignore_permissions=True)
+    else:
+        setter.insert(ignore_permissions=True)
 
 
 def retire_logistics_workspace():

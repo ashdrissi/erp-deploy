@@ -1,0 +1,184 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-05-14 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "employee",
+  "user",
+  "metric",
+  "col_break_main",
+  "appraisal_cycle",
+  "from_date",
+  "to_date",
+  "section_result",
+  "value",
+  "value_display",
+  "target_value",
+  "col_break_result",
+  "score_0_100",
+  "last_computed_on",
+  "section_status",
+  "compute_status",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "default": "PMS-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "PMS-.YYYY.-.#####",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User"
+  },
+  {
+   "fieldname": "metric",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Metric",
+   "options": "Performance Metric",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "appraisal_cycle",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Appraisal Cycle",
+   "options": "Appraisal Cycle",
+   "reqd": 1
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "label": "From Date"
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "To Date"
+  },
+  {
+   "fieldname": "section_result",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "value",
+   "fieldtype": "Float",
+   "label": "Value"
+  },
+  {
+   "fieldname": "value_display",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Value (display)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_value",
+   "fieldtype": "Float",
+   "label": "Target Value"
+  },
+  {
+   "fieldname": "col_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "score_0_100",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Score (0-100)"
+  },
+  {
+   "fieldname": "last_computed_on",
+   "fieldtype": "Datetime",
+   "label": "Last Computed On"
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Compute Status"
+  },
+  {
+   "default": "Computed",
+   "fieldname": "compute_status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Computed\nNo Data\nError"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift HR",
+ "name": "Performance Metric Snapshot",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Orderlift Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {"create": 1, "read": 1, "role": "Sales User"},
+  {"create": 1, "read": 1, "role": "Pricing Manager"},
+  {"create": 1, "read": 1, "role": "Logistics User"},
+  {"create": 1, "read": 1, "role": "Finance User"},
+  {"create": 1, "read": 1, "role": "Installation User"},
+  {"create": 1, "read": 1, "role": "Service User"}
+ ],
+ "sort_field": "last_computed_on",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

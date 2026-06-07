@@ -1503,7 +1503,7 @@ function bootVue(state) {
             const selectedOpenLabel = computed(() => {
                 if (!selectedDeal.value) return __("Open Document");
                 const doctype = selectedDeal.value.doctype || inferDoctype(selectedDeal.value.id);
-                return __("Open {0}", [doctype]);
+                return __("Open {0}", [doctype === "Forecast Load Plan" ? __("Shipment Plan") : doctype]);
             });
 
             function openDocPreview(node) {

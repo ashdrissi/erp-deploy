@@ -10,6 +10,8 @@
         "ratio_max",
         "target_margin_percent",
         "max_discount_percent",
+        "business_type",
+        "crm_segment",
         "customer_type",
         "item_group",
         "material",
@@ -53,11 +55,25 @@
             "in_list_view": 1
         },
         {
+            "fieldname": "business_type",
+            "fieldtype": "Link",
+            "label": "Business Type",
+            "options": "CRM Business Type",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "crm_segment",
+            "fieldtype": "Link",
+            "label": "CRM Segment",
+            "options": "CRM Segment",
+            "in_list_view": 1
+        },
+        {
             "fieldname": "customer_type",
             "fieldtype": "Link",
-            "label": "Customer Group",
+            "label": "Legacy Customer Group",
             "options": "Customer Group",
-            "in_list_view": 1
+            "hidden": 1
         },
         {
             "fieldname": "item_group",

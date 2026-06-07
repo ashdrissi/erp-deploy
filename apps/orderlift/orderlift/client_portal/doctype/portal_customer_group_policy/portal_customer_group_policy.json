@@ -5,9 +5,12 @@
   "custom": 0,
   "is_submittable": 0,
   "track_changes": 1,
-  "autoname": "field:customer_group",
+  "autoname": "field:policy_name",
   "engine": "InnoDB",
   "field_order": [
+    "policy_name",
+    "business_type",
+    "crm_segment",
     "customer_group",
     "enabled",
     "portal_price_list",
@@ -18,7 +21,10 @@
     "catalog_items"
   ],
   "fields": [
-    {"fieldname": "customer_group", "fieldtype": "Link", "label": "Customer Group", "options": "Customer Group", "reqd": 1},
+    {"fieldname": "policy_name", "fieldtype": "Data", "label": "Policy Name", "reqd": 1, "unique": 1, "in_list_view": 1},
+    {"fieldname": "business_type", "fieldtype": "Link", "label": "Business Type", "options": "CRM Business Type", "in_list_view": 1},
+    {"fieldname": "crm_segment", "fieldtype": "Link", "label": "CRM Segment", "options": "CRM Segment", "in_list_view": 1},
+    {"fieldname": "customer_group", "fieldtype": "Link", "label": "Legacy Customer Group", "options": "Customer Group", "default": "All Customer Groups", "hidden": 1},
     {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "1"},
     {"fieldname": "portal_price_list", "fieldtype": "Link", "label": "Portal Price List", "options": "Price List", "reqd": 1},
     {"fieldname": "currency", "fieldtype": "Link", "label": "Currency", "options": "Currency"},

@@ -49,12 +49,12 @@ SCENARIOS = [
 ]
 
 CUSTOMS_RULES = [
-    {"material": "STEEL", "value_per_kg": 13.0, "rate_components": "20.25", "rate_per_kg": 13.0 * 0.2025, "rate_percent": 20.25, "sequence": 10, "priority": 10},
-    {"material": "GALVA", "value_per_kg": 24.0, "rate_components": "20.25", "rate_per_kg": 24.0 * 0.2025, "rate_percent": 20.25, "sequence": 20, "priority": 10},
-    {"material": "INOX", "value_per_kg": 40.0, "rate_components": "20.25", "rate_per_kg": 40.0 * 0.2025, "rate_percent": 20.25, "sequence": 30, "priority": 10},
-    {"material": "COPPER", "value_per_kg": 60.0, "rate_components": "20.25", "rate_per_kg": 60.0 * 0.2025, "rate_percent": 20.25, "sequence": 40, "priority": 10},
-    {"material": "ALUM", "value_per_kg": 0.0, "rate_components": "20.25", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 50, "priority": 20},
-    {"material": "OTHER", "value_per_kg": 0.0, "rate_components": "20.25", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 60, "priority": 30},
+    {"material": "STEEL", "value_per_kg": 13.0, "rate_components": "", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 10, "priority": 10},
+    {"material": "GALVA", "value_per_kg": 24.0, "rate_components": "", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 20, "priority": 10},
+    {"material": "INOX", "value_per_kg": 40.0, "rate_components": "", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 30, "priority": 10},
+    {"material": "COPPER", "value_per_kg": 60.0, "rate_components": "", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 40, "priority": 10},
+    {"material": "ALUM", "value_per_kg": 0.0, "rate_components": "", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 50, "priority": 20},
+    {"material": "OTHER", "value_per_kg": 0.0, "rate_components": "", "rate_per_kg": 0.0, "rate_percent": 20.25, "sequence": 60, "priority": 30},
 ]
 
 
@@ -73,8 +73,8 @@ def _upsert_customs_policy() -> str:
     doc.is_active = 1
     doc.is_default = 1
     doc.notes = (
-        "Derived from workbook customs column. Applies 20.25% with material-specific per-kg floors. "
-        "ALUM/OTHER currently fall back to percent-only until business confirms a per-kg factor."
+        "Derived from workbook customs column. Applies 20.25% to material-specific customs value per kg. "
+        "Formula: Value Per Kg x total kg x Rate Percent / 100."
     )
     doc.set("customs_rules", [])
     for row in CUSTOMS_RULES:

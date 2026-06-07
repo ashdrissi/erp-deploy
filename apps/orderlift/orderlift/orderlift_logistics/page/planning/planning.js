@@ -48,9 +48,9 @@ function renderPlanningPage(wrapper) {
     if (!planName) {
         wrapper.planning_page.main.html(`
             <div style="padding:60px;text-align:center;font-family:'Outfit',sans-serif;color:#6B6A70;">
-                <div style="font-size:18px;font-weight:600;color:#1A1A1E;margin-bottom:8px;">No forecast plan selected</div>
-                <div style="margin-bottom:16px;">Open a plan from the Forecast Plans list to start planning.</div>
-                <button onclick="frappe.set_route('forecast-plans')" style="padding:8px 20px;border-radius:8px;border:none;background:#0D6B50;color:white;font-size:13px;font-weight:500;cursor:pointer;">Go to Forecast Plans</button>
+                <div style="font-size:18px;font-weight:600;color:#1A1A1E;margin-bottom:8px;">No shipment plan selected</div>
+                <div style="margin-bottom:16px;">Open a plan from the Shipment Plans list to start planning.</div>
+                <button onclick="frappe.set_route('forecast-plans')" style="padding:8px 20px;border-radius:8px;border:none;background:#0D6B50;color:white;font-size:13px;font-weight:500;cursor:pointer;">Go to Shipment Plans</button>
             </div>
         `);
         return;
@@ -352,7 +352,7 @@ function planningShellHtml(state) {
                 <div class="topbar-icon">
                     <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="12" rx="2"></rect><path d="M2 11h20M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </div>
-                <span class="topbar-title">Load Forecast Planner</span>
+                <span class="topbar-title">Shipment Planner</span>
                 <span class="topbar-sep">/</span>
                 <span class="topbar-crumb">${escapeHtml(planLabel)}</span>
                 <span class="topbar-route" id="topRoute" style="display:none;"></span>
@@ -1014,7 +1014,7 @@ function selectContainerProfile(state, node) {
     const profileName = node.dataset.value;
     setActive(state.root, ".ct-btn", node);
 
-    // Update forecast plan container_profile via backend
+    // Update shipment plan container_profile via backend
     frappe.call({
         method: "frappe.client.set_value",
         args: { doctype: "Forecast Load Plan", name: state.planName, fieldname: "container_profile", value: profileName },

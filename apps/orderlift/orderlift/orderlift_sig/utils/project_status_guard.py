@@ -3,6 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from orderlift.orderlift_crm.classification import copy_crm_classification
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -93,6 +95,8 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
     project.project_name = "Install — {0} — {1}".format(so.customer, so.name)
     project.company = so.company
     project.customer = so.customer
+    if project.meta.get_field("sales_order"):
+        project.sales_order = so.name
     project.expected_start_date = so.delivery_date or frappe.utils.today()
     project.status = "Open"
     project.notes = "Auto-created from Sales Order {0}".format(so.name)
@@ -100,6 +104,7 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
     # SIG fields
     project.custom_project_type_ol = "New Installation"
     project.custom_qc_status = "Not Started"
+    copy_crm_classification(so, project)
 
     # Copy delivery address if available
     if so.shipping_address_name:

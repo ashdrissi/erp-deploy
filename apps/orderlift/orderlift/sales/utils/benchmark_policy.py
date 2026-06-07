@@ -59,6 +59,11 @@ def resolve_benchmark_margin(
     if basis_warning:
         warnings.append(basis_warning)
 
+    configured_min_sources = cint(min_sources or 1) or 1
+    effective_min_sources = configured_min_sources
+    if _active_source_count(benchmark_sources) > 0:
+        effective_min_sources = 1
+
     # Gather benchmark prices from all active sources
     prices, source_labels = _fetch_benchmark_prices(
         item_code, benchmark_sources, price_map=price_map
@@ -66,10 +71,10 @@ def resolve_benchmark_margin(
 
     # Validate data quality
     is_fallback = False
-    if len(prices) < min_sources:
+    if len(prices) < effective_min_sources:
         warnings.append(
             f"Only {len(prices)} benchmark source(s) for {item_code}; "
-            f"need {min_sources}. Benchmark comparison disabled."
+            f"need {effective_min_sources}. Benchmark comparison disabled."
         )
         is_fallback = True
 
@@ -104,6 +109,8 @@ def resolve_benchmark_margin(
         "target_margin_percent": target_margin,
         "benchmark_reference": flt(benchmark_ref),
         "source_count": len(prices),
+        "min_sources_required": effective_min_sources,
+        "configured_min_sources_required": configured_min_sources,
         "method": method,
         "benchmark_basis": benchmark_basis,
         "ratio": ratio,
@@ -228,6 +235,13 @@ def _fetch_benchmark_prices(item_code, sources, price_map=None):
     return prices, labels
 
 
+def _active_source_count(sources):
+    return len([
+        src for src in (sources or [])
+        if cint(src.get("is_active", 1)) and src.get("price_list")
+    ])
+
+
 def _get_weights(sources, used_labels):
     """Build weights list parallel to the used_labels list."""
     label_to_weight = {}
@@ -319,7 +333,7 @@ def _match_benchmark_rule(ratio, rules, context=None):
 def _scope_matches(rule, context):
     """Check if rule scope filters match the context."""
     for key in (
-        "item_group", "material", "source_bundle", "geography_territory", "customer_type"
+        "item_group", "material", "source_bundle", "geography_territory", "business_type", "crm_segment", "customer_type"
     ):
         rule_val = _norm(rule.get(key))
         if not rule_val:
@@ -335,6 +349,8 @@ def _scope_specificity(rule):
         "source_bundle": 128,
         "item_group": 64,
         "material": 32,
+        "crm_segment": 16,
+        "business_type": 12,
         "customer_type": 8,
         "geography_territory": 2,
     }

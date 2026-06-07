@@ -9,12 +9,24 @@
     "sequence",
     "is_active",
     "rule_group",
+    "condition_section",
+    "condition_mode",
+    "question_key",
+    "operator",
+    "compare_source",
+    "manual_value",
+    "compare_question_key",
+    "article_section",
     "rule_label",
-    "condition_formula",
     "item",
-    "qty_formula",
+    "quantity_mode",
+    "fixed_qty",
+    "quantity_question_key",
     "display_group",
-    "show_in_detail"
+    "show_in_detail",
+    "legacy_section",
+    "condition_formula",
+    "qty_formula"
   ],
   "fields": [
     {
@@ -35,8 +47,53 @@
       "fieldname": "rule_group",
       "fieldtype": "Data",
       "label": "Groupe de Regle",
-      "hidden": 1,
-      "read_only": 1
+      "hidden": 1
+    },
+    {
+      "fieldname": "condition_section",
+      "fieldtype": "Section Break",
+      "label": "Condition"
+    },
+    {
+      "fieldname": "condition_mode",
+      "fieldtype": "Select",
+      "label": "Condition Mode",
+      "options": "always\nbased",
+      "default": "always"
+    },
+    {
+      "fieldname": "question_key",
+      "fieldtype": "Data",
+      "label": "Question Key"
+    },
+    {
+      "fieldname": "operator",
+      "fieldtype": "Select",
+      "label": "Operator",
+      "options": "==\n!=\n>\n>=\n<\n<=",
+      "default": "=="
+    },
+    {
+      "fieldname": "compare_source",
+      "fieldtype": "Select",
+      "label": "Compare Source",
+      "options": "manual\nquestion",
+      "default": "manual"
+    },
+    {
+      "fieldname": "manual_value",
+      "fieldtype": "Data",
+      "label": "Manual Value"
+    },
+    {
+      "fieldname": "compare_question_key",
+      "fieldtype": "Data",
+      "label": "Compare Question Key"
+    },
+    {
+      "fieldname": "article_section",
+      "fieldtype": "Section Break",
+      "label": "Article"
     },
     {
       "fieldname": "rule_label",
@@ -47,8 +104,9 @@
     },
     {
       "fieldname": "condition_formula",
-      "fieldtype": "Data",
+      "fieldtype": "Small Text",
       "label": "Condition Avancee",
+      "hidden": 1,
       "description": "Optionnel. Laisser vide pour toujours ajouter l'article quand la formule de quantite donne une valeur > 0."
     },
     {
@@ -61,11 +119,29 @@
     },
     {
       "fieldname": "qty_formula",
-      "fieldtype": "Data",
+      "fieldtype": "Small Text",
       "label": "Formule de Quantite",
-      "reqd": 1,
-      "in_list_view": 1,
+      "hidden": 1,
       "description": "Exemple : 3 * niveaux + 1"
+    },
+    {
+      "fieldname": "quantity_mode",
+      "fieldtype": "Select",
+      "label": "Quantity Mode",
+      "options": "fixed\nquestion",
+      "default": "fixed",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "fixed_qty",
+      "fieldtype": "Float",
+      "label": "Fixed Qty",
+      "default": "1"
+    },
+    {
+      "fieldname": "quantity_question_key",
+      "fieldtype": "Data",
+      "label": "Quantity Question Key"
     },
     {
       "fieldname": "display_group",
@@ -77,6 +153,13 @@
       "fieldtype": "Check",
       "label": "Afficher en Detail",
       "default": "1"
+    },
+    {
+      "fieldname": "legacy_section",
+      "fieldtype": "Section Break",
+      "label": "Legacy Runtime",
+      "collapsible": 1,
+      "collapsed": 1
     }
   ],
   "istable": 1,

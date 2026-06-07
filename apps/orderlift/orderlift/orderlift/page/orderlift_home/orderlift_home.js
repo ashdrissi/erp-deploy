@@ -10,6 +10,7 @@ frappe.pages["orderlift-home"].on_page_load = function (wrapper) {
         title: __("Home"),
         single_column: true,
     });
+    wrapper.page = page;
     page.main.addClass("hdb-root");
     injectStyles();
     renderSkeleton(page);
@@ -19,6 +20,17 @@ frappe.pages["orderlift-home"].on_page_load = function (wrapper) {
         loadData(page);
         frappe.show_alert({ message: __("Refreshed"), indicator: "green" });
     });
+};
+
+frappe.pages["orderlift-home"].on_page_show = function (wrapper) {
+    const page = wrapper.page;
+    if (!page) return;
+    page.main.addClass("hdb-root");
+    injectStyles();
+    if (!page.main.find(".hdb-wrap").length) {
+        renderSkeleton(page);
+    }
+    loadData(page);
 };
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -53,7 +65,7 @@ const GATEWAYS = [
     { icon: "crm", label: __("CRM"), desc: __("Customers, pipeline, campaigns"), url: "crm-dashboard", color: "#3b82f6" },
     { icon: "portal", label: __("B2B Portal"), desc: __("Policies, requests, catalog"), url: "b2b-portal-dashboard", color: "#7c3aed" },
     { icon: "sav", label: __("SAV / Field Service"), desc: __("Tickets, interventions, SLA"), url: "sav-dashboard", color: "#ec4899" },
-    { icon: "finance", label: __("Finance"), desc: __("Invoices, payments, P&L"), url: "finance-dashboard", color: "#8b5cf6" },
+    { icon: "finance", label: __("Finance"), desc: __("Invoices, payments, P&L"), url: "sale-financial-dashboard", color: "#8b5cf6" },
     { icon: "hr", label: __("HR"), desc: __("Employees, leave, payroll"), url: "hr-dashboard", color: "#06b6d4" },
     { icon: "settings", label: __("Settings"), desc: __("Users, roles, company config"), url: "setup/company", color: "#64748b" },
 ];
@@ -106,7 +118,7 @@ function renderSkeleton(page) {
                     <div class="hdb-mc-actions">
                         ${mcBtn(__("New Sheet"), "pricing-dashboard", "primary")}
                         ${mcBtn(__("Simulator"), "pricing-simulator", "ghost")}
-                        ${mcBtn(__("Builder"), "pricing-builder", "ghost")}
+                        ${mcBtn(__("Builder"), "pricing-sheet-builder", "ghost")}
                     </div>
                 </div>
 

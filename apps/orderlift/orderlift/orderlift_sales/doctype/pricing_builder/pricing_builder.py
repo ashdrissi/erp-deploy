@@ -1,11 +1,21 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, flt, nowdate
+from frappe.utils import cint, flt, now_datetime, nowdate
 
-from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import get_item_details_map, get_latest_item_prices
+from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import (
+    compute_margin_percent_for_basis,
+    get_item_details_map,
+    get_latest_item_prices,
+)
+from orderlift.orderlift_sales.utils.price_list_scope import apply_price_list_company, validate_price_list_scope
 from orderlift.sales.utils.pricing_projection import apply_expenses
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
+
+
+MAX_WARNING_LINES = 80
+MAX_WARNING_LINE_LENGTH = 240
+MAX_WARNING_TOTAL_LENGTH = 12000
 
 
 class PricingBuilder(Document):
@@ -18,6 +28,8 @@ class PricingBuilder(Document):
         active_buying_lists = _ordered_buying_lists(rules)
         if not active_buying_lists:
             frappe.throw(_("Add at least one active sourcing rule with a Buying Price List."))
+        existing_overrides = _existing_override_map(self.builder_items or [])
+        manual_items = []
 
         qty = flt(self.default_qty or 1)
         if qty <= 0:
@@ -25,6 +37,7 @@ class PricingBuilder(Document):
 
         items, item_warnings = _load_builder_items(
             active_buying_lists,
+            manual_items=manual_items,
             item_group=(getattr(self, "item_group", "") or "").strip(),
             max_items=cint(self.max_items or 0),
         )
@@ -69,12 +82,12 @@ class PricingBuilder(Document):
             status_note = ""
 
             if not matched_rule:
-                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("No sourcing rule matched buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_name=meta.get("item_name") or item_code))
+                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("No sourcing rule matched buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list)))
                 continue
 
             scenario_name = (matched_rule.get("pricing_scenario") or "").strip()
             if not scenario_name or scenario_name not in scenario_caches:
-                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("Select a valid Expenses Policy for buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_name=meta.get("item_name") or item_code))
+                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("Select a valid Expenses Policy for buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list)))
                 continue
 
             row = frappe._dict(item=item_code, qty=qty, source_buying_price_list=buying_list, source_bundle="")
@@ -82,6 +95,9 @@ class PricingBuilder(Document):
             sheet._set_buy_price_for_row(row, cache.get("buying_price_list"), cache.get("buy_prices") or {}, {cache.get("buying_price_list"): cache.get("buy_prices") or {}}, force_refresh=True)
 
             base_buy = flt(row.buy_price or 0)
+            if base_buy <= 0:
+                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Buy Price", row.buy_price_message or _("No buying price found for {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, pricing_scenario=scenario_name, customs_policy=matched_rule.get("customs_policy") or "", benchmark_policy=matched_rule.get("benchmark_policy") or "", override_selling_price=_existing_override(existing_overrides, item_code, buying_list)))
+                continue
             base_amount = base_buy * qty
             line_context = {
                 "source_buying_price_list": buying_list,
@@ -93,18 +109,23 @@ class PricingBuilder(Document):
                 "source_bundle": "",
                 "item_group": details.get("item_group") or "",
                 "tariff_number": details.get("customs_tariff_number") or "",
-                "material": details.get("custom_material") or "",
+                "material": details.get("custom_customs_material") or details.get("custom_material") or "",
             }
 
             row_customs_policy = _get_customs_policy_doc(matched_rule.get("customs_policy"), customs_cache)
             customs_calc = sheet._compute_customs_for_row(row, base_amount, item_details, row_customs_policy)
             transport_calc = sheet._compute_transport_for_row(row=row, qty=qty, base_amount=base_amount, item_details=item_details, transport_config=cache.get("transport_config") or {})
             effective_expenses = sheet._inject_transport_expense(cache.get("line_expenses") or [], transport_calc)
+            storage_calc = sheet._compute_storage_for_row(row=row, qty=qty, item_details=item_details, storage_config=cache.get("storage_config") or {})
+            effective_expenses = sheet._inject_storage_expense(effective_expenses, storage_calc)
             effective_expenses = sheet._strip_scenario_margin_expenses(effective_expenses)
 
             benchmark_policy_doc = _get_benchmark_policy_doc(matched_rule.get("benchmark_policy"), benchmark_cache)
             benchmark_result = None
+            landed_cost = base_buy
+            margin_basis = "Base Price"
             if benchmark_policy_doc:
+                margin_basis = (getattr(benchmark_policy_doc, "margin_application_basis", "") or "Base Price").strip() or "Base Price"
                 runtime = _get_benchmark_runtime_cache(benchmark_policy_doc, item_codes, benchmark_runtime_cache)
                 landed_cost = sheet._compute_landed_cost(base_buy, qty, effective_expenses, customs_calc, transport_calc)
                 benchmark_result = sheet._resolve_benchmark_for_row(row, landed_cost, benchmark_policy_doc, item_details, runtime.get("price_map") or {}, runtime.get("source_types") or {}, line_context)
@@ -122,11 +143,42 @@ class PricingBuilder(Document):
             projected_unit = projected_total / qty if qty else 0
             benchmark_reference = flt((benchmark_result or {}).get("benchmark_reference") or 0)
             published_price = flt(published_map.get(item_code) or 0)
-            policy_margin_pct = flt((benchmark_result or {}).get("target_margin_percent") or 0)
+            margin_amount = flt(component_summary.get("margin_unit") or 0)
+            total_margin_amount = margin_amount
+            final_margin_pct = compute_margin_percent_for_basis(
+                margin_amount,
+                margin_basis,
+                base_buy,
+                landed_cost,
+            )
+            total_margin_pct = compute_margin_percent_for_basis(
+                total_margin_amount,
+                margin_basis,
+                base_buy,
+                landed_cost,
+            )
             cost_before_margin = (
                 flt(base_buy)
                 + flt(component_summary.get("policy_expense_unit") or 0)
                 + (flt(customs_calc.get("applied") or 0) / qty if qty else 0)
+            )
+            discount_meta = extract_benchmark_discount_metadata(benchmark_result, benchmark_policy_doc)
+            calculation_breakdown = _build_calculation_breakdown(
+                qty=qty,
+                base_buy=base_buy,
+                buying_list=buying_list,
+                pricing_scenario=scenario_name,
+                customs_policy=matched_rule.get("customs_policy") or "",
+                benchmark_policy=matched_rule.get("benchmark_policy") or "",
+                pricing=pricing,
+                customs_calc=customs_calc,
+                benchmark_result=benchmark_result,
+                benchmark_policy_doc=benchmark_policy_doc,
+                discount_meta=discount_meta,
+                margin_basis=margin_basis,
+                landed_cost=landed_cost,
+                component_summary=component_summary,
+                projected_unit=projected_unit,
             )
 
             if base_buy <= 0:
@@ -140,7 +192,8 @@ class PricingBuilder(Document):
                 "item": item_code,
                 "item_name": meta.get("item_name") or item_code,
                 "item_group": details.get("item_group") or "",
-                "material": details.get("custom_material") or "",
+                "item_category": details.get("custom_item_category") or "",
+                "material": details.get("custom_customs_material") or details.get("custom_material") or "",
                 "customs_tariff_number": customs_calc.get("tariff_number") or details.get("customs_tariff_number") or "",
                 "buying_list": buying_list,
                 "origin": meta.get("origin") or "",
@@ -149,18 +202,36 @@ class PricingBuilder(Document):
                 "customs_base_value": flt(customs_calc.get("base_value") or 0) / qty if qty else 0,
                 "customs_value_per_kg": flt(customs_calc.get("value_per_kg") or 0),
                 "customs_amount": flt(customs_calc.get("applied") or 0) / qty if qty else 0,
-                "margin_amount": flt(component_summary.get("margin_unit") or 0),
+                "customs_weight_kg": (flt(customs_calc.get("weight_kg") or 0) / qty if qty else 0),
+                "customs_line_weight_kg": flt(customs_calc.get("weight_kg") or 0),
+                "customs_unit_weight_kg": flt(customs_calc.get("unit_weight_kg") or 0),
+                "customs_package_weight_kg": flt(customs_calc.get("package_weight_kg") or 0),
+                "packaging_units_per_package": flt(customs_calc.get("units_per_package") or 0),
+                "packaging_package_count": flt(customs_calc.get("package_count") or 0),
+                "packaging_profile_source": customs_calc.get("packaging_source") or "",
+                "customs_basis": customs_calc.get("basis") or "",
+                "margin_amount": margin_amount,
+                "total_margin_amount": total_margin_amount,
                 "avg_benchmark": benchmark_reference,
                 "projected_price": projected_unit,
-                "override_selling_price": 0,
-                "final_margin_pct": _effective_margin_pct(projected_unit, cost_before_margin, policy_margin_pct),
+                "override_selling_price": _existing_override(existing_overrides, item_code, buying_list),
+                "final_margin_pct": final_margin_pct,
+                "total_margin_pct": total_margin_pct,
+                "target_margin_percent": discount_meta.get("target_margin_percent"),
+                "margin_basis": margin_basis,
+                "benchmark_is_fallback": discount_meta.get("benchmark_is_fallback"),
+                "benchmark_rule_label": discount_meta.get("benchmark_rule_label"),
+                "benchmark_rule_max_discount_percent": discount_meta.get("benchmark_rule_max_discount_percent"),
+                "fallback_max_discount_percent": discount_meta.get("fallback_max_discount_percent"),
+                "policy_max_discount_percent": discount_meta.get("policy_max_discount_percent"),
                 "published_price": published_price,
                 "status": status,
                 "status_note": status_note,
                 "pricing_scenario": scenario_name,
                 "customs_policy": matched_rule.get("customs_policy") or "",
                 "benchmark_policy": matched_rule.get("benchmark_policy") or "",
-                "selected": 1 if status in {"Ready", "No Benchmark"} else 0,
+                "calculation_breakdown_json": frappe.as_json(calculation_breakdown),
+                "selected": 0,
             })
 
             if customs_calc.get("warning"):
@@ -169,6 +240,8 @@ class PricingBuilder(Document):
                 warnings.append(_("{0}: {1}").format(item_code, msg))
             if transport_calc.get("warning"):
                 warnings.append(_("{0}: {1}").format(item_code, transport_calc.get("warning")))
+            if storage_calc.get("warning"):
+                warnings.append(_("{0}: {1}").format(item_code, storage_calc.get("warning")))
 
         for row in result_rows:
             self.append("builder_items", row)
@@ -179,6 +252,7 @@ class PricingBuilder(Document):
 
     def publish_prices(self, selected_only=False):
         price_list_name = _ensure_selling_price_list((self.selling_price_list_name or "").strip())
+        stamp_price_list_from_builder(price_list_name, self)
         currency = frappe.db.get_value("Price List", price_list_name, "currency") or frappe.defaults.get_global_default("currency")
         created = 0
         updated = 0
@@ -192,7 +266,8 @@ class PricingBuilder(Document):
             if not item_code:
                 skipped += 1
                 continue
-            if (row.status or "").strip() in {"Missing Rule", "Missing Buy Price"}:
+            status = _effective_builder_status(row)
+            if status in {"Missing Rule", "Missing Buy Price"}:
                 skipped += 1
                 continue
             final_price = flt(row.override_selling_price or 0) or flt(row.projected_price or 0)
@@ -210,6 +285,7 @@ class PricingBuilder(Document):
                         doc.selling = 1
                     if hasattr(doc, "buying"):
                         doc.buying = 0
+                    stamp_item_price_from_builder_row(doc, self.name, row)
                     doc.save(ignore_permissions=True)
                     updated += 1
                 else:
@@ -227,6 +303,7 @@ class PricingBuilder(Document):
                         doc.uom = frappe.db.get_value("Item", item_code, "stock_uom")
                     if hasattr(doc, "valid_from"):
                         doc.valid_from = nowdate()
+                    stamp_item_price_from_builder_row(doc, self.name, row)
                     doc.insert(ignore_permissions=True)
                     created += 1
                 row.published_price = final_price
@@ -291,37 +368,100 @@ def _ordered_buying_lists(rules):
     return out
 
 
-def _load_builder_items(buying_lists, item_group=None, max_items=0):
-    price_rows = _get_latest_buying_list_rows(buying_lists)
-    if not price_rows:
+def _normalize_manual_items(rows, buying_lists):
+    out = []
+    seen = set()
+    for row in rows or []:
+        get = row.get if isinstance(row, dict) else lambda key, default=None: getattr(row, key, default)
+        if not cint(get("is_active", 1)):
+            continue
+        item_code = (get("item", "") or "").strip()
+        if not item_code or item_code in seen:
+            continue
+        out.append({
+            "item": item_code,
+            "buying_list": (get("buying_price_list", "") or get("buying_list", "") or "").strip(),
+        })
+        seen.add(item_code)
+    return out
+
+
+def _load_builder_items(buying_lists, manual_items=None, item_group=None, max_items=0):
+    manual_items = manual_items or []
+    price_lists = list(buying_lists or [])
+    for row in manual_items:
+        buying_list = row.get("buying_list")
+        if buying_list and buying_list not in price_lists:
+            price_lists.append(buying_list)
+
+    price_rows = _get_latest_buying_list_rows(price_lists)
+    if not price_rows and not manual_items:
         return [], [_("No buying prices found in the selected buying price lists.")]
     item_priority = {name: idx for idx, name in enumerate(buying_lists)}
     grouped = {}
+    price_by_key = {}
     for row in price_rows:
         item_code = row.get("item_code")
         if not item_code:
+            continue
+        price_by_key[(row.get("price_list"), item_code)] = flt(row.get("price_list_rate") or 0)
+        if row.get("price_list") not in buying_lists:
             continue
         bucket = grouped.get(item_code)
         candidate = {"item": item_code, "buying_list": row.get("price_list") or "", "buy_price": flt(row.get("price_list_rate") or 0)}
         if not bucket or item_priority.get(candidate["buying_list"], 9999) < item_priority.get(bucket["buying_list"], 9999):
             grouped[item_code] = candidate
-    filters = {"name": ["in", list(grouped.keys())], "disabled": 0}
     warnings = []
-    if item_group and item_group != "All Item Groups":
-        from orderlift.orderlift_sales.page.pricing_simulator.pricing_simulator import _descendant_leaf_item_groups, _is_item_group_node
-        if _is_item_group_node(item_group):
-            descendants = _descendant_leaf_item_groups(item_group)
-            if descendants:
-                filters["item_group"] = ["in", descendants]
+    items = []
+    if grouped:
+        filters = {"name": ["in", list(grouped.keys())], "disabled": 0}
+        if item_group and item_group != "All Item Groups":
+            from orderlift.orderlift_sales.page.pricing_simulator.pricing_simulator import _descendant_leaf_item_groups, _is_item_group_node
+            if _is_item_group_node(item_group):
+                descendants = _descendant_leaf_item_groups(item_group)
+                if descendants:
+                    filters["item_group"] = ["in", descendants]
+                else:
+                    warnings.append(_("Selected Item Group has no leaf item groups."))
             else:
-                warnings.append(_("Selected Item Group has no leaf item groups."))
-        else:
-            filters["item_group"] = item_group
-    item_rows = frappe.get_all("Item", filters=filters, fields=["name"], order_by="name asc", limit_page_length=max_items if max_items > 0 else 0)
-    items = [grouped.get(row.get("name")) for row in item_rows if grouped.get(row.get("name"))]
+                filters["item_group"] = item_group
+        item_rows = frappe.get_all("Item", filters=filters, fields=["name"], order_by="name asc", limit_page_length=max_items if max_items > 0 else 0)
+        items = [grouped.get(row.get("name")) for row in item_rows if grouped.get(row.get("name"))]
+    elif not manual_items:
+        warnings.append(_("No buying prices found in the selected buying price lists."))
+
+    if manual_items:
+        items = _merge_manual_items(items, manual_items, grouped, price_by_key, warnings)
+
     if not items:
         warnings.append(_("No items matched the selected buying lists and filters."))
     return items, warnings
+
+
+def _merge_manual_items(items, manual_items, auto_grouped, price_by_key, warnings):
+    item_codes = [row.get("item") for row in manual_items if row.get("item")]
+    valid_items = set(frappe.get_all("Item", filters={"name": ["in", item_codes], "disabled": 0}, pluck="name", limit_page_length=0)) if item_codes else set()
+    merged = list(items or [])
+    index_by_item = {row.get("item"): idx for idx, row in enumerate(merged) if row and row.get("item")}
+    for manual in manual_items:
+        item_code = manual.get("item")
+        if not item_code:
+            continue
+        if item_code not in valid_items:
+            warnings.append(_("Manual item {0} was not found or is disabled.").format(item_code))
+            continue
+        buying_list = manual.get("buying_list") or ""
+        candidate = {
+            "item": item_code,
+            "buying_list": buying_list,
+            "buy_price": flt(price_by_key.get((buying_list, item_code)) or 0),
+        }
+        if item_code in index_by_item:
+            merged[index_by_item[item_code]] = candidate
+        else:
+            index_by_item[item_code] = len(merged)
+            merged.append(candidate)
+    return merged
 
 
 def _get_latest_buying_list_rows(buying_lists):
@@ -458,13 +598,14 @@ def _build_summary(rows):
     summary = _empty_summary()
     summary["item_count"] = len(rows)
     for row in rows:
-        if row.get("status") in {"Ready", "No Benchmark"}:
+        status = _effective_builder_status(row)
+        if status in {"Ready", "No Benchmark"}:
             summary["ready_count"] += 1
         if _publish_state(row.get("override_selling_price") or row.get("projected_price"), row.get("published_price")) == "Changed":
             summary["changed_count"] += 1
         if _publish_state(row.get("override_selling_price") or row.get("projected_price"), row.get("published_price")) == "New":
             summary["new_count"] += 1
-        if row.get("status") in {"Missing Rule", "Missing Buy Price"}:
+        if status in {"Missing Rule", "Missing Buy Price"}:
             summary["missing_count"] += 1
     return summary
 
@@ -481,18 +622,70 @@ def _dedupe_warnings(messages):
     return out
 
 
+def _existing_override_map(rows):
+    exact = {}
+    by_item = {}
+    duplicate_items = set()
+    for row in rows or []:
+        value = flt(_row_value(row, "override_selling_price") or 0)
+        if value <= 0:
+            continue
+        item_code = (_row_value(row, "item") or "").strip()
+        buying_list = (_row_value(row, "buying_list") or "").strip()
+        if not item_code:
+            continue
+        if buying_list:
+            exact[(item_code, buying_list)] = value
+        if item_code in by_item and by_item[item_code] != value:
+            duplicate_items.add(item_code)
+        else:
+            by_item[item_code] = value
+    for item_code in duplicate_items:
+        by_item.pop(item_code, None)
+    return {"exact": exact, "by_item": by_item}
+
+
+def _existing_override(overrides, item_code, buying_list):
+    item_code = (item_code or "").strip()
+    buying_list = (buying_list or "").strip()
+    if not item_code:
+        return 0
+    exact = (overrides or {}).get("exact") or {}
+    if buying_list and (item_code, buying_list) in exact:
+        return flt(exact.get((item_code, buying_list)) or 0)
+    return flt(((overrides or {}).get("by_item") or {}).get(item_code) or 0)
+
+
 def _warnings_html(messages):
-    items = _dedupe_warnings(messages)
+    items = [_truncate_warning_line(item) for item in _dedupe_warnings(messages)]
     if not items:
         return ""
-    return "\n".join(items)
+    overflow = max(0, len(items) - MAX_WARNING_LINES)
+    selected = items[:MAX_WARNING_LINES]
+    if overflow:
+        selected.append(_("{0} more warning(s) omitted. Review affected rows in the Builder table.").format(overflow))
+    text = "\n".join(selected)
+    while len(text) > MAX_WARNING_TOTAL_LENGTH and len(selected) > 1:
+        selected.pop(-2 if overflow else -1)
+        text = "\n".join(selected)
+    if len(text) <= MAX_WARNING_TOTAL_LENGTH:
+        return text
+    return text[: MAX_WARNING_TOTAL_LENGTH - 80].rstrip() + "\n" + _("Additional warnings omitted to keep this record saveable.")
 
 
-def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_price, status, status_note, item_group="", item_name=""):
+def _truncate_warning_line(message):
+    text = (message or "").strip()
+    if len(text) <= MAX_WARNING_LINE_LENGTH:
+        return text
+    return text[: MAX_WARNING_LINE_LENGTH - 3].rstrip() + "..."
+
+
+def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_price, status, status_note, item_group="", item_category="", item_name="", pricing_scenario="", customs_policy="", benchmark_policy="", override_selling_price=0):
     return {
         "item": item_code,
         "item_name": item_name or item_code,
         "item_group": item_group,
+        "item_category": item_category,
         "material": "",
         "customs_tariff_number": "",
         "buying_list": buying_list,
@@ -502,23 +695,310 @@ def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_p
         "customs_base_value": 0,
         "customs_value_per_kg": 0,
         "customs_amount": 0,
+        "customs_weight_kg": 0,
+        "customs_line_weight_kg": 0,
+        "customs_unit_weight_kg": 0,
+        "customs_package_weight_kg": 0,
+        "packaging_units_per_package": 0,
+        "packaging_package_count": 0,
+        "packaging_profile_source": "",
+        "customs_basis": "",
         "margin_amount": 0,
+        "total_margin_amount": 0,
         "avg_benchmark": 0,
         "projected_price": 0,
-        "override_selling_price": 0,
+        "override_selling_price": flt(override_selling_price or 0),
         "final_margin_pct": 0,
+        "total_margin_pct": 0,
+        "target_margin_percent": 0,
+        "margin_basis": "",
+        "benchmark_is_fallback": 0,
+        "benchmark_rule_label": "",
+        "benchmark_rule_max_discount_percent": 0,
+        "fallback_max_discount_percent": 0,
+        "policy_max_discount_percent": 0,
         "published_price": published_price,
         "status": status,
         "status_note": status_note,
-        "pricing_scenario": "",
-        "customs_policy": "",
-        "benchmark_policy": "",
+        "pricing_scenario": pricing_scenario,
+        "customs_policy": customs_policy,
+        "benchmark_policy": benchmark_policy,
+        "calculation_breakdown_json": "",
         "selected": 0,
     }
 
 
+def _build_calculation_breakdown(
+    *,
+    qty,
+    base_buy,
+    buying_list,
+    pricing_scenario,
+    customs_policy,
+    benchmark_policy,
+    pricing,
+    customs_calc,
+    benchmark_result,
+    benchmark_policy_doc,
+    discount_meta,
+    margin_basis,
+    landed_cost,
+    component_summary,
+    projected_unit,
+):
+    qty = flt(qty or 1) or 1
+    customs_total = flt((customs_calc or {}).get("applied") or 0)
+    customs_unit = customs_total / qty if qty else 0
+    expenses_unit = flt(component_summary.get("policy_expense_unit") or 0)
+    margin_unit = flt(component_summary.get("margin_unit") or 0)
+    total_margin_unit = margin_unit + flt(component_summary.get("tier_unit") or 0) + flt(component_summary.get("zone_unit") or 0)
+    cost_before_margin = flt(base_buy) + expenses_unit + customs_unit
+
+    return {
+        "summary": {
+            "qty": qty,
+            "base_unit": flt(base_buy),
+            "expenses_unit": expenses_unit,
+            "customs_unit": customs_unit,
+            "cost_before_margin": cost_before_margin,
+            "margin_unit": margin_unit,
+            "total_margin_unit": total_margin_unit,
+            "projected_unit": flt(projected_unit),
+            "projected_total": flt(projected_unit) * qty,
+            "buying_list": buying_list or "",
+        },
+        "expenses": {
+            "policy": pricing_scenario or "",
+            "unit": expenses_unit,
+            "total": expenses_unit * qty,
+            "steps": _build_expense_step_breakdown((pricing or {}).get("steps") or [], qty),
+        },
+        "customs": _build_customs_breakdown(customs_calc, qty, customs_policy),
+        "margin": _build_margin_breakdown(
+            benchmark_result=benchmark_result,
+            benchmark_policy_doc=benchmark_policy_doc,
+            discount_meta=discount_meta,
+            benchmark_policy=benchmark_policy,
+            margin_basis=margin_basis,
+            base_buy=base_buy,
+            landed_cost=landed_cost,
+            margin_unit=margin_unit,
+            total_margin_unit=total_margin_unit,
+        ),
+    }
+
+
+def _build_expense_step_breakdown(steps, qty):
+    out = []
+    for step in steps or []:
+        source = (step.get("override_source") or "").strip()
+        if source in {"pricing_policy", "tier_modifier", "zone_modifier"}:
+            continue
+        delta_unit = flt(step.get("delta_unit") or 0)
+        delta_line = flt(step.get("delta_line") or 0)
+        delta_sheet = flt(step.get("delta_sheet") or 0)
+        unit_amount = delta_unit + (delta_line / qty if qty else 0) + (delta_sheet / qty if qty else 0)
+        out.append({
+            "label": step.get("label") or _("Expense"),
+            "type": step.get("type") or "",
+            "value": flt(step.get("value") or 0),
+            "applies_to": step.get("applies_to") or "",
+            "scope": step.get("scope") or "",
+            "basis": flt(step.get("basis") or 0),
+            "unit_amount": unit_amount,
+            "total_amount": unit_amount * qty,
+            "delta_unit": delta_unit,
+            "delta_line": delta_line,
+            "delta_sheet": delta_sheet,
+            "running_total": flt(step.get("running_total") or 0),
+            "sequence": cint(step.get("sequence") or 0),
+        })
+    return out
+
+
+def _build_customs_breakdown(customs_calc, qty, customs_policy):
+    customs_calc = customs_calc or {}
+    applied = flt(customs_calc.get("applied") or 0)
+    return {
+        "policy": customs_policy or "",
+        "unit": applied / qty if qty else 0,
+        "total": applied,
+        "basis": customs_calc.get("basis") or "",
+        "mode": customs_calc.get("mode") or "",
+        "tariff_number": customs_calc.get("tariff_number") or "",
+        "material": customs_calc.get("material") or "",
+        "base_value": flt(customs_calc.get("base_value") or 0),
+        "value_per_kg": flt(customs_calc.get("value_per_kg") or 0),
+        "weight_kg": flt(customs_calc.get("weight_kg") or 0),
+        "unit_weight_kg": flt(customs_calc.get("unit_weight_kg") or 0),
+        "package_weight_kg": flt(customs_calc.get("package_weight_kg") or 0),
+        "units_per_package": flt(customs_calc.get("units_per_package") or 0),
+        "package_count": flt(customs_calc.get("package_count") or 0),
+        "packaging_source": customs_calc.get("packaging_source") or "",
+        "rate_percent": flt(customs_calc.get("total_percent") or 0),
+        "component_display": customs_calc.get("component_display") or "",
+        "warning": customs_calc.get("warning") or "",
+    }
+
+
+def _build_margin_breakdown(
+    *,
+    benchmark_result,
+    benchmark_policy_doc,
+    discount_meta,
+    benchmark_policy,
+    margin_basis,
+    base_buy,
+    landed_cost,
+    margin_unit,
+    total_margin_unit,
+):
+    benchmark_result = benchmark_result or {}
+    matched_rule = benchmark_result.get("matched_rule") or {}
+    target_margin = flt(discount_meta.get("target_margin_percent") or 0)
+    basis = (margin_basis or "Base Price").strip() or "Base Price"
+    if basis == "Base Price":
+        basis_amount = flt(base_buy)
+    else:
+        basis_amount = flt(landed_cost)
+
+    return {
+        "policy": benchmark_policy or "",
+        "policy_name": getattr(benchmark_policy_doc, "policy_name", "") or "",
+        "basis": basis,
+        "basis_amount": basis_amount,
+        "landed_cost": flt(landed_cost),
+        "target_margin_percent": target_margin,
+        "unit": flt(margin_unit),
+        "total_unit": flt(total_margin_unit),
+        "is_fallback": 1 if benchmark_result.get("is_fallback") else 0,
+        "benchmark_reference": flt(benchmark_result.get("benchmark_reference") or 0),
+        "source_count": cint(benchmark_result.get("source_count") or 0),
+        "min_sources_required": cint(benchmark_result.get("min_sources_required") or 0),
+        "method": benchmark_result.get("method") or "",
+        "ratio": flt(benchmark_result.get("ratio") or 0),
+        "rule_label": discount_meta.get("benchmark_rule_label") or _format_benchmark_rule_label(matched_rule, benchmark_result.get("is_fallback")),
+        "ratio_min": flt(matched_rule.get("ratio_min") or 0),
+        "ratio_max": flt(matched_rule.get("ratio_max") or 0),
+        "max_discount_percent": flt(discount_meta.get("policy_max_discount_percent") or 0),
+        "warnings": benchmark_result.get("warnings") or [],
+    }
+
+
+def final_selling_price_for_builder_row(row):
+    return flt(_row_value(row, "override_selling_price") or 0) or flt(_row_value(row, "projected_price") or 0)
+
+
+def _effective_builder_status(row):
+    status = (_row_value(row, "status") or "").strip()
+    if status != "Missing Rule" and flt(_row_value(row, "base_buy_price") or 0) <= 0:
+        return "Missing Buy Price"
+    return status or "Ready"
+
+
+def extract_benchmark_discount_metadata(benchmark_result, benchmark_policy_doc):
+    fallback_max_discount = flt(_row_value(benchmark_policy_doc, "fallback_max_discount_percent", 0) or 0)
+    target_margin = flt((benchmark_result or {}).get("target_margin_percent") or 0)
+    is_fallback = 1 if (benchmark_result or {}).get("is_fallback") else 0
+    matched_rule = (benchmark_result or {}).get("matched_rule") or {}
+    rule_max_discount = 0 if is_fallback else flt(matched_rule.get("max_discount_percent") or 0)
+    policy_max_discount = fallback_max_discount if is_fallback else rule_max_discount
+
+    return {
+        "target_margin_percent": target_margin,
+        "benchmark_is_fallback": is_fallback,
+        "benchmark_rule_label": _format_benchmark_rule_label(matched_rule, is_fallback),
+        "benchmark_rule_max_discount_percent": rule_max_discount,
+        "fallback_max_discount_percent": fallback_max_discount,
+        "policy_max_discount_percent": policy_max_discount,
+    }
+
+
+def stamp_price_list_from_builder(price_list_name, builder_doc):
+    if not price_list_name or not frappe.db.exists("Price List", price_list_name):
+        return
+    values = {}
+    if _doctype_has_column("Price List", "custom_pricing_builder"):
+        values["custom_pricing_builder"] = builder_doc.name
+    if _doctype_has_column("Price List", "custom_source_buying_price_lists"):
+        values["custom_source_buying_price_lists"] = "\n".join(_builder_source_buying_lists(builder_doc))
+    if values:
+        frappe.db.set_value("Price List", price_list_name, values, update_modified=False)
+
+
+def stamp_item_price_from_builder_row(doc, builder_name, row, rebuild_time=None):
+    values = {
+        "custom_pricing_builder": builder_name,
+        "custom_source_buying_price_list": _row_value(row, "buying_list"),
+        "custom_pricing_scenario": _row_value(row, "pricing_scenario"),
+        "custom_customs_policy": _row_value(row, "customs_policy"),
+        "custom_benchmark_policy": _row_value(row, "benchmark_policy"),
+        "custom_benchmark_is_fallback": 1 if cint(_row_value(row, "benchmark_is_fallback")) else 0,
+        "custom_benchmark_rule_label": _row_value(row, "benchmark_rule_label"),
+        "custom_benchmark_rule_max_discount_percent": flt(_row_value(row, "benchmark_rule_max_discount_percent") or 0),
+        "custom_fallback_max_discount_percent": flt(_row_value(row, "fallback_max_discount_percent") or 0),
+        "custom_policy_max_discount_percent": flt(_row_value(row, "policy_max_discount_percent") or 0),
+        "custom_target_margin_percent": flt(_row_value(row, "target_margin_percent") or 0),
+        "custom_last_builder_buy_rate": flt(_row_value(row, "base_buy_price") or 0),
+        "custom_builder_price_overridden": 1 if flt(_row_value(row, "override_selling_price") or 0) > 0 else 0,
+        "custom_last_builder_rebuild_on": rebuild_time or now_datetime(),
+    }
+    for fieldname, value in values.items():
+        if _doc_has_field(doc, fieldname):
+            setattr(doc, fieldname, value)
+
+
+def _format_benchmark_rule_label(rule, is_fallback=0):
+    if is_fallback:
+        return "Fallback Margin"
+    if not rule:
+        return ""
+    scope = rule.get("source_bundle") or rule.get("item_group") or rule.get("material") or rule.get("crm_segment") or rule.get("business_type") or "Any"
+    ratio_min = flt(rule.get("ratio_min") or 0)
+    ratio_max = flt(rule.get("ratio_max") or 0)
+    ratio_text = f"{ratio_min:.2f}-{ratio_max:.2f}" if ratio_max > 0 else f"{ratio_min:.2f}-∞"
+    return "Ratio {0}: {1}% margin, {2}% max discount ({3})".format(
+        ratio_text,
+        flt(rule.get("target_margin_percent") or 0),
+        flt(rule.get("max_discount_percent") or 0),
+        scope,
+    )
+
+
+def _builder_source_buying_lists(builder_doc):
+    return _ordered_buying_lists(_normalize_rules(builder_doc.sourcing_rules or []))
+
+
+def _row_value(row, fieldname, default=None):
+    if isinstance(row, dict):
+        return row.get(fieldname, default)
+    getter = getattr(row, "get", None)
+    if callable(getter):
+        return getter(fieldname, default)
+    return getattr(row, fieldname, default)
+
+
+def _doctype_has_column(doctype, fieldname):
+    checker = getattr(frappe.db, "has_column", None)
+    if not callable(checker):
+        return True
+    return checker(doctype, fieldname)
+
+
+def _doc_has_field(doc, fieldname):
+    meta = getattr(doc, "meta", None)
+    has_field = getattr(meta, "has_field", None)
+    if callable(has_field):
+        return bool(has_field(fieldname))
+    fields = getattr(meta, "fields", None) or []
+    if fields:
+        return any(getattr(field, "fieldname", "") == fieldname for field in fields)
+    return hasattr(doc, fieldname)
+
+
 def _ensure_selling_price_list(price_list_name):
     if frappe.db.exists("Price List", price_list_name):
+        validate_price_list_scope(price_list_name, kind="selling", required=True)
         return price_list_name
     currency = frappe.defaults.get_global_default("currency") or "MAD"
     doc = frappe.new_doc("Price List")
@@ -534,5 +1014,6 @@ def _ensure_selling_price_list(price_list_name):
         doc.buying = 0
     if hasattr(doc, "currency"):
         doc.currency = currency
+    apply_price_list_company(doc)
     doc.insert(ignore_permissions=True)
     return doc.name

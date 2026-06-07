@@ -9,6 +9,7 @@ frappe.pages["home-page"].on_page_load = function (wrapper) {
         title: __("Home"),
         single_column: true,
     });
+    wrapper.page = page;
     page.main.addClass("hp-root");
     injectStyles();
     renderSkeleton(page);
@@ -18,6 +19,17 @@ frappe.pages["home-page"].on_page_load = function (wrapper) {
         loadData(page);
         frappe.show_alert({ message: __("Refreshed"), indicator: "green" });
     });
+};
+
+frappe.pages["home-page"].on_page_show = function (wrapper) {
+    const page = wrapper.page;
+    if (!page) return;
+    page.main.addClass("hp-root");
+    injectStyles();
+    if (!page.main.find(".hp-wrap").length) {
+        renderSkeleton(page);
+    }
+    loadData(page);
 };
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -44,14 +56,110 @@ const IC = {
 
 // ── Gateway definitions ───────────────────────────────────────────────────────
 const GATEWAYS = [
-    { icon: "pricing", label: __("Pricing & Sales"), desc: __("Sheets · Policies · Simulator"), url: "pricing-dashboard" },
-    { icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory · Transfers · Alerts"), url: "stock-dashboard" },
-    { icon: "logistics", label: __("Container Planning"), desc: __("Forecasts · Planners · Routes"), url: "logistics-dashboard" },
-    { icon: "crm", label: __("CRM"), desc: __("Customers · Pipeline · Leads"), url: "crm-dashboard" },
-    { icon: "portal", label: __("B2B Portal"), desc: __("Policies · Requests · Catalog"), url: "b2b-portal-dashboard" },
-    { icon: "sav", label: __("SAV / Field"), desc: __("Tickets · SLA · Interventions"), url: "sav-dashboard" },
-    { icon: "finance", label: __("Finance"), desc: __("Invoices · Payments · P&L"), url: "finance-dashboard" },
-    { icon: "hr", label: __("HR"), desc: __("Employees · Leave · Payroll"), url: "hr-dashboard" },
+    { icon: "pricing", label: __("Pricing Admin"), desc: __("Policies · Scenarios · Simulator"), url: "pricing-dashboard", menuKey: "sales.pricing_dashboard", accessKey: "pricing_admin" },
+    { icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory · Transfers · Alerts"), url: "stock-dashboard", menuKey: "stock.dashboard", accessKey: "stock" },
+    { icon: "logistics", label: __("Container Planning"), desc: __("Forecasts · Planners · Routes"), url: "logistics-dashboard", menuKey: "logistics.container_planning", accessKey: "logistics" },
+    { icon: "crm", label: __("CRM"), desc: __("Customers · Pipeline · Leads"), url: "crm-dashboard", menuKey: "crm.crm_dashboard", accessKey: "crm" },
+    { icon: "portal", label: __("B2B Portal"), desc: __("Policies · Requests · Catalog"), url: "b2b-portal-dashboard", menuKey: "b2b.dashboard", accessKey: "b2b" },
+    { icon: "sav", label: __("SAV / Field"), desc: __("Tickets · SLA · Interventions"), url: "sav-dashboard", menuKey: "sav.dashboard", accessKey: "sav" },
+    { icon: "finance", label: __("Finance"), desc: __("Invoices · Payments · P&L"), url: "sale-financial-dashboard", menuKey: "finance.sale_financial_dashboard", accessKey: "finance" },
+    { icon: "hr", label: __("HR"), desc: __("Employees · Leave · Payroll"), url: "hr-dashboard", menuKey: "hr.dashboard", accessKey: "hr" },
+];
+
+const MODULE_CARDS = [
+    {
+        icon: "pricing",
+        title: __("Pricing Sheets"),
+        sub: __("Sheets · Builder · Recent work"),
+        link: "pricing-sheet-manager",
+        accessKey: "pricing",
+        menuKey: "sales.pricing_sheets",
+        bodyId: "hp-pricing-body",
+        buttons: [
+            { url: "pricing-sheet-manager", label: __("Sheets"), variant: "primary", menuKey: "sales.pricing_sheets" },
+            { url: "pricing-dashboard", label: __("Dashboard"), variant: "ghost", menuKey: "sales.pricing_dashboard" },
+            { url: "pricing-sheet-builder", label: __("Builder"), variant: "ghost", menuKey: "sales.pricing_sheets" },
+        ],
+    },
+    {
+        icon: "stock",
+        title: __("Stock & Warehouses"),
+        sub: __("Inventory · Transfers · Reorder"),
+        link: "stock-dashboard",
+        accessKey: "stock",
+        menuKey: "stock.dashboard",
+        bodyId: "hp-stock-body",
+        buttons: [
+            { url: "stock/stock-entry/new-stock-entry-1", label: __("New Entry"), variant: "primary", accessKey: "stock" },
+            { url: "stock-dashboard", label: __("Dashboard"), variant: "ghost", menuKey: "stock.dashboard" },
+            { url: "stock/warehouse", label: __("Warehouses"), variant: "ghost", accessKey: "stock" },
+        ],
+    },
+    {
+        icon: "sales",
+        title: __("Sales & Orders"),
+        sub: __("Quotes · Orders · Deliveries"),
+        link: "selling/sales-order",
+        accessKey: "sales",
+        menuKey: "sales.sales_order",
+        bodyId: "hp-sales-body",
+        buttons: [
+            { url: "selling/quotation/new-quotation-1", label: __("New Quote"), variant: "primary", accessKey: "sales" },
+            { url: "selling/sales-order", label: __("Orders"), variant: "ghost", menuKey: "sales.sales_order" },
+            { url: "accounts/sales-invoice", label: __("Invoices"), variant: "ghost", accessKey: "finance" },
+        ],
+    },
+];
+
+const QUICK_ACCESS_GROUPS = [
+    {
+        title: __("Pipelines & Campaigns"),
+        icon: "crm",
+        links: [
+            { label: __("CRM Dashboard"), url: "crm-dashboard", menuKey: "crm.crm_dashboard" },
+            { label: __("Opportunity Pipeline"), url: "opportunity-pipeline", menuKey: "crm.opportunity_pipeline" },
+            { label: __("Project Pipeline"), url: "project-pipeline", menuKey: "projects.project_pipeline" },
+            { label: __("Sales Order Pipeline"), url: "sales-order-pipeline", menuKey: "projects.sales_order_pipeline" },
+            { label: __("Campaign Manager"), url: "campaign-manager", menuKey: "crm.campaign_manager" },
+            { label: __("Campaign Builder"), url: "campaign-editor", menuKey: "crm.campaign_builder" },
+        ],
+    },
+    {
+        title: __("Sales & Pricing"),
+        icon: "pricing",
+        links: [
+            { label: __("Pricing Sheets"), url: "pricing-sheet-manager", menuKey: "sales.pricing_sheets" },
+            { label: __("Pricing Sheet Builder"), url: "pricing-sheet-builder", menuKey: "sales.pricing_sheets" },
+            { label: __("Pricing Dashboard"), url: "pricing-dashboard", menuKey: "sales.pricing_dashboard" },
+            { label: __("Pricing Simulator"), url: "pricing-simulator", menuKey: "sales.pricing_simulator" },
+            { label: __("Dimensioning Sets"), url: "dimensioning-set-manager", menuKey: "items.dimensioning_sets" },
+            { label: __("Sale Financial Dashboard"), url: "sale-financial-dashboard", menuKey: "finance.sale_financial_dashboard" },
+        ],
+    },
+    {
+        title: __("Logistics & Purchasing"),
+        icon: "logistics",
+        links: [
+            { label: __("Logistics Pipeline"), url: "logistics-pipeline", menuKey: "logistics.pipeline" },
+            { label: __("Container Planning"), url: "logistics-dashboard", menuKey: "logistics.container_planning" },
+            { label: __("Forecast Container Plan"), url: "forecast-plans", menuKey: "projects.container_planning" },
+            { label: __("Stock Dashboard"), url: "stock-dashboard", menuKey: "stock.dashboard" },
+            { label: __("Pick List"), url: "stock/pick-list", menuKey: "purchasing.pick_list" },
+            { label: __("Purchase Orders"), url: "buying/purchase-order", menuKey: "purchasing.purchase_order" },
+        ],
+    },
+    {
+        title: __("B2B Portal & SIG"),
+        icon: "portal",
+        links: [
+            { label: __("B2B Portal Dashboard"), url: "b2b-portal-dashboard", menuKey: "b2b.dashboard" },
+            { label: __("Portal Policies"), url: "portal-customer-group-policy", menuKey: "b2b.portal_policies" },
+            { label: __("Portal Quote Requests"), url: "portal-quote-request", menuKey: "b2b.quote_requests" },
+            { label: __("Portal Review Board"), url: "portal-review-board", menuKey: "b2b.review_board" },
+            { label: __("SIG Dashboard"), url: "sig-dashboard", menuKey: "sig.dashboard" },
+            { label: __("Mobile QC"), url: "sig-qc", menuKey: "sig.mobile_qc" },
+        ],
+    },
 ];
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -68,72 +176,117 @@ function renderSkeleton(page) {
 				</div>
 			</div>
 
-			<div class="hp-gateways">
-				${GATEWAYS.map(g => `
-					<div class="hp-gw" data-url="${g.url}">
-						<span class="hp-gw-ico">${IC[g.icon]}</span>
-						<div class="hp-gw-label">${g.label}</div>
-						<div class="hp-gw-desc">${g.desc}</div>
-					</div>`).join("")}
-			</div>
+            <div class="hp-gateways" id="hp-gateways">
+                ${renderGatewayCards()}
+            </div>
 
-			<div class="hp-kpi-strip" id="hp-kpis">
-				${[1, 2, 3, 4, 5, 6].map(() => `<div class="hp-kpi hp-shimmer-kpi"></div>`).join("")}
-			</div>
+            ${quickAccessSection()}
 
-			<div class="hp-module-row">
-				${moduleCard("pricing", __("Pricing Engine"), __("Policies · Sheets · Scenarios"), "pricing-dashboard", [
-        ["pricing-dashboard", __("Dashboard"), "primary"],
-        ["pricing-simulator", __("Simulator"), "ghost"],
-        ["pricing-builder", __("Builder"), "ghost"],
-    ], "hp-pricing-body")}
-				${moduleCard("stock", __("Stock & Warehouses"), __("Inventory · Transfers · Reorder"), "stock-dashboard", [
-        ["stock/stock-entry/new-stock-entry-1", __("New Entry"), "primary"],
-        ["stock-dashboard", __("Dashboard"), "ghost"],
-        ["stock/warehouse", __("Warehouses"), "ghost"],
-    ], "hp-stock-body")}
-				${moduleCard("sales", __("Sales & Orders"), __("Quotes · Orders · Deliveries"), "selling/sales-order", [
-        ["selling/quotation/new-quotation-1", __("New Quote"), "primary"],
-        ["selling/sales-order", __("Orders"), "ghost"],
-        ["accounts/sales-invoice", __("Invoices"), "ghost"],
-    ], "hp-sales-body")}
-			</div>
+            <div class="hp-kpi-strip" id="hp-kpis">
+                ${[1, 2, 3, 4, 5, 6].map(() => `<div class="hp-kpi hp-shimmer-kpi"></div>`).join("")}
+            </div>
 
-			<div class="hp-bottom">
-				<div class="hp-card">
-					<div class="hp-card-hd"><span class="hp-card-ico">${IC.alert}</span>${__("Live Alerts")}<span class="hp-badge" id="hp-alert-badge"></span></div>
-					<div id="hp-alerts"><div class="hp-shimmer-block" style="height:150px;margin:14px;border-radius:8px;"></div></div>
-				</div>
-				<div class="hp-card">
-					<div class="hp-card-hd"><span class="hp-card-ico">${IC.clock}</span>${__("Pending Actions")}</div>
-					<div id="hp-actions"><div class="hp-shimmer-block" style="height:150px;margin:14px;border-radius:8px;"></div></div>
-				</div>
-				<div class="hp-card">
-					<div class="hp-card-hd"><span class="hp-card-ico">${IC.clock}</span>${__("Recent Activity")}</div>
-					<div id="hp-activity"><div class="hp-shimmer-block" style="height:150px;margin:14px;border-radius:8px;"></div></div>
-				</div>
-			</div>
-		</div>
-	`);
+            <div class="hp-module-row" id="hp-module-row">
+                ${renderModuleCards()}
+            </div>
 
-    page.main.find(".hp-gw").on("click", function () {
+            <div class="hp-bottom">
+                <div class="hp-card">
+                    <div class="hp-card-hd"><span class="hp-card-ico">${IC.alert}</span>${__("Live Alerts")}<span class="hp-badge" id="hp-alert-badge"></span></div>
+                    <div id="hp-alerts"><div class="hp-shimmer-block" style="height:150px;margin:14px;border-radius:8px;"></div></div>
+                </div>
+                <div class="hp-card">
+                    <div class="hp-card-hd"><span class="hp-card-ico">${IC.clock}</span>${__("Pending Actions")}</div>
+                    <div id="hp-actions"><div class="hp-shimmer-block" style="height:150px;margin:14px;border-radius:8px;"></div></div>
+                </div>
+                <div class="hp-card">
+                    <div class="hp-card-hd"><span class="hp-card-ico">${IC.clock}</span>${__("Recent Activity")}</div>
+                    <div id="hp-activity"><div class="hp-shimmer-block" style="height:150px;margin:14px;border-radius:8px;"></div></div>
+                </div>
+            </div>
+        </div>
+    `);
+
+    bindDashboardLinks(page);
+}
+
+function renderGatewayCards(access) {
+    return GATEWAYS.filter(g => canShowDashboardItem(g, access)).map(g => `
+                    <div class="hp-gw" data-url="${g.url}">
+                        <span class="hp-gw-ico">${IC[g.icon]}</span>
+                        <div class="hp-gw-label">${g.label}</div>
+                        <div class="hp-gw-desc">${g.desc}</div>
+                    </div>`).join("");
+}
+
+function renderModuleCards(access) {
+    return MODULE_CARDS.filter(card => canShowDashboardItem(card, access)).map(card => moduleCard(card, access)).join("");
+}
+
+function bindDashboardLinks(page) {
+    page.main.find(".hp-gw").off("click").on("click", function () {
         frappe.set_route($(this).data("url").split("/"));
     });
-    page.main.find(".hp-mc-btn").on("click", function () {
+    page.main.find(".hp-mc-btn").off("click").on("click", function () {
+        frappe.set_route($(this).data("url").split("/"));
+    });
+    page.main.find(".hp-quick-link").off("click").on("click", function () {
         frappe.set_route($(this).data("url").split("/"));
     });
 }
 
-function moduleCard(ico, title, sub, link, btns, bodyId) {
+function quickAccessSection() {
+    const groups = QUICK_ACCESS_GROUPS.map(group => {
+        const links = group.links.filter(link => canShowQuickLink(link));
+        if (!links.length) return "";
+        return `
+            <div class="hp-quick-card">
+                <div class="hp-quick-head"><span class="hp-quick-ico">${IC[group.icon] || IC.arrow}</span>${frappe.utils.escape_html(group.title)}</div>
+                <div class="hp-quick-grid">
+                    ${links.map(link => `<button class="hp-quick-link" data-url="${frappe.utils.escape_html(link.url)}">${frappe.utils.escape_html(link.label)}</button>`).join("")}
+                </div>
+            </div>`;
+    }).filter(Boolean).join("");
+
+    if (!groups) return "";
+    return `
+        <div class="hp-quick-section">
+            <div class="hp-section-title">${__("Quick Access")}</div>
+            <div class="hp-quick-wrap">${groups}</div>
+        </div>`;
+}
+
+function canShowQuickLink(link) {
+    const visibleKeys = getBootVisibleMenuKeys();
+    if (!link.menuKey) return true;
+    if (!Array.isArray(visibleKeys) || !visibleKeys.length) return false;
+    return visibleKeys.includes(link.menuKey);
+}
+
+function canShowDashboardItem(item, access) {
+    if (access && item.accessKey) return Boolean(access[item.accessKey]);
+    const visibleKeys = getBootVisibleMenuKeys();
+    if (!item.menuKey) return true;
+    if (!Array.isArray(visibleKeys) || !visibleKeys.length) return false;
+    return visibleKeys.includes(item.menuKey);
+}
+
+function getBootVisibleMenuKeys() {
+    const access = frappe.boot && frappe.boot.orderlift_menu_access;
+    return access && access.visible_menu_keys;
+}
+
+function moduleCard(card, access) {
+    const buttons = card.buttons.filter(button => canShowDashboardItem(button, access));
     return `
 		<div class="hp-mc">
 			<div class="hp-mc-hd">
-				<span class="hp-mc-ico">${IC[ico]}</span>
-				<div><div class="hp-mc-title">${title}</div><div class="hp-mc-sub">${sub}</div></div>
-				<a class="hp-mc-link" href="/app/${link}">${IC.arrow}</a>
+				<span class="hp-mc-ico">${IC[card.icon]}</span>
+				<div><div class="hp-mc-title">${card.title}</div><div class="hp-mc-sub">${card.sub}</div></div>
+				<a class="hp-mc-link" href="/app/${card.link}">${IC.arrow}</a>
 			</div>
-			<div id="${bodyId}" class="hp-mc-body"><div class="hp-shimmer-block" style="height:70px;margin:12px;border-radius:8px;"></div></div>
-			<div class="hp-mc-btns">${btns.map(([url, label, v]) => `<button class="hp-mc-btn hp-mc-btn--${v}" data-url="${url}">${label}</button>`).join("")}</div>
+			<div id="${card.bodyId}" class="hp-mc-body"><div class="hp-shimmer-block" style="height:70px;margin:12px;border-radius:8px;"></div></div>
+			<div class="hp-mc-btns">${buttons.map(({ url, label, variant }) => `<button class="hp-mc-btn hp-mc-btn--${variant}" data-url="${url}">${label}</button>`).join("")}</div>
 		</div>`;
 }
 
@@ -144,8 +297,12 @@ async function loadData(page) {
             method: "orderlift.orderlift_logistics.page.home_page.home_page.get_dashboard_data",
         });
         const d = res.message || {};
-        renderHero(page, d.user || {}, d.kpis || {});
-        renderKpis(page, d.kpis || {}, d.sales_summary || {});
+        const access = d.access || {};
+        page.main.find("#hp-gateways").html(renderGatewayCards(access));
+        page.main.find("#hp-module-row").html(renderModuleCards(access));
+        bindDashboardLinks(page);
+        renderHero(page, d.user || {}, d.kpis || {}, access);
+        renderKpis(page, d.kpis || {}, d.sales_summary || {}, access);
         renderModuleSummaries(page, d);
         renderAlerts(page, d.alerts || []);
         renderActions(page, d.pending_actions || []);
@@ -156,7 +313,7 @@ async function loadData(page) {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function renderHero(page, user, kpis) {
+function renderHero(page, user, kpis, access) {
     const h = new Date().getHours();
     const greet = h < 12 ? __("Good morning") : h < 18 ? __("Good afternoon") : __("Good evening");
     const name = (user.full_name || "").split(" ")[0];
@@ -164,23 +321,34 @@ function renderHero(page, user, kpis) {
     page.main.find("#hp-date").text(user.today || "");
     const salesK = kpis.sales_month > 0 ? `${(kpis.sales_month / 1000).toFixed(1)}k` : "0";
     const totalAlerts = (kpis.stockouts || 0) + (kpis.open_tickets || 0);
-    page.main.find("#hp-hero-stats").html(`
-		<div class="hp-hero-stat"><div class="hp-hero-val">${salesK}</div><div class="hp-hero-lbl">${__("Sales / Month")}</div></div>
-		<div class="hp-hero-stat"><div class="hp-hero-val">${kpis.open_quotes ?? 0}</div><div class="hp-hero-lbl">${__("Open Quotes")}</div></div>
-		<div class="hp-hero-stat"><div class="hp-hero-val ${totalAlerts > 0 ? "hp-red" : ""}">${totalAlerts}</div><div class="hp-hero-lbl">${__("Alerts")}</div></div>
-	`);
+    const stats = [
+        access.sales ? { value: salesK, label: __("Sales / Month") } : null,
+        access.sales ? { value: kpis.open_quotes ?? 0, label: __("Open Quotes") } : null,
+        (access.stock || access.logistics || access.sav) ? { value: totalAlerts, label: __("Alerts"), className: totalAlerts > 0 ? "hp-red" : "" } : null,
+    ].filter(Boolean);
+    if (!stats.length) {
+        page.main.find("#hp-hero-stats").empty();
+        return;
+    }
+    page.main.find("#hp-hero-stats").html(stats.map(stat => `
+		<div class="hp-hero-stat"><div class="hp-hero-val ${stat.className || ""}">${stat.value}</div><div class="hp-hero-lbl">${stat.label}</div></div>
+	`).join(""));
 }
 
-function renderKpis(page, k, sales) {
+function renderKpis(page, k, sales, access) {
     const defs = [
-        { ico: "pricing", label: __("Pricing Sheets / Mo"), val: k.pricing_sheets_month ?? 0, badge: null },
-        { ico: "sales", label: __("Orders / Month"), val: sales.orders_month ?? 0, badge: null },
-        { ico: "invoice", label: __("Open Quotations"), val: k.open_quotes ?? 0, badge: null },
-        { ico: "stock", label: __("Stock Units"), val: (k.total_stock || 0).toLocaleString(), badge: null },
-        { ico: "alert", label: __("Stockouts"), val: k.stockouts ?? 0, badge: (k.stockouts || 0) > 0 ? "error" : null },
-        { ico: "transfer", label: __("Pending Transfers"), val: k.pending_transfers ?? 0, badge: (k.pending_transfers || 0) > 0 ? "warn" : null },
-        { ico: "ticket", label: __("Open SAV Tickets"), val: k.open_tickets ?? 0, badge: (k.open_tickets || 0) > 0 ? "info" : null },
-    ];
+        { ico: "pricing", label: __("Pricing Sheets / Mo"), val: k.pricing_sheets_month ?? 0, badge: null, accessKey: "pricing" },
+        { ico: "sales", label: __("Orders / Month"), val: sales.orders_month ?? 0, badge: null, accessKey: "sales" },
+        { ico: "invoice", label: __("Open Quotations"), val: k.open_quotes ?? 0, badge: null, accessKey: "sales" },
+        { ico: "stock", label: __("Stock Units"), val: (k.total_stock || 0).toLocaleString(), badge: null, accessKey: "stock" },
+        { ico: "alert", label: __("Stockouts"), val: k.stockouts ?? 0, badge: (k.stockouts || 0) > 0 ? "error" : null, accessKey: "stock" },
+        { ico: "transfer", label: __("Pending Transfers"), val: k.pending_transfers ?? 0, badge: (k.pending_transfers || 0) > 0 ? "warn" : null, accessKey: "stock" },
+        { ico: "ticket", label: __("Open SAV Tickets"), val: k.open_tickets ?? 0, badge: (k.open_tickets || 0) > 0 ? "info" : null, accessKey: "sav" },
+    ].filter(item => !item.accessKey || access[item.accessKey]);
+    if (!defs.length) {
+        page.main.find("#hp-kpis").empty();
+        return;
+    }
     page.main.find("#hp-kpis").html(defs.map((d, i) => `
 		<div class="hp-kpi hp-kpi--in" style="animation-delay:${i * 50}ms">
 			<div class="hp-kpi-top">
@@ -200,14 +368,19 @@ function renderModuleSummaries(page, d) {
     const sl = d.sales_summary || {};
     const k = d.kpis || {};
 
-    page.main.find("#hp-pricing-body").html(renderPricingSummary(p, recentPricing));
-    page.main.find("#hp-stock-body").html(statRow([
+    const pricingBody = page.main.find("#hp-pricing-body");
+    if (pricingBody.length) pricingBody.html(renderPricingSummary(p, recentPricing));
+
+    const stockBody = page.main.find("#hp-stock-body");
+    if (stockBody.length) stockBody.html(statRow([
         [s.warehouses ?? "—", __("Warehouses")],
         [(k.total_stock || 0).toLocaleString(), __("Units")],
         [s.low_stock_items ?? "—", __("Low Stock"), (s.low_stock_items || 0) > 0 ? "warn" : null],
         [k.stockouts ?? "—", __("Stockouts"), (k.stockouts || 0) > 0 ? "error" : null],
     ]));
-    page.main.find("#hp-sales-body").html(statRow([
+
+    const salesBody = page.main.find("#hp-sales-body");
+    if (salesBody.length) salesBody.html(statRow([
         [sl.orders_month ?? "—", __("Orders")],
         [k.open_quotes ?? "—", __("Quotes")],
         [sl.invoices_overdue ?? "—", __("Overdue"), (sl.invoices_overdue || 0) > 0 ? "error" : null],
@@ -218,7 +391,6 @@ function renderModuleSummaries(page, d) {
 function renderPricingSummary(pricing, recentItems) {
     const stats = statRow([
         [pricing.total_sheets ?? "—", __("Sheets")],
-        [pricing.builders ?? "—", __("Builders")],
         [pricing.benchmark_policies ?? "—", __("Benchmark")],
         [pricing.customs_policies ?? "—", __("Customs")],
         [pricing.scenarios ?? "—", __("Scenarios")],
@@ -395,6 +567,38 @@ function injectStyles() {
 .hp-dot--info  { background: #3b82f6; }
 .hp-kpi-val { font-size: 28px; font-weight: 800; color: var(--heading-color, #1a1f2e); line-height: 1; margin-bottom: 4px; }
 .hp-kpi-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #4a8a8f); margin-bottom: 3px; }
+
+/* Quick access */
+.hp-quick-section { display: flex; flex-direction: column; gap: 10px; }
+.hp-section-title { font-size: 13px; font-weight: 800; color: var(--heading-color, #1a1f2e); text-transform: uppercase; letter-spacing: .06em; }
+.hp-quick-wrap { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+@media(max-width:1200px){ .hp-quick-wrap { grid-template-columns: repeat(2,1fr); } }
+@media(max-width:680px) { .hp-quick-wrap { grid-template-columns: 1fr; } }
+.hp-quick-card {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d4f0f5);
+	border-radius: 14px;
+	padding: 14px;
+	box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.hp-quick-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: var(--heading-color, #1a1f2e); margin-bottom: 12px; }
+.hp-quick-ico { display: inline-flex; width: 26px; height: 26px; border-radius: 8px; background: #e8f7f8; align-items: center; justify-content: center; }
+.hp-quick-ico svg { width: 15px; height: 15px; stroke: #027384; }
+.hp-quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+@media(max-width:480px) { .hp-quick-grid { grid-template-columns: 1fr; } }
+.hp-quick-link {
+	border: 1px solid #d4f0f5;
+	background: #f8feff;
+	color: #1f4f55;
+	border-radius: 9px;
+	padding: 9px 10px;
+	font-size: 11.5px;
+	font-weight: 700;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color .15s, background .15s, transform .15s;
+}
+.hp-quick-link:hover { border-color: #027384; background: #e0f4f6; color: #027384; transform: translateY(-1px); }
 
 /* Module row */
 .hp-module-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }

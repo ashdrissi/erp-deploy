@@ -1,0 +1,25 @@
+{
+  "actions": [],
+  "creation": "2026-05-19 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["status_label", "color", "is_default", "display_order"],
+  "fields": [
+    {"fieldname": "status_label", "fieldtype": "Data", "label": "Status Label", "reqd": 1, "in_list_view": 1},
+    {"fieldname": "color", "fieldtype": "Select", "label": "Color", "options": "Gray\nBlue\nGreen\nOrange\nRed\nPurple", "default": "Gray", "in_list_view": 1},
+    {"fieldname": "is_default", "fieldtype": "Check", "label": "Default", "in_list_view": 1},
+    {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100"}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-05-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift",
+  "name": "Orderlift Document Template Status",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "display_order",
+  "sort_order": "ASC",
+  "states": []
+}

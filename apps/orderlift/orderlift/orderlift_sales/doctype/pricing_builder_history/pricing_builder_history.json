@@ -1,0 +1,32 @@
+{
+  "actions": [],
+  "autoname": "format:PBH-{#####}",
+  "creation": "2026-06-01 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": ["pricing_builder", "action", "summary", "snapshot_json"],
+  "fields": [
+    {"fieldname": "pricing_builder", "fieldtype": "Link", "label": "Pricing Builder", "options": "Pricing Builder", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
+    {"fieldname": "action", "fieldtype": "Data", "label": "Action", "in_list_view": 1},
+    {"fieldname": "summary", "fieldtype": "Small Text", "label": "Summary", "in_list_view": 1},
+    {"fieldname": "snapshot_json", "fieldtype": "Long Text", "label": "Snapshot JSON", "hidden": 1, "read_only": 1}
+  ],
+  "links": [],
+  "modified": "2026-06-01 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Builder History",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Pricing Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Sales Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1}
+  ],
+  "sort_field": "creation",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "pricing_builder",
+  "track_changes": 1
+}

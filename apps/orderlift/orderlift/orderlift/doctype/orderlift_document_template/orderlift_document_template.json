@@ -1,0 +1,43 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:template_name",
+  "creation": "2026-05-19 00:00:00.000000",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": ["template_name", "is_active", "display_order", "targets_section", "targets", "fields_section", "fields", "statuses_section", "statuses", "print_section", "print_title", "print_header", "print_footer", "show_signature_block"],
+  "fields": [
+    {"fieldname": "template_name", "fieldtype": "Data", "label": "Template Name", "reqd": 1, "unique": 1, "in_list_view": 1, "search_index": 1},
+    {"fieldname": "is_active", "fieldtype": "Check", "label": "Active", "default": "1", "in_list_view": 1},
+    {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100", "in_list_view": 1},
+    {"fieldname": "targets_section", "fieldtype": "Section Break", "label": "Target Documents"},
+    {"fieldname": "targets", "fieldtype": "Table", "label": "Targets", "options": "Orderlift Document Template Target", "reqd": 1},
+    {"fieldname": "fields_section", "fieldtype": "Section Break", "label": "Form Fields"},
+    {"fieldname": "fields", "fieldtype": "Table", "label": "Fields", "options": "Orderlift Document Template Field"},
+    {"fieldname": "statuses_section", "fieldtype": "Section Break", "label": "Statuses"},
+    {"fieldname": "statuses", "fieldtype": "Table", "label": "Statuses", "options": "Orderlift Document Template Status"},
+    {"fieldname": "print_section", "fieldtype": "Section Break", "label": "Print Settings"},
+    {"fieldname": "print_title", "fieldtype": "Data", "label": "Print Title"},
+    {"fieldname": "print_header", "fieldtype": "Text Editor", "label": "Print Header"},
+    {"fieldname": "print_footer", "fieldtype": "Text Editor", "label": "Print Footer"},
+    {"fieldname": "show_signature_block", "fieldtype": "Check", "label": "Show Signature Block", "default": "1"}
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-05-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift",
+  "name": "Orderlift Document Template",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "print": 1, "email": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "print": 1, "email": 1}
+  ],
+  "sort_field": "display_order",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "template_name",
+  "track_changes": 1
+}

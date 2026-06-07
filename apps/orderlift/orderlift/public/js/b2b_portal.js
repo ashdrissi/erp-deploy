@@ -32,6 +32,7 @@
     function render() {
         const route        = parseRoute();
         const user         = (state.bootstrap && state.bootstrap.user) || {};
+        const crmLabel     = userCrmLabel(user);
         const initials     = makeInitials(user.customer_name || user.email || "U");
         const basketCount  = state.basket.reduce((s, r) => s + Number(r.qty || 0), 0);
 
@@ -44,8 +45,8 @@
                   <div class="olp-logo-icon">${iconBuildingStore()}</div>
                   <div>
                     <div class="olp-logo-name">Orderlift B2B</div>
-                    <div class="olp-logo-sub" title="${escapeHtml(user.customer_group||'')}">
-                      ${escapeHtml(user.customer_group || "Portal")}
+                    <div class="olp-logo-sub" title="${escapeHtml(crmLabel)}">
+                      ${escapeHtml(crmLabel || "Portal")}
                     </div>
                   </div>
                 </div>
@@ -134,7 +135,7 @@
           <div class="olp-welcome">
             <div>
               <div class="olp-welcome-greeting">${greeting}, ${escapeHtml(user.customer_name || "there")} 👋</div>
-              <div class="olp-welcome-sub">${escapeHtml(dateStr)} · ${escapeHtml(user.customer_group || "")}</div>
+              <div class="olp-welcome-sub">${escapeHtml(dateStr)} · ${escapeHtml(userCrmLabel(user))}</div>
             </div>
             <div class="olp-welcome-actions">
               <button class="olp-btn olp-btn-white" data-nav-page="catalog">${iconList()} Browse Catalog</button>
@@ -143,7 +144,7 @@
           </div>
 
           <div class="olp-kpi-row">
-            ${kpiCard("Catalog Products", metrics.visible_products  || 0, "approved for your group", "blue",   iconList())}
+            ${kpiCard("Catalog Products", metrics.visible_products  || 0, "approved for your CRM segment", "blue",   iconList())}
             ${kpiCard("Quote Requests",   metrics.requests_total    || 0, "submitted via portal",    "orange", iconDoc())}
             ${kpiCard("Quotations",       metrics.quotations_total  || 0, "available to download",   "green",  iconQuote())}
             ${kpiCard("Basket Lines",     state.basket.length,             "ready to submit",         "purple", iconBasket())}
@@ -173,7 +174,7 @@
                 <div class="olp-pad-sm">
                   <div class="olp-info-block" style="margin-bottom:0;">
                     ${infoRow("Customer",     user.customer_name   || "—")}
-                    ${infoRow("Group",        user.customer_group  || "—")}
+                    ${infoRow("CRM Segment",  userCrmLabel(user) || "—")}
                     ${infoRow("Quote Access", policy.quote_request_allowed ? "✓ Enabled" : "Disabled")}
                     ${infoRow("Currency",     policy.currency      || "MAD")}
                   </div>
@@ -194,7 +195,7 @@
             <div class="olp-section-head">
               <div>
                 <div class="olp-section-title">Featured Products</div>
-                <div class="olp-section-sub">Curated selection for your group</div>
+                <div class="olp-section-sub">Curated selection for your CRM segment</div>
               </div>
               <button class="olp-btn olp-btn-sm" data-nav-page="catalog">Browse all ${metrics.visible_products || ""} products</button>
             </div>
@@ -482,7 +483,7 @@
             <div class="olp-account-avatar">${escapeHtml(initials)}</div>
             <div>
               <div class="olp-section-title">${escapeHtml(user.customer_name||"Portal User")}</div>
-              <div class="olp-section-sub">${escapeHtml(user.email||"")} · ${escapeHtml(user.customer_group||"")}</div>
+              <div class="olp-section-sub">${escapeHtml(user.email||"")} · ${escapeHtml(userCrmLabel(user))}</div>
             </div>
           </div>
           <div class="olp-grid olp-grid-2">
@@ -492,7 +493,7 @@
                 <div class="olp-info-block" style="margin-bottom:0;">
                   ${infoRow("Customer Name",  user.customer_name   || "—")}
                   ${infoRow("Email",          user.email           || "—")}
-                  ${infoRow("Customer Group", user.customer_group  || "—")}
+                  ${infoRow("CRM Segment",    userCrmLabel(user)  || "—")}
                 </div>
               </div>
             </div>
@@ -1068,6 +1069,13 @@
         return match ? decodeURIComponent(match[1]) : "";
     }
     function makeInitials(s) { return ((s||"U").match(/\b\w/g)||[]).slice(0,2).join("").toUpperCase()||"U"; }
+    function userCrmLabel(user) {
+        if (!user) return "";
+        const businessType = user.business_type || "";
+        const segment = user.crm_segment || "";
+        if (businessType && segment) return `${businessType} / ${segment}`;
+        return businessType || segment || "";
+    }
     function navBtn(target, label, current, icon, badge) {
         return `<button class="olp-nav-item ${current===target?"is-active":""}" data-nav-page="${escapeHtml(target)}">
           <span class="olp-nav-icon">${icon}</span><span class="olp-nav-label">${escapeHtml(label)}</span>

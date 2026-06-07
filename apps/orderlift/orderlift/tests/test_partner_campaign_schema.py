@@ -34,12 +34,40 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn("Customer-custom_crm_segments", classification_names)
         self.assertIn("Opportunity-custom_crm_business_type", classification_names)
         self.assertIn("Opportunity-custom_crm_segment", classification_names)
+        self.assertIn("Opportunity-custom_first_contact_date", classification_names)
+        self.assertIn("Quotation-custom_crm_business_type", classification_names)
+        self.assertIn("Quotation-custom_crm_segment", classification_names)
         self.assertIn("custom_crm_segments", classification_fieldnames)
         self.assertIn("Sales Stage-custom_sequence", status_names)
+        self.assertIn("Sales Stage-custom_assigned_user", status_names)
+        self.assertIn("Sales Stage-custom_todo_priority", status_names)
+        self.assertIn("Sales Stage-custom_confirmation_message", status_names)
+        self.assertIn("Project Status-custom_confirmation_message", status_names)
+        self.assertIn("Orderlift Order Status-custom_confirmation_message", status_names)
         self.assertIn("Project-custom_project_status", status_names)
+        self.assertIn("Project-custom_crm_business_type", status_names)
+        self.assertIn("Project-custom_crm_segment", status_names)
         self.assertIn("Sales Order-custom_orderlift_order_status", status_names)
+        self.assertIn("Sales Order-custom_crm_business_type", status_names)
+        self.assertIn("Sales Order-custom_crm_segment", status_names)
         self.assertIn("custom_color", status_fieldnames)
+        self.assertIn("custom_assigned_user", status_fieldnames)
+        self.assertIn("custom_todo_priority", status_fieldnames)
+        self.assertIn("custom_confirmation_message", status_fieldnames)
         self.assertIn("custom_orderlift_order_status", status_fieldnames)
+
+        sales_stage_assignment = next(row for row in status_fields if row["name"] == "Sales Stage-custom_assigned_user")
+        self.assertEqual(sales_stage_assignment["options"], "User")
+
+        classification_by_name = {row["name"]: row for row in classification_fields}
+        status_by_name = {row["name"]: row for row in status_fields}
+        self.assertEqual(classification_by_name["Lead-custom_crm_classification_section"]["insert_after"], "company_name")
+        self.assertEqual(classification_by_name["Lead-custom_crm_classification_section"]["collapsible"], 0)
+        self.assertEqual(classification_by_name["Opportunity-custom_crm_business_type"]["insert_after"], "party_name")
+        self.assertEqual(classification_by_name["Quotation-custom_crm_business_type"]["insert_after"], "party_name")
+        self.assertEqual(status_by_name["Sales Order-custom_orderlift_order_status"]["insert_after"], "customer_name")
+        self.assertEqual(status_by_name["Sales Order-custom_crm_business_type"]["insert_after"], "custom_orderlift_order_status")
+        self.assertEqual(status_by_name["Project-custom_crm_business_type"]["insert_after"], "custom_project_status")
 
     def test_partner_campaign_doctype_has_required_child_tables_and_kpis(self):
         doctype_path = (
@@ -60,8 +88,35 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn("opportunity_count", fields)
         self.assertIn("quotation_amount", fields)
         self.assertIn("sales_order_amount", fields)
+        self.assertEqual(fields["archived"]["fieldtype"], "Check")
         self.assertEqual(fields["business_type_filter"]["options"], "CRM Business Type")
         self.assertEqual(fields["crm_segment_filter"]["options"], "CRM Segment")
+        self.assertIn("Visit", fields["campaign_action_type"]["options"])
+        self.assertIn("Other", fields["campaign_action_type"]["options"])
+        self.assertNotIn("Visit", fields["default_channel"]["options"])
+        self.assertNotIn("Other", fields["default_channel"]["options"])
+        self.assertEqual(fields["whatsapp_mode"]["fieldtype"], "Select")
+        self.assertIn("Twilio", fields["whatsapp_mode"]["options"])
+        self.assertIn("Custom Webhook", fields["whatsapp_mode"]["options"])
+        self.assertIn("visit_subject", fields)
+        self.assertIn("visit_agenda", fields)
+        self.assertIn("other_notes", fields)
+
+    def test_crm_classification_inheritance_is_wired_to_transactions(self):
+        hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
+        setup = (APP_ROOT / "orderlift" / "orderlift_crm" / "setup.py").read_text()
+        classification = (APP_ROOT / "orderlift" / "orderlift_crm" / "classification.py").read_text()
+
+        self.assertIn('("Maintenance", 30)', setup)
+        self.assertIn("_backfill_crm_classification()", setup)
+        self.assertIn("sync_quotation_crm_classification", hooks)
+        self.assertIn("sync_sales_order_crm_classification", hooks)
+        self.assertIn("sync_project_crm_classification", hooks)
+        self.assertIn('"Prospect": {', hooks)
+        self.assertIn("sync_customer_tier_mode", hooks)
+        self.assertIn('"Prospect": "public/js/customer_tier_mode.js', hooks)
+        self.assertIn("classification_from_document(\"Quotation\", quotation)", classification)
+        self.assertIn("classification_from_document(\"Sales Order\", sales_order)", classification)
 
     def test_config_doctypes_are_setup_documents(self):
         for doctype in [
@@ -77,6 +132,42 @@ class TestPartnerCampaignSchema(unittest.TestCase):
             doc = json.loads(path.read_text())
             self.assertEqual(doc["document_type"], "Setup")
             self.assertEqual(doc["module"], "Orderlift CRM")
+
+    def test_project_contracts_tab_fields_exist(self):
+        fixture_path = APP_ROOT / "orderlift" / "fixtures" / "custom_field_project_sig.json"
+        fields = {row["fieldname"]: row for row in json.loads(fixture_path.read_text())}
+
+        self.assertEqual(fields["custom_contracts_tab"]["fieldtype"], "Tab Break")
+        self.assertEqual(fields["custom_contracts_section"]["insert_after"], "custom_contracts_tab")
+        self.assertEqual(fields["custom_contracts_html"]["fieldtype"], "HTML")
+
+    def test_status_doctypes_have_assigned_user_and_todo_priority(self):
+        for doctype in ["project_status", "orderlift_order_status"]:
+            path = APP_ROOT / "orderlift" / "orderlift_crm" / "doctype" / doctype / f"{doctype}.json"
+            doc = json.loads(path.read_text())
+            fields = {row["fieldname"]: row for row in doc["fields"]}
+            self.assertEqual(fields["assigned_user"]["fieldtype"], "Link")
+            self.assertEqual(fields["assigned_user"]["options"], "User")
+            self.assertEqual(fields["todo_priority"]["fieldtype"], "Select")
+            self.assertIn("Important Urgent", fields["todo_priority"]["options"])
+
+    def test_logistics_pipeline_status_is_setup_document(self):
+        path = (
+            APP_ROOT
+            / "orderlift"
+            / "orderlift_logistics"
+            / "doctype"
+            / "logistics_pipeline_status"
+            / "logistics_pipeline_status.json"
+        )
+        doc = json.loads(path.read_text())
+        fields = {row["fieldname"]: row for row in doc["fields"]}
+
+        self.assertEqual(doc["document_type"], "Setup")
+        self.assertEqual(doc["module"], "Orderlift Logistics")
+        self.assertEqual(fields["assigned_user"]["options"], "User")
+        self.assertIn("Non Important Non Urgent", fields["todo_priority"]["options"])
+        self.assertEqual(fields["confirmation_message"]["fieldtype"], "Small Text")
 
     def test_crm_segment_assignment_is_child_table(self):
         path = (
@@ -106,6 +197,99 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         fields = {row["fieldname"]: row for row in doc["fields"]}
         self.assertEqual(fields["business_type"]["options"], "CRM Business Type")
         self.assertEqual(fields["crm_segment"]["options"], "CRM Segment")
+        self.assertEqual(fields["email"]["fieldtype"], "Data")
+        self.assertEqual(fields["mobile_no"]["fieldtype"], "Data")
+        self.assertEqual(fields["visit_todo"]["options"], "ToDo")
+        self.assertEqual(fields["last_email_queue"]["options"], "Email Queue")
+
+    def test_whatsapp_settings_supports_twilio_and_custom_webhook(self):
+        path = (
+            APP_ROOT
+            / "orderlift"
+            / "orderlift_crm"
+            / "doctype"
+            / "orderlift_whatsapp_settings"
+            / "orderlift_whatsapp_settings.json"
+        )
+        doc = json.loads(path.read_text())
+        fields = {row["fieldname"]: row for row in doc["fields"]}
+
+        self.assertEqual(doc["issingle"], 1)
+        self.assertEqual(doc["document_type"], "Setup")
+        self.assertIn("Twilio", fields["provider"]["options"])
+        self.assertIn("Custom Webhook", fields["provider"]["options"])
+        self.assertEqual(fields["twilio_auth_token"]["fieldtype"], "Password")
+        self.assertEqual(fields["custom_webhook_secret"]["fieldtype"], "Password")
+
+    def test_party_legacy_partner_fields_are_hidden(self):
+        fixture_path = APP_ROOT / "orderlift" / "fixtures" / "custom_field_partner_campaign_crm.json"
+        rows = json.loads(fixture_path.read_text())
+        fields = {(row["dt"], row["fieldname"]): row for row in rows}
+
+        for doctype in ["Lead", "Prospect", "Customer"]:
+            section = fields[(doctype, "custom_partner_campaign_section")]
+            self.assertEqual(section["hidden"], 1)
+
+            segment = fields[(doctype, "custom_partner_segment")]
+            self.assertEqual(segment["label"], "Legacy Partner Segment")
+            self.assertEqual(segment["hidden"], 1)
+            self.assertEqual(segment["read_only"], 1)
+            self.assertEqual(segment["in_list_view"], 0)
+            self.assertEqual(segment["in_standard_filter"], 0)
+
+            campaign = fields[(doctype, "custom_partner_campaign")]
+            self.assertEqual(campaign["hidden"], 1)
+            self.assertEqual(campaign["read_only"], 1)
+            self.assertEqual(campaign["in_standard_filter"], 0)
+
+            target = fields[(doctype, "custom_partner_campaign_target")]
+            self.assertEqual(target["hidden"], 1)
+            self.assertEqual(target["read_only"], 1)
+
+        opportunity_segment = fields[("Opportunity", "custom_partner_segment")]
+        self.assertEqual(opportunity_segment["label"], "Legacy Partner Segment")
+        self.assertEqual(opportunity_segment["hidden"], 1)
+        self.assertEqual(opportunity_segment["read_only"], 1)
+        self.assertEqual(opportunity_segment["in_standard_filter"], 0)
+
+    def test_campaign_api_uses_crm_segment_filter_for_initial_targets(self):
+        api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
+        content = api_path.read_text()
+
+        self.assertIn('business_type=doc.get("business_type_filter")', content)
+        self.assertIn("segment=_campaign_crm_segment_filter(doc)", content)
+        self.assertIn("FROM `tabCRM Segment Assignment`", content)
+
+    def test_campaign_visit_todo_uses_orderlift_priority_options(self):
+        api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
+        content = api_path.read_text()
+
+        self.assertIn("from orderlift.orderlift_crm.todo_priority import DEFAULT_TODO_PRIORITY", content)
+        self.assertIn('"priority": DEFAULT_TODO_PRIORITY', content)
+        self.assertNotIn('"priority": "Medium"', content)
+
+    def test_campaign_email_and_whatsapp_have_preflight_guards(self):
+        api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
+        content = api_path.read_text()
+
+        self.assertIn("def get_campaign_send_preflight", content)
+        self.assertIn("def render_campaign_content_from_payload", content)
+        self.assertIn("_ensure_campaign_can_send(doc, [row.name], \"Email\"", content)
+        self.assertIn("_ensure_campaign_can_send(doc, [row.name], \"WhatsApp\"", content)
+        self.assertIn("EMAIL_RE", content)
+        self.assertIn("ALLOWED_TEMPLATE_KEYS", content)
+        self.assertIn("_webhook_url_is_allowed", content)
+
+    def test_campaign_pages_surface_preflight_and_rendered_preview(self):
+        editor = (APP_ROOT / "orderlift" / "orderlift_crm" / "page" / "campaign_editor" / "campaign_editor.js").read_text()
+        manager = (APP_ROOT / "orderlift" / "orderlift_crm" / "page" / "campaign_manager" / "campaign_manager.js").read_text()
+
+        self.assertIn("render_campaign_content_from_payload", editor)
+        self.assertIn("get_campaign_send_preflight", editor)
+        self.assertIn("Preview as target", editor)
+        self.assertIn("ensureCampaignActionReady", manager)
+        self.assertIn("showBulkActionResult", manager)
+        self.assertIn("Campaign is not ready", manager)
 
     def test_status_config_declares_single_primary_status_per_document(self):
         config_path = APP_ROOT / "orderlift" / "orderlift_crm" / "status_config.py"
@@ -116,6 +300,8 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn('"target_field": "custom_project_status"', content)
         self.assertIn('"Sales Order": {', content)
         self.assertIn('"target_field": "custom_orderlift_order_status"', content)
+        self.assertIn('"Forecast Load Plan": {', content)
+        self.assertIn('"target_field": "status"', content)
 
 
 if __name__ == "__main__":

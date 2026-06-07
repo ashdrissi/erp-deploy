@@ -1,5 +1,16 @@
 frappe.ui.form.on("Dimensioning Set", {
     refresh(frm) {
+        if (frm.is_new()) {
+            prepareNewDimensioningSetForm(frm);
+            return;
+        }
+
+        if (!frm.__dimensioning_builder_redirected) {
+            frm.__dimensioning_builder_redirected = true;
+            openDimensioningSetBuilder(frm);
+            return;
+        }
+
         ensureDimensioningSetStyles();
         setupDimensioningGridHints(frm);
         renderDimensioningOverview(frm);
@@ -17,7 +28,34 @@ frappe.ui.form.on("Dimensioning Set", {
         renderDimensioningOverview(frm);
         renderSelectionRuleBuilder(frm);
     },
+
+    after_save(frm) {
+        if (!frm.__dimensioning_create_in_builder) return;
+        frm.__dimensioning_create_in_builder = false;
+        openDimensioningSetBuilder(frm);
+    },
 });
+
+function prepareNewDimensioningSetForm(frm) {
+    const visibleFields = new Set(["set_name"]);
+    (frm.meta.fields || []).forEach((field) => {
+        if (!field.fieldname) return;
+        frm.toggle_display(field.fieldname, visibleFields.has(field.fieldname));
+    });
+
+    frm.clear_custom_buttons();
+    frm.set_intro(__("Name the set, then save to continue in the guided Dimensioning Set Builder."), "blue");
+    frm.page.clear_primary_action();
+    frm.page.set_primary_action(__("Create in Builder"), async () => {
+        frm.__dimensioning_create_in_builder = true;
+        await frm.save();
+    });
+}
+
+function openDimensioningSetBuilder(frm) {
+    frappe.route_options = { dimensioning_set: frm.doc.name };
+    frappe.set_route("dimensioning-set-builder");
+}
 
 frappe.ui.form.on("Dimensioning Set Field", {
     input_fields_add(frm) {

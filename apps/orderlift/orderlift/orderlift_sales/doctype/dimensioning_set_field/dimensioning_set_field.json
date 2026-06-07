@@ -13,6 +13,7 @@
     "options",
     "default_value",
     "is_required",
+    "group",
     "help_text"
   ],
   "fields": [
@@ -66,6 +67,11 @@
       "label": "Obligatoire",
       "default": "0",
       "in_list_view": 1
+    },
+    {
+      "fieldname": "group",
+      "fieldtype": "Data",
+      "label": "Section"
     },
     {
       "fieldname": "help_text",

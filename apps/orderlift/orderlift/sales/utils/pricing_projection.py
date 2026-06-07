@@ -134,16 +134,8 @@ def resolve_max_discount_cap(
 ) -> float:
     rule_max_discount_percent = float(rule_max_discount_percent or 0)
     fallback_max_discount_percent = float(fallback_max_discount_percent or 0)
-    agent_max_discount_percent = float(agent_max_discount_percent or 0)
 
     if not is_fallback:
-        return rule_max_discount_percent or agent_max_discount_percent or 0.0
+        return rule_max_discount_percent or 0.0
 
-    positive_caps = [
-        value for value in (fallback_max_discount_percent, agent_max_discount_percent)
-        if value > 0
-    ]
-    if positive_caps:
-        return min(positive_caps)
-
-    return 0.0
+    return fallback_max_discount_percent or 0.0

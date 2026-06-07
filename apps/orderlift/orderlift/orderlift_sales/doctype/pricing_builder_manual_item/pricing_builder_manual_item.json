@@ -1,0 +1,49 @@
+{
+  "actions": [],
+  "creation": "2026-05-06 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "item",
+    "buying_price_list",
+    "is_active"
+  ],
+  "fields": [
+    {
+      "fieldname": "item",
+      "fieldtype": "Link",
+      "label": "Item",
+      "options": "Item",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "buying_price_list",
+      "fieldtype": "Link",
+      "label": "Buying Price List",
+      "options": "Price List",
+      "description": "Optional. Leave empty to use the first active sourcing buying list.",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-05-06 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Pricing Builder Manual Item",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

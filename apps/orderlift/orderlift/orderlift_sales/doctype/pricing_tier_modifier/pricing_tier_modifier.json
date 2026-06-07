@@ -6,37 +6,55 @@
     "editable_grid": 1,
     "engine": "InnoDB",
     "field_order": [
-        "customer_group",
+        "business_type",
+        "crm_segment",
         "tier",
+        "customer_group",
         "modifier_amount",
         "modifier_type",
         "is_active"
     ],
     "fields": [
         {
+            "fieldname": "business_type",
+            "fieldtype": "Link",
+            "label": "Business Type",
+            "options": "CRM Business Type",
+            "in_list_view": 1,
+            "description": "Optional. If set, modifier applies only to this CRM business type."
+        },
+        {
+            "fieldname": "crm_segment",
+            "fieldtype": "Link",
+            "label": "CRM Segment",
+            "options": "CRM Segment",
+            "in_list_view": 1,
+            "description": "Optional. If set, modifier applies only to this CRM segment."
+        },
+        {
             "fieldname": "customer_group",
             "fieldtype": "Link",
-            "label": "Customer Group",
+            "label": "Legacy Customer Group",
             "options": "Customer Group",
-            "in_list_view": 1,
-            "description": "Optional. If set, modifier applies only to this customer group."
+            "hidden": 1,
+            "description": "Deprecated. Use Business Type and CRM Segment instead."
         },
         {
             "fieldname": "tier",
-            "fieldtype": "Select",
+            "fieldtype": "Link",
             "label": "Tier",
-            "options": "\nEco\nIntermediaire\nLuxe\nGold\nSilver\nBronze",
+            "options": "Pricing Tier",
             "in_list_view": 1,
-            "description": "Optional. Leave blank to apply the modifier to the whole customer group."
+            "description": "Optional. Select a configurable pricing tier."
         },
         {
             "fieldname": "modifier_amount",
-            "fieldtype": "Currency",
+            "fieldtype": "Float",
             "label": "Modifier Amount",
             "default": "0",
             "reqd": 1,
             "in_list_view": 1,
-            "description": "Positive = surcharge, Negative = discount (in MAD)"
+            "description": "Positive = surcharge, Negative = discount. Fixed rows use MAD; Percentage rows use %."
         },
         {
             "fieldname": "modifier_type",

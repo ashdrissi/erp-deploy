@@ -53,6 +53,15 @@ class TestScenarioPolicyResolver(unittest.TestCase):
         rule = resolve_scenario_rule(rules, context)
         self.assertEqual(rule["pricing_scenario"], "SCN-BUNDLE")
 
+    def test_crm_segment_rule_applies_before_business_type_rule(self):
+        rules = [
+            {"pricing_scenario": "SCN-DIST", "business_type": "Distribution", "priority": 10, "sequence": 90, "is_active": 1},
+            {"pricing_scenario": "SCN-GROSSISTE", "business_type": "Distribution", "crm_segment": "Grossiste", "priority": 10, "sequence": 90, "is_active": 1},
+        ]
+        context = {"business_type": "Distribution", "crm_segment": "Grossiste"}
+        rule = resolve_scenario_rule(rules, context)
+        self.assertEqual(rule["pricing_scenario"], "SCN-GROSSISTE")
+
 
 if __name__ == "__main__":
     unittest.main()

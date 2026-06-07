@@ -41,7 +41,6 @@ class PricingBenchmarkPolicy(Document):
             self.benchmark_basis = self.benchmark_basis or "Selling Market"
 
     def _validate_sources(self):
-        active = 0
         seen = set()
         basis = (self.benchmark_basis or "Selling Market").strip() or "Selling Market"
         source_type_values = []
@@ -63,7 +62,6 @@ class PricingBenchmarkPolicy(Document):
                 row.source_kind = _default_source_kind(price_list_type)
 
             if cint(row.is_active):
-                active += 1
                 source_type_values.append(price_list_type)
                 mismatch = _basis_mismatch(basis, price_list_type)
                 if mismatch:
@@ -75,9 +73,6 @@ class PricingBenchmarkPolicy(Document):
                             basis,
                         )
                     )
-
-        if active == 0:
-            frappe.throw(_("At least one active benchmark source is required."))
 
         normalized_types = {t for t in source_type_values if t in {"Selling", "Buying"}}
         if basis == "Any List" and len(normalized_types) > 1:
@@ -95,6 +90,10 @@ class PricingBenchmarkPolicy(Document):
 
     def _validate_rules(self):
         active = 0
+        requires_rules = any(
+            cint(row.is_active) and (row.price_list or "").strip()
+            for row in self.benchmark_sources or []
+        )
         for row in self.benchmark_rules or []:
             row.ratio_min = flt(row.ratio_min)
             row.ratio_max = flt(row.ratio_max)
@@ -112,8 +111,8 @@ class PricingBenchmarkPolicy(Document):
             if cint(row.is_active):
                 active += 1
 
-        if active == 0:
-            frappe.throw(_("At least one active benchmark rule is required."))
+        if requires_rules and active == 0:
+            frappe.throw(_("At least one active benchmark rule is required when benchmark sources are configured."))
 
     def _validate_margin_application_basis(self):
         basis = (self.margin_application_basis or "Base Price").strip() or "Base Price"
@@ -146,6 +145,9 @@ class PricingBenchmarkPolicy(Document):
 
             if not row.customer_group and not row.tier:
                 frappe.throw(_("Row {0}: set Customer Group, Tier, or both for a dynamic modifier.").format(row.idx))
+            if row.tier and frappe.db.exists("Pricing Tier", row.tier):
+                if not cint(frappe.db.get_value("Pricing Tier", row.tier, "is_active")):
+                    frappe.throw(_("Row {0}: Pricing Tier {1} is inactive.").format(row.idx, row.tier))
 
             key = (row.customer_group.lower(), row.tier.lower())
             if key in seen:

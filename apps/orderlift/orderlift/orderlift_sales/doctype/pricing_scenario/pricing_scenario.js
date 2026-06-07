@@ -30,6 +30,9 @@ function renderExpenseGuide(frm) {
     const transportEnabled = !!frm.doc.transport_is_active;
     const transportMode = frappe.utils.escape_html(frm.doc.transport_allocation_mode || "By Value");
     const transportPrice = frappe.format(frm.doc.transport_container_price || 0, { fieldtype: "Currency" });
+    const storageEnabled = !!frm.doc.storage_is_active;
+    const storageRate = frappe.format(frm.doc.storage_cost_per_m3_per_month || 0, { fieldtype: "Currency" });
+    const storageDuration = frappe.format(frm.doc.storage_duration_months || 0, { fieldtype: "Float" });
 
     const cards = [
         { label: __("Active Expenses"), value: stats.total, tone: "slate" },
@@ -69,6 +72,9 @@ function renderExpenseGuide(frm) {
     const transportBadge = transportEnabled
         ? `<span class="ep-chip ep-chip--on">${__("Enabled")}</span>`
         : `<span class="ep-chip ep-chip--off">${__("Disabled")}</span>`;
+    const storageBadge = storageEnabled
+        ? `<span class="ep-chip ep-chip--on">${__("Enabled")}</span>`
+        : `<span class="ep-chip ep-chip--off">${__("Disabled")}</span>`;
 
     const html = `
         <div class="ep-shell">
@@ -82,6 +88,11 @@ function renderExpenseGuide(frm) {
                     <div class="ep-transport-head">${__("Transport Allocation")}</div>
                     <div class="ep-transport-state">${transportBadge}</div>
                     <div class="ep-transport-meta">${transportMode} - ${transportPrice}</div>
+                </div>
+                <div class="ep-transport-box">
+                    <div class="ep-transport-head">${__("Storage Allocation")}</div>
+                    <div class="ep-transport-state">${storageBadge}</div>
+                    <div class="ep-transport-meta">${storageRate} / m3 / ${__("month")} - ${storageDuration} ${__("month(s)")}</div>
                 </div>
             </div>
 
@@ -126,7 +137,7 @@ function ensureScenarioLayoutStyles() {
         .ps-scenario-flow-fullwidth .section-body > .form-column:empty { display: none; }
         .ps-scenario-flow-fullwidth .grid-field { width: 100%; }
         .ep-shell { display: grid; gap: 14px; }
-        .ep-hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr); gap: 14px; padding: 18px; border: 1px solid #dbe4ea; border-radius: 18px; background: linear-gradient(135deg, #fff8ef 0%, #eef7f3 100%); }
+        .ep-hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.6fr) minmax(220px, 0.6fr); gap: 14px; padding: 18px; border: 1px solid #dbe4ea; border-radius: 18px; background: linear-gradient(135deg, #fff8ef 0%, #eef7f3 100%); }
         .ep-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
         .ep-hero h3 { margin: 0 0 8px; font-size: 26px; line-height: 1.05; color: #102a43; }
         .ep-hero p { margin: 0; color: #486581; max-width: 60ch; }
@@ -257,6 +268,9 @@ frappe.ui.form.on("Pricing Scenario", {
     transport_is_active: renderExpenseGuide,
     transport_allocation_mode: renderExpenseGuide,
     transport_container_price: renderExpenseGuide,
+    storage_is_active: renderExpenseGuide,
+    storage_cost_per_m3_per_month: renderExpenseGuide,
+    storage_duration_months: renderExpenseGuide,
 });
 
 frappe.ui.form.on("Pricing Scenario Expense", {

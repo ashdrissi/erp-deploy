@@ -6,9 +6,15 @@ import os
 import frappe
 
 from orderlift.orderlift_crm.status_config import (
+    LOGISTICS_STATUS_SEEDS,
     OPPORTUNITY_STAGE_SEEDS,
     PROJECT_STATUS_SEEDS,
     SALES_ORDER_STATUS_SEEDS,
+)
+from orderlift.orderlift_crm.todo_priority import (
+    LEGACY_TODO_PRIORITY_MAP,
+    TODO_PRIORITY_OPTIONS_TEXT,
+    normalize_todo_priority,
 )
 
 
@@ -21,7 +27,13 @@ FIXTURE_FILES = [
 DEFAULT_BUSINESS_TYPES = [
     ("Distribution", 10),
     ("Installation", 20),
+    ("Maintenance", 30),
 ]
+
+DEFAULT_COMPANY_BUSINESS_TYPES = {
+    "Orderlift Maroc Distribution": ["Distribution"],
+    "Orderlift Maroc Installation": ["Installation"],
+}
 
 DEFAULT_CRM_SEGMENTS = [
     ("Grossiste", "Distribution", 10),
@@ -76,7 +88,13 @@ DEFAULT_INSTALLATION_STAGES = [
 
 def after_migrate():
     _sync_custom_fields()
+    _setup_crm_layout_overrides()
+    _setup_todo_priority_options()
+    _retire_customer_group_ui()
+    _migrate_portal_policies_to_crm()
+    _hide_legacy_partner_classification_fields()
     _seed_business_types()
+    _seed_company_business_types()
     _seed_crm_segments()
     _seed_partner_segments()
     _seed_target_statuses()
@@ -85,11 +103,16 @@ def after_migrate():
     _deactivate_legacy_sales_stages()
     _seed_project_statuses()
     _seed_sales_order_statuses()
+    _seed_logistics_pipeline_statuses()
     _migrate_party_crm_segments()
     _migrate_opportunity_crm_classification()
     _migrate_campaign_crm_classification()
     _clear_party_campaign_shortcuts()
+    _remove_obsolete_opportunity_workflow_fields()
     _migrate_opportunity_stages_to_sales_stage()
+    _remove_installation_pipeline_page()
+    _backfill_crm_classification()
+    _rename_opportunities_with_business_abbreviation()
     frappe.db.commit()
 
 
@@ -129,6 +152,204 @@ def _upsert_custom_fields(fields: list[dict]) -> int:
     return count
 
 
+def _setup_todo_priority_options():
+    if not frappe.db.exists("DocType", "ToDo"):
+        return
+
+    existing = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": "ToDo", "field_name": "priority", "property": "options"},
+        "name",
+    )
+    setter = frappe.get_doc("Property Setter", existing) if existing else frappe.new_doc("Property Setter")
+    setter.doc_type = "ToDo"
+    setter.doctype_or_field = "DocField"
+    setter.field_name = "priority"
+    setter.property = "options"
+    setter.property_type = "Text"
+    setter.value = TODO_PRIORITY_OPTIONS_TEXT
+    if existing:
+        setter.save(ignore_permissions=True)
+    else:
+        setter.insert(ignore_permissions=True)
+
+    for old_value, new_value in LEGACY_TODO_PRIORITY_MAP.items():
+        frappe.db.sql("UPDATE `tabToDo` SET priority = %s WHERE priority = %s", (new_value, old_value))
+
+
+def _setup_crm_layout_overrides():
+    if _doctype_has_field("Opportunity", "title"):
+        _upsert_property_setter("Opportunity", "title", "hidden", "0", "Check")
+        _upsert_property_setter("Opportunity", "title", "insert_after", "customer_name", "Data")
+    if _doctype_has_field("Opportunity", "organization_details_section"):
+        _upsert_property_setter("Opportunity", "organization_details_section", "collapsible", "1", "Check")
+        _upsert_property_setter("Opportunity", "organization_details_section", "collapsible_depends_on", "eval:0", "Code")
+    if _doctype_has_field("Opportunity", "probability"):
+        _upsert_property_setter("Opportunity", "probability", "hidden", "1", "Check")
+    if _doctype_has_field("Opportunity", "section_break_14"):
+        _upsert_property_setter("Opportunity", "section_break_14", "collapsible", "1", "Check")
+        _upsert_property_setter("Opportunity", "section_break_14", "collapsible_depends_on", "eval:1", "Code")
+    if not _doctype_has_field("Project", "customer_details"):
+        return
+    _upsert_property_setter("Project", "customer_details", "collapsible", "0", "Check")
+    if _doctype_has_field("Project", "custom_crm_segment"):
+        _upsert_property_setter("Project", "customer_details", "insert_after", "custom_crm_segment", "Data")
+
+
+def _backfill_crm_classification():
+    from orderlift.orderlift_crm.classification import (
+        BUSINESS_FIELD,
+        SEGMENT_FIELD,
+        sync_project_crm_classification,
+        sync_quotation_crm_classification,
+        sync_sales_order_crm_classification,
+    )
+
+    syncers = {
+        "Quotation": sync_quotation_crm_classification,
+        "Sales Order": sync_sales_order_crm_classification,
+        "Project": sync_project_crm_classification,
+    }
+    for doctype, syncer in syncers.items():
+        if not (_doctype_has_field(doctype, BUSINESS_FIELD) and _doctype_has_field(doctype, SEGMENT_FIELD)):
+            continue
+        for name in frappe.get_all(doctype, pluck="name", limit_page_length=0):
+            doc = frappe.get_doc(doctype, name)
+            before = (doc.get(BUSINESS_FIELD) or "", doc.get(SEGMENT_FIELD) or "")
+            syncer(doc)
+            after = (doc.get(BUSINESS_FIELD) or "", doc.get(SEGMENT_FIELD) or "")
+            if after == before:
+                continue
+            frappe.db.set_value(
+                doctype,
+                name,
+                {BUSINESS_FIELD: after[0], SEGMENT_FIELD: after[1]},
+                update_modified=False,
+            )
+
+
+def _retire_customer_group_ui():
+    _ensure_default_customer_group()
+    for doctype in ["Customer", "Prospect"]:
+        if not _doctype_has_field(doctype, "customer_group"):
+            continue
+        for property_name, value, property_type in [
+            ("hidden", "1", "Check"),
+            ("read_only", "1", "Check"),
+            ("in_list_view", "0", "Check"),
+            ("in_standard_filter", "0", "Check"),
+        ]:
+            _upsert_property_setter(doctype, "customer_group", property_name, value, property_type)
+
+
+def _migrate_portal_policies_to_crm():
+    if not frappe.db.exists("DocType", "Portal Customer Group Policy"):
+        return
+    if not _db_has_column("Portal Customer Group Policy", "policy_name"):
+        return
+    rows = frappe.get_all(
+        "Portal Customer Group Policy",
+        fields=["name", "policy_name", "customer_group"],
+        limit_page_length=0,
+    )
+    for row in rows:
+        updates = {}
+        if not (row.get("policy_name") or "").strip():
+            updates["policy_name"] = row.get("name") or row.get("customer_group") or "Portal CRM Policy"
+        if _db_has_column("Portal Customer Group Policy", "customer_group") and not (row.get("customer_group") or "").strip():
+            updates["customer_group"] = "All Customer Groups"
+        if updates:
+            frappe.db.set_value("Portal Customer Group Policy", row.name, updates, update_modified=False)
+
+
+def _ensure_default_customer_group():
+    if not frappe.db.exists("DocType", "Customer Group"):
+        return
+    if frappe.db.exists("Customer Group", "All Customer Groups"):
+        return
+    doc = frappe.new_doc("Customer Group")
+    doc.customer_group_name = "All Customer Groups"
+    if doc.meta.get_field("is_group"):
+        doc.is_group = 1
+    doc.insert(ignore_permissions=True, ignore_mandatory=True)
+
+
+def _upsert_property_setter(doctype: str, fieldname: str, property_name: str, value, property_type: str):
+    existing = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": doctype, "field_name": fieldname, "property": property_name},
+        "name",
+    )
+    setter = frappe.get_doc("Property Setter", existing) if existing else frappe.new_doc("Property Setter")
+    setter.doc_type = doctype
+    setter.doctype_or_field = "DocField"
+    setter.field_name = fieldname
+    setter.property = property_name
+    setter.property_type = property_type
+    setter.value = value
+    if existing:
+        setter.save(ignore_permissions=True)
+    else:
+        setter.insert(ignore_permissions=True)
+
+
+def _db_has_column(doctype: str, fieldname: str) -> bool:
+    has_column = getattr(frappe.db, "has_column", None)
+    return bool(has_column and has_column(doctype, fieldname))
+
+
+def _doctype_has_field(doctype: str, fieldname: str) -> bool:
+    if not frappe.db.exists("DocType", doctype):
+        return False
+    return bool(frappe.get_meta(doctype).get_field(fieldname))
+
+
+def _hide_legacy_partner_classification_fields():
+    party_updates = {
+        "custom_partner_campaign_section": {"label": "Legacy Partner Campaign", "hidden": 1},
+        "custom_partner_segment": {
+            "label": "Legacy Partner Segment",
+            "hidden": 1,
+            "read_only": 1,
+            "in_list_view": 0,
+            "in_standard_filter": 0,
+        },
+        "custom_partner_campaign": {
+            "label": "Legacy Partner Campaign",
+            "hidden": 1,
+            "read_only": 1,
+            "in_standard_filter": 0,
+        },
+        "custom_partner_campaign_target": {
+            "label": "Legacy Partner Campaign Target",
+            "hidden": 1,
+            "read_only": 1,
+            "in_standard_filter": 0,
+        },
+    }
+    for doctype in ["Lead", "Prospect", "Customer"]:
+        for fieldname, values in party_updates.items():
+            _update_custom_field_properties(doctype, fieldname, values)
+
+    _update_custom_field_properties(
+        "Opportunity",
+        "custom_partner_segment",
+        {
+            "label": "Legacy Partner Segment",
+            "hidden": 1,
+            "read_only": 1,
+            "in_list_view": 0,
+            "in_standard_filter": 0,
+        },
+    )
+
+
+def _update_custom_field_properties(doctype: str, fieldname: str, values: dict):
+    custom_field = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
+    if custom_field:
+        frappe.db.set_value("Custom Field", custom_field, values, update_modified=False)
+
+
 def _seed_partner_segments():
     if not frappe.db.exists("DocType", "Partner Segment"):
         return
@@ -154,10 +375,43 @@ def _seed_business_types():
             type_name,
             {
                 "type_name": type_name,
+                "abbreviation": _business_type_abbreviation(type_name),
                 "sequence": sequence,
                 "is_active": 1,
             },
         )
+        if frappe.db.has_column("CRM Business Type", "abbreviation"):
+            frappe.db.set_value(
+                "CRM Business Type",
+                type_name,
+                "abbreviation",
+                _business_type_abbreviation(type_name),
+                update_modified=False,
+            )
+
+
+def _seed_company_business_types():
+    if not (frappe.db.exists("DocType", "Company") and frappe.db.exists("DocType", "Company Business Type")):
+        return
+    if not _doctype_has_field("Company", "custom_crm_business_types"):
+        return
+    for company, business_types in DEFAULT_COMPANY_BUSINESS_TYPES.items():
+        if not frappe.db.exists("Company", company):
+            continue
+        doc = frappe.get_doc("Company", company)
+        existing = {row.get("business_type") for row in doc.get("custom_crm_business_types") or [] if row.get("business_type")}
+        changed = False
+        for idx, business_type in enumerate(business_types, start=1):
+            if not frappe.db.exists("CRM Business Type", business_type) or business_type in existing:
+                continue
+            doc.append(
+                "custom_crm_business_types",
+                {"business_type": business_type, "is_default": 1 if idx == 1 and not existing else 0},
+            )
+            existing.add(business_type)
+            changed = True
+        if changed:
+            doc.save(ignore_permissions=True)
 
 
 def _seed_crm_segments():
@@ -230,6 +484,9 @@ def _seed_opportunity_stages():
                 "custom_is_default": row["is_default"],
                 "custom_applies_distribution": row["distribution"],
                 "custom_applies_installation": row["installation"],
+                "custom_company": row.get("company"),
+                "custom_display_label": row.get("display_label"),
+                "custom_todo_priority": normalize_todo_priority(row.get("todo_priority")),
             },
         )
 
@@ -266,6 +523,8 @@ def _seed_project_statuses():
                 "is_default": row["is_default"],
                 "applies_distribution": row["distribution"],
                 "applies_installation": row["installation"],
+                "company": row.get("company"),
+                "todo_priority": normalize_todo_priority(row.get("todo_priority")),
             },
         )
 
@@ -285,6 +544,25 @@ def _seed_sales_order_statuses():
                 "is_default": row["is_default"],
                 "applies_distribution": row["distribution"],
                 "applies_installation": row["installation"],
+                "todo_priority": normalize_todo_priority(row.get("todo_priority")),
+            },
+        )
+
+
+def _seed_logistics_pipeline_statuses():
+    if not frappe.db.exists("DocType", "Logistics Pipeline Status"):
+        return
+    for row in LOGISTICS_STATUS_SEEDS:
+        _insert_doc_if_missing(
+            "Logistics Pipeline Status",
+            row["label"],
+            {
+                "status_label": row["label"],
+                "sequence": row["sequence"],
+                "color": row["color"],
+                "is_active": 1,
+                "is_default": row["is_default"],
+                "todo_priority": normalize_todo_priority(row.get("todo_priority")),
             },
         )
 
@@ -316,7 +594,7 @@ def _migrate_opportunity_stages_to_sales_stage():
         elif current_stage in stage_names:
             desired_stage = current_stage
         else:
-            desired_stage = "New"
+            desired_stage = next((seed["label"] for seed in OPPORTUNITY_STAGE_SEEDS if seed.get("is_default")), None)
 
         if current_stage == desired_stage:
             continue
@@ -415,6 +693,73 @@ def _clear_party_campaign_shortcuts():
             )
 
 
+def _remove_obsolete_opportunity_workflow_fields():
+    obsolete_fields = [
+        "custom_study_required",
+        "custom_site_visit_required",
+        "custom_next_action",
+    ]
+    for fieldname in obsolete_fields:
+        custom_field = frappe.db.get_value("Custom Field", {"dt": "Opportunity", "fieldname": fieldname}, "name")
+        if custom_field:
+            frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True, force=True)
+
+
+def _remove_installation_pipeline_page():
+    for doctype in ["Workspace Sidebar Item", "Workspace Shortcut"]:
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        for filters in [
+            {"label": "Installation Pipeline"},
+            {"link_to": "installation-pipeline"},
+            {"url": "/app/installation-pipeline"},
+            {"url": "/desk/installation-pipeline"},
+        ]:
+            frappe.db.delete(doctype, filters)
+
+    if frappe.db.exists("Page", "installation-pipeline"):
+        previous_in_migrate = getattr(frappe.flags, "in_migrate", False)
+        frappe.flags.in_migrate = True
+        try:
+            frappe.delete_doc("Page", "installation-pipeline", ignore_permissions=True, force=True)
+        finally:
+            frappe.flags.in_migrate = previous_in_migrate
+
+
+def _rename_opportunities_with_business_abbreviation():
+    if not frappe.db.exists("DocType", "Opportunity"):
+        return
+    meta = frappe.get_meta("Opportunity")
+    if not meta.get_field("custom_crm_business_type"):
+        return
+    rows = frappe.get_all(
+        "Opportunity",
+        filters={"name": ["like", "CRM-OPP-%"]},
+        fields=["name", "custom_crm_business_type"],
+        limit_page_length=0,
+    )
+    for row in rows:
+        business_type = (row.get("custom_crm_business_type") or "").strip()
+        if not business_type or _opportunity_name_has_business_abbreviation(row.name):
+            continue
+        new_name = _opportunity_name_with_business_abbreviation(row.name, business_type)
+        if not new_name or frappe.db.exists("Opportunity", new_name):
+            continue
+        frappe.rename_doc("Opportunity", row.name, new_name, force=True, merge=False)
+
+
+def _opportunity_name_has_business_abbreviation(name: str) -> bool:
+    parts = (name or "").split("-")
+    return len(parts) >= 5 and parts[0] == "CRM" and parts[1] == "OPP" and parts[2].isdigit()
+
+
+def _opportunity_name_with_business_abbreviation(name: str, business_type: str) -> str:
+    parts = (name or "").split("-")
+    if len(parts) != 4 or parts[0] != "CRM" or parts[1] != "OPP" or not parts[2].isdigit():
+        return ""
+    return f"CRM-OPP-{parts[2]}-{_business_type_abbreviation(business_type)}-{parts[3]}"
+
+
 def _party_has_segment(doctype: str, name: str, segment: str) -> bool:
     return bool(
         frappe.db.exists(
@@ -463,3 +808,7 @@ def _insert_doc_if_missing(doctype: str, name: str, values: dict):
         setattr(doc, key, value)
     doc.insert(ignore_permissions=True)
     return doc
+
+
+def _business_type_abbreviation(type_name: str | None) -> str:
+    return "".join(ch for ch in (type_name or "").strip().lower() if ch.isalnum())[:4] or "type"

@@ -12,10 +12,16 @@ from __future__ import annotations
 import frappe
 from werkzeug.wrappers import Response
 
+from orderlift.menu_access import user_can_access_page
+
 
 # The role that triggers all restrictions
 RESTRICTED_ROLE = "Orderlift Admin"
 TARGET_URL = "/desk/home-page"
+LEGACY_CRM_ROUTE_REDIRECTS = {
+    "/desk/installation-pipeline": "/desk/opportunity-pipeline",
+    "/app/installation-pipeline": "/desk/opportunity-pipeline",
+}
 
 # Roles that bypass all restrictions (superadmins)
 BYPASS_ROLES = frozenset(["System Manager", "Administrator", "Developer"])
@@ -42,20 +48,42 @@ def _is_system_user(user: str | None = None) -> bool:
     return frappe.db.get_value("User", user, "user_type") == "System User"
 
 
-def _do_redirect() -> None:
+def _set_redirect(location: str) -> None:
     """Set a safe 307 redirect that works in all before_request contexts."""
-    frappe.flags.redirect_location = TARGET_URL
+    frappe.flags.redirect_location = location
+    frappe.local.flags.redirect_location = location
 
     # If frappe.local.response is already a Response, swap it out.
     if isinstance(frappe.local.response, Response):
         frappe.local.response = Response(
             status=307,
-            headers={"Location": TARGET_URL, "Cache-Control": "no-store"},
+            headers={"Location": location, "Cache-Control": "no-store"},
         )
     else:
         # dict-style response — set redirect fields.
         frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = TARGET_URL
+        frappe.local.response["location"] = location
+
+
+def _do_redirect() -> None:
+    _set_redirect(TARGET_URL)
+
+
+def redirect_legacy_crm_page_routes() -> None:
+    """Normalize removed CRM page URLs to the active Desk routes."""
+    request = getattr(frappe.local, "request", None)
+    if not request:
+        return
+
+    path = (getattr(request, "path", "") or "").rstrip("/")
+    location = LEGACY_CRM_ROUTE_REDIRECTS.get(path)
+    if not location:
+        return
+
+    query = getattr(request, "query_string", b"") or b""
+    if query:
+        location = f"{location}?{query.decode('utf-8', errors='ignore')}"
+    _set_redirect(location)
 
 
 def block_if_restricted(user: str | None = None) -> bool:
@@ -129,16 +157,17 @@ def guard_restricted_routes() -> None:
 
     blocked_slugs = (
         "workspace", "workspaces", "module-def", "doctype", "customize-form",
-        "system-settings", "server-script", "data-import", "custom-field",
+        "account", "cost-center", "chart-of-accounts", "accounting-dimension", "accounting-dimension-detail",
+        "system-settings", "server-script", "custom-field",
         "custom-docperm", "property-setter", "client-script", "scheduled-job-type",
         "error-log", "activity-log", "access-log", "route-history", "console-log",
-        "module-profile", "role", "role-profile", "user-permission", "email-account",
+        "module-profile", "role-profile", "email-account",
         "email-domain", "website-settings", "web-form", "print-format", "auto-repeat",
         "prepared-report", "installed-applications", "installed-app", "package",
         "build", "notification-settings", "rq-worker", "rq-job", "scheduled-job-log",
         "recorder", "api-request-log", "view-log", "patch-log", "log-settings",
         "system-console", "system-health-report", "sms-log", "sms-settings",
-        "assignment-rule", "auto-email-report", "email-queue", "email-group",
+        "auto-email-report", "email-queue", "email-group",
         "email-rule", "email-flag-queue", "oauth-client", "oauth-settings",
         "oauth-provider-settings", "ldap-settings", "social-login-key",
         "integration-request", "webhook-request-log", "push-notification-settings",
@@ -152,4 +181,34 @@ def guard_restricted_routes() -> None:
     )
 
     if slug in blocked_slugs:
+        _do_redirect()
+
+
+def guard_orderlift_menu_routes() -> None:
+    """Block direct access to custom Desk pages hidden by menu access rules."""
+    user = frappe.session.user
+    if user in ("Administrator", "Guest"):
+        return
+
+    request = getattr(frappe.local, "request", None)
+    if not request:
+        return
+    path = (getattr(request, "path", "") or "").rstrip("/")
+    if not path.startswith(("/app/", "/desk/")):
+        return
+
+    slug = ""
+    if path.startswith("/app/"):
+        slug = path[5:].split("/")[0].lower()
+    elif path.startswith("/desk/"):
+        slug = path[6:].split("/")[0].lower()
+    if not slug or slug == "home-page":
+        return
+
+    try:
+        allowed = user_can_access_page(slug, user=user)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Orderlift menu route guard failed")
+        return
+    if not allowed:
         _do_redirect()

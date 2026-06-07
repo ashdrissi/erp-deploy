@@ -144,5 +144,36 @@
     "label": "QC Checklist",
     "options": "Installation QC Item",
     "insert_after": "custom_qc_status"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project-custom_contracts_tab",
+    "dt": "Project",
+    "fieldname": "custom_contracts_tab",
+    "fieldtype": "Tab Break",
+    "label": "Contracts",
+    "insert_after": "custom_qc_checklist",
+    "module": "Orderlift SIG"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project-custom_contracts_section",
+    "dt": "Project",
+    "fieldname": "custom_contracts_section",
+    "fieldtype": "Section Break",
+    "label": "Project Contracts",
+    "insert_after": "custom_contracts_tab",
+    "collapsible": 0,
+    "module": "Orderlift SIG"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project-custom_contracts_html",
+    "dt": "Project",
+    "fieldname": "custom_contracts_html",
+    "fieldtype": "HTML",
+    "label": "Contracts",
+    "insert_after": "custom_contracts_section",
+    "module": "Orderlift SIG"
   }
 ]

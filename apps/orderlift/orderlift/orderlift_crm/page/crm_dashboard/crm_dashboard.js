@@ -69,24 +69,26 @@ function renderSkeleton(page) {
                 </div>
             </div>
 
-            <div class="cdb-shortcuts-grid">
-                ${shortcut("plus", __("New Lead"), "/app/lead/new-lead-1", "primary")}
-                ${shortcut("opportunity", __("Opportunities"), "/app/opportunity", "default")}
-                ${shortcut("opportunity", __("Prospects"), "/app/prospect", "default")}
-                ${shortcut("customer", __("Customers"), "/app/customer", "default")}
-                ${shortcut("contact", __("Contacts"), "/app/contact", "default")}
-                ${shortcut("quote", __("Quotations"), "/app/quotation", "default")}
-                ${shortcut("segment", __("Segmentation"), "/app/customer-segmentation-engine", "default")}
-                ${shortcut("communication", __("Campaign Manager"), "/app/campaign-manager", "default")}
-                ${shortcut("plus", __("Campaign Builder"), "/app/campaign-editor", "default")}
-                ${shortcut("calendar", __("Opportunity Pipeline"), "/app/opportunity-pipeline", "default")}
-                ${shortcut("calendar", __("Project Pipeline"), "/app/project-pipeline", "default")}
-                ${shortcut("quote", __("Sales Order Pipeline"), "/app/sales-order-pipeline", "default")}
-                ${shortcut("segment", __("Status Control"), "/app/status-control", "default")}
-            </div>
+            <div class="cdb-shortcuts-grid" id="cdb-shortcuts-grid"></div>
 
             <div class="cdb-kpi-grid" id="cdb-kpi-grid">
-                ${Array.from({ length: 6 }, () => `<div class="cdb-kpi cdb-kpi--shimmer"></div>`).join("")}
+                ${Array.from({ length: 9 }, () => `<div class="cdb-kpi cdb-kpi--shimmer"></div>`).join("")}
+            </div>
+
+            <div class="cdb-lower cdb-lower--secondary">
+                <div class="cdb-card">
+                    <div class="cdb-card-header">
+                        <div class="cdb-card-title"><span class="cdb-card-icon">${ICONS.opportunity}</span>${__("Opportunities by Business Type")}</div>
+                    </div>
+                    <div id="cdb-opportunity-types" class="cdb-metrics-wrap"><div class="cdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div></div>
+                </div>
+
+                <div class="cdb-card">
+                    <div class="cdb-card-header">
+                        <div class="cdb-card-title"><span class="cdb-card-icon">${ICONS.customer}</span>${__("Opportunities by Reporting Company")}</div>
+                    </div>
+                    <div id="cdb-opportunity-companies" class="cdb-metrics-wrap"><div class="cdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div></div>
+                </div>
             </div>
 
             <div class="cdb-lower">
@@ -114,7 +116,7 @@ function renderSkeleton(page) {
                     <div id="cdb-pipeline" class="cdb-metrics-wrap"><div class="cdb-shimmer-block" style="height:180px;margin:16px;border-radius:8px;"></div></div>
                 </div>
 
-                <div class="cdb-card">
+                <div class="cdb-card" id="cdb-customer-mix-card">
                     <div class="cdb-card-header">
                         <div class="cdb-card-title"><span class="cdb-card-icon">${ICONS.segment}</span>${__("Customer Mix")}</div>
                     </div>
@@ -140,7 +142,7 @@ function renderSkeleton(page) {
         </div>
     `);
 
-    page.main.find(".cdb-shortcut").on("click", function () {
+    page.main.on("click", ".cdb-shortcut", function () {
         const url = $(this).data("url");
         if (!url) return;
         if (url === "/app/campaign-editor") {
@@ -158,21 +160,25 @@ async function loadDashboardData(page) {
             method: "orderlift.orderlift_crm.page.crm_dashboard.crm_dashboard.get_dashboard_data",
         });
         const data = res.message || {};
+        renderShortcuts(page, data.shortcuts || []);
         renderHeroStats(page, data.kpis || {}, data.alerts || []);
         renderKpis(page, data.kpis || {});
         renderRecentDocs(page, data.recent_docs || []);
         renderAlerts(page, data.alerts || []);
         renderPipeline(page, data.pipeline || []);
         renderCustomerMix(page, data.customer_mix || {});
+        renderOpportunitySummaries(page, data.opportunity_business_types || [], data.opportunity_companies || []);
         renderCommunications(page, data.recent_communications || []);
         renderSchedule(page, data.upcoming_schedule || []);
     } catch (e) {
+        renderShortcuts(page, []);
         renderHeroStats(page, {}, []);
         renderKpis(page, {});
         renderRecentDocs(page, []);
         renderAlerts(page, []);
         renderPipeline(page, []);
         renderCustomerMix(page, {});
+        renderOpportunitySummaries(page, [], []);
         renderCommunications(page, []);
         renderSchedule(page, []);
         console.warn("CRM Dashboard: failed to load data", e);
@@ -191,15 +197,26 @@ function shortcut(iconKey, label, url, variant) {
     return `<div class="cdb-shortcut cdb-shortcut--${variant}" data-url="${frappe.utils.escape_html(url)}"><span class="cdb-shortcut-icon">${ICONS[iconKey] || ""}</span><span class="cdb-shortcut-label">${frappe.utils.escape_html(label)}</span></div>`;
 }
 
+function renderShortcuts(page, shortcuts) {
+    page.main.find("#cdb-shortcuts-grid").html((shortcuts || []).map((row) => shortcut(
+        row.icon || "arrow",
+        row.label || "",
+        row.url || "",
+        row.variant || "default"
+    )).join(""));
+}
+
 function renderKpis(page, kpis) {
     const defs = [
         { icon: "lead", label: __("Leads"), value: kpis.leads_total ?? "—", sub: __("raw inbound pipeline") },
         { icon: "opportunity", label: __("Opportunities"), value: kpis.opportunities_total ?? "—", sub: __("qualified deals") },
+        { icon: "check", label: __("Gained Opportunities"), value: kpis.gained_opportunities ?? "—", sub: formatAmountList(kpis.gained_amounts || []) || __("won/project value") },
+        { icon: "opportunity", label: __("Active Pipeline"), value: kpis.active_opportunities ?? "—", sub: formatAmountList(kpis.pipeline_amounts || []) || __("open opportunity value") },
         { icon: "opportunity", label: __("Prospects"), value: kpis.prospects_total ?? "—", sub: __("prospect organizations") },
         { icon: "customer", label: __("Customers"), value: kpis.customers_total ?? "—", sub: __("active customer records") },
         { icon: "contact", label: __("Contacts"), value: kpis.contacts_total ?? "—", sub: __("contact coverage") },
-        { icon: "quote", label: __("Quotes This Month"), value: kpis.quotations_month ?? "—", sub: __("commercial output") },
-        { icon: "segment", label: __("Segmentation Engines"), value: kpis.segment_engines ?? "—", sub: __("tier automation rules") },
+        { icon: "quote", label: __("Quotes This Month"), value: kpis.quotations_month ?? "—", sub: formatAmountList(kpis.quotations_month_amounts || []) || __("quoted value") },
+        { icon: "quote", label: __("Sales Orders This Month"), value: kpis.sales_orders_month ?? "—", sub: formatAmountList(kpis.sales_orders_month_amounts || []) || __("ordered value") },
     ];
 
     page.main.find("#cdb-kpi-grid").html(defs.map((d) => `
@@ -210,6 +227,44 @@ function renderKpis(page, kpis) {
             <div class="cdb-kpi-sub">${d.sub}</div>
         </div>
     `).join(""));
+}
+
+function renderOpportunitySummaries(page, byType, byCompany) {
+    renderOpportunitySummary(page, "#cdb-opportunity-types", byType, __("No opportunity business type data yet."));
+    renderOpportunitySummary(page, "#cdb-opportunity-companies", byCompany, __("No reporting company data yet."));
+}
+
+function renderOpportunitySummary(page, selector, rows, emptyMessage) {
+    if (!rows.length) {
+        page.main.find(selector).html(`<div class="cdb-empty">${frappe.utils.escape_html(emptyMessage)}</div>`);
+        return;
+    }
+
+    page.main.find(selector).html(`
+        <div class="cdb-stack-grid">
+            ${rows.map((row) => `
+                <div class="cdb-stack-card">
+                    <div class="cdb-stack-title">${frappe.utils.escape_html(row.label || "")}</div>
+                    <div class="cdb-metric-row"><span>${__("Opportunities")}</span><strong>${row.opportunities || 0}</strong></div>
+                    <div class="cdb-metric-row"><span>${__("Active")}</span><strong>${row.active || 0}</strong></div>
+                    <div class="cdb-metric-row"><span>${__("Gained")}</span><strong>${row.gained || 0}</strong></div>
+                    <div class="cdb-metric-row"><span>${__("Pipeline")}</span><strong>${frappe.utils.escape_html(formatAmountList(row.pipeline_amounts || []) || "0")}</strong></div>
+                    <div class="cdb-metric-row"><span>${__("Gained Value")}</span><strong>${frappe.utils.escape_html(formatAmountList(row.gained_amounts || []) || "0")}</strong></div>
+                </div>
+            `).join("")}
+        </div>
+    `);
+}
+
+function formatAmountList(rows) {
+    return (rows || [])
+        .filter((row) => Number(row.amount || 0) !== 0)
+        .map((row) => `${row.currency || ""} ${formatNumber(row.amount || 0)}`.trim())
+        .join(" · ");
+}
+
+function formatNumber(value) {
+    return frappe.format(Number(value || 0), { fieldtype: "Float", precision: 0 }, { only_value: true });
 }
 
 function renderRecentDocs(page, rows) {
@@ -272,6 +327,11 @@ function renderPipeline(page, sections) {
 }
 
 function renderCustomerMix(page, mix) {
+    if (mix.hidden) {
+        page.main.find("#cdb-customer-mix-card").hide();
+        return;
+    }
+    page.main.find("#cdb-customer-mix-card").show();
     const groups = mix.groups || [];
     const territories = mix.territories || [];
     if (!groups.length && !territories.length) {
@@ -282,13 +342,13 @@ function renderCustomerMix(page, mix) {
     page.main.find("#cdb-customer-mix").html(`
         <div class="cdb-stack-grid">
             <div class="cdb-stack-card">
-                <div class="cdb-stack-title">${__("By Customer Group")}</div>
+                <div class="cdb-stack-title">${__("By CRM Segment")}</div>
                 ${groups.map((item) => `
                     <div class="cdb-metric-row">
                         <span>${frappe.utils.escape_html(item.label || "")}</span>
                         <strong>${item.value ?? 0}</strong>
                     </div>
-                `).join("") || `<div class="cdb-empty-inline">${__("No groups")}</div>`}
+                `).join("") || `<div class="cdb-empty-inline">${__("No CRM segments")}</div>`}
             </div>
             <div class="cdb-stack-card">
                 <div class="cdb-stack-title">${__("By Territory")}</div>

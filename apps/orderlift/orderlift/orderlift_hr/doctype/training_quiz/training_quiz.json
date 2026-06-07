@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-05-13 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "quiz_name",
+  "is_active",
+  "col_break_main",
+  "linked_module",
+  "linked_level",
+  "section_rules",
+  "pass_percentage",
+  "max_attempts",
+  "unlimited_attempts",
+  "col_break_rules",
+  "randomize_questions"
+ ],
+ "fields": [
+  {
+   "default": "TQZ-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "TQZ-.#####",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "quiz_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Quiz Name",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Active"
+  },
+  {
+   "fieldname": "col_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "linked_module",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Linked Module",
+   "options": "Training Module"
+  },
+  {
+   "fieldname": "linked_level",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Linked Level",
+   "options": "Training Level"
+  },
+  {
+   "fieldname": "section_rules",
+   "fieldtype": "Section Break",
+   "label": "Rules"
+  },
+  {
+   "default": "70",
+   "fieldname": "pass_percentage",
+   "fieldtype": "Percent",
+   "label": "Pass Percentage",
+   "reqd": 1
+  },
+  {
+   "default": "3",
+   "fieldname": "max_attempts",
+   "fieldtype": "Int",
+   "label": "Max Attempts"
+  },
+  {
+   "default": "0",
+   "fieldname": "unlimited_attempts",
+   "fieldtype": "Check",
+   "label": "Unlimited Attempts"
+  },
+  {
+   "fieldname": "col_break_rules",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "randomize_questions",
+   "fieldtype": "Check",
+   "label": "Randomize Questions"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift HR",
+ "name": "Training Quiz",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Orderlift Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {"read": 1, "role": "Sales User"},
+  {"read": 1, "role": "Pricing Manager"},
+  {"read": 1, "role": "Logistics User"},
+  {"read": 1, "role": "Finance User"},
+  {"read": 1, "role": "Installation User"},
+  {"read": 1, "role": "Service User"}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "quiz_name",
+ "track_changes": 1
+}

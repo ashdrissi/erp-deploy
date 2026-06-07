@@ -108,6 +108,18 @@ class TestMatchBenchmarkRule(unittest.TestCase):
         rule = _match_benchmark_rule(0.5, rules, context={"item_group": "Cables"})
         self.assertEqual(rule["target_margin_percent"], 10)
 
+    def test_crm_segment_scope_is_more_specific_than_business_type(self):
+        rules = [
+            {"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 12, "is_active": 1, "business_type": "Distribution", "priority": 10, "idx": 1},
+            {"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 18, "is_active": 1, "business_type": "Distribution", "crm_segment": "Grossiste", "priority": 10, "idx": 2},
+        ]
+        rule = _match_benchmark_rule(
+            0.5,
+            rules,
+            context={"business_type": "Distribution", "crm_segment": "Grossiste"},
+        )
+        self.assertEqual(rule["target_margin_percent"], 18)
+
     def test_no_match(self):
         rules = [{"ratio_min": 0, "ratio_max": 0.5, "target_margin_percent": 30, "is_active": 1, "priority": 10, "idx": 1}]
         rule = _match_benchmark_rule(0.8, rules)
@@ -191,8 +203,8 @@ class TestResolveBenchmarkMargin(unittest.TestCase):
         self.assertFalse(result["is_fallback"])
         self.assertEqual(result["target_margin_percent"], 8)
 
-    def test_insufficient_sources_fallback(self):
-        """Fewer sources than required → fallback."""
+    def test_single_configured_source_can_resolve_even_when_configured_minimum_is_two(self):
+        """One active benchmark source is enough to compare and select a margin rule."""
         sources = [{"price_list": "A", "label": "A", "weight": 1, "is_active": 1}]
         rules = [{"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 30, "is_active": 1, "priority": 10, "idx": 1}]
         price_map = {"A": {"ITEM-1": 4200}}
@@ -201,9 +213,58 @@ class TestResolveBenchmarkMargin(unittest.TestCase):
             method="Median", min_sources=2, fallback_margin=15,
             price_map=price_map,
         )
+        self.assertFalse(result["is_fallback"])
+        self.assertEqual(result["target_margin_percent"], 30)
+        self.assertEqual(result["min_sources_required"], 1)
+        self.assertEqual(result["configured_min_sources_required"], 2)
+        self.assertEqual(result["source_count"], 1)
+
+    def test_one_source_policy_can_resolve_when_min_sources_is_one(self):
+        """A one-source policy can still benchmark when explicitly configured for one source."""
+        sources = [{"price_list": "A", "label": "A", "weight": 1, "is_active": 1}]
+        rules = [{"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 30, "is_active": 1, "priority": 10, "idx": 1}]
+        price_map = {"A": {"ITEM-1": 4200}}
+        result = resolve_benchmark_margin(
+            "ITEM-1", 2000, sources, rules,
+            method="Median", min_sources=1, fallback_margin=15,
+            price_map=price_map,
+        )
+        self.assertFalse(result["is_fallback"])
+        self.assertEqual(result["target_margin_percent"], 30)
+        self.assertEqual(result["min_sources_required"], 1)
+
+    def test_no_configured_sources_use_fallback_margin(self):
+        """Policies with no benchmark source rows are valid fallback-only margin policies."""
+        result = resolve_benchmark_margin(
+            "ITEM-1", 2000, [], [],
+            method="Median", min_sources=2, fallback_margin=17,
+            price_map={},
+        )
+
         self.assertTrue(result["is_fallback"])
-        self.assertEqual(result["target_margin_percent"], 15)
+        self.assertEqual(result["target_margin_percent"], 17)
+        self.assertEqual(result["benchmark_reference"], 0)
+        self.assertEqual(result["source_count"], 0)
+        self.assertEqual(result["min_sources_required"], 2)
         self.assertTrue(len(result["warnings"]) > 0)
+
+    def test_two_configured_sources_can_resolve_with_one_valid_price(self):
+        """One valid benchmark price is enough even if another source is missing this item."""
+        sources = [
+            {"price_list": "A", "label": "A", "weight": 1, "is_active": 1},
+            {"price_list": "B", "label": "B", "weight": 1, "is_active": 1},
+        ]
+        rules = [{"ratio_min": 0, "ratio_max": 0, "target_margin_percent": 30, "is_active": 1, "priority": 10, "idx": 1}]
+        price_map = {"A": {"ITEM-1": 4200}, "B": {}}
+        result = resolve_benchmark_margin(
+            "ITEM-1", 2000, sources, rules,
+            method="Median", min_sources=2, fallback_margin=15,
+            price_map=price_map,
+        )
+        self.assertFalse(result["is_fallback"])
+        self.assertEqual(result["target_margin_percent"], 30)
+        self.assertEqual(result["min_sources_required"], 1)
+        self.assertEqual(result["source_count"], 1)
 
     def test_no_matching_rule_fallback(self):
         """No rule matches the ratio → fallback."""

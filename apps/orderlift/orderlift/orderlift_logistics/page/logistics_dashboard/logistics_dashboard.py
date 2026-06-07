@@ -44,7 +44,7 @@ def get_dashboard_data():
         alerts.append({
             "title": f"Container {c.plan_label or c.name} departs soon",
             "message": f"Departure date: {c.departure_date}. Review and confirm before departure.",
-            "link": f"/app/forecast-plans/{c.name}",
+            "link": "/app/logistics-pipeline",
             "level": "warn",
         })
 
@@ -61,7 +61,7 @@ def get_dashboard_data():
         alerts.append({
             "title": f"Container {c.plan_label or c.name} in transit",
             "message": f"Departed: {c.departure_date}. Deadline: {c.deadline}.",
-            "link": f"/app/forecast-plans/{c.name}",
+            "link": "/app/logistics-pipeline",
             "level": "info",
         })
 

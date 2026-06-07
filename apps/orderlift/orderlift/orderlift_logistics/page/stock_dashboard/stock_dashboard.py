@@ -6,7 +6,7 @@ Item Reorder, Stock Ledger Entry.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate, add_days, get_first_day
+from frappe.utils import cint, flt, nowdate, add_days, get_first_day
 
 
 @frappe.whitelist()
@@ -14,6 +14,7 @@ def get_dashboard_data():
     return {
         "warehouses": _get_warehouse_cards(),
         "kpis": _get_kpis(),
+        "stock_overview": _get_stock_overview(),
         "critical_stock": _get_critical_stock(),
         "rotation_by_category": _get_rotation_by_category(),
         "alerts": _get_live_alerts(),
@@ -22,6 +23,91 @@ def get_dashboard_data():
         "flagged_items": _get_flagged_items(),
         "qc_routing": _get_qc_routing_receipts(),
     }
+
+
+@frappe.whitelist()
+def get_stock_overview(search=None, warehouse=None, only_in_stock=1, limit=80):
+    return {"rows": _get_stock_overview(search=search, warehouse=warehouse, only_in_stock=only_in_stock, limit=limit)}
+
+
+def _get_stock_overview(search=None, warehouse=None, only_in_stock=1, limit=80):
+    limit = min(max(cint(limit or 80), 20), 300)
+    conditions = ["i.disabled = 0", "i.is_stock_item = 1"]
+    params = {}
+
+    search = (search or "").strip()
+    if search:
+        conditions.append("(i.name LIKE %(search)s OR i.item_name LIKE %(search)s OR i.item_group LIKE %(search)s)")
+        params["search"] = f"%{search}%"
+
+    warehouse_join = ""
+    warehouse = (warehouse or "").strip()
+    if warehouse:
+        warehouse_join = "AND b.warehouse = %(warehouse)s"
+        params["warehouse"] = warehouse
+
+    having = "HAVING SUM(COALESCE(b.actual_qty, 0)) > 0" if cint(only_in_stock) else ""
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            i.name AS item_code,
+            i.item_name,
+            i.item_group,
+            i.stock_uom,
+            SUM(COALESCE(b.actual_qty, 0)) AS actual_qty,
+            SUM(COALESCE(b.projected_qty, 0)) AS projected_qty,
+            SUM(COALESCE(b.reserved_qty, 0)) AS reserved_qty,
+            SUM(COALESCE(b.ordered_qty, 0)) AS ordered_qty,
+            COUNT(DISTINCT CASE WHEN COALESCE(b.actual_qty, 0) != 0 THEN b.warehouse END) AS warehouse_count,
+            GROUP_CONCAT(
+                CASE
+                    WHEN COALESCE(b.actual_qty, 0) != 0
+                    THEN CONCAT(b.warehouse, ': ', ROUND(b.actual_qty, 2))
+                END
+                ORDER BY b.actual_qty DESC SEPARATOR ' · '
+            ) AS warehouse_summary
+        FROM `tabItem` i
+        LEFT JOIN `tabBin` b ON b.item_code = i.name {warehouse_join}
+        WHERE {' AND '.join(conditions)}
+        GROUP BY i.name, i.item_name, i.item_group, i.stock_uom
+        {having}
+        ORDER BY SUM(COALESCE(b.actual_qty, 0)) DESC, i.name ASC
+        LIMIT {limit}
+        """,
+        params,
+        as_dict=True,
+    )
+
+    result = []
+    for row in rows:
+        actual_qty = flt(row.actual_qty)
+        reserved_qty = flt(row.reserved_qty)
+        available_qty = actual_qty - reserved_qty
+        result.append(
+            {
+                "item_code": row.item_code,
+                "item_name": row.item_name,
+                "item_group": row.item_group,
+                "stock_uom": row.stock_uom,
+                "actual_qty": actual_qty,
+                "available_qty": available_qty,
+                "reserved_qty": reserved_qty,
+                "ordered_qty": flt(row.ordered_qty),
+                "projected_qty": flt(row.projected_qty),
+                "warehouse_count": cint(row.warehouse_count),
+                "warehouse_summary": row.warehouse_summary or "",
+                "status": _stock_row_status(actual_qty, available_qty),
+            }
+        )
+    return result
+
+
+def _stock_row_status(actual_qty, available_qty):
+    if flt(actual_qty) <= 0:
+        return "out"
+    if flt(available_qty) <= 0:
+        return "reserved"
+    return "available"
 
 
 # ── Warehouse cards ────────────────────────────────────────────────────────────

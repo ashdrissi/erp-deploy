@@ -1299,6 +1299,7 @@ function renderPricingSheetWorkspace(frm) {
             </div>
             <div class="ps-workspace-panels">
                 <div class="ps-workspace-panel ${activeTab === "items" ? "is-active" : ""}" data-ps-panel="items">
+                    ${getPricingSheetWorkspaceDimensioningHtml(frm)}
                     ${getPricingSheetWorkspaceTableHtml(frm)}
                 </div>
                 <div class="ps-workspace-panel ${!restrictedAgent && activeTab === "breakdown" ? "is-active" : ""}" data-ps-panel="breakdown">
@@ -1369,6 +1370,18 @@ function renderPricingSheetWorkspace(frm) {
     mountPricingSheetWorkspaceLinkEditors(frm, $root);
     bindPricingSheetWorkspaceInlineInputs(frm, $root);
     enforcePricingSheetWorkspaceLayout($root);
+    if (frm.__ps_dimensioning_tool_initialized) {
+        window.setTimeout(() => renderDimensioningTool(frm), 0);
+    }
+}
+
+function getPricingSheetWorkspaceDimensioningHtml(frm) {
+    const hasSet = Boolean(frm.doc.dimensioning_set);
+    return `
+        <section class="ps-workspace-dimensioning ${hasSet ? "has-set" : "is-empty"}" data-ps-dimensioning-host>
+            <div class="text-muted small">${hasSet ? __("Chargement du formulaire de dimensionnement...") : __("Selectionnez un Dimensioning Set pour inserer son formulaire ici.")}</div>
+        </section>
+    `;
 }
 
 function ensurePricingSheetStyles(frm) {
@@ -1637,6 +1650,8 @@ function ensureDimensioningToolStyles() {
         .od-preview-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
         .od-preview-rule{font-size:12px;color:#64748b;margin-top:2px}
         .od-preview-qty{font-size:16px;font-weight:700;color:#0f172a}
+        .ps-workspace-dimensioning{margin:0 0 14px;padding:12px;border-radius:16px;background:#f8fafc;border:1px dashed #cbd5e1}
+        .ps-workspace-dimensioning.has-set{padding:0;border:0;background:transparent}
         @media (max-width:900px){.od-hero{flex-direction:column}.od-grid{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
@@ -1644,13 +1659,19 @@ function ensureDimensioningToolStyles() {
 
 async function renderDimensioningTool(frm) {
     const field = frm.get_field("dimensioning_inputs_html");
-    if (!field || !field.$wrapper) {
+    const workspaceHost = frm.page.wrapper.find("[data-ps-dimensioning-host]").first();
+    const $target = workspaceHost.length ? workspaceHost : field && field.$wrapper;
+    if (!$target || !$target.length) {
         return;
+    }
+    frm.__ps_dimensioning_tool_initialized = true;
+    if (workspaceHost.length && field && field.$wrapper) {
+        field.$wrapper.html(`<div class="text-muted small">${__("Le formulaire de dimensionnement est affiche au-dessus du tableau des articles.")}</div>`);
     }
     ensureDimensioningToolStyles();
 
     if (!frm.doc.dimensioning_set) {
-        field.$wrapper.html(`<div class="text-muted small">${__("Selectionnez un set de dimensionnement pour afficher les caracteristiques a renseigner.")}</div>`);
+        $target.html(`<div class="text-muted small">${__("Selectionnez un set de dimensionnement pour afficher les caracteristiques a renseigner.")}</div>`);
         return;
     }
 
@@ -1660,7 +1681,7 @@ async function renderDimensioningTool(frm) {
     });
     const setConfig = (response.message || {}).set;
     if (!setConfig) {
-        field.$wrapper.html(`<div class="text-danger small">${__("Impossible de charger le set de dimensionnement selectionne.")}</div>`);
+        $target.html(`<div class="text-danger small">${__("Impossible de charger le set de dimensionnement selectionne.")}</div>`);
         return;
     }
 
@@ -1693,7 +1714,7 @@ async function renderDimensioningTool(frm) {
         `;
     }).join("");
 
-    field.$wrapper.html(`
+    $target.html(`
         <div class="od-shell">
             <div class="od-hero">
                 <div>
@@ -1702,6 +1723,7 @@ async function renderDimensioningTool(frm) {
                     <div class="od-copy">${frappe.utils.escape_html(setConfig.description || __("Renseignez les caracteristiques du projet, previsualisez les articles generes, puis ajoutez-les a la fiche tarifaire."))}</div>
                 </div>
                 <div class="od-actions">
+                    <button class="btn btn-default btn-sm" type="button" data-dimensioning-configure>${__("Configurer le set")}</button>
                     <button class="btn btn-default btn-sm" type="button" data-dimensioning-preview>${__("Apercu des articles")}</button>
                     <button class="btn btn-default btn-sm" type="button" data-dimensioning-reset>${__("Reinitialiser")}</button>
                     <button class="btn btn-primary btn-sm" type="button" data-dimensioning-add>${__("Ajouter les articles")}</button>
@@ -1717,7 +1739,7 @@ async function renderDimensioningTool(frm) {
         </div>
     `);
 
-    const $root = field.$wrapper;
+    const $root = $target;
     $root.find("[data-dimensioning-key]").on("change input", () => {
         const currentValues = collectDimensioningValues($root, setConfig);
         frm.doc.dimensioning_inputs_json = JSON.stringify(currentValues);
@@ -1727,6 +1749,11 @@ async function renderDimensioningTool(frm) {
     $root.find("[data-dimensioning-reset]").on("click", async () => {
         frm.doc.dimensioning_inputs_json = JSON.stringify(normalizeDimensioningValues(setConfig, {}));
         await renderDimensioningTool(frm);
+    });
+
+    $root.find("[data-dimensioning-configure]").on("click", () => {
+        frappe.route_options = { dimensioning_set: frm.doc.dimensioning_set };
+        frappe.set_route("dimensioning-set-builder");
     });
 
     $root.find("[data-dimensioning-preview]").on("click", async () => {
@@ -2062,6 +2089,7 @@ function applyModeLayout(frm) {
 
     dynamicFields.forEach(fn => frm.toggle_display(fn, !isStatic));
     staticFields.forEach(fn => frm.toggle_display(fn, isStatic));
+    frm.toggle_display("customer_type", false);
 
     if (restrictedAgent) {
         [
@@ -2257,6 +2285,160 @@ async function applyAgentDynamicDefaults(frm) {
     }
 }
 
+function setPricingSheetCrmQueries(frm) {
+    if (frm.fields_dict.crm_business_type) {
+        frm.set_query("crm_business_type", () => {
+            const filters = { is_active: 1 };
+            const allowed = getCustomerContextBusinessTypes(frm);
+            if (frm.doc.customer) {
+                filters.name = ["in", allowed.length ? allowed : ["__none__"]];
+            }
+            return { filters };
+        });
+    }
+    if (frm.fields_dict.crm_segment) {
+        frm.set_query("crm_segment", () => {
+            const filters = { is_active: 1 };
+            const allowed = getCustomerContextSegments(frm);
+            if (frm.doc.customer) {
+                filters.name = ["in", allowed.length ? allowed : ["__none__"]];
+            } else if (frm.doc.crm_business_type) {
+                filters.business_type = frm.doc.crm_business_type;
+            }
+            return { filters };
+        });
+    }
+}
+
+function getCustomerContextSegmentsData(frm) {
+    const context = frm.__customer_pricing_context || {};
+    return context.segments || [];
+}
+
+function getCustomerContextBusinessTypes(frm) {
+    return [...new Set(
+        getCustomerContextSegmentsData(frm)
+            .map((row) => row.business_type)
+            .filter(Boolean)
+    )];
+}
+
+function getCustomerContextSegments(frm) {
+    const selectedBusinessType = frm.doc.crm_business_type || "";
+    return [...new Set(
+        getCustomerContextSegmentsData(frm)
+            .filter((row) => !selectedBusinessType || row.business_type === selectedBusinessType)
+            .map((row) => row.crm_segment)
+            .filter(Boolean)
+    )];
+}
+
+function renderCustomerPricingContextMessage(frm, context = null) {
+    const customerField = frm.fields_dict.customer;
+    if (!customerField || !customerField.$wrapper) return;
+
+    let wrapper = frm.__customer_pricing_context_wrapper;
+    if (!wrapper) {
+        wrapper = $('<div class="orderlift-customer-pricing-context" style="margin:6px 0 12px;"></div>');
+        wrapper.insertAfter(customerField.$wrapper);
+        frm.__customer_pricing_context_wrapper = wrapper;
+    }
+
+    if (!frm.doc.customer) {
+        wrapper.hide().empty();
+        return;
+    }
+
+    const currentContext = context || frm.__customer_pricing_context || {};
+    const selected = currentContext.selected || {};
+    const segments = currentContext.segments || [];
+    const businessType = selected.business_type || "";
+    const crmSegment = selected.crm_segment || "";
+    const esc = (value) => frappe.utils.escape_html(String(value || ""));
+    const tier = currentContext.tier || frm.doc.tier || "";
+    const tierMode = currentContext.tier_mode || "";
+    const tierSource = currentContext.tier_source || "";
+    const tierMessage = currentContext.tier_message || "";
+    const isDynamicTier = Number(currentContext.enable_dynamic_segmentation || 0) === 1;
+    const tierStatus = currentContext.tier_status || "";
+    const tierIndicator = isDynamicTier && tierStatus !== "matched" ? "orange" : "blue";
+    const tierLine = `
+        <div class="indicator ${tierIndicator}" style="display:block;margin-bottom:4px;">
+            ${esc(tier ? __("Pricing Tier: {0}", [tier]) : __("Pricing Tier: not assigned"))}
+        </div>
+        <div><strong>${__("Tier Source")}:</strong> ${esc(tierMode || tierSource || __("Manual"))}${tierSource && tierSource !== tierMode ? ` - ${esc(tierSource)}` : ""}</div>
+        ${tierMessage ? `<div>${esc(tierMessage)}</div>` : ""}
+    `;
+
+    if (!segments.length || (!businessType && !crmSegment)) {
+        wrapper.html(`
+            <div class="indicator orange" style="display:block;margin-bottom:4px;">${__("Missing CRM context for this customer.")}</div>
+            <div class="small text-muted" style="line-height:1.5;">
+                ${tierLine}
+                <div>${__("Add Business Type and CRM Segment rows in Customer > CRM Segments. Pricing Sheet will only allow contexts assigned to the selected customer.")}</div>
+            </div>
+        `).show();
+        return;
+    }
+
+    const multipleText = currentContext.has_multiple
+        ? `<div>${__("Multiple contexts available. Business Type and Segment choices are limited to this customer's assignments.")}</div>`
+        : "";
+    wrapper.html(`
+        <div class="indicator blue" style="display:block;margin-bottom:4px;">${__("Loaded customer CRM pricing context.")}</div>
+        <div class="small text-muted" style="line-height:1.5;">
+            ${tierLine}
+            <div><strong>${__("Business Type / Segment")}:</strong> ${esc(businessType || __("missing"))} / ${esc(crmSegment || __("missing"))}</div>
+            ${multipleText}
+        </div>
+    `).show();
+}
+
+async function applyCustomerPricingContext(frm, options = {}) {
+    if (frm.__applying_customer_pricing_context) return;
+    frm.__applying_customer_pricing_context = true;
+    try {
+        if (!frm.doc.customer) {
+            frm.__customer_pricing_context = null;
+            const emptyValues = {};
+            ["customer_type", "tier", "crm_business_type", "crm_segment"].forEach((fieldname) => {
+                if (frm.fields_dict[fieldname]) emptyValues[fieldname] = "";
+            });
+            await frm.set_value(emptyValues);
+            renderCustomerPricingContextMessage(frm, null);
+            return;
+        }
+
+        const response = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_customer_pricing_context",
+            args: {
+                customer: frm.doc.customer,
+                business_type: options.business_type !== undefined ? options.business_type : frm.doc.crm_business_type,
+                crm_segment: options.crm_segment !== undefined ? options.crm_segment : frm.doc.crm_segment,
+            },
+        });
+        const context = response.message || {};
+        frm.__customer_pricing_context = context;
+        const selected = context.selected || {};
+        const values = {};
+        if (frm.fields_dict.customer_type) values.customer_type = context.customer_type || "";
+        if (frm.fields_dict.tier) values.tier = context.tier || "";
+        if (frm.fields_dict.crm_business_type) values.crm_business_type = selected.business_type || "";
+        if (frm.fields_dict.crm_segment) values.crm_segment = selected.crm_segment || "";
+        await frm.set_value(values);
+        renderCustomerPricingContextMessage(frm, context);
+
+        if (context.has_multiple && !options.silent) {
+            frappe.show_alert({
+                message: __("Customer has multiple CRM contexts. Primary context was selected; adjust Business Type / CRM Segment if needed."),
+                indicator: "blue",
+            });
+        }
+    } finally {
+        frm.__applying_customer_pricing_context = false;
+    }
+}
+
 frappe.ui.form.on("Pricing Sheet", {
     setup(frm) {
         const queryConfig = () => ({
@@ -2266,6 +2448,7 @@ frappe.ui.form.on("Pricing Sheet", {
         frm.set_query("item", "lines", queryConfig);
         frm.set_query("source_buying_price_list", "lines", () => ({ filters: { buying: 1 } }));
         frm.set_query("dimensioning_set", () => ({ filters: { is_active: 1 } }));
+        setPricingSheetCrmQueries(frm);
         setAgentPolicyQueries(frm, null);
         frm.fields_dict.lines.grid.get_field("benchmark_status").formatter = (value) => statusBadge(value);
         if (frm.fields_dict.lines.grid.get_field("margin_pct")) {
@@ -2325,6 +2508,9 @@ frappe.ui.form.on("Pricing Sheet", {
         if (frm.doc.sales_person) {
             frm.events.sales_person(frm);
         }
+        if (frm.doc.customer) {
+            applyCustomerPricingContext(frm, { silent: true });
+        }
     },
 
     validate(frm) {
@@ -2347,16 +2533,17 @@ frappe.ui.form.on("Pricing Sheet", {
     },
 
     async customer(frm) {
-        if (!frm.doc.customer) {
-            frm.set_value("customer_type", "");
-            frm.set_value("tier", "");
-            return;
-        }
+        await applyCustomerPricingContext(frm, { business_type: "", crm_segment: "" });
+    },
 
-        const response = await frappe.db.get_value("Customer", frm.doc.customer, ["customer_group", "tier"]);
-        const values = response.message || {};
-        await frm.set_value("customer_type", values.customer_group || "");
-        await frm.set_value("tier", values.tier || "");
+    async crm_business_type(frm) {
+        if (frm.__applying_customer_pricing_context) return;
+        await applyCustomerPricingContext(frm, { business_type: frm.doc.crm_business_type, crm_segment: "", silent: true });
+    },
+
+    async crm_segment(frm) {
+        if (frm.__applying_customer_pricing_context) return;
+        await applyCustomerPricingContext(frm, { business_type: frm.doc.crm_business_type, crm_segment: frm.doc.crm_segment, silent: true });
     },
 
     dimensioning_set(frm) {

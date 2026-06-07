@@ -8,7 +8,6 @@
     "field_order": [
         "section_profile",
         "sales_person",
-        "max_discount_percent",
         "commission_rate",
         "column_break_profile",
         "pricing_mode",
@@ -46,6 +45,7 @@
             "fieldtype": "Percent",
             "label": "Maximum Allowed Discount (%)",
             "default": "10",
+            "hidden": 1,
             "description": "Cannot go above this discount margin globally on their pricing sheets."
         },
         {

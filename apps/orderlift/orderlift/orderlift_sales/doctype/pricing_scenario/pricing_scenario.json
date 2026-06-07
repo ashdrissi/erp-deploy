@@ -19,6 +19,10 @@
     "transport_total_merch_value",
     "transport_total_weight_kg",
     "transport_total_volume_m3",
+    "section_storage",
+    "storage_is_active",
+    "storage_cost_per_m3_per_month",
+    "storage_duration_months",
     "section_flow",
     "expense_help_html",
     "expenses"
@@ -53,7 +57,6 @@
       "fieldtype": "Link",
       "label": "Legacy Benchmark Price List",
       "options": "Price List",
-      "default": "Benchmark Selling",
       "description": "Deprecated legacy field. Benchmark source lists now belong only to Margin & Benchmark Policy.",
       "hidden": 1
     },
@@ -108,6 +111,31 @@
       "fieldtype": "Float",
       "label": "Total Volume in Container (m3)",
       "default": "0"
+    },
+    {
+      "fieldname": "section_storage",
+      "fieldtype": "Section Break",
+      "label": "Storage Allocation"
+    },
+    {
+      "fieldname": "storage_is_active",
+      "fieldtype": "Check",
+      "label": "Storage Cost",
+      "default": "0",
+      "description": "Enable storage allocation based on item volume."
+    },
+    {
+      "fieldname": "storage_cost_per_m3_per_month",
+      "fieldtype": "Currency",
+      "label": "Storage Cost per m3 per Month",
+      "default": "0"
+    },
+    {
+      "fieldname": "storage_duration_months",
+      "fieldtype": "Float",
+      "label": "Average Storage Duration",
+      "default": "0",
+      "description": "Hypothesis in months used for storage fee calculation."
     },
     {
       "fieldname": "section_flow",

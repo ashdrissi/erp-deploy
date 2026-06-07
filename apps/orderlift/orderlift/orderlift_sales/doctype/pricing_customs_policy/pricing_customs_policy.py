@@ -26,11 +26,12 @@ class PricingCustomsPolicy(Document):
             if row.rate_percent < 0:
                 frappe.throw(_("Row {0}: Rate percent cannot be negative.").format(row.idx))
 
-            key = ((row.tariff_number or row.material).lower(), row.priority, cint(row.is_active))
+            key = (row.tariff_number.lower(), row.material.lower(), row.priority, cint(row.is_active))
             if key in seen:
                 frappe.throw(
-                    _("Duplicate customs rule for tariff/material {0}, priority {1}.").format(
-                        row.tariff_number or row.material or "Any",
+                    _("Duplicate customs rule for tariff {0}, material {1}, priority {2}.").format(
+                        row.tariff_number or "Any",
+                        row.material or "Any",
                         row.priority,
                     )
                 )

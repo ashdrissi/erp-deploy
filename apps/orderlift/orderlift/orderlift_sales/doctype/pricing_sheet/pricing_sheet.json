@@ -11,6 +11,8 @@
   "sheet_name",
   "customer",
   "sales_person",
+  "crm_business_type",
+  "crm_segment",
   "column_break_identity",
   "customer_type",
   "tier",
@@ -19,7 +21,8 @@
    "pricing_scenario",
    "benchmark_policy",
    "customs_policy",
-   "selected_price_list",
+    "selected_price_list",
+    "selected_selling_price_lists",
    "section_dimensioning",
    "dimensioning_set",
    "dimensioning_inputs_json",
@@ -84,13 +87,27 @@
   {
    "fieldname": "customer_type",
    "fieldtype": "Link",
-   "label": "Customer Group",
+   "label": "Legacy Customer Group",
    "options": "Customer Group",
-   "fetch_from": "customer.customer_group",
-   "fetch_if_empty": 1,
+   "hidden": 1,
    "read_only": 1,
-   "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 0
+  },
+  {
+   "fieldname": "crm_business_type",
+   "fieldtype": "Link",
+   "label": "Business Type",
+   "options": "CRM Business Type",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "crm_segment",
+   "fieldtype": "Link",
+   "label": "CRM Segment",
+   "options": "CRM Segment",
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "tier",
@@ -193,9 +210,18 @@
    "fieldtype": "Link",
    "label": "Selling Price List",
    "options": "Price List",
-   "description": "Primary selling price list used in Static mode",
-   "depends_on": "eval:doc.resolved_mode=='Static'"
-  },
+    "description": "Legacy primary selling price list used in Static mode",
+    "hidden": 1,
+    "depends_on": "eval:doc.resolved_mode=='Static'"
+   },
+   {
+    "fieldname": "selected_selling_price_lists",
+    "fieldtype": "Table",
+    "label": "Selling Price Lists",
+    "options": "Pricing Sheet Price List Selection",
+    "description": "Ordered selling price lists used in Static mode. The first list containing the item wins.",
+    "depends_on": "eval:doc.resolved_mode=='Static'"
+   },
   {
    "fieldname": "output_mode",
    "fieldtype": "Select",

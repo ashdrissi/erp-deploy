@@ -477,13 +477,13 @@ def _score_candidate(candidate, remaining_weight, remaining_volume):
     )
 
 
-def _sort_candidates_by_customer_group(candidates):
+def _sort_candidates_by_customer(candidates):
     """
-    Sort candidates by customer group, with best-scoring customers first.
-    Within each customer group, candidates are sorted by score (descending).
+    Sort candidates by customer, with best-scoring customers first.
+    Within each customer, candidates are sorted by score (descending).
 
     :param candidates: List of candidate dicts with 'customer' and 'score' keys
-    :return: Re-sorted list with customer grouping applied
+    :return: Re-sorted list with customer-level grouping applied
     """
     from collections import defaultdict
 
@@ -500,7 +500,7 @@ def _sort_candidates_by_customer_group(candidates):
     for customer in groups:
         groups[customer].sort(key=lambda x: x["score"], reverse=True)
 
-    # Sort customer groups by their best candidate's score (descending)
+    # Sort customers by their best candidate's score (descending)
     sorted_customers = sorted(
         groups.keys(),
         key=lambda cust: groups[cust][0]["score"] if groups[cust] else 0,
@@ -559,7 +559,7 @@ def suggest_shipments_for_load_plan(load_plan):
 
     # Apply grouping or sorting
     if frappe.utils.cint(load_plan.get("group_by_customer")):
-        candidates = _sort_candidates_by_customer_group(candidates)
+        candidates = _sort_candidates_by_customer(candidates)
     else:
         candidates.sort(key=lambda x: x["score"], reverse=True)
 

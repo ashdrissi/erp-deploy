@@ -44,6 +44,7 @@ class PricingScenario(Document):
 
     def validate(self):
         self._validate_transport_settings()
+        self._validate_storage_settings()
         self._validate_expenses()
 
     def _validate_transport_settings(self):
@@ -61,6 +62,16 @@ class PricingScenario(Document):
             frappe.throw(_("Container Price cannot be negative."))
         if self.transport_total_merch_value < 0 or self.transport_total_weight_kg < 0 or self.transport_total_volume_m3 < 0:
             frappe.throw(_("Container totals cannot be negative."))
+
+    def _validate_storage_settings(self):
+        self.storage_is_active = 1 if flt(getattr(self, "storage_is_active", 0)) else 0
+        self.storage_cost_per_m3_per_month = flt(getattr(self, "storage_cost_per_m3_per_month", 0))
+        self.storage_duration_months = flt(getattr(self, "storage_duration_months", 0))
+
+        if self.storage_cost_per_m3_per_month < 0:
+            frappe.throw(_("Storage Cost per m3 per Month cannot be negative."))
+        if self.storage_duration_months < 0:
+            frappe.throw(_("Average Storage Duration cannot be negative."))
 
     def _validate_expenses(self):
         if not self.expenses:

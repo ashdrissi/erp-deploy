@@ -33,17 +33,24 @@ flowchart TD
   %% =========================
   subgraph SEG["Segmentation"]
     SE["Customer Segmentation Engine
-- target customer group
-- active rules"]
+    - one config per company
+    - active rules
+    - global tier/territory modifiers"]
     SR["Segmentation Rules
-- Revenue / RFM / Orders
-- designated_segment (tier)"]
+    - Revenue / RFM / Orders
+    - designated_segment (tier)"]
+    PTM["Tier Modifiers
+    - business type / segment / tier"]
+    PZM["Territory Modifiers
+    - territory"]
     TM["Tier Mode Logic
 A) Dynamic ON -> engine writes tier
 B) Dynamic OFF -> manual_tier -> tier"]
   end
 
   SR --> SE --> TM --> C
+  SE --> PTM
+  SE --> PZM
 
   %% =========================
   %% 3) AGENT GOVERNANCE
@@ -94,17 +101,11 @@ B) Dynamic OFF -> manual_tier -> tier"]
 - is_active"]
     PBR["Benchmark Rules
 - ratio bands + scope"]
-    PTM["Tier Modifiers
-- tier-only OR customer_group+tier"]
-    PZM["Zone Modifiers
-- territory"]
   end
 
   PSP --> PSR --> PSC
   PBP --> PBS
   PBP --> PBR
-  PBP --> PTM
-  PBP --> PZM
 
   %% =========================
   %% 5) RUNTIME PIPELINE

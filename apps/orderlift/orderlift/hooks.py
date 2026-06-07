@@ -31,7 +31,7 @@ app_include_js = [
     "/assets/orderlift/js/orderlift_section_break_guard_20260423d.js",
     "/assets/orderlift/js/orderlift_main_dashboard_section_state_20260423g.js",
     "/assets/orderlift/js/crm_classification.js?v=20260601a",
-    "/assets/orderlift/js/company_scope_form_20260601a.js?v=20260602a",
+    "/assets/orderlift/js/company_scope_form_20260607a.js?v=20260607a",
     "/assets/orderlift/js/company_scope_list_focus_20260601a.js?v=20260602a",
     "/assets/orderlift/js/sidebar_logo_fix_20260415b.js",
     "/assets/orderlift/js/refresh_stability_fix_20260415.js",
@@ -41,6 +41,8 @@ app_include_js = [
     "/assets/orderlift/js/item_price_uom_default_20260506a.js?v=20260507a",
     "/assets/orderlift/js/document_annex_dialog_20260519a.js?v=20260519b",
     "/assets/orderlift/js/orderlift_home_page_scroll_fix_20260520b.js?v=20260520b",
+    "/assets/orderlift/js/pricing_policy_import_20260602a.js?v=20260602a",
+    "/assets/orderlift/js/quotation_bulk_quantity_20260602a.js?v=20260602a",
 ]
 
 # ---------------------------------------------------------
@@ -161,6 +163,7 @@ doc_events = {
         ],
     },
     "Item Price": {
+        "before_validate": "orderlift.orderlift_sales.utils.item_price_tools.apply_item_price_defaults",
         "after_insert": "orderlift.orderlift_sales.utils.price_list_auto_rebuild.on_item_price_change",
         "on_update": "orderlift.orderlift_sales.utils.price_list_auto_rebuild.on_item_price_change",
     },
@@ -254,28 +257,32 @@ doc_events = {
 doctype_js = {
     "Container Profile": "public/js/container_profile_form_20260411.js",
     "Delivery Note": "public/js/delivery_note_logistics.js",
+    "Item": "public/js/item_form_prices_20260607a.js",
     "Purchase Order": "public/js/purchase_order_pricing_alerts_20260417.js",
     "Purchase Receipt": "public/js/purchase_receipt_logistics.js",
     "Portal Customer Group Policy": "public/js/portal_customer_group_policy.js",
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Item Price": "public/js/item_price_uom_default_20260506a.js",
+    "Price List": "public/js/price_list_import_20260602c.js",
+    "Quotation": "public/js/quotation_form_simplify_20260602c.js",
     "Sales Order": "public/js/sales_order_logistics_20260425d.js",
     # Loaded via doctype_js so setup/refresh fire before the form opens.
-    # Keep a query version so Desk fetches the latest static asset after targeted edits.
-    "Pricing Sheet": "public/js/pricing_sheet_form_20260501_110.js?v=20260601c",
-    "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js?v=20260601a",
-    "Customer": "public/js/customer_tier_mode.js?v=20260601h",
-    "Prospect": "public/js/customer_tier_mode.js?v=20260601h",
+    "Pricing Sheet": "public/js/pricing_sheet_form_20260501_110.js",
+    "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
+    "Customer": "public/js/customer_tier_mode.js",
+    "Prospect": "public/js/customer_tier_mode.js",
     "SAV Ticket": "public/js/sav_ticket_v3.js",
     # SIG module — Project form enhancements (QC Template, Geocoding)
     "Project": "public/js/project_sig_20260429c.js",
-    "Sales Invoice": "public/js/finance_account_guard_20260501a.js?v=20260501b",
-    "Purchase Invoice": "public/js/finance_account_guard_20260501a.js?v=20260501b",
-    "Payment Entry": "public/js/finance_account_guard_20260501a.js?v=20260501b",
+    "Sales Invoice": "public/js/finance_account_guard_20260501a.js",
+    "Purchase Invoice": "public/js/finance_account_guard_20260501a.js",
+    "Payment Entry": "public/js/finance_account_guard_20260501a.js",
     "QC Checklist Template": "orderlift_sig/doctype/qc_checklist_template/qc_checklist_template.js",
 }
 
 doctype_list_js = {
+    "Item": "public/js/item_list_price_helper_20260607a.js",
+    "Price List": "public/js/price_list_import_list_20260602a.js",
     "Portal Quote Request": "public/js/portal_quote_request_list.js",
 }
 
@@ -313,8 +320,10 @@ after_migrate = [
     "orderlift.orderlift_sig.setup.after_migrate",
     "orderlift.orderlift_crm.setup.after_migrate",
     "orderlift.company_scope.after_migrate",
+    "orderlift.orderlift_sales.doctype.customer_segmentation_engine.customer_segmentation_engine.after_migrate",
     "orderlift.orderlift_finance.account_governance.after_migrate",
     "orderlift.orderlift_sales.page.sale_financial_dashboard.sale_financial_dashboard.sync_page_roles",
+    "orderlift.scripts.sync_page_roles_from_menu_registry.run",
     "orderlift.orderlift_sav.setup.after_migrate",
     "orderlift.orderlift_hr.setup.after_migrate",
     "orderlift.scripts.setup_french_translations.after_migrate",

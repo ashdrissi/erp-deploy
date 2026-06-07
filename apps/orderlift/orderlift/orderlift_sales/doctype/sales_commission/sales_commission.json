@@ -299,6 +299,13 @@
       "report": 1
     },
     {
+      "role": "Sales User",
+      "read": 1,
+      "email": 1,
+      "print": 1,
+      "report": 1
+    },
+    {
       "role": "Orderlift Accountant",
       "read": 1,
       "write": 1,

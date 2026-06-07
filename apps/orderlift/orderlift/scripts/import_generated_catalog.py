@@ -7,9 +7,27 @@ import frappe
 from frappe.utils import flt
 from frappe.utils.file_manager import save_file
 
+from orderlift.orderlift_logistics.utils.item_sequence import get_next_item_code
+from orderlift.scripts.import_article_excel_catalog import _normalize_material_name
+
 
 DEFAULT_IMPORT_DIR = Path("/tmp/orderlift-import")
 WEIGHT_UOM = "Kg"
+
+SPEC_COLUMN_MAP = {
+    "spec_taille": "Taille",
+    "spec_capacite": "Capacité",
+    "spec_capacity": "Capacité",
+    "spec_finition": "Finition",
+    "spec_tension": "Tension",
+    "spec_voltage": "Tension",
+    "spec_amperage": "Ampérage",
+    "spec_amperage_a": "Ampérage",
+    "spec_puissance": "Puissance",
+    "spec_power": "Puissance",
+    "spec_power_kw": "Puissance",
+    "spec_type": "Type",
+}
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -45,6 +63,44 @@ def _ensure_brand(brand_name: str) -> str:
         doc.brand = brand_name
     else:
         doc.name = brand_name
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _ensure_item_material(material_name: str) -> str:
+    material_name = _normalize_material_name(material_name)
+    if not material_name:
+        return ""
+    if not frappe.db.exists("DocType", "Item Material"):
+        return material_name
+    if frappe.db.exists("Item Material", material_name):
+        return material_name
+    doc = frappe.new_doc("Item Material")
+    doc.material_name = material_name
+    doc.material_code = material_name
+    doc.is_active = 1
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _ensure_item_category(row: dict[str, str]) -> str:
+    category = (row.get("item_category") or row.get("custom_item_category") or "").strip()
+    if not category:
+        return ""
+
+    if frappe.db.exists("Item Category", category):
+        return category
+
+    abbreviation = (row.get("item_category_abbreviation") or row.get("category_abbreviation") or "").strip()
+    if not abbreviation:
+        frappe.throw(f"Item Category {category} does not exist and no abbreviation was provided.")
+
+    doc = frappe.new_doc("Item Category")
+    doc.category_name = category
+    doc.abbreviation = abbreviation
+    doc.sequence_digits = int(row.get("sequence_digits") or 5)
+    doc.current_sequence = int(row.get("current_sequence") or 0)
+    doc.is_active = 1
     doc.insert(ignore_permissions=True)
     return doc.name
 
@@ -90,7 +146,13 @@ def _ensure_price_list(row: dict[str, str]) -> str:
 
 
 def _ensure_item(row: dict[str, str]) -> str:
-    item_code = row["item_code"].strip()
+    item_category = _ensure_item_category(row)
+    item_code = (row.get("item_code") or "").strip()
+    if not item_code and item_category:
+        item_code = get_next_item_code(item_category)
+    if not item_code:
+        frappe.throw("items.csv row is missing item_code or item_category.")
+
     values = {
         "item_code": item_code,
         "item_name": row["item_name"].strip(),
@@ -98,9 +160,13 @@ def _ensure_item(row: dict[str, str]) -> str:
         "item_group": row["item_group"].strip(),
         "stock_uom": row["stock_uom"].strip(),
         "brand": _ensure_brand(row.get("brand", "")),
-        "custom_material": row.get("custom_material", "").strip(),
+        "custom_material": _ensure_item_material(row.get("custom_material", "")),
         "custom_weight_kg": flt(row.get("custom_weight_kg") or 0),
         "custom_volume_m3": flt(row.get("custom_volume_m3") or 0),
+        "custom_length_cm": flt(row.get("custom_length_cm") or 0),
+        "custom_width_cm": flt(row.get("custom_width_cm") or 0),
+        "custom_height_cm": flt(row.get("custom_height_cm") or 0),
+        "custom_item_category": item_category,
         "disabled": int(row.get("disabled") or 0),
         "is_stock_item": 1,
         "include_item_in_manufacturing": 0,
@@ -114,16 +180,20 @@ def _ensure_item(row: dict[str, str]) -> str:
     if frappe.db.exists("Item", item_code):
         doc = frappe.get_doc("Item", item_code)
         doc.update(values)
+        _apply_item_specifications(doc, row)
         doc.save(ignore_permissions=True)
         return item_code
 
-    frappe.get_doc({"doctype": "Item", **values}).insert(ignore_permissions=True)
+    doc = frappe.get_doc({"doctype": "Item", **values})
+    _apply_item_specifications(doc, row)
+    doc.insert(ignore_permissions=True)
     return item_code
 
 
-def _ensure_item_price(row: dict[str, str]) -> str:
+def _ensure_item_price(row: dict[str, str], item_code_map: dict[str, str] | None = None) -> str:
+    item_code = _resolve_item_code(row, item_code_map or {})
     filters = {
-        "item_code": row["item_code"].strip(),
+        "item_code": item_code,
         "price_list": row["price_list"].strip(),
         "uom": row["uom"].strip(),
     }
@@ -180,6 +250,67 @@ def _ensure_item_image(row: dict[str, str], image_dir: Path) -> str:
         item.db_set("image", file_doc.file_url, update_modified=False)
 
     return file_doc.name
+
+
+def _resolve_item_code(row: dict[str, str], item_code_map: dict[str, str]) -> str:
+    item_code = (row.get("item_code") or "").strip()
+    if item_code:
+        return item_code_map.get(item_code, item_code)
+
+    import_key = (row.get("import_key") or "").strip()
+    if import_key and import_key in item_code_map:
+        return item_code_map[import_key]
+
+    frappe.throw("Row is missing item_code and import_key could not be resolved.")
+
+
+def _apply_item_specifications(doc, row: dict[str, str]) -> None:
+    specs = _extract_specifications(row)
+    if not specs:
+        return
+
+    existing = {
+        (getattr(child, "specification_attribute", "") or "").strip(): child
+        for child in (doc.get("custom_specifications") or [])
+    }
+    for attribute, value in specs:
+        _ensure_specification_attribute(attribute)
+        child = existing.get(attribute)
+        if child:
+            child.value = value
+        else:
+            doc.append("custom_specifications", {"specification_attribute": attribute, "value": value})
+
+
+def _extract_specifications(row: dict[str, str]) -> list[tuple[str, str]]:
+    specs = []
+    for column, raw_value in row.items():
+        value = (raw_value or "").strip()
+        if not value:
+            continue
+
+        normalized = (column or "").strip().lower()
+        if normalized in SPEC_COLUMN_MAP:
+            specs.append((SPEC_COLUMN_MAP[normalized], value))
+        elif normalized.startswith("spec:"):
+            attribute = column.split(":", 1)[1].strip()
+            if attribute:
+                specs.append((attribute, value))
+    return specs
+
+
+def _ensure_specification_attribute(attribute: str) -> str:
+    if frappe.db.exists("Item Specification Attribute", attribute):
+        return attribute
+
+    doc = frappe.new_doc("Item Specification Attribute")
+    doc.attribute_name = attribute
+    doc.value_type = "Texte"
+    doc.sequence = 90
+    doc.is_filterable = 1
+    doc.is_active = 1
+    doc.insert(ignore_permissions=True)
+    return doc.name
 
 
 def _ensure_product_bundles(rows: list[dict[str, str]]) -> int:
@@ -248,6 +379,7 @@ def run(import_dir: str = str(DEFAULT_IMPORT_DIR)) -> dict[str, int]:
         "item_images": 0,
         "product_bundles": 0,
     }
+    item_code_map = {}
 
     for row in _read_csv(base / "uoms.csv"):
         _ensure_uom(row)
@@ -262,11 +394,17 @@ def run(import_dir: str = str(DEFAULT_IMPORT_DIR)) -> dict[str, int]:
         counts["price_lists"] += 1
 
     for row in _read_csv(base / "items.csv"):
-        _ensure_item(row)
+        item_code = _ensure_item(row)
+        source_code = (row.get("item_code") or "").strip()
+        import_key = (row.get("import_key") or "").strip()
+        if source_code:
+            item_code_map[source_code] = item_code
+        if import_key:
+            item_code_map[import_key] = item_code
         counts["items"] += 1
 
     for row in _read_csv(base / "item_prices.csv"):
-        _ensure_item_price(row)
+        _ensure_item_price(row, item_code_map=item_code_map)
         counts["item_prices"] += 1
 
     image_csv = base / "item_images.csv"

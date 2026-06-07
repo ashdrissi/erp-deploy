@@ -29,10 +29,12 @@
    "base_amount",
    "expense_unit_price",
     "expense_total",
-    "customs_unit_amount",
-    "margin_unit_amount",
-    "margin_total_amount",
-    "projected_unit_price",
+     "customs_unit_amount",
+     "margin_unit_amount",
+     "margin_total_amount",
+     "total_margin_unit_amount",
+     "total_margin_total_amount",
+     "projected_unit_price",
   "projected_total_price",
    "manual_sell_unit_price",
    "is_manual_override",
@@ -44,9 +46,11 @@
    "discounted_sell_unit_price",
    "discounted_sell_total",
    "commission_rate",
-   "commission_amount",
-   "margin_pct",
-   "customs_material",
+    "commission_amount",
+    "margin_pct",
+    "total_margin_pct",
+    "margin_basis",
+    "customs_material",
    "customs_tariff_number",
    "customs_weight_kg",
    "customs_value_per_kg",
@@ -82,7 +86,8 @@
   "zone_modifier_amount",
   "pricing_breakdown_json",
   "breakdown_preview",
-  "static_list_price"
+   "static_list_price",
+   "resolved_selling_price_list"
  ],
  "fields": [
   {
@@ -268,6 +273,18 @@
    "read_only": 1
   },
   {
+   "fieldname": "total_margin_unit_amount",
+   "fieldtype": "Currency",
+   "label": "Total Margin Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_margin_total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Margin Total",
+   "read_only": 1
+  },
+  {
    "fieldname": "projected_unit_price",
    "fieldtype": "Currency",
     "label": "Cout PU HT",
@@ -303,6 +320,18 @@
    "fieldname": "margin_pct",
    "fieldtype": "Percent",
    "label": "Margin Pct",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_margin_pct",
+   "fieldtype": "Percent",
+   "label": "Total Margin Pct",
+   "read_only": 1
+  },
+  {
+   "fieldname": "margin_basis",
+   "fieldtype": "Data",
+   "label": "Margin Basis",
    "read_only": 1
   },
   {
@@ -588,14 +617,23 @@
    "label": "Breakdown Preview",
    "read_only": 1
   },
-  {
-   "fieldname": "static_list_price",
-   "fieldtype": "Currency",
-   "label": "List Price",
-   "read_only": 1,
-   "in_list_view": 0,
-   "description": "Price fetched from the selling price list in Static mode"
-  }
+   {
+    "fieldname": "static_list_price",
+    "fieldtype": "Currency",
+    "label": "List Price",
+    "read_only": 1,
+    "in_list_view": 0,
+    "description": "Price fetched from the selling price list in Static mode"
+   },
+   {
+    "fieldname": "resolved_selling_price_list",
+    "fieldtype": "Link",
+    "label": "Resolved Selling Price List",
+    "options": "Price List",
+    "read_only": 1,
+    "in_list_view": 0,
+    "description": "Selling Price List that supplied the static Item Price for this line"
+   }
  ],
  "istable": 1,
  "links": [],

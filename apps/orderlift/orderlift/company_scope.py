@@ -30,8 +30,10 @@ except ImportError:  # Unit tests use a small frappe stub without translation.
         return msg
 
 from orderlift.menu_access import (
+    get_allowed_business_types,
     get_allowed_companies,
     resolve_current_company,
+    user_can_access_all_business_types,
     user_can_access_all_companies,
 )
 from orderlift.orderlift_crm.company_business_type import (
@@ -76,6 +78,18 @@ def company_field_for(doctype: str) -> str:
     """Return the fieldname that stores the owning company for a scoped doctype."""
     config = SCOPED_DOCTYPES.get(doctype)
     return config["company_field"] if config else "company"
+
+
+def business_type_field_for(doctype: str) -> str | None:
+    """Return the single business-type Link fieldname for a doctype, or None."""
+    config = SCOPED_DOCTYPES.get(doctype)
+    return config.get("bt_field") if config else None
+
+
+def segments_field_for(doctype: str) -> str | None:
+    """Return the CRM Segment Assignment child-table fieldname, or None."""
+    config = SCOPED_DOCTYPES.get(doctype)
+    return config.get("segments_field") if config else None
 
 
 # ---------------------------------------------------------------------------
@@ -132,30 +146,58 @@ def _apply_company(doc, company_field: str) -> None:
 
 def _apply_business_type(doc, company: str, bt_field: str) -> None:
     value = (doc.get(bt_field) or "").strip()
+    user = frappe.session.user
+    user_restricted = not user_can_access_all_business_types(user)
+    user_allowed = set(get_allowed_business_types(user)) if user_restricted else set()
+
     if not value:
+        # Prefer a value that is valid for BOTH the company and the user. When the
+        # company has a single business type, use it; otherwise, if the user is
+        # restricted to a single allowed type, default to that.
         single = get_single_company_business_type(company)
-        if single:
+        if single and (not user_restricted or single in user_allowed):
             doc.set(bt_field, single)
+        elif user_restricted:
+            company_allowed = set(get_company_business_type_names(company))
+            candidates = (company_allowed & user_allowed) if company_allowed else user_allowed
+            if len(candidates) == 1:
+                doc.set(bt_field, next(iter(candidates)))
         return
+
     if not is_business_type_allowed_for_company(company, value):
         frappe.throw(_business_type_error(value, company))
+    if user_restricted and value not in user_allowed:
+        frappe.throw(_user_business_type_error(value, user_allowed))
 
 
 def _validate_segments(doc, company: str, segments_field: str) -> None:
-    allowed = get_company_business_type_names(company)
-    if not allowed:
+    company_allowed = set(get_company_business_type_names(company))
+    user = frappe.session.user
+    user_restricted = not user_can_access_all_business_types(user)
+    user_allowed = set(get_allowed_business_types(user)) if user_restricted else set()
+    if not company_allowed and not user_restricted:
         return
-    allowed_set = set(allowed)
     for row in doc.get(segments_field) or []:
         business_type = (row.get("business_type") or "").strip()
-        if business_type and business_type not in allowed_set:
+        if not business_type:
+            continue
+        if company_allowed and business_type not in company_allowed:
             frappe.throw(_business_type_error(business_type, company))
+        if user_restricted and business_type not in user_allowed:
+            frappe.throw(_user_business_type_error(business_type, user_allowed))
 
 
 def _business_type_error(business_type: str, company: str) -> str:
     allowed = ", ".join(get_company_business_type_names(company)) or "—"
     return _("Business Type {0} is not allowed for company {1}. Allowed business types: {2}").format(
         business_type, company or "—", allowed
+    )
+
+
+def _user_business_type_error(business_type: str, user_allowed: set[str]) -> str:
+    allowed = ", ".join(sorted(user_allowed)) or "—"
+    return _("You are not allowed to use Business Type {0}. Your allowed business types: {1}").format(
+        business_type, allowed
     )
 
 

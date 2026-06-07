@@ -151,7 +151,7 @@
     },
     {
       "fieldname": "warnings_html",
-      "fieldtype": "Small Text",
+      "fieldtype": "Long Text",
       "label": "Warnings",
       "hidden": 1,
       "read_only": 1
@@ -186,6 +186,32 @@
       "delete": 1,
       "report": 1,
       "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Pricing Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
       "share": 1,
       "print": 1,
       "email": 1

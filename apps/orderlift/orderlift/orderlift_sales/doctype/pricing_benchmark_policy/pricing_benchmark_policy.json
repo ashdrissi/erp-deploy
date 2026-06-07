@@ -134,7 +134,7 @@
             "fieldname": "margin_basis_help_html",
             "fieldtype": "HTML",
             "label": "Margin Basis Help",
-            "options": "<div style=\"padding:8px 0 4px;line-height:1.55;\"><p><strong>Choose how margin % becomes a money amount.</strong></p><p><strong>Base Price</strong>: margin is calculated on the buying/base price only.<br><code>m = base * r</code></p><p><strong>Loaded Cost</strong>: margin is calculated on the fully loaded cost before benchmark margin (base + expenses + transport + customs).<br><code>m = loaded_cost * r</code></p><p><strong>Sale Price</strong>: margin is treated as a share of the final selling price.<br><code>s = c / (1 - r)</code><br><code>m = s * r = c * r / (1 - r)</code></p><p style=\"color:#64748b;\">Fallback Margin % uses the same basis you choose here.</p></div>"
+            "options": "<div style=\"padding:8px 0 4px;line-height:1.55;\"><p><strong>The margin amount depends on Margin Application Basis.</strong></p><p><strong>Base Price</strong>: <code>margin = base_buy_price * margin%</code></p><p><strong>Loaded Cost</strong>: <code>margin = landed_cost * margin%</code></p><p><strong>Sale Price</strong>: margin is treated as part of final sale price.<br><code>margin = landed_cost * margin% / (1 - margin%)</code></p><p style=\"color:#64748b;\">Pricing Sheet and Selling Pricing Builder calculate the displayed Margin % from the actual margin amount against the same basis, so a configured 10% normally displays as 10%. Total Margin includes margin plus tier and territory modifiers when those modifiers apply. Fallback Margin % uses the same basis selected here.</p></div>"
         },
         {
             "fieldname": "section_notes",
@@ -156,14 +156,13 @@
             "fieldname": "sources_help_html",
             "fieldtype": "HTML",
             "label": "Sources Help",
-            "options": ""
+            "options": "<div style=\"padding:8px 0 4px;color:#64748b;line-height:1.5;\">Add benchmark Price Lists only when this policy should compare against market or supplier prices. Leave sources empty to always use the Fallback Margin %.</div>"
         },
         {
             "fieldname": "benchmark_sources",
             "fieldtype": "Table",
             "label": "Benchmark Sources",
-            "options": "Pricing Benchmark Source",
-            "reqd": 1
+            "options": "Pricing Benchmark Source"
         },
         {
             "fieldname": "section_rules",
@@ -174,41 +173,45 @@
             "fieldname": "rules_help_html",
             "fieldtype": "HTML",
             "label": "Rules Help",
-            "options": ""
+            "options": "<div style=\"padding:8px 0 4px;color:#64748b;line-height:1.5;\">Rules are required only when benchmark sources are configured. If sources are empty, the policy uses Fallback Margin % directly.</div>"
         },
         {
             "fieldname": "benchmark_rules",
             "fieldtype": "Table",
             "label": "Benchmark Rules",
-            "options": "Pricing Benchmark Rule",
-            "reqd": 1
+            "options": "Pricing Benchmark Rule"
         },
         {
             "fieldname": "section_modifiers",
             "fieldtype": "Section Break",
-            "label": "Runtime Modifiers (Tier & Territory)"
+            "label": "Runtime Modifiers (Tier & Territory)",
+            "hidden": 1
         },
         {
             "fieldname": "modifiers_help_html",
             "fieldtype": "HTML",
             "label": "Modifiers Help",
-            "options": ""
+            "options": "",
+            "hidden": 1
         },
         {
             "fieldname": "tier_modifiers",
             "fieldtype": "Table",
             "label": "Tier Modifiers",
-            "options": "Pricing Tier Modifier"
+            "options": "Pricing Tier Modifier",
+            "hidden": 1
         },
         {
             "fieldname": "column_break_modifiers",
-            "fieldtype": "Column Break"
+            "fieldtype": "Column Break",
+            "hidden": 1
         },
         {
             "fieldname": "zone_modifiers",
             "fieldtype": "Table",
             "label": "Zone Modifiers",
-            "options": "Pricing Zone Modifier"
+            "options": "Pricing Zone Modifier",
+            "hidden": 1
         }
     ],
     "is_submittable": 0,

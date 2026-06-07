@@ -4,14 +4,23 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from orderlift.sales.utils.customer_tier import DEFAULT_CUSTOMER_GROUP
+
 
 class PortalCustomerGroupPolicy(Document):
     def validate(self):
-        self.customer_group = (self.customer_group or "").strip()
+        self.customer_group = (self.customer_group or "").strip() or DEFAULT_CUSTOMER_GROUP
+        if self.meta.get_field("policy_name") and not (self.policy_name or "").strip():
+            self.policy_name = self._default_policy_name()
         if self.portal_price_list:
             self.currency = frappe.db.get_value("Price List", self.portal_price_list, "currency") or self.currency
-        if frappe.db.exists("Portal Customer Group Policy", {"customer_group": self.customer_group, "name": ["!=", self.name]}):
-            frappe.throw(frappe._("A portal policy already exists for customer group {0}.").format(self.customer_group))
+        duplicate_filters = {
+            "business_type": (self.get("business_type") or "").strip(),
+            "crm_segment": (self.get("crm_segment") or "").strip(),
+            "name": ["!=", self.name],
+        }
+        if self.meta.get_field("business_type") and frappe.db.exists("Portal Customer Group Policy", duplicate_filters):
+            frappe.throw(frappe._("A portal policy already exists for this CRM scope."))
 
         seen = set()
         for row in self.catalog_items or []:
@@ -19,8 +28,13 @@ class PortalCustomerGroupPolicy(Document):
                 frappe.throw(frappe._("Each catalog row must choose either Item or Product Bundle."))
             key = (row.item_code or "", row.product_bundle or "")
             if key in seen:
-                frappe.throw(frappe._("Duplicate catalog entry found in this customer group policy."))
+                frappe.throw(frappe._("Duplicate catalog entry found in this portal policy."))
             seen.add(key)
+
+    def _default_policy_name(self) -> str:
+        parts = [self.get("business_type"), self.get("crm_segment")]
+        label = " / ".join([part for part in parts if part])
+        return label or "Default Portal CRM Policy"
 
     @frappe.whitelist()
     def bulk_add_products(self, filter_type: str, filter_value: str, featured: int = 0, allow_quote: int = 1):

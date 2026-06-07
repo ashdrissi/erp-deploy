@@ -1,0 +1,105 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:category_name",
+  "creation": "2026-05-13 12:00:00.000000",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": [
+    "category_name",
+    "abbreviation",
+    "sequence_digits",
+    "current_sequence",
+    "is_active",
+    "description"
+  ],
+  "fields": [
+    {
+      "fieldname": "category_name",
+      "fieldtype": "Data",
+      "label": "Catégorie",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "abbreviation",
+      "fieldtype": "Data",
+      "label": "Abréviation",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "description": "Préfixe utilisé pour générer les codes articles, par exemple ARM-00001. Lettres/chiffres uniquement."
+    },
+    {
+      "fieldname": "sequence_digits",
+      "fieldtype": "Int",
+      "label": "Chiffres séquence",
+      "default": "5",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "current_sequence",
+      "fieldtype": "Int",
+      "label": "Séquence actuelle",
+      "default": "0",
+      "read_only": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Actif",
+      "default": "1",
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    }
+  ],
+  "links": [],
+  "modified": "2026-05-13 12:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Item Category",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "category_name,abbreviation",
+  "sort_field": "category_name",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "category_name"
+}

@@ -9,14 +9,19 @@ from frappe import _
 from frappe.utils import add_days, flt, getdate, nowdate
 
 
+COMMISSION_MANAGER_ROLES = {"Orderlift Admin", "Sales Manager", "Orderlift Accountant", "System Manager", "Administrator"}
+
+
 @frappe.whitelist()
 def get_dashboard_data():
+    _require_commission_read_access()
     rows = _get_commission_rows()
     return {"rows": rows}
 
 
 @frappe.whitelist()
 def update_commission(name, status=None, payout_state=None, payment_reference=None, notes=None):
+    _require_commission_manager_access()
     commission = frappe.get_doc("Sales Commission", name)
     if commission.docstatus != 1:
         frappe.throw(_("Commission must be submitted before it can be updated."))
@@ -58,9 +63,16 @@ def _get_commission_rows():
     if not frappe.db.exists("DocType", "Sales Commission"):
         return []
 
+    filters = {"docstatus": 1}
+    if not _can_manage_commissions():
+        salesperson = _sales_person_for_user(frappe.session.user)
+        if not salesperson:
+            return []
+        filters["salesperson"] = salesperson
+
     commissions = frappe.get_all(
         "Sales Commission",
-        filters={"docstatus": 1},
+        filters=filters,
         fields=[
             "name",
             "salesperson",
@@ -185,3 +197,27 @@ def _normalize_status(status):
     if status == "Pending":
         return "Approved"
     return status or "Approved"
+
+
+def _require_commission_read_access():
+    if not frappe.has_permission("Sales Commission", "read"):
+        frappe.throw(_("You do not have access to Sales Commissions."), frappe.PermissionError)
+
+
+def _require_commission_manager_access():
+    if not _can_manage_commissions():
+        frappe.throw(_("Only commission managers can update commission payout or status."), frappe.PermissionError)
+
+
+def _can_manage_commissions(user: str | None = None) -> bool:
+    roles = set(frappe.get_roles(user or frappe.session.user))
+    return bool(COMMISSION_MANAGER_ROLES.intersection(roles))
+
+
+def _sales_person_for_user(user: str) -> str:
+    if not frappe.db.exists("DocType", "Sales Person") or not frappe.db.has_column("Sales Person", "user"):
+        return ""
+    filters = {"user": user}
+    if frappe.db.has_column("Sales Person", "enabled"):
+        filters["enabled"] = 1
+    return frappe.db.get_value("Sales Person", filters, "name") or ""

@@ -1,4 +1,16 @@
 frappe.ui.form.on('Customer Segmentation Engine', {
+    setup(frm) {
+        frm.set_query('business_type_filter', () => ({ filters: { is_active: 1 } }));
+        frm.set_query('crm_segment_filter', () => {
+            const filters = { is_active: 1 };
+            if (frm.doc.business_type_filter) {
+                filters.business_type = frm.doc.business_type_filter;
+            }
+            return { filters };
+        });
+        frm.set_query('designated_segment', 'segmentation_rules', () => ({ filters: { is_active: 1 } }));
+    },
+
     refresh(frm) {
         if (frm.doc.is_active) {
             frm.add_custom_button(__('Calculate Now'), function () {
@@ -36,6 +48,17 @@ frappe.ui.form.on('Customer Segmentation Engine', {
         }
     },
 
+    business_type_filter(frm) {
+        if (!frm.doc.crm_segment_filter) return;
+
+        frappe.db.get_value('CRM Segment', frm.doc.crm_segment_filter, 'business_type').then((r) => {
+            const segmentBusinessType = r && r.message && r.message.business_type;
+            if (segmentBusinessType && frm.doc.business_type_filter && segmentBusinessType !== frm.doc.business_type_filter) {
+                frm.set_value('crm_segment_filter', '');
+            }
+        });
+    },
+
     render_results(frm, results) {
         if (!results || !results.length) {
             frm.fields_dict.results_html.$wrapper.html(
@@ -47,7 +70,7 @@ frappe.ui.form.on('Customer Segmentation Engine', {
         let html = '<div style="border:1px solid var(--border-color);border-radius:8px;overflow:hidden;">';
         html += '<table class="table table-bordered" style="margin:0;font-size:12px;">';
         html += '<thead style="background:#fafafa;"><tr>';
-        html += '<th>ID</th><th>Customer</th><th>Segment</th>';
+        html += '<th>ID</th><th>Customer</th><th>Pricing Tier</th>';
         html += '<th>Variables</th><th>Confidence</th>';
         html += '</tr></thead><tbody>';
 

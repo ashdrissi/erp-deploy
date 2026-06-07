@@ -1,0 +1,138 @@
+{
+ "actions": [],
+ "autoname": "field:profile_name",
+ "creation": "2026-05-14 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "profile_name",
+  "is_active",
+  "col_break_main",
+  "target_department",
+  "target_designation",
+  "auto_assign",
+  "section_description",
+  "description",
+  "section_metrics",
+  "metrics",
+  "section_appraisal",
+  "default_appraisal_template"
+ ],
+ "fields": [
+  {
+   "fieldname": "profile_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Profile Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "col_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_department",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Target Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "target_designation",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Target Designation",
+   "options": "Designation"
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_assign",
+   "fieldtype": "Check",
+   "label": "Auto-assign by Department/Designation"
+  },
+  {
+   "fieldname": "section_description",
+   "fieldtype": "Section Break",
+   "label": "Description"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "section_metrics",
+   "fieldtype": "Section Break",
+   "label": "Metrics"
+  },
+  {
+   "fieldname": "metrics",
+   "fieldtype": "Table",
+   "label": "Metrics",
+   "options": "Performance Profile Metric"
+  },
+  {
+   "fieldname": "section_appraisal",
+   "fieldtype": "Section Break",
+   "label": "Appraisal Defaults"
+  },
+  {
+   "fieldname": "default_appraisal_template",
+   "fieldtype": "Link",
+   "label": "Default Appraisal Template",
+   "options": "Appraisal Template"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift HR",
+ "name": "Performance Profile",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Orderlift Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {"read": 1, "role": "Sales User"},
+  {"read": 1, "role": "Pricing Manager"},
+  {"read": 1, "role": "Logistics User"},
+  {"read": 1, "role": "Finance User"},
+  {"read": 1, "role": "Installation User"},
+  {"read": 1, "role": "Service User"}
+ ],
+ "sort_field": "profile_name",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

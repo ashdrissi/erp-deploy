@@ -22,12 +22,12 @@
         },
         {
             "fieldname": "modifier_amount",
-            "fieldtype": "Currency",
+            "fieldtype": "Float",
             "label": "Modifier Amount",
             "default": "0",
             "reqd": 1,
             "in_list_view": 1,
-            "description": "Positive = surcharge, Negative = discount (in MAD)"
+            "description": "Positive = surcharge, Negative = discount. Fixed rows use MAD; Percentage rows use %."
         },
         {
             "fieldname": "modifier_type",

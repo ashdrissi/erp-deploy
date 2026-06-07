@@ -21,12 +21,13 @@
     "fields": [
         {
             "fieldname": "designated_segment",
-            "fieldtype": "Data",
-            "label": "Assign Segment",
+            "fieldtype": "Link",
+            "label": "Assign Pricing Tier",
+            "options": "Pricing Tier",
             "reqd": 1,
             "in_list_view": 1,
             "columns": 2,
-            "description": "Tier to assign (e.g. Gold, Silver, Bronze, Eco)"
+            "description": "Active Pricing Tier to assign when this rule matches."
         },
         {
             "fieldname": "is_default",

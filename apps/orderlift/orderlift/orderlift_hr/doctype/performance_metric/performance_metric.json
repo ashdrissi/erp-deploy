@@ -1,0 +1,215 @@
+{
+ "actions": [],
+ "autoname": "field:metric_code",
+ "creation": "2026-05-14 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "metric_code",
+  "metric_name",
+  "category",
+  "is_active",
+  "col_break_main",
+  "linked_kra",
+  "unit",
+  "direction",
+  "default_target",
+  "section_description",
+  "description",
+  "section_source",
+  "source_type",
+  "source_doctype",
+  "aggregate",
+  "value_field",
+  "employee_link_field",
+  "col_break_source",
+  "filters_json",
+  "section_score",
+  "score_curve"
+ ],
+ "fields": [
+  {
+   "fieldname": "metric_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Metric Code",
+   "reqd": 1,
+   "unique": 1,
+   "description": "Stable identifier, e.g. sales.so_count. Used as the DocType name."
+  },
+  {
+   "fieldname": "metric_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Metric Name",
+   "reqd": 1,
+   "translatable": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Sales\nCRM\nQuotations\nOperations\nTraining\nQuality\nAttendance\nOther",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "col_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "linked_kra",
+   "fieldtype": "Link",
+   "label": "Linked KRA",
+   "options": "KRA",
+   "description": "Optional ERPNext KRA used when syncing snapshots into Goals/Appraisal."
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "description": "count, %, \u20ac, days, hours, min"
+  },
+  {
+   "default": "Higher is better",
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "label": "Direction",
+   "options": "Higher is better\nLower is better"
+  },
+  {
+   "fieldname": "default_target",
+   "fieldtype": "Float",
+   "label": "Default Target"
+  },
+  {
+   "fieldname": "section_description",
+   "fieldtype": "Section Break",
+   "label": "Description"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "translatable": 1
+  },
+  {
+   "fieldname": "section_source",
+   "fieldtype": "Section Break",
+   "label": "Data Source"
+  },
+  {
+   "default": "Builtin",
+   "fieldname": "source_type",
+   "fieldtype": "Select",
+   "label": "Source Type",
+   "options": "Builtin\nDoc Query\nManual",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.source_type==\"Doc Query\"",
+   "fieldname": "source_doctype",
+   "fieldtype": "Link",
+   "label": "Source DocType",
+   "options": "DocType"
+  },
+  {
+   "depends_on": "eval:doc.source_type==\"Doc Query\"",
+   "default": "count",
+   "fieldname": "aggregate",
+   "fieldtype": "Select",
+   "label": "Aggregate",
+   "options": "count\nsum\navg\nmin\nmax"
+  },
+  {
+   "depends_on": "eval:doc.source_type==\"Doc Query\" && doc.aggregate!=\"count\"",
+   "fieldname": "value_field",
+   "fieldtype": "Data",
+   "label": "Value Field"
+  },
+  {
+   "depends_on": "eval:doc.source_type==\"Doc Query\"",
+   "fieldname": "employee_link_field",
+   "fieldtype": "Data",
+   "label": "Employee Link Field",
+   "description": "Field on source DocType that links to Employee or User (e.g. owner, sales_person, assigned_to, employee)."
+  },
+  {
+   "fieldname": "col_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.source_type==\"Doc Query\"",
+   "fieldname": "filters_json",
+   "fieldtype": "Code",
+   "label": "Filters JSON",
+   "options": "JSON",
+   "description": "JSON object passed verbatim as `filters` to frappe.get_all. Date range tokens {from_date} and {to_date} are substituted at compute time."
+  },
+  {
+   "fieldname": "section_score",
+   "fieldtype": "Section Break",
+   "label": "Scoring"
+  },
+  {
+   "default": "Linear",
+   "fieldname": "score_curve",
+   "fieldtype": "Select",
+   "label": "Score Curve",
+   "options": "Linear\nThreshold (pass/fail)\nStepped"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift HR",
+ "name": "Performance Metric",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Orderlift Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {"read": 1, "role": "Sales User"},
+  {"read": 1, "role": "Pricing Manager"},
+  {"read": 1, "role": "Logistics User"},
+  {"read": 1, "role": "Finance User"},
+  {"read": 1, "role": "Installation User"},
+  {"read": 1, "role": "Service User"}
+ ],
+ "sort_field": "category",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

@@ -98,7 +98,7 @@ def _get_alerts():
             "level": "warn",
             "title": _("{0} sheet(s) have no Benchmark Policy").format(missing_bench),
             "message": _("Without a benchmark policy, margin guardrails won't be enforced."),
-            "link": "/app/pricing-sheet?benchmark_policy=",
+            "link": "/app/pricing-sheet-manager?attention=missing_benchmark",
         })
 
     # Sheets missing customs policy
@@ -111,7 +111,7 @@ def _get_alerts():
             "level": "warn",
             "title": _("{0} sheet(s) have no Customs Policy").format(missing_customs),
             "message": _("Customs duties will not be applied to these pricing sheets."),
-            "link": "/app/pricing-sheet?customs_policy=",
+            "link": "/app/pricing-sheet-manager?attention=missing_customs",
         })
 
     # Scenarios with no expenses

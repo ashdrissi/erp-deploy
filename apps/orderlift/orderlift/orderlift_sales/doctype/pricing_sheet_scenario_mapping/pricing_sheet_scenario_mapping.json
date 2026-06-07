@@ -10,6 +10,8 @@
     "pricing_scenario",
     "customs_policy",
     "benchmark_policy",
+    "business_type",
+    "crm_segment",
     "priority",
     "is_active",
     "notes"
@@ -44,6 +46,22 @@
       "label": "Margin & Benchmark Policy",
       "options": "Pricing Benchmark Policy",
       "in_list_view": 1
+    },
+    {
+      "fieldname": "business_type",
+      "fieldtype": "Link",
+      "label": "Business Type",
+      "options": "CRM Business Type",
+      "in_list_view": 1,
+      "description": "Optional. Applies this mapping only for the selected Pricing Sheet business type."
+    },
+    {
+      "fieldname": "crm_segment",
+      "fieldtype": "Link",
+      "label": "CRM Segment",
+      "options": "CRM Segment",
+      "in_list_view": 1,
+      "description": "Optional. Applies this mapping only for the selected Pricing Sheet CRM segment."
     },
     {
       "fieldname": "priority",

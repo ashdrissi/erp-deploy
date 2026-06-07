@@ -6,15 +6,19 @@
   "doctype": "DocType",
   "document_type": "Setup",
   "engine": "InnoDB",
-  "field_order": ["status_label", "sequence", "is_active", "is_default", "color", "applies_distribution", "applies_installation"],
+  "field_order": ["status_label", "display_label", "company", "sequence", "is_active", "is_default", "color", "applies_distribution", "applies_installation", "assigned_user", "todo_priority"],
   "fields": [
-    {"fieldname": "status_label", "fieldtype": "Data", "label": "Status Label", "reqd": 1, "unique": 1, "in_list_view": 1, "search_index": 1},
+    {"fieldname": "status_label", "fieldtype": "Data", "label": "Internal Status Label", "reqd": 1, "unique": 1, "in_list_view": 1, "search_index": 1},
+    {"fieldname": "display_label", "fieldtype": "Data", "label": "Display Label", "in_list_view": 1},
+    {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "in_list_view": 1, "in_standard_filter": 1},
     {"fieldname": "sequence", "fieldtype": "Int", "label": "Sequence", "default": "100", "in_list_view": 1},
     {"fieldname": "is_active", "fieldtype": "Check", "label": "Is Active", "default": "1", "in_list_view": 1},
     {"fieldname": "is_default", "fieldtype": "Check", "label": "Default"},
     {"fieldname": "color", "fieldtype": "Select", "label": "Color", "options": "Gray\nBlue\nGreen\nOrange\nRed\nPurple", "default": "Blue"},
     {"fieldname": "applies_distribution", "fieldtype": "Check", "label": "Applies To Distribution", "default": "1"},
-    {"fieldname": "applies_installation", "fieldtype": "Check", "label": "Applies To Installation", "default": "0"}
+    {"fieldname": "applies_installation", "fieldtype": "Check", "label": "Applies To Installation", "default": "0"},
+    {"fieldname": "assigned_user", "fieldtype": "Link", "label": "Assigned User", "options": "User", "in_list_view": 1},
+    {"fieldname": "todo_priority", "fieldtype": "Select", "label": "Todo Priority", "options": "Important Urgent\nImportant Non Urgent\nNon Important Urgent\nNon Important Non Urgent", "default": "Important Non Urgent", "in_list_view": 1}
   ],
   "links": [],
   "modified": "2026-04-25 00:00:00.000000",

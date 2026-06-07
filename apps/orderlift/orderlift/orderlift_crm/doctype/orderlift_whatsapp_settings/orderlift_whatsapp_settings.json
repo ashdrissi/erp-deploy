@@ -1,0 +1,35 @@
+{
+  "actions": [],
+  "creation": "2026-04-28 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "issingle": 1,
+  "field_order": ["enabled", "provider", "default_country_code", "twilio_section", "twilio_account_sid", "twilio_auth_token", "twilio_from_number", "webhook_section", "custom_webhook_url", "custom_webhook_secret"],
+  "fields": [
+    {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "0"},
+    {"fieldname": "provider", "fieldtype": "Select", "label": "Provider", "options": "Twilio\nCustom Webhook", "default": "Custom Webhook"},
+    {"fieldname": "default_country_code", "fieldtype": "Data", "label": "Default Country Code", "default": "212"},
+    {"fieldname": "twilio_section", "fieldtype": "Section Break", "label": "Twilio", "collapsible": 1},
+    {"fieldname": "twilio_account_sid", "fieldtype": "Data", "label": "Twilio Account SID"},
+    {"fieldname": "twilio_auth_token", "fieldtype": "Password", "label": "Twilio Auth Token"},
+    {"fieldname": "twilio_from_number", "fieldtype": "Data", "label": "Twilio From Number"},
+    {"fieldname": "webhook_section", "fieldtype": "Section Break", "label": "Custom Webhook", "collapsible": 1},
+    {"fieldname": "custom_webhook_url", "fieldtype": "Data", "label": "Custom Webhook URL"},
+    {"fieldname": "custom_webhook_secret", "fieldtype": "Password", "label": "Custom Webhook Secret"}
+  ],
+  "links": [],
+  "modified": "2026-04-28 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift CRM",
+  "name": "Orderlift WhatsApp Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1},
+    {"role": "Sales Manager", "read": 1, "report": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

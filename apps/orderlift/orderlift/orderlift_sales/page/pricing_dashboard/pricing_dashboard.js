@@ -137,14 +137,14 @@ function renderSkeleton(page) {
 
             <!-- ── Shortcuts ── -->
             <div class="pdb-shortcuts-grid">
-                ${shortcut("plus", __("New Pricing Sheet"), "/app/pricing-sheet/new-pricing-sheet-1", "primary")}
+                ${shortcut("plus", __("New Pricing Sheet"), "/app/pricing-sheet-builder", "primary")}
                 ${shortcut("simulator", __("Pricing Simulator"), "/app/pricing-simulator", "default")}
-                ${shortcut("builder", __("Pricing Builder"), "/app/pricing-builder", "default")}
-                ${shortcut("list", __("All Sheets"), "/app/pricing-sheet", "default")}
+                ${shortcut("builder", __("Sheet Builder"), "/app/pricing-sheet-builder", "default")}
+                ${shortcut("list", __("All Sheets"), "/app/pricing-sheet-manager", "default")}
                 ${shortcut("benchmark", __("Benchmark Policies"), "/app/pricing-benchmark-policy", "default")}
                 ${shortcut("customs", __("Customs Policies"), "/app/pricing-customs-policy", "default")}
                 ${shortcut("scenario", __("Scenarios"), "/app/pricing-scenario", "default")}
-                ${shortcut("dim", __("Dimensioning Sets"), "/app/dimensioning-set", "default")}
+                ${shortcut("dim", __("Dimensioning Sets"), "/app/dimensioning-set-manager", "default")}
             </div>
 
             <!-- ── KPI strip ── -->
@@ -162,7 +162,7 @@ function renderSkeleton(page) {
                             <span class="pdb-card-icon">${ICONS.sheet}</span>
                             ${__("Recent Pricing Sheets")}
                         </div>
-                        <a href="/app/pricing-sheet" class="pdb-view-all">${__("View all")} ${ICONS.arrow}</a>
+                        <a href="/app/pricing-sheet-manager" class="pdb-view-all">${__("View all")} ${ICONS.arrow}</a>
                     </div>
                     <div id="pdb-recent-table" class="pdb-table-wrap">
                         <div class="pdb-shimmer-block" style="height:220px;margin:16px;border-radius:8px;"></div>
@@ -311,7 +311,7 @@ function renderRecentSheets(page, rows) {
             <div class="pdb-empty">
                 <span class="pdb-empty-icon">${ICONS.sheet}</span>
                 <p>${__("No pricing sheets yet.")}</p>
-                <button class="btn btn-primary btn-sm" onclick="frappe.set_route('pricing-sheet','new-pricing-sheet-1')">
+                <button class="btn btn-primary btn-sm" onclick="frappe.set_route('pricing-sheet-builder')">
                     ${__("Create First Sheet")}
                 </button>
             </div>`);
@@ -331,9 +331,9 @@ function renderRecentSheets(page, rows) {
             </thead>
             <tbody>
                 ${rows.map(r => `
-                    <tr class="pdb-row" data-route="pricing-sheet/${encodeURIComponent(r.name)}">
+                    <tr class="pdb-row" data-pricing-sheet="${frappe.utils.escape_html(r.name)}">
                         <td>
-                            <a class="pdb-tlink" href="/app/pricing-sheet/${encodeURIComponent(r.name)}">
+                            <a class="pdb-tlink" href="/app/pricing-sheet-builder?pricing_sheet=${encodeURIComponent(r.name)}">
                                 ${frappe.utils.escape_html(r.sheet_name || r.name)}
                             </a>
                         </td>
@@ -361,7 +361,8 @@ function renderRecentSheets(page, rows) {
 
     el.find(".pdb-row").on("click", function (e) {
         if ($(e.target).is("a")) return;
-        frappe.set_route($(this).data("route").split("/"));
+        frappe.route_options = { pricing_sheet: $(this).data("pricing-sheet") };
+        frappe.set_route("pricing-sheet-builder");
     });
 }
 

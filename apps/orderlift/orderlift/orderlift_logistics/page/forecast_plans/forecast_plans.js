@@ -1,7 +1,7 @@
 frappe.pages["forecast-plans"].on_page_load = function (wrapper) {
     wrapper.forecast_page = frappe.ui.make_app_page({
         parent: wrapper,
-        title: __("Forecast Load Plans"),
+        title: __("Shipment Plans"),
         single_column: true,
     });
 
@@ -9,7 +9,10 @@ frappe.pages["forecast-plans"].on_page_load = function (wrapper) {
 };
 
 frappe.pages["forecast-plans"].on_page_show = function (wrapper) {
-    if (wrapper._fpInitialised) loadPlansList(wrapper);
+    if (wrapper._fpInitialised) {
+        loadPlansList(wrapper);
+        openCreateModalFromRouteOptions(wrapper);
+    }
 };
 
 function renderForecastPlansPage(wrapper) {
@@ -23,11 +26,11 @@ function renderForecastPlansPage(wrapper) {
                 <div class="fp-topbar-icon">
                     <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="12" rx="2"></rect><path d="M2 11h20M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </div>
-                <span class="fp-topbar-title">Forecast Load Plans</span>
+                <span class="fp-topbar-title">Shipment Plans</span>
                 <div class="fp-topbar-space"></div>
                 <button class="fp-btn-create" id="fpCreateBtn">
                     <svg viewBox="0 0 24 24" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    New Forecast Plan
+                    New Shipment Plan
                 </button>
             </div>
             <div class="fp-summary-bar" id="fpSummary"></div>
@@ -55,7 +58,7 @@ function renderForecastPlansPage(wrapper) {
             <div class="fp-list" id="fpList"></div>
             <div class="fp-modal-overlay" id="fpModal">
                 <div class="fp-modal">
-                    <div class="fp-modal-title">New Forecast Load Plan</div>
+                    <div class="fp-modal-title">New Shipment Plan</div>
                     <div class="fp-modal-body" id="fpModalBody"></div>
                     <div class="fp-modal-actions">
                         <button class="fp-btn-cancel" id="fpModalCancel">Cancel</button>
@@ -68,14 +71,13 @@ function renderForecastPlansPage(wrapper) {
 
     bindFPEvents(wrapper);
     loadPlansList(wrapper);
+    openCreateModalFromRouteOptions(wrapper);
 }
 
 function bindFPEvents(wrapper) {
     const root = wrapper.querySelector(".fp-root");
 
     root.querySelector("#fpCreateBtn").onclick = () => openCreateModal(wrapper);
-    root.querySelector("#fpModalCancel").onclick = () => closeCreateModal(wrapper);
-    root.querySelector("#fpModalConfirm").onclick = () => createAndOpen(wrapper);
 
     root.querySelectorAll(".fp-status-btn").forEach((btn) => {
         btn.onclick = () => {
@@ -102,6 +104,13 @@ function bindFPEvents(wrapper) {
         const card = laneCard || gridCard;
         if (card) frappe.set_route("planning", card.dataset.name);
     });
+}
+
+function openCreateModalFromRouteOptions(wrapper) {
+    const options = frappe.route_options || {};
+    if (!options.create_forecast_plan) return;
+    frappe.route_options = null;
+    openCreateModal(wrapper, options);
 }
 
 function loadPlansList(wrapper) {
@@ -187,7 +196,7 @@ function renderKanbanLanes(wrapper, plans) {
             </div>
             <div class="fp-lane-body">
                 ${lanePlans.length === 0
-                    ? `<div class="fp-lane-empty">No containers</div>`
+                    ? `<div class="fp-lane-empty">No shipment plans</div>`
                     : lanePlans.map((p) => laneCardHtml(p, lane)).join("")
                 }
             </div>
@@ -207,8 +216,8 @@ function renderGridView(wrapper, plans) {
                 <div class="fp-empty-icon">
                     <svg viewBox="0 0 24 24" width="48" height="48"><rect x="2" y="7" width="20" height="12" rx="2" fill="none" stroke="#C0BFB8" stroke-width="1.5"></rect><path d="M2 11h20" fill="none" stroke="#C0BFB8" stroke-width="1.5"></path></svg>
                 </div>
-                <div class="fp-empty-text">No forecast plans yet</div>
-                <div class="fp-empty-sub">Create one to start planning container loads</div>
+                <div class="fp-empty-text">No shipment plans yet</div>
+                <div class="fp-empty-sub">Create one to start planning loads</div>
             </div>
         `;
         return;
@@ -289,115 +298,57 @@ function planCardHtml(p) {
     `;
 }
 
-async function openCreateModal(wrapper) {
-    const body = wrapper.querySelector("#fpModalBody");
-    body.innerHTML = "";
-    wrapper._fpFields = {};
-
-    const containerProfiles = await loadActiveContainerProfiles(wrapper);
-
-    const fields = [
-        { key: "plan_label", label: "Plan Label", type: "text", required: true, placeholder: "e.g. Bangkok Export Apr W3" },
-        { key: "company", label: "Company", type: "link", options: "Company", required: true },
-        {
-            key: "container_profile",
-            label: "Container Profile",
-            type: "select",
-            options: ["", ...containerProfiles.map((cp) => cp.name)],
-            labels: Object.fromEntries(containerProfiles.map((cp) => [cp.name, cp.container_name || cp.container_type || cp.name])),
+function openCreateModal(wrapper, defaults = {}) {
+    const dialog = new frappe.ui.Dialog({
+        title: __("New Shipment Plan"),
+        fields: getCreateForecastPlanFields(defaults || {}),
+        primary_action_label: __("Create & Open Planner"),
+        primary_action(values) {
+            createAndOpen(wrapper, values, dialog);
         },
-        { key: "route_origin", label: "Origin", type: "text", placeholder: "e.g. Bangkok, Shanghai" },
-        { key: "route_destination", label: "Destination", type: "text", placeholder: "e.g. Casablanca, Paris" },
-        { key: "flow_scope", label: "Flow Scope", type: "select", options: ["", "Inbound", "Domestic", "Outbound"] },
-        { key: "shipping_responsibility", label: "Shipping Responsibility", type: "select", options: ["", "Orderlift", "Customer"] },
-        { key: "destination_zone", label: "Destination Zone", type: "text", placeholder: "e.g. Casablanca Central" },
-        { key: "departure_date", label: "Departure Date", type: "date" },
-        { key: "deadline", label: "Deadline", type: "date" },
-    ];
-
-    fields.forEach((f) => {
-        const row = document.createElement("div");
-        row.className = "fp-field-row";
-
-        const label = document.createElement("label");
-        label.textContent = f.label + (f.required ? " *" : "");
-        label.className = "fp-field-label";
-        row.appendChild(label);
-
-        let input;
-        if (f.type === "select") {
-            input = document.createElement("select");
-            input.className = "fp-field-input";
-            f.options.forEach((opt) => {
-                const o = document.createElement("option");
-                o.value = opt;
-                o.textContent = (f.labels && f.labels[opt]) || opt || "— Select —";
-                input.appendChild(o);
-            });
-        } else if (f.type === "link") {
-            input = document.createElement("input");
-            input.className = "fp-field-input";
-            input.type = "text";
-            input.placeholder = f.placeholder || f.options;
-            input.dataset.linkDoctype = f.options;
-            // Use frappe awesomebar-style autocomplete
-            $(input).on("input", frappe.utils.debounce(function () {
-                const val = this.value;
-                if (val.length < 2) return;
-                frappe.call({
-                    method: "frappe.client.get_list",
-                    args: { doctype: f.options, filters: { name: ["like", `%${val}%`] }, fields: ["name"], limit_page_length: 5 },
-                    async: true,
-                    callback: (r) => {
-                        // Simple datalist
-                        let dl = document.getElementById(`dl-${f.key}`);
-                        if (!dl) {
-                            dl = document.createElement("datalist");
-                            dl.id = `dl-${f.key}`;
-                            input.setAttribute("list", dl.id);
-                            input.parentNode.appendChild(dl);
-                        }
-                        dl.innerHTML = (r.message || []).map((d) => `<option value="${frappe.utils.escape_html(d.name)}">`).join("");
-                    },
-                });
-            }, 300));
-        } else {
-            input = document.createElement("input");
-            input.className = "fp-field-input";
-            input.type = f.type === "date" ? "date" : "text";
-            if (f.placeholder) input.placeholder = f.placeholder;
-        }
-
-        wrapper._fpFields[f.key] = input;
-        row.appendChild(input);
-        body.appendChild(row);
     });
-
-    wrapper.querySelector("#fpModal").classList.add("show");
+    wrapper._fpCreateDialog = dialog;
+    dialog.show();
 }
 
-async function loadActiveContainerProfiles(wrapper) {
-    if (wrapper._fpContainerProfiles) {
-        return wrapper._fpContainerProfiles;
-    }
-
-    const response = await frappe.call({
-        method: "orderlift.orderlift_logistics.services.forecast_planning.get_container_profiles",
-        async: true,
-    });
-
-    wrapper._fpContainerProfiles = response.message || [];
-    return wrapper._fpContainerProfiles;
+function getCreateForecastPlanFields(defaults) {
+    return [
+        { fieldname: "plan_label", label: __("Plan Label"), fieldtype: "Data", reqd: 1, default: defaults.plan_label || "", description: __("Example: Bangkok Export Apr W3") },
+        { fieldname: "company", label: __("Company"), fieldtype: "Link", options: "Company", reqd: 1, default: defaults.company || "" },
+        { fieldname: "column_break_1", fieldtype: "Column Break" },
+        {
+            fieldname: "container_profile",
+            label: __("Container Profile"),
+            fieldtype: "Link",
+            options: "Container Profile",
+            default: defaults.container_profile || "",
+            get_query: () => ({ filters: { is_active: 1 } }),
+            description: __("Type to search existing profiles or create a new Container Profile."),
+        },
+        { fieldname: "section_route", fieldtype: "Section Break", label: __("Route") },
+        { fieldname: "route_origin", label: __("Origin"), fieldtype: "Data", default: defaults.route_origin || "", description: __("Example: Bangkok, Shanghai") },
+        { fieldname: "route_destination", label: __("Destination"), fieldtype: "Data", default: defaults.route_destination || "", description: __("Example: Casablanca, Paris") },
+        { fieldname: "column_break_2", fieldtype: "Column Break" },
+        { fieldname: "destination_zone", label: __("Destination Zone"), fieldtype: "Data", default: defaults.destination_zone || "", description: __("Example: Casablanca Central") },
+        { fieldname: "section_context", fieldtype: "Section Break", label: __("Logistics Context") },
+        { fieldname: "flow_scope", label: __("Flow Scope"), fieldtype: "Select", options: "\nInbound\nDomestic\nOutbound", default: defaults.flow_scope || "" },
+        { fieldname: "shipping_responsibility", label: __("Shipping Responsibility"), fieldtype: "Select", options: "\nOrderlift\nCustomer", default: defaults.shipping_responsibility || "" },
+        { fieldname: "column_break_3", fieldtype: "Column Break" },
+        { fieldname: "departure_date", label: __("Departure Date"), fieldtype: "Date", default: defaults.departure_date || "" },
+        { fieldname: "deadline", label: __("Deadline"), fieldtype: "Date", default: defaults.deadline || "" },
+    ];
 }
 
 function closeCreateModal(wrapper) {
+    if (wrapper._fpCreateDialog) {
+        wrapper._fpCreateDialog.hide();
+    }
     wrapper.querySelector("#fpModal").classList.remove("show");
 }
 
-function createAndOpen(wrapper) {
-    const fields = wrapper._fpFields;
-    const plan_label = fields.plan_label.value.trim();
-    const company = fields.company.value.trim();
+function createAndOpen(wrapper, values, dialog) {
+    const plan_label = String(values.plan_label || "").trim();
+    const company = String(values.company || "").trim();
 
     if (!plan_label) { frappe.throw(__("Plan Label is required")); return; }
     if (!company) { frappe.throw(__("Company is required")); return; }
@@ -406,23 +357,24 @@ function createAndOpen(wrapper) {
         doctype: "Forecast Load Plan",
         plan_label: plan_label,
         company: company,
-        container_profile: fields.container_profile.value.trim() || undefined,
-        route_origin: fields.route_origin.value.trim() || undefined,
-        route_destination: fields.route_destination.value.trim() || undefined,
-        flow_scope: fields.flow_scope.value || undefined,
-        shipping_responsibility: fields.shipping_responsibility.value || undefined,
-        destination_zone: fields.destination_zone.value.trim() || undefined,
-        departure_date: fields.departure_date.value || undefined,
-        deadline: fields.deadline.value || undefined,
+        container_profile: String(values.container_profile || "").trim() || undefined,
+        route_origin: String(values.route_origin || "").trim() || undefined,
+        route_destination: String(values.route_destination || "").trim() || undefined,
+        flow_scope: String(values.flow_scope || "") || undefined,
+        shipping_responsibility: String(values.shipping_responsibility || "") || undefined,
+        destination_zone: String(values.destination_zone || "").trim() || undefined,
+        departure_date: String(values.departure_date || "") || undefined,
+        deadline: String(values.deadline || "") || undefined,
     };
 
     frappe.call({
         method: "frappe.client.insert",
         args: { doc: vals },
         async: true,
+        freeze: true,
         callback: (r) => {
             if (r.message) {
-                closeCreateModal(wrapper);
+                dialog.hide();
                 frappe.set_route("planning", r.message.name);
             }
         },

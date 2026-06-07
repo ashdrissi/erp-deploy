@@ -43,7 +43,7 @@ async function getBundleItemCode(bundleName) {
 frappe.ui.form.on("Portal Customer Group Policy", {
     async refresh(frm) {
         await refreshPortalPolicySummary(frm);
-        if (!frm.is_new() && frm.doc.customer_group) {
+        if (!frm.is_new()) {
             frm.add_custom_button(__("Preview Portal Catalog"), () => {
                 window.open(`/b2b-portal/catalog`, "_blank", "noopener");
             });

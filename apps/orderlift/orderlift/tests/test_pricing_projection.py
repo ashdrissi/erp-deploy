@@ -136,7 +136,7 @@ class TestPricingProjection(unittest.TestCase):
                 commission_rate=20,
             )
 
-    def test_max_discount_uses_rule_before_agent_when_not_fallback(self):
+    def test_max_discount_uses_rule_when_not_fallback(self):
         self.assertEqual(
             resolve_max_discount_cap(
                 rule_max_discount_percent=7,
@@ -147,7 +147,7 @@ class TestPricingProjection(unittest.TestCase):
             7,
         )
 
-    def test_max_discount_uses_stricter_fallback_and_agent_caps(self):
+    def test_max_discount_uses_fallback_cap_and_ignores_agent_cap(self):
         self.assertEqual(
             resolve_max_discount_cap(
                 rule_max_discount_percent=0,
@@ -155,7 +155,7 @@ class TestPricingProjection(unittest.TestCase):
                 agent_max_discount_percent=4,
                 is_fallback=True,
             ),
-            4,
+            6,
         )
 
     def test_max_discount_uses_fallback_cap_when_agent_cap_missing(self):

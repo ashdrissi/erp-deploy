@@ -21,6 +21,16 @@
 - `apps/orderlift/orderlift/scripts/import_generated_catalog.py`: imports generated catalog CSVs into ERPNext in master-data order.
 - `apps/orderlift/orderlift/scripts/import_item_packaging_profiles.py`: imports packaging profiles from `logistique_export.csv`, creates missing UOMs, and updates item HS codes.
 - `apps/orderlift/orderlift/scripts/setup_workbook_pricing_policies.py`: seeds workbook-derived customs, scenario, and passive benchmark policy records and can verify parity against imported price lists.
+- `apps/orderlift/orderlift/scripts/import_workbook_dimensioning_set.py`: parses the pricing workbook formulas and upserts the dynamic Ascenseur Complet Dimensioning Set.
+- `apps/orderlift/orderlift/orderlift_crm/page/opportunity_pipeline`: custom Opportunity kanban using native `Opportunity.sales_stage` as the main editable status.
+- `apps/orderlift/orderlift/orderlift_crm/page/project_pipeline`: custom Project kanban using `Project.custom_project_status` as the main editable status.
+- `apps/orderlift/orderlift/orderlift_crm/page/sales_order_pipeline`: custom Sales Order kanban using `Sales Order.custom_orderlift_order_status` as the main editable status.
+- `apps/orderlift/orderlift/orderlift_crm/page/status_control`: editable status control page for Opportunity, Project, Sales Order, and Forecast Load Plan workflow statuses.
+- `apps/orderlift/orderlift/orderlift_crm/page/campaign_editor` and `campaign_manager`: Partner Campaign builder/manager. `campaign_action_type` contains peer values (`Email`, `WhatsApp`, `Call`, `Visit`, `Other`); native `default_channel` stays channel-only (`Email`, `WhatsApp`, `Call`, or blank). The Content tab shows only the selected campaign action type. Email uses ERPNext/Frappe Email Queue, WhatsApp supports manual click-to-chat plus Twilio/custom webhook automated templates, Visit creates target ToDos, and Other is notes-only.
+- `apps/orderlift/orderlift/orderlift_sales/page/pricing_sheet_manager`: independent custom Pricing Sheet landing page for opening/creating sheets without the native ERPNext list/form UI.
+- `apps/orderlift/orderlift/orderlift_sales/page/pricing_sheet_builder`: independent custom Pricing Sheet builder page for setup, line building, dimensioning insertion, bundle import, recalculation, and quotation generation.
+- `apps/orderlift/orderlift/orderlift_finance/account_governance.py`: minimal backend account defaults, Account edit restriction, and invoice/payment account defaulting/protection. Native finance documents stay visible; backend account fields are superadmin-only.
+- `apps/orderlift/orderlift/orderlift_logistics/page/logistics_pipeline`: container-first Forecast Load Plan pipeline using logistics lifecycle statuses.
 - `apps/orderlift`: main business logic app; Python-heavy with `unittest` coverage.
 - `apps/custom_desk_theme`: small Frappe desk theme app with vanilla JS assets.
 - `apps/infintrix_theme`: Frappe theme app with Ruff, pre-commit, and a React/Vite sidebar package.
@@ -53,8 +63,12 @@
 - To load the generated catalog into the live site, copy `docs/data/generated` into the app container and run `bench --site <site> execute orderlift.scripts.import_generated_catalog.run --kwargs '{"import_dir": "/tmp/orderlift-import"}'`.
 - To load packaging profiles from `logistique_export.csv` into the live site, copy the CSV into the app container and run `bench --site <site> execute orderlift.scripts.import_item_packaging_profiles.run --kwargs '{"import_file": "/tmp/logistique_export.csv", "dry_run": 1}'`, then rerun with `"dry_run": 0` after reviewing the summary.
 - To seed workbook-derived pricing policy records, run `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.run` and verify with `bench --site <site> execute orderlift.scripts.setup_workbook_pricing_policies.verify`.
+- To update `Item.custom_customs_material` from a materials workbook with columns `ITEM CATEGORY`, `ITEM GROUP`, `ITEM NAME FR`, and `DOUANE MATERIAL`, copy the workbook into the app container and run dry-run first: `bench --site <site> execute orderlift.scripts.sync_customs_material_values.sync_item_customs_materials --kwargs '{"workbook_path":"/tmp/materials.xlsx","sheet_name":"Database","dry_run":1}'`, then rerun with `"dry_run":0` after reviewing unmatched, ambiguous, and conflict samples.
+- To stamp existing selling Price Lists/Item Prices with Pricing Builder source and max-discount metadata, run dry-run first: `bench --site <site> execute orderlift.scripts.backfill_pricing_builder_selling_list_stamps.run --kwargs '{"price_list":"<Selling Price List>","dry_run":1}'`, then rerun with `"dry_run":0`; use `"update_prices":1` only when the current selling rates should be recalculated from the builder.
+- To import the dynamic workbook-derived Ascenseur Complet Dimensioning Set, copy the `.xlsm` into the app container and run `bench --site <site> execute orderlift.scripts.import_workbook_dimensioning_set.run --kwargs '{"workbook_path":"/tmp/Pricing & Edition Devis_V01.2026 (1).xlsm","target_name":"DSET-00038","dry_run":1}'`, then rerun with `"dry_run":0` after reviewing counts.
 - To seed SIG demo projects and QC data, run `bench --site <site> execute orderlift.orderlift_sig.utils.demo_seed.seed_demo_data`.
 - To seed live logistics demo flows (inbound, domestic, outbound customer-managed, outbound Orderlift-managed), run `bench --site <site> execute orderlift.scripts.seed_logistics_demo_flows.run --kwargs '{"company":"Orderlift","batch_key":"DEMO-LOG-YYYYMMDD"}'` and use `scenarios` to limit reruns, e.g. `{"company":"Orderlift","batch_key":"DEMO-LOG-YYYYMMDD","scenarios":"outbound_customer,outbound_orderlift"}`.
+- To import B2C opportunity workbook rows from `Suivi Projets B2C (1).xlsx`, copy the workbook into the app container and run dry-run first: `bench --site <site> execute orderlift.scripts.import_b2c_opportunities.run --kwargs '{"workbook_path":"/tmp/Suivi Projets B2C (1).xlsx","dry_run":1}'`, then rerun with `"dry_run":0` after reviewing counts and warnings.
 
 ## Build Commands
 - Dev stack: `docker compose -f docker-compose.dev.yml up -d`
@@ -75,7 +89,7 @@
 - `custom_desk_theme` asset changes usually need `bench build --app custom_desk_theme`.
 - `infintrix_theme` sidebar changes need `npm run build` in `apps/infintrix_theme/infintrix_theme/public/js/sidebar_menu`.
 - If a workflow depends on `app_include_js`, `doctype_js`, or `app_include_css`, treat it as a hook-cache problem first, not a migration problem.
-- In the current production app container, `node` may be unavailable, so `bench build` can fail even when static `orderlift` assets are already linked and usable.
+- Production images expose the base image's nvm-managed `node`, `npm`, and `yarn` through `/usr/local/bin`; if `bench migrate` or `bench build` reports missing `node`, verify those symlinks first.
 
 ## Live Apply Decision Table
 - In this deployment, app code under `/root/erp-deploy/apps/...` is usually mounted into the live Coolify containers.
@@ -87,10 +101,27 @@
 | Python logic only (`*.py`) | Clear cache + restart `app/backend/websocket` | No `migrate` needed unless schema or fixtures changed |
 | `hooks.py`, `doctype_js`, page wiring | Clear cache + clear hook cache + restart `app/backend/websocket` | Full Desk reload afterward |
 | Existing `orderlift/public/js/*` or `orderlift/public/css/*` | Clear cache first; restart if still stale | Usually no `bench build` needed |
-| DocType JSON, fixtures, custom fields, property setters, patches | `bench --site <site> migrate` | If migrate fails late on missing `node`, run relevant setup hooks manually |
+| DocType JSON, fixtures, custom fields, property setters, patches | `bench --site <site> migrate` | If migrate reports missing `node`, verify `/usr/local/bin/node` points to the nvm Node binary |
 | `setup.py` / `after_migrate` logic | `bench --site <site> migrate` or explicit `bench execute ...after_migrate` | Then clear cache + restart |
 | New workspace/sidebar setup logic | Run the setup hook explicitly | Example: `bench --site <site> execute orderlift.scripts.setup_main_dashboard_sidebar.run --kwargs '{"workspace_name":"Main Dashboard"}'` |
 | New static file not picked up publicly | Verify public asset URL directly with `curl` | Only use direct file copy/patching if mounted source is not enough |
+
+### CRM Status Model
+- `Opportunity.sales_stage` is the single main editable opportunity status for custom CRM pages.
+- `Opportunity.status`, `Project.status`, and `Sales Order.status` remain visible ERP legacy statuses; do not overload them with custom workflow labels.
+- Project workflow status now lives in `Project.custom_project_status` linked to the `Project Status` setup doctype.
+- Sales Order workflow status now lives in `Sales Order.custom_orderlift_order_status` linked to the `Orderlift Order Status` setup doctype.
+- Logistics pipeline status uses `Forecast Load Plan.status` with metadata from `Logistics Pipeline Status`; keep lifecycle labels aligned with `forecast_planning.advance_status`.
+- Pipeline-assignment ToDos use Eisenhower priority labels: `Important Urgent`, `Important Non Urgent`, `Non Important Urgent`, `Non Important Non Urgent`.
+- The `installation-pipeline` route now redirects to `opportunity-pipeline`; use the new route and naming in future changes.
+
+### CRM Classification Model
+- CRM classification uses `CRM Business Type` (`Distribution`, `Installation`) and `CRM Segment` (`Grossiste`, `Revendeur`, `Installateur`, `Promoteur`, `Individu`).
+- `Lead`, `Prospect`, and `Customer` can have multiple CRM segments through the `custom_crm_segments` child table (`CRM Segment Assignment`).
+- `Opportunity` uses one focused flow via `custom_crm_business_type` and `custom_crm_segment`.
+- ERPNext `Customer Group` is a hidden technical fallback only; default it to `All Customer Groups` and do not use it for Orderlift business logic, targeting, portal access, pricing, campaigns, segmentation, or logistics decisions.
+- Use `CRM Business Type` and `CRM Segment` as the active classification source for customer targeting, portal policies, pricing context, campaigns, segmentation, and pipeline filters.
+- Party-level campaign fields (`custom_partner_campaign`, `custom_partner_campaign_target`) are legacy/hidden; campaign history is derived from `Partner Campaign Target` rows.
 
 ### Typical Live Apply Flow
 1. Edit local files under `/root/erp-deploy/apps/orderlift/...`
@@ -215,3 +246,6 @@
 - If you touch schema, fixtures, or hooks, mention migration/rebuild requirements in your handoff.
 - If you add a new command or workflow, update this `AGENTS.md` so future agents inherit it.
 - Operator-facing SAV/SIG delivery notes now live in `docs/sav_sig_delivery_runbook.md`.
+- Operator-facing campaign workflow notes now live in `docs/campaign_workflows.md`.
+- Operator-facing role/menu/company access notes now live in `docs/access_command_center_menu_company_access.md`.
+- Operator-facing finance account and Cost Center governance notes now live in `docs/finance_account_governance.md`.

@@ -13,7 +13,7 @@
         wrapper = document.createElement("div");
         wrapper.id = WRAPPER_ID;
         wrapper.style.cssText =
-            "padding: 16px 16px 8px 16px; text-align: center; border-bottom: 1px solid var(--border-color, #e2e6e9);";
+            "padding: 5px 6px 5px; text-align: center; border-bottom: 1px solid var(--border-color, #e2e6e9);";
 
         var link = document.createElement("a");
         link.href = "/app";
@@ -21,7 +21,7 @@
 
         var img = document.createElement("img");
         img.alt = "Orderlift";
-        img.style.cssText = "max-width: 140px; max-height: 50px; object-fit: contain; cursor: pointer;";
+        img.style.cssText = "max-width: 85px; max-height: 50px; object-fit: contain; cursor: pointer;";
 
         link.appendChild(img);
         wrapper.appendChild(link);

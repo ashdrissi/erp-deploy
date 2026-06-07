@@ -1,7 +1,7 @@
 frappe.pages["logistics-dashboard"].on_page_load = function (wrapper) {
     const page = frappe.ui.make_app_page({
         parent: wrapper,
-        title: __("Container Planning"),
+        title: __("Shipment Planning"),
         single_column: true,
     });
 
@@ -41,7 +41,7 @@ function renderSkeleton(page) {
             <!-- Hero -->
             <div class="ld-hero">
                 <div class="ld-hero-left">
-                    <div class="ld-hero-eyebrow">${__("Orderlift · Container Planning")}</div>
+                    <div class="ld-hero-eyebrow">${__("Orderlift · Shipment Planning")}</div>
                     <div class="ld-hero-greeting">${greeting}</div>
                     <div class="ld-hero-sub">${today}</div>
                 </div>
@@ -65,9 +65,9 @@ function renderSkeleton(page) {
 
             <!-- Shortcuts -->
             <div class="ld-shortcuts-grid">
-                ${shortcut("plus", __("New Forecast Plan"), "/app/forecast-plans", "primary")}
-                ${shortcut("forecast", __("Forecast Plans"), "/app/forecast-plans", "default")}
-                ${shortcut("planning", __("Load Forecast Planner"), "/app/planning", "default")}
+                ${shortcut("plus", __("Logistics Pipeline"), "/app/logistics-pipeline", "primary")}
+                ${shortcut("forecast", __("Shipment Plans"), "/app/logistics-pipeline", "default")}
+                ${shortcut("planning", __("Shipment Planner"), "/app/planning", "default")}
                 ${shortcut("profile", __("Container Profiles"), "/app/container-profile", "default")}
             </div>
 
@@ -84,7 +84,7 @@ function renderSkeleton(page) {
                             <span class="ld-card-icon">${ICONS.container}</span>
                             ${__("Container Timeline")}
                         </div>
-                        <a href="/app/forecast-plans" class="ld-view-all">${__("View all")} ${ICONS.arrow}</a>
+                        <a href="/app/logistics-pipeline" class="ld-view-all">${__("View all")} ${ICONS.arrow}</a>
                     </div>
                     <div id="ld-timeline" class="ld-timeline-wrap">
                         <div class="ld-shimmer-block" style="height:260px;margin:16px;border-radius:8px;"></div>
@@ -181,7 +181,7 @@ function renderKpis(page, kpis) {
 function renderTimeline(page, containers) {
     const el = page.main.find("#ld-timeline");
     if (!containers.length) {
-        el.html(`<div class="ld-empty">${ICONS.container}<p>${__("No containers yet. Create a Forecast Plan to start.")}</p></div>`);
+        el.html(`<div class="ld-empty">${ICONS.container}<p>${__("No shipment plans yet. Create a Shipment Plan to start.")}</p></div>`);
         return;
     }
 

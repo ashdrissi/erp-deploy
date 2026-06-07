@@ -8,13 +8,18 @@
     "field_order": [
         "section_config",
         "engine_name",
-        "target_customer_type",
+        "business_type_filter",
+        "crm_segment_filter",
         "is_active",
         "column_break_config",
         "description",
         "section_rules",
         "rules_help_html",
         "segmentation_rules",
+        "section_modifiers",
+        "tier_modifiers",
+        "column_break_modifiers",
+        "zone_modifiers",
         "section_results",
         "results_html"
     ],
@@ -35,10 +40,28 @@
         {
             "fieldname": "target_customer_type",
             "fieldtype": "Link",
-            "label": "Target Customer Group",
+            "label": "Legacy Customer Group Filter",
             "options": "Customer Group",
+            "hidden": 1,
+            "description": "Deprecated. Customer segmentation now uses Business Type and CRM Segment."
+        },
+        {
+            "fieldname": "business_type_filter",
+            "fieldtype": "Link",
+            "label": "Business Type Filter",
+            "options": "CRM Business Type",
             "in_list_view": 1,
-            "description": "Only customers in this customer group will be evaluated"
+            "in_standard_filter": 1,
+            "description": "Optional CRM business type filter for selecting which customers to evaluate."
+        },
+        {
+            "fieldname": "crm_segment_filter",
+            "fieldtype": "Link",
+            "label": "CRM Segment Filter",
+            "options": "CRM Segment",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "description": "Optional CRM segment filter for selecting which customers to evaluate."
         },
         {
             "fieldname": "is_active",
@@ -73,6 +96,27 @@
             "label": "Segmentation Rules",
             "options": "Customer Segmentation Rule",
             "reqd": 1
+        },
+        {
+            "fieldname": "section_modifiers",
+            "fieldtype": "Section Break",
+            "label": "Global Tier & Territory Modifiers"
+        },
+        {
+            "fieldname": "tier_modifiers",
+            "fieldtype": "Table",
+            "label": "Tier Modifiers",
+            "options": "Pricing Tier Modifier"
+        },
+        {
+            "fieldname": "column_break_modifiers",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "zone_modifiers",
+            "fieldtype": "Table",
+            "label": "Territory Modifiers",
+            "options": "Pricing Zone Modifier"
         },
         {
             "fieldname": "section_results",

@@ -6,12 +6,18 @@ from frappe.model.document import Document
 from frappe.utils import flt, now
 
 from orderlift.client_portal.utils.access import ensure_internal_reviewer
+from orderlift.sales.utils.customer_tier import DEFAULT_CUSTOMER_GROUP
 
 
 class PortalQuoteRequest(Document):
     def validate(self):
         if self.customer:
-            self.customer_group = frappe.db.get_value("Customer", self.customer, "customer_group") or self.customer_group
+            self.customer_group = frappe.db.get_value("Customer", self.customer, "customer_group") or DEFAULT_CUSTOMER_GROUP
+            crm_context = _customer_primary_crm_context(self.customer)
+            if self.meta.get_field("business_type"):
+                self.business_type = crm_context.get("business_type") or ""
+            if self.meta.get_field("crm_segment"):
+                self.crm_segment = crm_context.get("crm_segment") or ""
         self._sync_totals()
 
     def _sync_totals(self):
@@ -104,3 +110,18 @@ class PortalQuoteRequest(Document):
             message=message,
             delayed=False,
         )
+
+
+def _customer_primary_crm_context(customer: str) -> dict:
+    if not customer or not frappe.db.exists("DocType", "CRM Segment Assignment"):
+        return {"business_type": "", "crm_segment": ""}
+    rows = frappe.get_all(
+        "CRM Segment Assignment",
+        filters={"parenttype": "Customer", "parent": customer},
+        fields=["business_type", "segment"],
+        order_by="is_primary desc, idx asc",
+        limit_page_length=1,
+    )
+    if not rows:
+        return {"business_type": "", "crm_segment": ""}
+    return {"business_type": rows[0].get("business_type") or "", "crm_segment": rows[0].get("segment") or ""}

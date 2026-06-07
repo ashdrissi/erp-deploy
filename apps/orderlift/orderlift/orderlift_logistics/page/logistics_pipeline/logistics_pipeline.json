@@ -1,0 +1,10 @@
+{
+  "doctype": "Page",
+  "module": "Orderlift Logistics",
+  "page_name": "logistics-pipeline",
+  "name": "logistics-pipeline",
+  "title": "Logistics Pipeline",
+  "standard": "Yes",
+  "system_page": 0,
+  "roles": []
+}

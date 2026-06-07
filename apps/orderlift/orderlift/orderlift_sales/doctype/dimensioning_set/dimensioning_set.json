@@ -53,8 +53,7 @@
       "fieldname": "input_fields",
       "fieldtype": "Table",
       "label": "Caracteristiques",
-      "options": "Dimensioning Set Field",
-      "reqd": 1
+      "options": "Dimensioning Set Field"
     },
     {
       "fieldname": "heading_rules",
@@ -70,8 +69,7 @@
       "fieldname": "item_rules",
       "fieldtype": "Table",
       "label": "Articles generes",
-      "options": "Dimensioning Set Item Rule",
-      "reqd": 1
+      "options": "Dimensioning Set Item Rule"
     },
     {
       "fieldname": "preview_test_values_json",

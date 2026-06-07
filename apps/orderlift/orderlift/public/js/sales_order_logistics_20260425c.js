@@ -40,6 +40,15 @@ frappe.ui.form.on("Sales Order", {
     custom_orderlift_order_status(frm) {
         _render_so_status_bar(frm);
     },
+    custom_crm_business_type(frm) {
+        _render_so_status_bar(frm);
+    },
+    custom_crm_segment(frm) {
+        _render_so_status_bar(frm);
+    },
+    custom_installation_project(frm) {
+        _render_so_status_bar(frm);
+    },
 });
 
 // ── SIG: Create / Open Installation Project button ─────────────────────────
@@ -116,6 +125,8 @@ function _render_so_status_bar(frm) {
 
     const chips = [
         _order_status_chip(__("Order Status"), _selected_so_status(frm), "custom"),
+        _order_status_chip(__("Type"), frm.doc.custom_crm_business_type || __("Not set"), "type"),
+        _order_status_chip(__("Segment"), frm.doc.custom_crm_segment || __("Not set"), "segment"),
     ];
     if (frm.doc.custom_installation_project) {
         chips.push(_order_project_chip(__("Project"), frm.doc.custom_installation_project));
@@ -187,6 +198,19 @@ function _order_status_chip_color(value, tone) {
     if (!value || value === __("Not set")) return "gray";
     if (tone === "custom" && ORDERLIFT_SO_STATUS_COLORS && ORDERLIFT_SO_STATUS_COLORS[value]) {
         return ORDERLIFT_SO_STATUS_COLORS[value];
+    }
+    if (tone === "type") {
+        if (status.includes("installation")) return "purple";
+        if (status.includes("distribution")) return "blue";
+        if (status.includes("maintenance")) return "orange";
+        return "gray";
+    }
+    if (tone === "segment") {
+        if (status.includes("grossiste")) return "green";
+        if (status.includes("revendeur")) return "blue";
+        if (status.includes("installateur")) return "orange";
+        if (status.includes("promoteur")) return "purple";
+        return "gray";
     }
     if (status === "completed") return "green";
     if (["cancelled", "closed"].includes(status)) return "red";

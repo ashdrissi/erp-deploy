@@ -12,6 +12,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-libmysqlclient-dev pkg-config gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# The base image installs Node through nvm, but login shells can reset PATH.
+# Expose the bundled Node toolchain on the standard runtime PATH for bench migrate/build.
+RUN set -eux; \
+    node_bin="$(find /home/frappe/.nvm/versions/node -path '*/bin/node' -type f | sort -V | tail -n 1)"; \
+    node_dir="$(dirname "$node_bin")"; \
+    ln -sf "$node_dir/node" /usr/local/bin/node; \
+    ln -sf "$node_dir/npm" /usr/local/bin/npm; \
+    ln -sf "$node_dir/npx" /usr/local/bin/npx; \
+    ln -sf "$node_dir/yarn" /usr/local/bin/yarn; \
+    ln -sf "$node_dir/yarnpkg" /usr/local/bin/yarnpkg
+
 # Ship custom apps inside the image so they persist across redeploys.
 COPY --chown=frappe:frappe apps/orderlift/ /home/frappe/frappe-bench/apps/orderlift/
 COPY --chown=frappe:frappe apps/custom_desk_theme/ /home/frappe/frappe-bench/apps/custom_desk_theme/

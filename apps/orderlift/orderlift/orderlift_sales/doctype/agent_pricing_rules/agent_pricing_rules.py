@@ -6,6 +6,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
+from orderlift.orderlift_sales.utils.price_list_scope import validate_price_list_scope
+
 
 DYNAMIC_MODE = "Dynamic Calculation Engine"
 STATIC_MODE  = "Pick from Published Selling Price List"
@@ -14,6 +16,7 @@ STATIC_MODE  = "Pick from Published Selling Price List"
 
 class AgentPricingRules(Document):
     def validate(self):
+        self._validate_price_list_scopes()
         if self.pricing_mode != DYNAMIC_MODE:
             return
 
@@ -47,6 +50,18 @@ class AgentPricingRules(Document):
 
         if defaults > 1:
             frappe.throw(_("Only one Dynamic Configuration row can be marked as Default."))
+
+    def _validate_price_list_scopes(self):
+        if self.pricing_mode == DYNAMIC_MODE and self.default_buying_price_list:
+            validate_price_list_scope(self.default_buying_price_list, kind="buying", required=True)
+        if self.pricing_mode == DYNAMIC_MODE:
+            for row in self.dynamic_pricing_configs or []:
+                if row.get("buying_price_list"):
+                    validate_price_list_scope(row.get("buying_price_list"), kind="buying", required=True)
+        if self.pricing_mode == STATIC_MODE:
+            for row in self.allocated_price_lists or []:
+                if row.get("selling_price_list"):
+                    validate_price_list_scope(row.get("selling_price_list"), kind="selling", required=True)
 
 
 def build_dynamic_context(sales_person=None, agent_doc=None):

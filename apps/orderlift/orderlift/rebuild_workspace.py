@@ -239,8 +239,8 @@ def execute():
     
     # 3. Add the Pricing items explicitly at the end
     ws.append('items', {'type': 'Section Break', 'label': 'Pricing Operations', 'child': 0})
-    ws.append('items', {'type': 'Link', 'label': 'Pricing Builder', 'link_type': 'DocType', 'link_to': 'Pricing Builder', 'child': 1, 'icon': 'tool'})
-    ws.append('items', {'type': 'Link', 'label': 'Pricing Sheets', 'link_type': 'DocType', 'link_to': 'Pricing Sheet', 'child': 1, 'icon': 'file-text'})
+    ws.append('items', {'type': 'Link', 'label': 'Sheet Builder', 'link_type': 'Page', 'link_to': 'pricing-sheet-builder', 'child': 1, 'icon': 'tool'})
+    ws.append('items', {'type': 'Link', 'label': 'Pricing Sheets', 'link_type': 'Page', 'link_to': 'pricing-sheet-manager', 'child': 1, 'icon': 'file-text'})
     ws.append('items', {'type': 'Link', 'label': 'Pricing Scenarios', 'link_type': 'DocType', 'link_to': 'Pricing Scenario', 'child': 1, 'icon': 'branch'})
 
     ws.append('items', {'type': 'Section Break', 'label': 'Policies & Configs', 'child': 0})

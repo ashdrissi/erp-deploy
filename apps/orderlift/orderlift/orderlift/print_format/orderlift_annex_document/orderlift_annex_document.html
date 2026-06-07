@@ -1,0 +1,59 @@
+{%- set template = frappe.get_doc("Orderlift Document Template", doc.template) -%}
+{%- set source = frappe.get_doc(doc.reference_doctype, doc.reference_name) -%}
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 820px; margin: 0 auto; color: #172033;">
+    <div style="border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; gap: 24px;">
+        <div>
+            <div style="font-size: 11px; font-weight: 800; color: #2563eb; letter-spacing: .08em; text-transform: uppercase;">Annexed Document</div>
+            <h1 style="margin: 5px 0 0; font-size: 24px; line-height: 1.15;">{{ template.print_title or doc.template_name }}</h1>
+            <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{{ doc.name }}</div>
+        </div>
+        <div style="text-align: right; font-size: 12px; color: #334155;">
+            <div><strong>Status:</strong> {{ doc.status or "Draft" }}</div>
+            <div><strong>Source:</strong> {{ doc.reference_doctype }} {{ doc.reference_name }}</div>
+            {% if doc.company %}<div><strong>Company:</strong> {{ doc.company }}</div>{% endif %}
+        </div>
+    </div>
+
+    {% if template.print_header %}
+    <div style="margin-bottom: 18px; padding: 12px 14px; border: 1px solid #dbe5ef; border-radius: 10px; background: #f8fafc; font-size: 12px;">
+        {{ template.print_header }}
+    </div>
+    {% endif %}
+
+    <div style="margin-bottom: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; font-size: 12px;">
+        {% if source.get("customer_name") or source.get("customer") %}<div><strong>Customer:</strong> {{ source.get("customer_name") or source.get("customer") }}</div>{% endif %}
+        {% if source.get("party_name") %}<div><strong>Party:</strong> {{ source.get("party_name") }}</div>{% endif %}
+        {% if source.get("transaction_date") %}<div><strong>Date:</strong> {{ frappe.format(source.get("transaction_date"), {"fieldtype": "Date"}) }}</div>{% endif %}
+        {% if source.get("project_name") %}<div><strong>Project:</strong> {{ source.get("project_name") }}</div>{% endif %}
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;">
+        <thead>
+            <tr style="background: #eff6ff; color: #1e3a8a;">
+                <th style="text-align: left; padding: 9px 10px; border: 1px solid #dbeafe; width: 34%;">Field</th>
+                <th style="text-align: left; padding: 9px 10px; border: 1px solid #dbeafe;">Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in doc.values %}
+            <tr>
+                <td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: 700; color: #334155;">{{ row.field_label }}</td>
+                <td style="padding: 8px 10px; border: 1px solid #e2e8f0; white-space: pre-wrap;">{{ "Yes" if row.fieldtype == "Check" and row.value in ["1", "true", "True"] else ("No" if row.fieldtype == "Check" else (row.value or "")) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if template.print_footer %}
+    <div style="margin-top: 18px; padding: 12px 14px; border: 1px solid #dbe5ef; border-radius: 10px; background: #f8fafc; font-size: 12px;">
+        {{ template.print_footer }}
+    </div>
+    {% endif %}
+
+    {% if template.show_signature_block %}
+    <div style="margin-top: 44px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 60px; font-size: 11px; color: #64748b;">
+        <div><div style="height: 48px;"></div><div style="border-top: 1px solid #94a3b8; padding-top: 6px;">Prepared by</div></div>
+        <div><div style="height: 48px;"></div><div style="border-top: 1px solid #94a3b8; padding-top: 6px;">Validated by</div></div>
+    </div>
+    {% endif %}
+</div>

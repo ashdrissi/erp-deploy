@@ -31,6 +31,19 @@ load_planning_stub._get_row_metrics = lambda row, parent_doctype=None, packaging
 
 capacity_math_stub = types.ModuleType("orderlift.orderlift_logistics.services.capacity_math")
 capacity_math_stub.round3 = lambda value: round(float(value or 0), 3)
+capacity_math_stub.compute_utilization = lambda total_weight_kg, total_volume_m3, max_weight_kg, max_volume_m3: {
+    "weight_utilization_pct": capacity_math_stub.round3((float(total_weight_kg or 0) / float(max_weight_kg or 1)) * 100) if float(max_weight_kg or 0) > 0 else 0,
+    "volume_utilization_pct": capacity_math_stub.round3((float(total_volume_m3 or 0) / float(max_volume_m3 or 1)) * 100) if float(max_volume_m3 or 0) > 0 else 0,
+}
+capacity_math_stub.detect_limiting_factor = lambda weight_utilization_pct, volume_utilization_pct, epsilon=1.0: (
+    "both" if abs(float(weight_utilization_pct or 0) - float(volume_utilization_pct or 0)) <= float(epsilon or 0)
+    else "weight" if float(weight_utilization_pct or 0) > float(volume_utilization_pct or 0)
+    else "volume"
+)
+capacity_math_stub.candidate_pressure = lambda total_weight_kg, total_volume_m3, remaining_weight_kg, remaining_volume_m3: max(
+    (float(total_weight_kg or 0) / float(remaining_weight_kg or 1)) if float(remaining_weight_kg or 0) > 0 else 0,
+    (float(total_volume_m3 or 0) / float(remaining_volume_m3 or 1)) if float(remaining_volume_m3 or 0) > 0 else 0,
+)
 
 sys.modules["frappe"] = frappe_stub
 sys.modules["frappe.utils"] = frappe_utils_stub

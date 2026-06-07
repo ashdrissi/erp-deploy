@@ -1,0 +1,131 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "field:menu_key",
+    "creation": "2026-04-29 00:00:00.000000",
+    "doctype": "DocType",
+    "document_type": "Document",
+    "engine": "InnoDB",
+    "field_order": [
+        "enabled",
+        "menu_key",
+        "section",
+        "label",
+        "menu_order",
+        "link_type",
+        "link_to",
+        "url",
+        "icon",
+        "company_scoped",
+        "allowed_roles_json",
+        "default_roles_json"
+    ],
+    "fields": [
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled"
+        },
+        {
+            "fieldname": "menu_key",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Menu Key",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "section",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Section",
+            "read_only": 1
+        },
+        {
+            "fieldname": "label",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Label",
+            "read_only": 1
+        },
+        {
+            "fieldname": "menu_order",
+            "fieldtype": "Int",
+            "label": "Menu Order",
+            "read_only": 1
+        },
+        {
+            "fieldname": "link_type",
+            "fieldtype": "Select",
+            "label": "Link Type",
+            "options": "\nDocType\nPage\nReport\nDashboard\nWorkspace\nURL",
+            "read_only": 1
+        },
+        {
+            "fieldname": "link_to",
+            "fieldtype": "Data",
+            "label": "Link To",
+            "read_only": 1
+        },
+        {
+            "fieldname": "url",
+            "fieldtype": "Data",
+            "label": "URL",
+            "read_only": 1
+        },
+        {
+            "fieldname": "icon",
+            "fieldtype": "Data",
+            "label": "Icon",
+            "read_only": 1
+        },
+        {
+            "default": "1",
+            "fieldname": "company_scoped",
+            "fieldtype": "Check",
+            "label": "Company Scoped"
+        },
+        {
+            "description": "JSON array of roles allowed to see this menu item. Use Access Command Center to edit.",
+            "fieldname": "allowed_roles_json",
+            "fieldtype": "Code",
+            "label": "Allowed Roles JSON",
+            "options": "JSON"
+        },
+        {
+            "fieldname": "default_roles_json",
+            "fieldtype": "Code",
+            "hidden": 1,
+            "label": "Default Roles JSON",
+            "options": "JSON",
+            "read_only": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "istable": 0,
+    "links": [],
+    "modified": "2026-04-29 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Orderlift",
+    "name": "Orderlift Menu Access Rule",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "sort_field": "menu_order",
+    "sort_order": "ASC",
+    "states": []
+}

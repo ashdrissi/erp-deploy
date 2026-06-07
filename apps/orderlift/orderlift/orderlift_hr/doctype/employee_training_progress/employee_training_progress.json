@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-05-13 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "employee",
+  "user",
+  "program",
+  "col_break_main",
+  "level",
+  "module",
+  "section_progress",
+  "studied",
+  "studied_on",
+  "last_activity"
+ ],
+ "fields": [
+  {
+   "default": "ETP-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "ETP-.YYYY.-.#####",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Program",
+   "options": "Training Program"
+  },
+  {
+   "fieldname": "col_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Level",
+   "options": "Training Level"
+  },
+  {
+   "fieldname": "module",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Module",
+   "options": "Training Module",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_progress",
+   "fieldtype": "Section Break",
+   "label": "Progress"
+  },
+  {
+   "default": "0",
+   "fieldname": "studied",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Studied"
+  },
+  {
+   "fieldname": "studied_on",
+   "fieldtype": "Datetime",
+   "label": "Studied On"
+  },
+  {
+   "fieldname": "last_activity",
+   "fieldtype": "Datetime",
+   "label": "Last Activity"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Orderlift HR",
+ "name": "Employee Training Progress",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Orderlift Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {"create": 1, "read": 1, "write": 1, "role": "Sales User"},
+  {"create": 1, "read": 1, "write": 1, "role": "Pricing Manager"},
+  {"create": 1, "read": 1, "write": 1, "role": "Logistics User"},
+  {"create": 1, "read": 1, "write": 1, "role": "Finance User"},
+  {"create": 1, "read": 1, "write": 1, "role": "Installation User"},
+  {"create": 1, "read": 1, "write": 1, "role": "Service User"}
+ ],
+ "sort_field": "last_activity",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

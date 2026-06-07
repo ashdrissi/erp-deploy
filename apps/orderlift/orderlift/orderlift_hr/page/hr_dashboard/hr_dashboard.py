@@ -16,6 +16,104 @@ def get_dashboard_data():
         "workforce_mix": _get_workforce_mix(),
         "upcoming_milestones": _get_upcoming_milestones(),
         "leave_pipeline": _get_leave_pipeline(),
+        "performance_summary": _get_performance_summary(),
+        "training_summary": _get_training_summary(),
+    }
+
+
+def _get_performance_summary():
+    """Pull a compact summary from the most recent open Appraisal Cycle."""
+    if not frappe.db.exists("DocType", "Performance Metric Snapshot"):
+        return None
+    cycle = frappe.db.get_value(
+        "Appraisal Cycle",
+        {"status": "In Progress"},
+        ["name", "cycle_name", "start_date", "end_date"],
+        order_by="start_date desc",
+        as_dict=True,
+    )
+    if not cycle:
+        cycle = frappe.db.get_value(
+            "Appraisal Cycle",
+            {},
+            ["name", "cycle_name", "start_date", "end_date"],
+            order_by="start_date desc",
+            as_dict=True,
+        )
+    if not cycle:
+        return None
+
+    snaps = frappe.get_all(
+        "Performance Metric Snapshot",
+        filters={"appraisal_cycle": cycle.name},
+        fields=["employee", "score_0_100"],
+        limit_page_length=0,
+    )
+    if not snaps:
+        return {
+            "cycle": cycle.name,
+            "cycle_name": cycle.cycle_name or cycle.name,
+            "start_date": str(cycle.start_date) if cycle.start_date else None,
+            "end_date": str(cycle.end_date) if cycle.end_date else None,
+            "employees": 0,
+            "metrics": 0,
+            "median": None,
+            "top": [],
+        }
+
+    by_emp: dict[str, dict] = {}
+    for s in snaps:
+        b = by_emp.setdefault(s.employee, {"total": 0.0, "count": 0})
+        b["total"] += float(s.score_0_100 or 0.0)
+        b["count"] += 1
+
+    rows = []
+    emp_names = {
+        r.name: r.employee_name
+        for r in frappe.get_all(
+            "Employee",
+            filters={"name": ["in", list(by_emp.keys())]},
+            fields=["name", "employee_name"],
+        )
+    }
+    for emp, b in by_emp.items():
+        avg = (b["total"] / b["count"]) if b["count"] else 0.0
+        rows.append({"employee": emp, "name": emp_names.get(emp) or emp, "score": round(avg, 1)})
+    rows.sort(key=lambda r: r["score"], reverse=True)
+
+    scores = sorted(r["score"] for r in rows)
+    n = len(scores)
+    median = (scores[(n - 1) // 2] + scores[n // 2]) / 2 if n else None
+
+    return {
+        "cycle": cycle.name,
+        "cycle_name": cycle.cycle_name or cycle.name,
+        "start_date": str(cycle.start_date) if cycle.start_date else None,
+        "end_date": str(cycle.end_date) if cycle.end_date else None,
+        "employees": len(rows),
+        "metrics": len(snaps),
+        "median": round(median, 1) if median is not None else None,
+        "top": rows[:3],
+    }
+
+
+def _get_training_summary():
+    """Top-line training engagement stats for the HR dashboard."""
+    if not frappe.db.exists("DocType", "Training Module"):
+        return None
+    modules = frappe.db.count("Training Module") if frappe.db.exists("DocType", "Training Module") else 0
+    programs = frappe.db.count("Training Program") if frappe.db.exists("DocType", "Training Program") else 0
+    progresses = 0
+    completion_pct = 0
+    if frappe.db.exists("DocType", "Training Progress"):
+        progresses = frappe.db.count("Training Progress")
+        completed = frappe.db.count("Training Progress", {"studied": 1})
+        completion_pct = round((completed / progresses) * 100, 1) if progresses else 0
+    return {
+        "programs": int(programs or 0),
+        "modules": int(modules or 0),
+        "progress_records": int(progresses or 0),
+        "completion_pct": completion_pct,
     }
 
 
