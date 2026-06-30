@@ -1,5 +1,6 @@
 (function () {
     const PARTY_DOCTYPES = ["Lead", "Prospect", "Customer"];
+    const OPPORTUNITY_ITEM_PRICING_FIELDS = ["rate", "amount", "base_rate", "base_amount"];
     let OPPORTUNITY_STATUS_COLORS = null;
     let OPPORTUNITY_STATUS_COLORS_PROMISE = null;
 
@@ -29,12 +30,14 @@
 
     frappe.ui.form.on("Opportunity", {
         refresh(frm) {
+            clearInvalidNewOpportunityStage(frm);
             if (showOpportunityPreFormIfNeeded(frm)) return;
             setupOpportunityResponsiveComments(frm);
             addOpportunityVoiceCommentButton(frm);
             injectOpportunityVoiceCommentControl(frm);
             setupOpportunitySegmentQueries(frm);
             setupOpportunityQuickActions(frm);
+            hideOpportunityItemPricingFields(frm);
             defaultOpportunityOwner(frm);
             loadCompanyBusinessTypes(frm, true);
             renderOpportunityStatusBar(frm);
@@ -83,14 +86,53 @@
         },
     });
 
+    function clearInvalidNewOpportunityStage(frm) {
+        if (frm.is_new() && frm.doc.sales_stage === "Prospecting") {
+            frm.set_value("sales_stage", "");
+        }
+    }
+
+    frappe.ui.form.on("Opportunity Item", {
+        form_render(frm) {
+            hideOpportunityItemPricingFields(frm);
+        },
+        items_add(frm) {
+            hideOpportunityItemPricingFields(frm);
+        },
+    });
+
+    function hideOpportunityItemPricingFields(frm) {
+        if (!frm || frm.doctype !== "Opportunity" || !frm.fields_dict || !frm.fields_dict.items) return;
+        const grid = frm.fields_dict.items.grid;
+        if (!grid) return;
+
+        OPPORTUNITY_ITEM_PRICING_FIELDS.forEach((fieldname) => {
+            if (typeof grid.update_docfield_property === "function") {
+                grid.update_docfield_property(fieldname, "hidden", 1);
+                grid.update_docfield_property(fieldname, "in_list_view", 0);
+                grid.update_docfield_property(fieldname, "reqd", 0);
+            }
+            const field = grid.get_field && grid.get_field(fieldname);
+            if (field && field.df) {
+                field.df.hidden = 1;
+                field.df.in_list_view = 0;
+                field.df.reqd = 0;
+            }
+        });
+        if (!grid.__orderlift_pricing_fields_hidden && typeof grid.refresh === "function") {
+            grid.__orderlift_pricing_fields_hidden = true;
+            grid.refresh();
+        }
+    }
+
     function showOpportunityPreFormIfNeeded(frm) {
         if (!frm.is_new() || frm._orderlift_creating_draft) return false;
         frm._orderlift_creating_draft = true;
-        showOpportunityPreFormDialog({
-            company: (frappe.route_options || {}).company || "",
+        resolveActiveCompany().then((company) => showOpportunityPreFormDialog({
+            company: (frappe.route_options || {}).company || company,
             business_type: (frappe.route_options || {}).custom_crm_business_type || "",
             segment: (frappe.route_options || {}).custom_crm_segment || "",
-        }).finally(() => {
+        })).finally(() => {
             frm._orderlift_creating_draft = false;
         });
         return true;
@@ -98,7 +140,7 @@
 
     async function showOpportunityPreFormDialog(defaults = {}) {
         const routeOptions = frappe.route_options || {};
-        const company = defaults.company || routeOptions.company || "";
+        const company = defaults.company || routeOptions.company || activeCompany();
         const businessType = defaults.business_type || routeOptions.custom_crm_business_type || "";
         const segment = defaults.segment || routeOptions.custom_crm_segment || "";
         const dialog = new frappe.ui.Dialog({
@@ -110,7 +152,7 @@
                 { fieldname: "party_name", label: __("Existing Client"), fieldtype: "Dynamic Link", options: "party_type" },
                 { fieldname: "client_name", label: __("Client Name"), fieldtype: "Data" },
                 { fieldname: "phone", label: __("N Tel"), fieldtype: "Data" },
-                { fieldname: "tier", label: __("Tier"), fieldtype: "Data" },
+                { fieldname: "tier", label: __("Tier"), fieldtype: "Link", options: "Pricing Tier" },
                 { fieldname: "business_type", label: __("Business Type"), fieldtype: "Link", options: "CRM Business Type", default: businessType },
                 { fieldname: "segment", label: __("Segment"), fieldtype: "Link", options: "CRM Segment", default: segment },
                 { fieldname: "territory", label: __("Territory"), fieldtype: "Link", options: "Territory" },
@@ -138,7 +180,9 @@
             },
         });
         dialog.show();
+        lockPreFormCompanyIfRestricted(dialog, company);
         setupPreFormBusinessTypeFilters(dialog);
+        setupPreFormPartyDefaults(dialog);
     }
 
     window.orderliftShowOpportunityPreForm = showOpportunityPreFormDialog;
@@ -164,7 +208,88 @@
             dialog.set_query("segment", () => ({ filters: businessType ? { business_type: businessType, is_active: 1 } : { is_active: 1 } }));
         };
         dialog.set_query("segment", () => ({ filters: { is_active: 1 } }));
+        if (dialog.fields_dict.tier) {
+            dialog.set_query("tier", () => ({ filters: { is_active: 1 } }));
+        }
         apply();
+    }
+
+    function setupPreFormPartyDefaults(dialog) {
+        const apply = async () => {
+            const partyType = dialog.get_value("party_type") || "";
+            const partyName = dialog.get_value("party_name") || "";
+            if (!partyType || !partyName) return;
+            try {
+                const res = await frappe.call({
+                    method: "orderlift.orderlift_crm.api.pipeline.get_party_defaults",
+                    args: { party_type: partyType, party_name: partyName },
+                });
+                if (dialog.get_value("party_type") !== partyType || dialog.get_value("party_name") !== partyName) return;
+                const defaults = res.message || {};
+                setDialogValueIfPresent(dialog, "client_name", defaults.display_name);
+                setDialogValueIfPresent(dialog, "phone", defaults.mobile || defaults.phone);
+                setDialogValueIfPresent(dialog, "tier", defaults.tier);
+                setDialogValueIfPresent(dialog, "business_type", defaults.business_type);
+                setDialogValueIfPresent(dialog, "segment", defaults.crm_segment);
+                setDialogValueIfPresent(dialog, "territory", defaults.territory);
+                setDialogValueIfPresent(dialog, "address", defaults.address);
+                const businessType = defaults.business_type || "";
+                dialog.set_query("segment", () => ({ filters: businessType ? { business_type: businessType, is_active: 1 } : { is_active: 1 } }));
+            } catch (error) {
+                console.warn("Opportunity party defaults failed", error);
+            }
+        };
+        dialog.fields_dict.party_type.df.onchange = () => {
+            if (dialog.get_value("party_name")) dialog.set_value("party_name", "");
+        };
+        dialog.fields_dict.party_name.df.onchange = apply;
+    }
+
+    function setDialogValueIfPresent(dialog, fieldname, value) {
+        if (!dialog.fields_dict[fieldname] || value == null || value === "") return;
+        dialog.set_value(fieldname, value);
+    }
+
+    function activeCompany() {
+        const ctx = (window.frappe && frappe.boot && frappe.boot.orderlift_company_access) || {};
+        return ctx.current_company || ctx.user_default_company || (ctx.companies || [])[0] || "";
+    }
+
+    async function resolveActiveCompany() {
+        const fallback = activeCompany();
+        try {
+            const res = await frappe.call({ method: "orderlift.menu_access.get_current_company_access_payload" });
+            const payload = res.message || {};
+            if (window.frappe && frappe.boot && payload.current_company) {
+                frappe.boot.orderlift_company_access = payload;
+            }
+            return payload.current_company || fallback;
+        } catch (error) {
+            console.warn("Unable to refresh active company", error);
+            return fallback;
+        }
+    }
+
+    function canChangePreFormCompany() {
+        const adminRoles = ["Administrator", "System Manager", "Developer", "Orderlift Admin"];
+        return adminRoles.some((role) => frappe.user && frappe.user.has_role && frappe.user.has_role(role));
+    }
+
+    function lockPreFormCompanyIfRestricted(dialog, company) {
+        const field = dialog.fields_dict.company;
+        if (!field) return;
+        if (company && !dialog.get_value("company")) {
+            dialog.set_value("company", company);
+        }
+        if (canChangePreFormCompany()) return;
+        field.df.read_only = 1;
+        field.refresh();
+        if (field.$input) {
+            field.$input.prop("readonly", true).addClass("disabled");
+        }
+        if (field.$wrapper) {
+            field.$wrapper.find(".link-btn, .btn-open, .btn-clear, .input-group-btn").hide();
+        }
     }
 
     async function loadCompanyBusinessTypes(frm, applyValues) {
@@ -501,13 +626,16 @@
         refresh(frm) {
             setupTransactionClassificationQueries(frm);
             syncTransactionPartyClassification(frm, "quotation", false);
+            syncTransactionPartyDefaults(frm, "quotation", false);
             renderTransactionClassificationBar(frm, "Quotation");
         },
         quotation_to(frm) {
             syncTransactionPartyClassification(frm, "quotation", true);
+            syncTransactionPartyDefaults(frm, "quotation", true);
         },
         party_name(frm) {
             syncTransactionPartyClassification(frm, "quotation", true);
+            syncTransactionPartyDefaults(frm, "quotation", true);
         },
         custom_crm_business_type(frm) {
             if (frm.doc.custom_crm_segment) {
@@ -751,6 +879,40 @@
             console.error("Unable to load transaction CRM classification", error);
             frm._orderlift_party_segments = [];
             setupTransactionClassificationQueries(frm);
+        }
+    }
+
+    async function syncTransactionPartyDefaults(frm, mode, applyValues) {
+        const partyType = mode === "quotation" ? frm.doc.quotation_to : "Customer";
+        const partyName = mode === "quotation" ? frm.doc.party_name : frm.doc.customer;
+        if (!partyType || !partyName || !PARTY_DOCTYPES.includes(partyType)) {
+            return;
+        }
+        const token = `${frm.doctype}:${partyType}:${partyName}:defaults:${Date.now()}`;
+        frm._orderlift_party_defaults_token = token;
+        try {
+            const res = await frappe.call({
+                method: "orderlift.orderlift_crm.api.pipeline.get_party_defaults",
+                args: { party_type: partyType, party_name: partyName },
+            });
+            if (frm._orderlift_party_defaults_token !== token) return;
+            const data = res.message || {};
+            const values = {
+                customer_name: data.display_name || "",
+                territory: data.territory || "",
+                customer_address: data.address_name || "",
+                address_display: data.address || "",
+                contact_person: data.contact_name || "",
+                contact_display: data.contact_display || data.email || data.mobile || "",
+                contact_mobile: data.mobile || data.phone || "",
+                contact_email: data.email || "",
+                shipping_address_name: data.address_name || "",
+            };
+            for (const [fieldname, value] of Object.entries(values)) {
+                await setAutoValue(frm, fieldname, value, applyValues);
+            }
+        } catch (error) {
+            console.error("Unable to load transaction party defaults", error);
         }
     }
 

@@ -2,8 +2,10 @@ import json
 
 import frappe
 from frappe import _
+from frappe.model.db_query import DatabaseQuery
 from frappe.utils import cint, flt
 
+from orderlift import company_access
 from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules import (
     DYNAMIC_MODE,
     STATIC_MODE,
@@ -11,11 +13,11 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
     build_static_context,
 )
 from orderlift.menu_access import resolve_current_company
-from orderlift.orderlift_crm.company_business_type import get_company_business_type_names
 from orderlift.orderlift_sales.utils.price_list_scope import get_price_list_names, validate_price_list_scope
+from orderlift.orderlift_sales.utils.tax_inclusive import company_default_sales_taxes_template
 
 PRIVILEGED_PRICING_ROLES = {"Administrator", "Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
-COMMERCIAL_PRICING_ROLES = {"Sales User", "Orderlift Commercial"}
+SUPPORTED_PARTY_TYPES = {"Customer", "Lead", "Prospect"}
 
 
 LINE_FIELDS = [
@@ -61,11 +63,19 @@ LINE_FIELDS = [
     "discount_amount",
     "discounted_sell_unit_price",
     "discounted_sell_total",
+    "custom_applied_taxes",
+    "custom_pu_ttc",
+    "custom_pt_ttc",
     "commission_rate",
     "commission_amount",
     "margin_pct",
     "total_margin_pct",
     "margin_basis",
+    "target_margin_percent",
+    "builder_margin_percent",
+    "builder_price_overridden",
+    "pricing_builder",
+    "builder_source_buying_price_list",
     "customs_material",
     "customs_tariff_number",
     "customs_weight_kg",
@@ -109,19 +119,19 @@ AGENT_VISIBLE_LINE_FIELDS = {
     "name",
     "item",
     "item_name",
-    "source_bundle",
-    "dimensioning_set",
-    "dimensioning_rule_label",
-    "line_type",
-    "bundle_group_id",
     "display_group",
     "qty",
+    "resolved_selling_price_list",
     "manual_sell_unit_price",
     "final_sell_unit_price",
     "final_sell_total",
     "max_discount_percent_allowed",
     "discount_percent",
+    "discounted_sell_unit_price",
     "discounted_sell_total",
+    "custom_applied_taxes",
+    "custom_pu_ttc",
+    "custom_pt_ttc",
     "commission_rate",
     "commission_amount",
 }
@@ -147,7 +157,10 @@ SHEET_FIELDS = [
     "name",
     "sheet_name",
     "custom_company",
+    "party_type",
+    "party_name",
     "customer",
+    "opportunity",
     "sales_person",
     "crm_business_type",
     "crm_segment",
@@ -155,6 +168,7 @@ SHEET_FIELDS = [
     "pricing_scenario",
     "benchmark_policy",
     "customs_policy",
+    "taxes_and_charges_template",
     "selected_price_list",
     "output_mode",
     "dimensioning_set",
@@ -202,7 +216,11 @@ def save_pricing_sheet_builder_payload(payload):
     payload = _parse_payload(payload)
     doc = _doc_from_payload(payload)
     doc.save()
-    return {"sheet": _serialize_sheet(doc), "name": doc.name}
+    link_warning = _link_sheet_to_source_quotation(doc, payload)
+    result = {"sheet": _serialize_sheet(doc), "name": doc.name}
+    if link_warning:
+        result["link_warning"] = link_warning
+    return result
 
 
 @frappe.whitelist()
@@ -246,6 +264,89 @@ def add_dimensioning_to_pricing_sheet(pricing_sheet, dimensioning_set=None, inpu
 
 
 @frappe.whitelist()
+def get_opportunity_pricing_sheet_source(opportunity):
+    return _get_opportunity_source_payload(opportunity)
+
+
+@frappe.whitelist()
+def get_quotation_pricing_sheet_source(quotation):
+    quotation = (quotation or "").strip()
+    if not quotation or not frappe.db.exists("Quotation", quotation):
+        frappe.throw(_("Quotation {0} was not found.").format(quotation or ""))
+
+    doc = frappe.get_doc("Quotation", quotation)
+    doc.check_permission("read")
+    party_type = (doc.get("quotation_to") or "Customer").strip()
+    if party_type not in SUPPORTED_PARTY_TYPES:
+        party_type = "Customer"
+    return {
+        "quotation": doc.name,
+        "company": doc.get("company") or "",
+        "party_type": party_type,
+        "party_name": doc.get("party_name") or "",
+        "customer": (doc.get("party_name") or "") if party_type == "Customer" else "",
+        "opportunity": doc.get("opportunity") or "",
+        "crm_business_type": doc.get("custom_crm_business_type") or "",
+        "crm_segment": doc.get("custom_crm_segment") or "",
+        "geography_territory": doc.get("territory") or "",
+        "taxes_and_charges_template": doc.get("taxes_and_charges") or "",
+        "selected_price_list": doc.get("selling_price_list") or "",
+        "selected_selling_price_lists": _quotation_selling_price_list_rows(doc),
+        "lines": _quotation_line_rows(doc),
+        "title": _("Pricing Sheet - {0}").format(doc.name),
+    }
+
+
+@frappe.whitelist()
+def create_pricing_sheet_from_opportunity(opportunity, pricing_mode=None):
+    source = _get_opportunity_source_payload(opportunity)
+    doc = _create_pricing_sheet_from_source(source, pricing_mode=pricing_mode)
+    return {"pricing_sheet": doc.name, "sheet": _serialize_sheet(doc)}
+
+
+@frappe.whitelist()
+def create_pricing_sheet_from_quotation(quotation, pricing_mode=None, link_source_quotation=1):
+    source = get_quotation_pricing_sheet_source(quotation)
+    doc = _create_pricing_sheet_from_source(
+        source,
+        pricing_mode=pricing_mode,
+        source_quotation=source.get("quotation") or "",
+        link_source_quotation=cint(link_source_quotation),
+    )
+    return {"pricing_sheet": doc.name, "sheet": _serialize_sheet(doc)}
+
+
+@frappe.whitelist()
+def import_opportunity_items_to_pricing_sheet(pricing_sheet, opportunity=None, replace_existing=0, pricing_mode=None):
+    doc = _get_writable_sheet(pricing_sheet)
+    _apply_builder_mode_flag(doc, pricing_mode)
+    opportunity = (opportunity or doc.get("opportunity") or "").strip()
+    if not opportunity:
+        frappe.throw(_("Choose an Opportunity before loading items."))
+
+    source = _get_opportunity_source_payload(opportunity)
+    _apply_opportunity_source_to_doc(doc, source)
+    if cint(replace_existing):
+        doc.set("lines", [])
+    for row in source.get("items") or []:
+        doc.append(
+            "lines",
+            {
+                "item": row.get("item") or "",
+                "qty": flt(row.get("qty") or 1) or 1,
+                "display_group": row.get("display_group") or _("Opportunity"),
+                "show_in_detail": 1,
+                "line_type": "Standard",
+            },
+        )
+    if not source.get("items"):
+        frappe.throw(_("Opportunity {0} has no item rows to import.").format(opportunity))
+    doc.save()
+    doc.reload()
+    return {"sheet": _serialize_sheet(doc), "imported_count": len(source.get("items") or [])}
+
+
+@frappe.whitelist()
 def generate_builder_quotation(pricing_sheet, pricing_mode=None):
     doc = _get_writable_sheet(pricing_sheet)
     _apply_builder_mode_flag(doc, pricing_mode)
@@ -269,10 +370,140 @@ def _get_writable_sheet(pricing_sheet):
     return doc
 
 
+def _link_sheet_to_source_quotation(doc, payload):
+    if not cint(payload.get("link_source_quotation") or 0):
+        return ""
+    quotation = (payload.get("source_quotation") or "").strip()
+    if not quotation:
+        return ""
+    if not frappe.db.exists("Quotation", quotation) or not frappe.db.has_column("Quotation", "source_pricing_sheet"):
+        return ""
+
+    qdoc = frappe.get_doc("Quotation", quotation)
+    qdoc.check_permission("write")
+    current = (qdoc.get("source_pricing_sheet") or "").strip()
+    if current == doc.name:
+        return ""
+    if current:
+        return _("Quotation already linked to Pricing Sheet {0}; link was not changed.").format(current)
+
+    qdoc.flags.allow_source_pricing_sheet_update = True
+    qdoc.source_pricing_sheet = doc.name
+    qdoc.save()
+    return ""
+
+
 def _apply_builder_mode_flag(doc, pricing_mode):
+    locked_mode = _locked_current_user_agent_pricing_mode()
+    if locked_mode:
+        doc.flags.pricing_builder_mode = locked_mode
+        return
     mode = (pricing_mode or "").strip()
     if mode in {"Static", "Dynamic"}:
         doc.flags.pricing_builder_mode = mode
+
+
+def _quotation_selling_price_list_rows(doc) -> list[dict]:
+    rows = []
+    seen = set()
+    if doc.meta.get_field("selected_selling_price_lists"):
+        source_rows = doc.get("selected_selling_price_lists") or []
+        source_rows = sorted(source_rows, key=lambda row: (cint(row.get("sequence") or 0) or 999999, cint(row.get("idx") or 0)))
+        for idx, row in enumerate(source_rows, start=1):
+            price_list = (row.get("price_list") or "").strip()
+            if not price_list or price_list in seen:
+                continue
+            seen.add(price_list)
+            rows.append(
+                {
+                    "price_list": price_list,
+                    "sequence": cint(row.get("sequence") or idx * 10),
+                    "is_active": 1 if cint(row.get("is_active", 1)) else 0,
+                }
+            )
+
+    selling_price_list = (doc.get("selling_price_list") or "").strip()
+    if selling_price_list and selling_price_list not in seen:
+        rows.insert(0, {"price_list": selling_price_list, "sequence": 10, "is_active": 1})
+    return rows
+
+
+def _quotation_line_rows(doc) -> list[dict]:
+    lines = []
+    for row in doc.get("items") or []:
+        item = (row.get("item_code") or "").strip()
+        if not item:
+            continue
+        gross_rate = flt(
+            row.get("source_gross_sell_rate")
+            or row.get("price_list_rate")
+            or row.get("rate")
+            or 0
+        )
+        line = {
+            "item": item,
+            "item_name": row.get("item_name") or item,
+            "qty": flt(row.get("qty") or 1) or 1,
+            "manual_sell_unit_price": gross_rate,
+            "discount_percent": flt(row.get("source_discount_percent") or row.get("discount_percentage") or 0),
+            "display_group": row.get("item_group") or _("Quotation"),
+            "show_in_detail": 1,
+            "line_type": "Standard",
+        }
+        lines.append(line)
+    return lines
+
+
+def _create_pricing_sheet_from_source(source: dict, pricing_mode=None, source_quotation: str = "", link_source_quotation: int = 0):
+    payload = _builder_payload_from_source(source, pricing_mode=pricing_mode)
+    doc = _doc_from_payload(payload)
+    doc.save()
+    if source_quotation:
+        _link_sheet_to_source_quotation(
+            doc,
+            {
+                "source_quotation": source_quotation,
+                "link_source_quotation": 1 if cint(link_source_quotation) else 0,
+            },
+        )
+    doc.reload()
+    return doc
+
+
+def _builder_payload_from_source(source: dict, pricing_mode=None) -> dict:
+    payload = _new_sheet_payload()
+    source = source or {}
+    inferred_mode = (pricing_mode or "").strip()
+    if inferred_mode not in {"Static", "Dynamic"}:
+        inferred_mode = "Static" if (source.get("selected_selling_price_lists") or source.get("selected_price_list")) else "Dynamic"
+
+    payload.update(
+        {
+            "sheet_name": _source_sheet_name(source),
+            "custom_company": source.get("company") or payload.get("custom_company") or "",
+            "party_type": source.get("party_type") or payload.get("party_type") or "Customer",
+            "party_name": source.get("party_name") or source.get("customer") or "",
+            "customer": source.get("customer") or "",
+            "opportunity": source.get("opportunity") or "",
+            "crm_business_type": source.get("crm_business_type") or "",
+            "crm_segment": source.get("crm_segment") or "",
+            "geography_territory": source.get("geography_territory") or "",
+            "taxes_and_charges_template": source.get("taxes_and_charges_template") or "",
+            "selected_price_list": source.get("selected_price_list") or "",
+            "selected_selling_price_lists": source.get("selected_selling_price_lists") or [],
+            "lines": source.get("lines") or source.get("items") or [],
+            "pricing_mode": inferred_mode,
+        }
+    )
+    return payload
+
+
+def _source_sheet_name(source: dict) -> str:
+    title = (source.get("title") or "").strip()
+    if title:
+        return title if title.lower().startswith(_("Pricing Sheet").lower()) else _("Pricing Sheet - {0}").format(title)
+    label = (source.get("quotation") or source.get("opportunity") or source.get("party_name") or "").strip()
+    return _("Pricing Sheet - {0}").format(label) if label else _("New Pricing Sheet")
 
 
 def _doc_from_payload(payload):
@@ -290,16 +521,23 @@ def _doc_from_payload(payload):
     _apply_builder_company(doc)
     locked_sales_person = _locked_current_user_sales_person()
     for fieldname in [
+        "party_type",
+        "party_name",
         "customer",
+        "opportunity",
         "crm_business_type",
         "crm_segment",
         "geography_territory",
         "selected_price_list",
         "benchmark_policy",
+        "taxes_and_charges_template",
         "dimensioning_set",
     ]:
         if fieldname in payload:
             setattr(doc, fieldname, (payload.get(fieldname) or "").strip())
+    if not (doc.get("taxes_and_charges_template") or "").strip():
+        doc.taxes_and_charges_template = company_default_sales_taxes_template(doc.get("custom_company") or "")
+    _sync_builder_party_fields(doc)
     if locked_sales_person is not None:
         doc.sales_person = locked_sales_person
     elif "sales_person" in payload:
@@ -341,26 +579,28 @@ def _doc_from_payload(payload):
         row["show_in_detail"] = 1
         row["line_type"] = row.get("line_type") or "Standard"
         doc.append("lines", row)
-    _validate_builder_customer_scope(doc)
+    _validate_builder_party_scope(doc)
     return doc
 
 
 def _serialize_sheet(doc):
     user_context = _get_user_context(getattr(doc, "sales_person", ""))
+    _sync_builder_party_fields(doc)
     data = {fieldname: getattr(doc, fieldname, None) for fieldname in SHEET_FIELDS}
     data["is_new"] = 0
     data["pricing_mode"] = "Static" if data.get("resolved_mode") == "Static" else "Dynamic"
     data["user_context"] = user_context
+    selected_selling_price_lists = [_serialize_selling_price_list(row) for row in (doc.selected_selling_price_lists or [])]
+    if not selected_selling_price_lists and (data.get("selected_price_list") or "").strip():
+        selected_selling_price_lists = [{"price_list": data["selected_price_list"], "sequence": 10, "is_active": 1}]
     if user_context.get("is_restricted_agent"):
-        data["selected_price_list"] = ""
+        if (user_context.get("agent_pricing_mode") or "").strip() != STATIC_MODE:
+            data["selected_price_list"] = ""
+            selected_selling_price_lists = []
         data["pricing_scenario"] = ""
         data["benchmark_policy"] = ""
         data["customs_policy"] = ""
-        data["selected_selling_price_lists"] = []
-    else:
-        data["selected_selling_price_lists"] = [_serialize_selling_price_list(row) for row in (doc.selected_selling_price_lists or [])]
-        if not data["selected_selling_price_lists"] and (data.get("selected_price_list") or "").strip():
-            data["selected_selling_price_lists"] = [{"price_list": data["selected_price_list"], "sequence": 10, "is_active": 1}]
+    data["selected_selling_price_lists"] = selected_selling_price_lists
     data["scenario_mappings"] = [] if user_context.get("is_restricted_agent") else [_serialize_mapping(row) for row in (doc.scenario_mappings or [])]
     data["lines"] = [_serialize_line(row, user_context) for row in (doc.lines or [])]
     data["quotation_preview"] = doc.get_quotation_preview()
@@ -368,10 +608,78 @@ def _serialize_sheet(doc):
     return data
 
 
+def _get_opportunity_source_payload(opportunity):
+    opportunity = (opportunity or "").strip()
+    if not opportunity or not frappe.db.exists("Opportunity", opportunity):
+        frappe.throw(_("Opportunity {0} was not found.").format(opportunity or ""))
+
+    doc = frappe.get_doc("Opportunity", opportunity)
+    doc.check_permission("read")
+    party_type = (doc.get("opportunity_from") or "Customer").strip()
+    party_name = (doc.get("party_name") or "").strip()
+    if party_type not in SUPPORTED_PARTY_TYPES:
+        party_type = "Customer"
+    company = (doc.get("company") or "").strip()
+    current_company = _current_company()
+    if company and current_company and company != current_company:
+        frappe.throw(_("Opportunity {0} belongs to company {1}, not the active company {2}.").format(doc.name, company, current_company))
+
+    return {
+        "opportunity": doc.name,
+        "title": doc.get("title") or doc.name,
+        "company": company,
+        "party_type": party_type,
+        "party_name": party_name,
+        "customer": party_name if party_type == "Customer" else "",
+        "customer_name": doc.get("customer_name") or party_name,
+        "crm_business_type": doc.get("custom_crm_business_type") or "",
+        "crm_segment": doc.get("custom_crm_segment") or "",
+        "geography_territory": doc.get("territory") or "",
+        "items": _opportunity_item_rows(doc),
+    }
+
+
+def _opportunity_item_rows(doc):
+    rows = []
+    for row in doc.get("items") or []:
+        item_code = (row.get("item_code") or row.get("item") or "").strip()
+        if not item_code or not frappe.db.exists("Item", item_code):
+            continue
+        item_name, item_group = frappe.db.get_value("Item", item_code, ["item_name", "item_group"]) or ("", "")
+        display_group = item_group or _("Opportunity")
+        rows.append(
+            {
+                "item": item_code,
+                "item_name": row.get("item_name") or item_name or item_code,
+                "qty": flt(row.get("qty") or 1) or 1,
+                "display_group": display_group,
+            }
+        )
+    return rows
+
+
+def _apply_opportunity_source_to_doc(doc, source):
+    doc.opportunity = source.get("opportunity") or ""
+    if source.get("company") and frappe.get_meta("Pricing Sheet").get_field("custom_company"):
+        doc.custom_company = source.get("company")
+    if source.get("party_type"):
+        doc.party_type = source.get("party_type")
+    if source.get("party_name"):
+        doc.party_name = source.get("party_name")
+    if source.get("customer"):
+        doc.customer = source.get("customer")
+    if source.get("crm_business_type"):
+        doc.crm_business_type = source.get("crm_business_type")
+    if source.get("crm_segment"):
+        doc.crm_segment = source.get("crm_segment")
+    if source.get("geography_territory"):
+        doc.geography_territory = source.get("geography_territory")
+
+
 def _get_user_context(sales_person=None):
     roles = set(frappe.get_roles(frappe.session.user) or [])
     is_privileged = bool(roles & PRIVILEGED_PRICING_ROLES)
-    is_commercial = bool(roles & COMMERCIAL_PRICING_ROLES) and not is_privileged
+    is_restricted = not is_privileged
     sales_person = (sales_person or _get_current_user_sales_person() or "").strip()
     agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name") if sales_person else ""
     agent_values = _get_agent_context(agent_name)
@@ -381,23 +689,27 @@ def _get_user_context(sales_person=None):
     scoped_selling_price_lists = _enabled_selling_price_lists(current_company)
     scoped_buying_price_lists = _enabled_buying_price_lists(current_company)
     selling_price_lists = _filter_scoped_names(static_context.get("selling_price_lists") or [], scoped_selling_price_lists)
+    benchmark_price_lists = _filter_scoped_names(static_context.get("benchmark_price_lists") or [], scoped_selling_price_lists)
     allowed_buying_price_lists = _filter_scoped_names(
         dynamic_context.get("allowed_buying_price_lists") or [], scoped_buying_price_lists
     )
-    all_selling_price_lists = [] if is_commercial else scoped_selling_price_lists
+    all_selling_price_lists = [] if is_restricted else scoped_selling_price_lists
+    agent_mode = agent_values.get("pricing_mode") or ""
     return {
         "current_company": current_company,
         "sales_person": sales_person,
         "agent_rule": agent_name or "",
-        "agent_pricing_mode": agent_values.get("pricing_mode") or "",
-        "is_restricted_agent": is_commercial,
-        "can_view_sensitive_pricing": not is_commercial,
-        "can_edit_pricing_source": not is_commercial,
+        "agent_pricing_mode": agent_mode,
+        "is_restricted_agent": is_restricted,
+        "can_view_sensitive_pricing": not is_restricted,
+        "can_edit_pricing_source": (not is_restricted) or (agent_mode == STATIC_MODE and bool(selling_price_lists)),
+        "can_edit_pricing_mode": not is_restricted,
         "can_edit_sales_person": is_privileged,
         "commission_rate": flt(agent_values.get("commission_rate") or 0),
         "static_pricing_mode": STATIC_MODE,
         "dynamic_pricing_mode": DYNAMIC_MODE,
         "selling_price_lists": selling_price_lists,
+        "benchmark_price_lists": benchmark_price_lists,
         "all_selling_price_lists": all_selling_price_lists,
         "allowed_buying_price_lists": allowed_buying_price_lists,
     }
@@ -417,6 +729,16 @@ def _locked_current_user_sales_person():
     if roles & PRIVILEGED_PRICING_ROLES:
         return None
     return _get_current_user_sales_person()
+
+
+def _locked_current_user_agent_pricing_mode():
+    roles = set(frappe.get_roles(frappe.session.user) or [])
+    if roles & PRIVILEGED_PRICING_ROLES:
+        return ""
+    sales_person = _get_current_user_sales_person()
+    agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name") if sales_person else ""
+    agent_mode = (_get_agent_context(agent_name).get("pricing_mode") or "").strip() if agent_name else ""
+    return agent_mode if agent_mode in {STATIC_MODE, DYNAMIC_MODE} else ""
 
 
 def _get_agent_context(agent_name):
@@ -522,10 +844,15 @@ def _serialize_line(row, user_context=None):
         "discount_amount",
         "discounted_sell_unit_price",
         "discounted_sell_total",
+        "custom_applied_taxes",
+        "custom_pu_ttc",
+        "custom_pt_ttc",
         "commission_rate",
         "commission_amount",
         "margin_pct",
         "total_margin_pct",
+        "target_margin_percent",
+        "builder_margin_percent",
         "customs_weight_kg",
         "customs_value_per_kg",
         "customs_base_value",
@@ -555,6 +882,7 @@ def _serialize_line(row, user_context=None):
     data["has_scenario_override"] = 1 if cint(data.get("has_scenario_override")) else 0
     data["has_line_override"] = 1 if cint(data.get("has_line_override")) else 0
     data["is_manual_override"] = 1 if cint(data.get("is_manual_override")) else 0
+    data["builder_price_overridden"] = 1 if cint(data.get("builder_price_overridden")) else 0
     data["price_floor_violation"] = 1 if cint(data.get("price_floor_violation")) else 0
     if user_context.get("is_restricted_agent"):
         data = {fieldname: data.get(fieldname) for fieldname in AGENT_VISIBLE_LINE_FIELDS}
@@ -569,7 +897,10 @@ def _new_sheet_payload():
         "is_new": 1,
         "sheet_name": "",
         "custom_company": current_company,
+        "party_type": "Customer",
+        "party_name": "",
         "customer": "",
+        "opportunity": "",
         "sales_person": user_context.get("sales_person") or "",
         "crm_business_type": "",
         "crm_segment": "",
@@ -577,6 +908,7 @@ def _new_sheet_payload():
         "pricing_scenario": "",
         "benchmark_policy": "",
         "customs_policy": "",
+        "taxes_and_charges_template": company_default_sales_taxes_template(current_company),
         "selected_price_list": "",
         "selected_selling_price_lists": [],
         "pricing_mode": "Dynamic",
@@ -652,10 +984,21 @@ def _selling_price_list_rows(payload):
 @frappe.whitelist()
 def customer_query(doctype, txt, searchfield, start, page_len, filters=None):
     filters = frappe._dict(filters or {})
-    company = _current_company()
+    filters.party_type = "Customer"
+    return party_query(doctype, txt, searchfield, start, page_len, filters)
+
+
+@frappe.whitelist()
+def party_query(doctype, txt, searchfield, start, page_len, filters=None):
+    filters = frappe._dict(filters or {})
+    party_type = (filters.get("party_type") or doctype or "Customer").strip()
+    if party_type not in SUPPORTED_PARTY_TYPES:
+        frappe.throw(_("Party Type must be Customer, Lead, or Prospect."))
+    table = _table_name(party_type)
+    display_expr = _party_display_expr(party_type, table)
+    company = (filters.get("company") or _current_company()).strip()
     business_type = (filters.get("business_type") or "").strip()
     crm_segment = (filters.get("crm_segment") or "").strip()
-    allowed_business_types = [business_type] if business_type else get_company_business_type_names(company)
 
     conditions = []
     values = {
@@ -663,37 +1006,46 @@ def customer_query(doctype, txt, searchfield, start, page_len, filters=None):
         "start": cint(start),
         "page_len": cint(page_len) or 20,
     }
-    if frappe.db.has_column("Customer", "disabled"):
-        conditions.append("ifnull(c.disabled, 0) = 0")
-    if company and frappe.db.has_column("Customer", "custom_company"):
-        conditions.append("c.custom_company = %(company)s")
+
+    scope_clause = _party_scope_clause(party_type, user=frappe.session.user)
+    if scope_clause:
+        conditions.append(scope_clause)
+    match_clause = DatabaseQuery(party_type).build_match_conditions(as_condition=True)
+    if match_clause:
+        conditions.append(match_clause)
+
+    if frappe.db.has_column(party_type, "disabled"):
+        conditions.append(f"ifnull({table}.disabled, 0) = 0")
+    company_field = _party_company_field(party_type)
+    if company and company_field:
+        conditions.append(f"{table}.{company_field} = %(company)s")
         values["company"] = company
-    if allowed_business_types and frappe.db.exists("DocType", "CRM Segment Assignment"):
-        values["business_types"] = tuple(allowed_business_types)
-        segment_clause = ""
+
+    if (business_type or crm_segment) and frappe.db.exists("DocType", "CRM Segment Assignment"):
+        segment_conditions = [
+            "csa.parenttype = %(party_type)s",
+            f"csa.parent = {table}.name",
+        ]
+        values["party_type"] = party_type
+        if business_type:
+            segment_conditions.append("csa.business_type = %(business_type)s")
+            values["business_type"] = business_type
         if crm_segment:
-            segment_clause = "AND csa.segment = %(crm_segment)s"
+            segment_conditions.append("csa.segment = %(crm_segment)s")
             values["crm_segment"] = crm_segment
         conditions.append(
-            """
-            EXISTS (
-                SELECT 1
-                FROM `tabCRM Segment Assignment` csa
-                WHERE csa.parenttype = 'Customer'
-                    AND csa.parent = c.name
-                    AND csa.business_type IN %(business_types)s
-                    {segment_clause}
-            )
-            """.format(segment_clause=segment_clause)
+            "EXISTS (SELECT 1 FROM `tabCRM Segment Assignment` csa WHERE "
+            + " AND ".join(segment_conditions)
+            + ")"
         )
-    conditions.append("(c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s)")
+    conditions.append(f"({table}.name LIKE %(txt)s OR {display_expr} LIKE %(txt)s)")
     where_clause = " AND ".join(conditions)
     return frappe.db.sql(
         f"""
-        SELECT c.name, c.customer_name
-        FROM `tabCustomer` c
+        SELECT {table}.name, {display_expr}
+        FROM {table}
         WHERE {where_clause}
-        ORDER BY c.customer_name asc, c.name asc
+        ORDER BY {display_expr} asc, {table}.name asc
         LIMIT %(start)s, %(page_len)s
         """,
         values,
@@ -708,29 +1060,109 @@ def _apply_builder_company(doc):
         doc.custom_company = current_company
 
 
-def _validate_builder_customer_scope(doc):
+def _sync_builder_party_fields(doc):
+    party_type = (doc.get("party_type") or "").strip() or "Customer"
+    party_name = (doc.get("party_name") or "").strip()
     customer = (doc.get("customer") or "").strip()
-    if not customer:
-        return
+    if party_type not in SUPPORTED_PARTY_TYPES:
+        frappe.throw(_("Party Type must be Customer, Lead, or Prospect."))
+    if not party_name and customer:
+        party_type = "Customer"
+        party_name = customer
+    doc.party_type = party_type
+    doc.party_name = party_name
+    doc.customer = party_name if party_type == "Customer" else ""
+
+
+def _validate_builder_party_scope(doc):
+    _sync_builder_party_fields(doc)
+    party_type = (doc.get("party_type") or "Customer").strip()
+    party_name = (doc.get("party_name") or "").strip()
+    if not party_name:
+        frappe.throw(_("Choose a Customer, Lead, or Prospect for this Pricing Sheet."))
+    if not frappe.db.exists(party_type, party_name):
+        frappe.throw(_("{0} {1} was not found.").format(party_type, party_name))
+
+    if not _party_is_visible(party_type, party_name, user=frappe.session.user):
+        frappe.throw(_("You do not have access to {0} {1}.").format(party_type, party_name), frappe.PermissionError)
+
+    if not doc.get("custom_company") and _party_company_field(party_type):
+        company = (frappe.db.get_value(party_type, party_name, _party_company_field(party_type)) or "").strip()
+        if company and frappe.get_meta("Pricing Sheet").get_field("custom_company"):
+            doc.custom_company = company
+
     company = (doc.get("custom_company") or _current_company()).strip()
-    if company and frappe.db.has_column("Customer", "custom_company"):
-        customer_company = (frappe.db.get_value("Customer", customer, "custom_company") or "").strip()
-        if customer_company and customer_company != company:
-            frappe.throw(_("Customer {0} belongs to company {1}, not the active Pricing Sheet company {2}.").format(customer, customer_company, company))
+    company_field = _party_company_field(party_type)
+    if company and company_field:
+        party_company = (frappe.db.get_value(party_type, party_name, company_field) or "").strip()
+        if party_company and party_company != company:
+            frappe.throw(_("{0} {1} belongs to company {2}, not the active Pricing Sheet company {3}.").format(party_type, party_name, party_company, company))
 
     business_type = (doc.get("crm_business_type") or "").strip()
-    allowed_business_types = [business_type] if business_type else get_company_business_type_names(company)
-    if not allowed_business_types or not frappe.db.exists("DocType", "CRM Segment Assignment"):
+    if not business_type:
+        return
+    if not frappe.db.exists("DocType", "CRM Segment Assignment"):
         return
     if not frappe.db.exists(
         "CRM Segment Assignment",
         {
-            "parenttype": "Customer",
-            "parent": customer,
-            "business_type": ["in", allowed_business_types],
+            "parenttype": party_type,
+            "parent": party_name,
+            "business_type": business_type,
         },
     ):
-        frappe.throw(_("Customer {0} does not match the active company business type for this Pricing Sheet.").format(customer))
+        frappe.throw(_("{0} {1} does not match the selected business type for this Pricing Sheet.").format(party_type, party_name))
+
+
+def _party_is_visible(party_type, party_name, user=None):
+    user = user or frappe.session.user
+    table = _table_name(party_type)
+    conditions = [f"{table}.name = %(party_name)s"]
+    scope_clause = _party_scope_clause(party_type, user=user)
+    if scope_clause:
+        conditions.append(scope_clause)
+    match_clause = DatabaseQuery(party_type, user=user).build_match_conditions(as_condition=True)
+    if match_clause:
+        conditions.append(match_clause)
+    return bool(
+        frappe.db.sql(
+            f"select {table}.name from {table} where {' and '.join(f'({clause})' for clause in conditions)} limit 1",
+            {"party_name": party_name},
+        )
+    )
+
+
+def _party_scope_clause(party_type, user=None):
+    if party_type == "Customer":
+        return company_access.customer_query(user=user)
+    if party_type == "Lead":
+        return company_access.lead_query(user=user)
+    if party_type == "Prospect":
+        return company_access.prospect_query(user=user)
+    return None
+
+
+def _party_company_field(party_type):
+    for fieldname in ("custom_company", "company"):
+        if frappe.db.has_column(party_type, fieldname):
+            return fieldname
+    return ""
+
+
+def _party_display_expr(party_type, table):
+    fields_by_type = {
+        "Customer": ["customer_name"],
+        "Lead": ["lead_name", "company_name"],
+        "Prospect": ["company_name", "prospect_name"],
+    }
+    fields = [field for field in fields_by_type.get(party_type, []) if frappe.db.has_column(party_type, field)]
+    parts = [f"nullif({table}.{field}, '')" for field in fields]
+    parts.append(f"{table}.name")
+    return f"coalesce({', '.join(parts)})"
+
+
+def _table_name(doctype):
+    return f"`tab{doctype.replace('`', '')}`"
 
 
 def _current_company():

@@ -4,6 +4,7 @@ import json
 import os
 
 import frappe
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 from orderlift.orderlift_crm.status_config import (
     LOGISTICS_STATUS_SEEDS,
@@ -87,6 +88,9 @@ DEFAULT_INSTALLATION_STAGES = [
 
 
 def after_migrate():
+    _ensure_user_crm_visibility_fields()
+    _ensure_company_pipeline_quick_action_fields()
+    _ensure_project_documents_tab()
     _sync_custom_fields()
     _setup_crm_layout_overrides()
     _setup_todo_priority_options()
@@ -114,6 +118,92 @@ def after_migrate():
     _backfill_crm_classification()
     _rename_opportunities_with_business_abbreviation()
     frappe.db.commit()
+
+
+def _ensure_user_crm_visibility_fields():
+    create_custom_fields(
+        {
+            "User": [
+                {
+                    "fieldname": "custom_owned_documents_only",
+                    "label": "Owned / Assigned Documents Only",
+                    "fieldtype": "Check",
+                    "default": "0",
+                    "insert_after": "role_profile_name",
+                    "description": "When enabled, CRM pipelines and scoped business views show only documents owned by or assigned to this user.",
+                },
+            ]
+        },
+        update=True,
+    )
+
+
+def _ensure_project_documents_tab():
+    """Add a 'Documents' tab on Project that renders all linked CRM/sales docs
+    (opportunity, quotations, sales orders, etc.) as quick shortcuts. The HTML is
+    rendered client-side in project_sig.js; placed just before the Connections tab."""
+    anchor = "custom_contracts_html" if frappe.get_meta("Project").get_field("custom_contracts_html") else "custom_qc_checklist"
+    create_custom_fields(
+        {
+            "Project": [
+                {
+                    "fieldname": "custom_documents_tab",
+                    "label": "Documents",
+                    "fieldtype": "Tab Break",
+                    "insert_after": anchor,
+                },
+                {
+                    "fieldname": "custom_documents_html",
+                    "label": "Linked Documents",
+                    "fieldtype": "HTML",
+                    "insert_after": "custom_documents_tab",
+                },
+            ]
+        },
+        update=True,
+    )
+
+
+def _ensure_company_pipeline_quick_action_fields():
+    create_custom_fields(
+        {
+            "Company": [
+                {
+                    "fieldname": "custom_opportunity_pipeline_quick_actions",
+                    "label": "Opportunity Pipeline Quick Actions",
+                    "fieldtype": "Small Text",
+                    "hidden": 1,
+                    "insert_after": "default_currency",
+                    "description": "JSON array managed by Status Control.",
+                },
+                {
+                    "fieldname": "custom_project_pipeline_quick_actions",
+                    "label": "Project Pipeline Quick Actions",
+                    "fieldtype": "Small Text",
+                    "hidden": 1,
+                    "insert_after": "custom_opportunity_pipeline_quick_actions",
+                    "description": "JSON array managed by Status Control.",
+                },
+                {
+                    "fieldname": "custom_sales_order_pipeline_quick_actions",
+                    "label": "Sales Order Pipeline Quick Actions",
+                    "fieldtype": "Small Text",
+                    "hidden": 1,
+                    "insert_after": "custom_project_pipeline_quick_actions",
+                    "description": "JSON array managed by Status Control.",
+                },
+                {
+                    "fieldname": "custom_forecast_load_plan_pipeline_quick_actions",
+                    "label": "Shipment Plan Pipeline Quick Actions",
+                    "fieldtype": "Small Text",
+                    "hidden": 1,
+                    "insert_after": "custom_sales_order_pipeline_quick_actions",
+                    "description": "JSON array managed by Status Control.",
+                },
+            ]
+        },
+        update=True,
+    )
 
 
 def _sync_custom_fields():
@@ -189,6 +279,11 @@ def _setup_crm_layout_overrides():
     if _doctype_has_field("Opportunity", "section_break_14"):
         _upsert_property_setter("Opportunity", "section_break_14", "collapsible", "1", "Check")
         _upsert_property_setter("Opportunity", "section_break_14", "collapsible_depends_on", "eval:1", "Code")
+    for fieldname in ("rate", "amount", "base_rate", "base_amount"):
+        if _doctype_has_field("Opportunity Item", fieldname):
+            _upsert_property_setter("Opportunity Item", fieldname, "hidden", "1", "Check")
+            _upsert_property_setter("Opportunity Item", fieldname, "in_list_view", "0", "Check")
+            _upsert_property_setter("Opportunity Item", fieldname, "reqd", "0", "Check")
     if not _doctype_has_field("Project", "customer_details"):
         return
     _upsert_property_setter("Project", "customer_details", "collapsible", "0", "Check")

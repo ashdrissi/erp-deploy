@@ -1,6 +1,6 @@
 (function () {
     const settings = frappe.listview_settings["Price List"] = frappe.listview_settings["Price List"] || {};
-    settings.add_fields = Array.from(new Set([...(settings.add_fields || []), "custom_pricing_builder", "custom_company", "buying", "selling"]));
+    settings.add_fields = Array.from(new Set([...(settings.add_fields || []), "custom_pricing_builder", "custom_company", "buying", "selling", "custom_price_list_type", "custom_is_shared_from"]));
     settings.formatters = Object.assign({}, settings.formatters || {}, {
         custom_pricing_builder(value, df, doc) {
             return priceListSourceHtml(doc || { custom_pricing_builder: value });
@@ -8,7 +8,11 @@
     });
     settings.get_indicator = function (doc) {
         const builder = String((doc || {}).custom_pricing_builder || "").trim();
-        if (builder) return [__("Builder: {0}", [builder]), "blue", `custom_pricing_builder,=,${builder}`];
+        const type = String((doc || {}).custom_price_list_type || "").trim();
+        const sharedFrom = String((doc || {}).custom_is_shared_from || "").trim();
+        if (sharedFrom) return [__("Shared"), "green", "custom_is_shared_from,is,set"];
+        if (type === "Benchmark") return [__("Benchmark"), "orange", "custom_price_list_type,=,Benchmark"];
+        if (builder) return [__("Builder: {0}", [builder]), "blue", "custom_pricing_builder,=," + builder];
         return [__("Manual"), "gray", "custom_pricing_builder,is,not set"];
     };
 
@@ -31,6 +35,8 @@
 
     function priceListSourceHtml(doc) {
         const builder = String((doc || {}).custom_pricing_builder || "").trim();
+        const sharedFrom = String((doc || {}).custom_is_shared_from || "").trim();
+        if (sharedFrom) return `<span class="indicator-pill green">${frappe.utils.escape_html(__("Shared from {0}", [sharedFrom]))}</span>`;
         if (!builder) return `<span class="indicator-pill gray">${frappe.utils.escape_html(__("Manual"))}</span>`;
         return `<span class="indicator-pill blue">${frappe.utils.escape_html(__("Builder"))}: ${frappe.utils.escape_html(builder)}</span>`;
     }

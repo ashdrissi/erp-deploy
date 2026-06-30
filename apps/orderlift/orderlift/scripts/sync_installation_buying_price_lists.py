@@ -18,6 +18,7 @@ PRICE_LIST_PAIRS = [
 
 @frappe.whitelist()
 def run(dry_run: int = 1, target_company: str = "Orderlift Maroc Installation") -> dict:
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     dry_run = int(dry_run or 0)
     summary = {"dry_run": dry_run, "pairs": []}
     for source, target in PRICE_LIST_PAIRS:

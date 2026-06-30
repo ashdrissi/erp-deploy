@@ -1,6 +1,6 @@
 {
   "actions": [],
-  "allow_import": 1,
+  "allow_import": 0,
   "allow_rename": 1,
   "autoname": "naming_series:",
   "creation": "2026-04-17 00:00:00",
@@ -170,45 +170,37 @@
     {
       "create": 1,
       "email": 1,
-      "export": 1,
       "print": 1,
       "read": 1,
       "report": 1,
       "role": "Sales Manager",
-      "share": 1,
       "write": 1
     },
     {
       "create": 1,
       "email": 1,
-      "export": 1,
       "print": 1,
       "read": 1,
       "report": 1,
       "role": "Sales User",
-      "share": 1,
       "write": 1
     },
     {
       "create": 1,
       "email": 1,
-      "export": 1,
       "print": 1,
       "read": 1,
       "report": 1,
       "role": "Projects Manager",
-      "share": 1,
       "write": 1
     },
     {
       "create": 1,
       "email": 1,
-      "export": 1,
       "print": 1,
       "read": 1,
       "report": 1,
       "role": "Projects User",
-      "share": 1,
       "write": 1
     }
   ],

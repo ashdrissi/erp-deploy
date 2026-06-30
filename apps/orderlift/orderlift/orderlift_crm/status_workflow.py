@@ -214,12 +214,23 @@ def ensure_primary_status(doc, method=None):
     target_field = meta["target_field"]
     if not doc.meta.get_field(target_field):
         return
-    if doc.get(target_field):
-        return
-    try:
-        default_name = get_default_status_name(doc.doctype, company=doc.get("company"))
-    except TypeError:
-        default_name = get_default_status_name(doc.doctype)
+    statuses = None
+    current = (doc.get(target_field) or "").strip()
+    if current:
+        try:
+            statuses = list_editable_statuses(doc.doctype, include_inactive=False, company=doc.get("company"))
+        except TypeError:
+            statuses = list_editable_statuses(doc.doctype, include_inactive=False)
+        if current in {status["name"] for status in statuses if status.get("is_active")}:
+            return
+    if statuses is not None:
+        default_name = next((status["name"] for status in statuses if status.get("is_default")), None)
+        default_name = default_name or (statuses[0]["name"] if statuses else None)
+    else:
+        try:
+            default_name = get_default_status_name(doc.doctype, company=doc.get("company"))
+        except TypeError:
+            default_name = get_default_status_name(doc.doctype)
     if default_name:
         doc.set(target_field, default_name)
 

@@ -934,7 +934,7 @@ function contentPreviewMarkup(campaign, selectedArticles = []) {
             <div class="oce-phone-top"></div>
             <div class="oce-message-bubble">${frappe.utils.escape_html(activePreviewText(campaign, rendered).slice(0, 420))}</div>
             <div class="oce-preview-items">
-                ${selectedArticles.length ? selectedArticles.slice(0, 5).map((row) => `<span>${frappe.utils.escape_html(row.item_code)} - ${row.display_available_qty ? `${row.available_qty_snapshot} ${__("available")}` : __("qty hidden")} - ${row.display_price ? `${Number(row.price_snapshot).toLocaleString()} DH` : __("price hidden")}</span>`).join("") : `<span>${__("No selected articles yet")}</span>`}
+                ${selectedArticles.length ? selectedArticles.slice(0, 5).map((row) => `<span>${frappe.utils.escape_html(row.item_code)} - ${row.display_available_qty ? `${row.available_qty_snapshot} ${__("available")}` : __("qty hidden")} - ${row.display_price ? formatMoney(row.price_snapshot) : __("price hidden")}</span>`).join("") : `<span>${__("No selected articles yet")}</span>`}
             </div>
             ${rendered && rendered.variables ? `<pre class="oce-whatsapp-vars">${frappe.utils.escape_html(JSON.stringify(rendered.variables, null, 2))}</pre>` : ""}
         </div>
@@ -1047,10 +1047,14 @@ function articleRow(article) {
             <td><span class="oce-payment-chip">${frappe.utils.escape_html(article.supplier_payment_mode || "-")}</span></td>
             <td>${article.sold_qty_period || 0}</td>
             <td>${article.available_qty_snapshot || 0}</td>
-            <td>${Number(article.price_snapshot || 0).toLocaleString()} DH</td>
+            <td>${formatMoney(article.price_snapshot || 0)}</td>
             <td><label class="oce-check-pill"><input class="oce-article-toggle" type="checkbox" data-item="${frappe.utils.escape_html(article.item_code)}" data-field="display_price" ${article.display_price ? "checked" : ""}> ${__("Price")}</label><label class="oce-check-pill"><input class="oce-article-toggle" type="checkbox" data-item="${frappe.utils.escape_html(article.item_code)}" data-field="display_available_qty" ${article.display_available_qty ? "checked" : ""}> ${__("Qty")}</label></td>
         </tr>
     `;
+}
+
+function formatMoney(value) {
+    return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : Number(value || 0).toLocaleString();
 }
 
 function targetRowsMarkup(rows) {

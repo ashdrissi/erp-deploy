@@ -1,7 +1,7 @@
 (function () {
     const PAGE_NAME = "catalogue-prix-articles";
     const API = "orderlift.orderlift_sales.page.catalogue_prix_articles.catalogue_prix_articles";
-    const COLUMN_STORAGE_KEY = "orderlift.catalogue_prix_articles.columns.v2";
+    const COLUMN_STORAGE_KEY = "orderlift.catalogue_prix_articles.columns.v4";
     const STATE_STORAGE_KEY = "orderlift.catalogue_prix_articles.state.v1";
     const PAGE_SIZES = [20, 50, 100, 200, 500];
     const DEFAULT_VISIBLE_COLUMNS = ["_select", "_row_number", "item_code", "image", "item_category", "item_group", "item_name", "brand", "uom", "stock_qty", "stock_available"];
@@ -9,6 +9,8 @@
         boot: {},
         priceLists: [],
         selectedPriceLists: [],
+        benchmarkPriceLists: [],
+        selectedBenchmarkPriceLists: [],
         rows: [],
         kpis: {},
         filters: { in_stock_only: false, show_missing_prices: true },
@@ -21,6 +23,11 @@
         sort: { key: "", direction: "asc" },
         priceListDropdownOpen: false,
         priceListSearch: "",
+        benchmarkDropdownOpen: false,
+        benchmarkSearch: "",
+        defaultTtcPriceList: "",
+        defaultTaxTemplate: "",
+        priceDisplayMode: "both",
         columnConfigOpen: false,
         loading: false,
         error: "",
@@ -68,6 +75,7 @@
             const boot = res.message || {};
             STATE.boot = boot;
             STATE.priceLists = boot.price_lists || [];
+            STATE.benchmarkPriceLists = boot.benchmark_price_lists || [];
             if (hideStockQty()) STATE.filters.in_stock_only = false;
             normalizeSelectedPriceLists();
             if (!STATE.selectedPriceLists.length) {
@@ -83,44 +91,50 @@
         }
     }
 
-    async function loadRows(page) {
+    async function loadRows(page, options = {}) {
         if (!STATE.selectedPriceLists.length) {
             STATE.rows = [];
             STATE.kpis = {};
+            STATE.defaultTtcPriceList = "";
+            STATE.defaultTaxTemplate = "";
             STATE.message = STATE.boot.restricted_agent
                 ? __("Aucune liste de prix de vente active n'est allouée à votre profil agent.")
                 : __("Sélectionnez au moins une liste de prix de vente.");
-            render(page);
+            saveState();
+            render(page, { preserveScroll: options.preserveScroll });
             return;
         }
         if (hideStockQty()) STATE.filters.in_stock_only = false;
         STATE.loading = true;
         STATE.error = "";
         STATE.message = "";
-        render(page);
+        render(page, { preserveScroll: options.preserveScroll });
         try {
             const res = await frappe.call({
                 method: `${API}.get_catalogue_rows`,
                 args: {
                     price_lists: JSON.stringify(STATE.selectedPriceLists),
+                    benchmark_price_lists: JSON.stringify(STATE.selectedBenchmarkPriceLists),
                     filters: JSON.stringify(STATE.filters),
                 },
             });
             const payload = res.message || {};
             STATE.rows = payload.rows || [];
             STATE.kpis = payload.kpis || {};
-            pruneSelectedItems();
+            STATE.defaultTtcPriceList = payload.default_ttc_price_list || "";
+            STATE.defaultTaxTemplate = payload.default_tax_template || "";
             saveState();
         } catch (error) {
             console.error("Catalogue Prix Articles load failed", error);
             STATE.error = error.message || __("Impossible de charger les articles du catalogue.");
         } finally {
             STATE.loading = false;
-            render(page);
+            render(page, { preserveScroll: options.preserveScroll });
         }
     }
 
     function render(page, options = {}) {
+        const scrollState = options.preserveScroll ? getScrollState(page) : null;
         const kpis = STATE.kpis || {};
         page.main.html(`
             <div class="cpa-shell">
@@ -142,15 +156,25 @@
         `);
         bind(page);
         restoreFocus(options.focusSelector);
+        restoreScrollState(page, scrollState);
     }
 
     function selectionAndFilterPanel() {
         const help = STATE.boot.restricted_agent
             ? __("Vos articles sont limités aux listes de prix allouées dans vos règles agent.")
             : __("Choisissez les listes de prix de vente. Les filtres d'articles sont directement dans les colonnes du tableau.");
+        const mode = STATE.priceDisplayMode || "both";
         return `<div class="cpa-card-head compact"><div><h2>${esc(__("Paramètres Catalogue"))}</h2><p>${esc(help)}</p></div><div class="cpa-inline-actions"><button type="button" class="cpa-btn ghost" data-reset>${esc(__("Réinitialiser"))}</button><button type="button" class="cpa-btn primary" data-refresh>${esc(__("Actualiser"))}</button></div></div>
             <div class="cpa-fields cpa-fields-price-only">
                 <label class="cpa-price-list-field"><span>${esc(__("Listes de prix de vente"))}</span>${priceListDropdown()}</label>
+                ${STATE.benchmarkPriceLists.length ? `<label class="cpa-price-list-field"><span>${esc(__("Listes de prix benchmark"))}</span>${benchmarkDropdown()}</label>` : ""}
+                <label class="cpa-price-display-mode"><span>${esc(__("Prix affiché"))}</span>
+                    <div class="cpa-mode-toggle">
+                        <button type="button" class="cpa-mode-btn ${mode === "ht" ? "active" : ""}" data-price-mode="ht">${esc(__("HT"))}</button>
+                        <button type="button" class="cpa-mode-btn ${mode === "ttc" ? "active" : ""}" data-price-mode="ttc">${esc(__("TTC"))}</button>
+                        <button type="button" class="cpa-mode-btn ${mode === "both" ? "active" : ""}" data-price-mode="both">${esc(__("Les deux"))}</button>
+                    </div>
+                </label>
                 ${hideStockQty() ? "" : `<label class="cpa-check cpa-filter-check"><input type="checkbox" data-catalogue-filter="in_stock_only" ${STATE.filters.in_stock_only ? "checked" : ""}><span>${esc(__("Articles en stock seulement"))}</span></label>`}
                 <label class="cpa-check cpa-filter-check"><input type="checkbox" data-catalogue-filter="with_price_only" ${STATE.filters.show_missing_prices === false ? "checked" : ""}><span>${esc(__("Articles avec prix seulement"))}</span></label>
             </div>`;
@@ -171,9 +195,29 @@
         </div>`;
     }
 
+    function benchmarkDropdown() {
+        const rows = visibleBenchmarkLists().map((row) => {
+            const selected = STATE.selectedBenchmarkPriceLists.includes(row.name);
+            return `<label class="cpa-dropdown-row ${selected ? "selected" : ""}"><input type="checkbox" data-benchmark-list="${attr(row.name)}" ${selected ? "checked" : ""}><span><strong>${esc(row.name)}</strong><small>${esc(row.currency || "")}</small></span></label>`;
+        }).join("") || `<div class="cpa-empty-mini">${esc(__("Aucune liste trouvée."))}</div>`;
+        return `<div class="cpa-price-dropdown ${STATE.benchmarkDropdownOpen ? "open" : ""}">
+            <button type="button" class="cpa-dropdown-button" data-toggle-benchmark-dropdown><span>${esc(selectedBenchmarkLabel())}</span><em>${esc(__("Choisir"))}</em></button>
+            <div class="cpa-dropdown-panel">
+                <input type="search" data-benchmark-search value="${attr(STATE.benchmarkSearch)}" placeholder="${attr(__("Filtrer les listes"))}">
+                <div class="cpa-mini-actions"><button type="button" class="cpa-link-btn" data-clear-benchmark-lists>${esc(__("Vider"))}</button></div>
+                <div class="cpa-dropdown-list">${rows}</div>
+            </div>
+        </div>`;
+    }
+
     function visiblePriceLists() {
         const needle = String(STATE.priceListSearch || "").trim().toLowerCase();
         return (STATE.priceLists || []).filter((row) => !needle || String(row.name || "").toLowerCase().includes(needle));
+    }
+
+    function visibleBenchmarkLists() {
+        const needle = String(STATE.benchmarkSearch || "").trim().toLowerCase();
+        return (STATE.benchmarkPriceLists || []).filter((row) => !needle || String(row.name || "").toLowerCase().includes(needle));
     }
 
     function selectedPriceListLabel() {
@@ -181,6 +225,13 @@
         if (!selected.length) return __("Aucune liste sélectionnée");
         if (selected.length === 1) return selected[0];
         return __("{0} listes sélectionnées", [selected.length]);
+    }
+
+    function selectedBenchmarkLabel() {
+        const selected = STATE.selectedBenchmarkPriceLists || [];
+        if (!selected.length) return __("Aucune (optionnel)");
+        if (selected.length === 1) return selected[0];
+        return __("{0} benchmark(s)", [selected.length]);
     }
 
     function tablePanel() {
@@ -199,10 +250,10 @@
             { key: "_row_number", label: __("N°"), width: 58, minWidth: 50, locked: true, noSort: true, noFilter: true, align: "right", render: (_row, _column, rowNumber) => esc(rowNumber), exportValue: (_row, _column, rowNumber) => rowNumber },
             { key: "item_code", label: "CODE", width: 130, locked: true, render: (row) => `<button type="button" class="cpa-item-link" data-open-item="${attr(row.item_code)}">${esc(row.item_code || "-")}</button>` },
             { key: "image", label: __("Image"), width: 88, align: "center", noSort: true, noFilter: true, render: (row) => imageCell(row), exportValue: (row) => row.image || "" },
-            { key: "item_category", label: __("Catégorie d'article"), width: 190, render: textCell("item_category") },
-            { key: "item_group", label: __("Groupe d'item"), width: 210, render: textCell("item_group") },
-            { key: "item_name", label: __("Nom d'Item"), width: 280, wrap: true, render: textCell("item_name") },
-            { key: "brand", label: __("Marque"), width: 130, render: textCell("brand") },
+            { key: "item_category", label: __("Catégorie d'article"), width: 190, minWidth: 96, wrap: true, render: textCell("item_category") },
+            { key: "item_group", label: __("Groupe d'item"), width: 210, minWidth: 96, wrap: true, render: textCell("item_group") },
+            { key: "item_name", label: __("Nom d'Item"), width: 280, minWidth: 120, wrap: true, render: textCell("item_name") },
+            { key: "brand", label: __("Marque"), width: 130, minWidth: 80, wrap: true, render: textCell("brand") },
             { key: "uom", label: __("UOM"), width: 90, render: textCell("uom") },
             { key: "stock_qty", label: __("Qté Stock Totale"), width: 140, align: "right", render: (row) => esc(formatQty(row.stock_qty)), sortValue: (row) => toNumber(row.stock_qty), exportValue: (row) => row.stock_qty },
             { key: "stock_available", label: __("Disponibilité Stock"), width: 160, align: "center", render: (row) => `<span class="cpa-pill ${row.stock_available === "OUI" ? "ok" : "bad"}">${esc(row.stock_available || "NON")}</span>` },
@@ -212,28 +263,73 @@
 
     function tableColumns() {
         const priceMeta = priceListMetaMap();
-        const priceColumns = (STATE.selectedPriceLists || []).map((name) => ({
-            key: `price:${name}`,
-            label: name,
+        const benchMeta = benchmarkMetaMap();
+        const mode = STATE.priceDisplayMode || "both";
+        const priceColumns = (STATE.selectedPriceLists || []).flatMap((name) => {
+            const cols = [];
+            if (mode !== "ttc") cols.push(priceColumn(name, "ht", (priceMeta[name] || {}).currency || ""));
+            if (mode !== "ht") cols.push(priceColumn(name, "ttc", (priceMeta[name] || {}).currency || ""));
+            return cols;
+        });
+        const benchmarkColumns = (STATE.selectedBenchmarkPriceLists || []).map((name) => ({
+            key: `benchmark:${name}`,
+            label: `${__("Benchmark")}: ${name}`,
             priceList: name,
-            currency: (priceMeta[name] || {}).currency || "",
+            currency: (benchMeta[name] || {}).currency || "",
             width: 150,
+            minWidth: 110,
             locked: true,
             align: "right",
             render: (row, column) => {
-                const value = (row.prices || {})[column.priceList];
+                const value = (row.benchmark_prices || {})[column.priceList];
                 return value == null ? `<span class="cpa-muted">-</span>` : esc(money(value, column.currency));
             },
             sortValue: (row, column) => {
-                const value = (row.prices || {})[column.priceList];
+                const value = (row.benchmark_prices || {})[column.priceList];
                 return value == null ? -1 : toNumber(value);
             },
-            exportValue: (row, column) => (row.prices || {})[column.priceList] == null ? "" : (row.prices || {})[column.priceList],
+            exportValue: (row, column) => (row.benchmark_prices || {})[column.priceList] == null ? "" : (row.benchmark_prices || {})[column.priceList],
         }));
-        const columns = [...baseColumns(), ...priceColumns];
+        const columns = [...baseColumns(), ...priceColumns, ...benchmarkColumns];
         ensureColumnConfig(columns);
         const visible = new Set(STATE.visibleColumns || []);
         return columns.filter((column) => column.locked || visible.has(column.key));
+    }
+
+    function priceColumn(name, mode, currency) {
+        const isTtc = mode === "ttc";
+        return {
+            key: `price_${mode}:${name}`,
+            label: `${name} ${isTtc ? __("TTC") : __("HT")}`,
+            priceList: name,
+            currency,
+            width: 150,
+            minWidth: 110,
+            align: "right",
+            render: (row, column) => {
+                const value = isTtc ? (row.ttc_prices || {})[column.priceList] : (row.prices || {})[column.priceList];
+                return value == null ? `<span class="cpa-muted">-</span>` : esc(money(value, column.currency));
+            },
+            sortValue: (row, column) => {
+                const value = isTtc ? (row.ttc_prices || {})[column.priceList] : (row.prices || {})[column.priceList];
+                return value == null ? -1 : toNumber(value);
+            },
+            exportValue: (row, column) => {
+                const value = isTtc ? (row.ttc_prices || {})[column.priceList] : (row.prices || {})[column.priceList];
+                return value == null ? "" : value;
+            },
+        };
+    }
+
+    function defaultTtcCell(row) {
+        const value = row.default_ttc_price;
+        if (value == null) return `<span class="cpa-muted">-</span>`;
+        const meta = priceListMetaMap();
+        const priceList = STATE.defaultTtcPriceList || STATE.selectedPriceLists[0] || "";
+        const currency = (meta[priceList] || {}).currency || "";
+        const template = STATE.defaultTaxTemplate || "";
+        const title = template ? `${__("Company default tax template")}: ${template}` : __("Company default tax template not configured");
+        return `<span title="${attr(title)}">${esc(money(value, currency))}</span>`;
     }
 
     function tableRows(columns, rows, start) {
@@ -264,7 +360,50 @@
     function filterControl(column) {
         if (column.noFilter) return `<span class="cpa-filter-spacer"></span>`;
         const value = (STATE.columnFilters || {})[column.key] || "";
-        return `<input class="cpa-header-filter" type="search" data-column-filter="${attr(column.key)}" value="${attr(value)}" placeholder="${attr(__("Filtrer"))}" aria-label="${attr(__("Filtrer {0}", [column.label]))}">`;
+        if (["item_group", "item_category"].includes(column.key)) {
+            const options = catalogueFilterOptions(column.key);
+            return `<select class="cpa-header-filter" data-column-filter="${attr(column.key)}" aria-label="${attr(__("Filtrer {0}", [column.label]))}"><option value="">${esc(__("Tous"))}</option>${options.map((option) => `<option value="${attr(option)}" ${option === value ? "selected" : ""}>${esc(option)}</option>`).join("")}</select>`;
+        }
+        return `<input class="cpa-header-filter" type="search" data-column-filter="${attr(column.key)}" value="${attr(value)}" placeholder="${attr(columnFilterPlaceholder(column))}" aria-label="${attr(__("Filtrer {0}", [column.label]))}">`;
+    }
+
+    function catalogueFilterOptions(key) {
+        if (key === "item_group") return uniqueCatalogueOptions("item_group", STATE.boot.item_groups || []);
+        if (key === "item_category") {
+            const selectedGroup = String((STATE.columnFilters || {}).item_group || "").trim();
+            const bootCategories = normalizeBootItemCategories(STATE.boot.item_categories || [])
+                .filter((row) => !selectedGroup || !row.item_group || row.item_group === selectedGroup)
+                .map((row) => row.name);
+            const rowCategories = (STATE.rows || [])
+                .filter((row) => !selectedGroup || row.item_group === selectedGroup)
+                .map((row) => row.item_category);
+            return uniqueCatalogueOptions("item_category", [...bootCategories, ...rowCategories]);
+        }
+        return [];
+    }
+
+    function normalizeBootItemCategories(rows) {
+        return (rows || []).map((row) => {
+            if (typeof row === "string") return { name: row, item_group: "" };
+            return { name: row.name || row.category_name || "", item_group: row.item_group || "" };
+        }).filter((row) => row.name);
+    }
+
+    function uniqueCatalogueOptions(key, values) {
+        const out = [];
+        const seen = new Set();
+        (values || []).forEach((value) => {
+            const clean = String(value || "").trim();
+            if (!clean || seen.has(clean)) return;
+            seen.add(clean);
+            out.push(clean);
+        });
+        if (key && key !== "item_group") return out.sort((a, b) => a.localeCompare(b));
+        return out.sort((a, b) => a.localeCompare(b));
+    }
+
+    function columnFilterPlaceholder(column) {
+        return isNumericColumn(column) ? __("Filtrer ex. >0") : __("Filtrer");
     }
 
     function bodyCell(column, row, rowNumber) {
@@ -281,6 +420,14 @@
             for (const [key, value] of Object.entries(columnFilters)) {
                 const column = columns.find((candidate) => candidate.key === key);
                 if (!column) continue;
+                if (isNumericColumn(column) && numericFilterHasOperator(value)) {
+                    if (!matchesNumericColumnFilter(columnNumericValue(row, column), value)) return false;
+                    continue;
+                }
+                if (["item_group", "item_category"].includes(key)) {
+                    if (String(columnFilterValue(row, column)).toLowerCase() !== String(value).toLowerCase()) return false;
+                    continue;
+                }
                 if (!String(columnFilterValue(row, column)).toLowerCase().includes(String(value).toLowerCase())) return false;
             }
             return true;
@@ -322,11 +469,19 @@
 
     function allColumnsForFiltering() {
         const priceMeta = priceListMetaMap();
-        return [...baseColumns(), ...(STATE.selectedPriceLists || []).map((name) => ({ key: `price:${name}`, priceList: name, currency: (priceMeta[name] || {}).currency || "" }))];
+        const benchMeta = benchmarkMetaMap();
+        return [
+            ...baseColumns(),
+            ...(STATE.selectedPriceLists || []).flatMap((name) => [
+                { key: `price_ht:${name}`, label: `${name} ${__("HT")}`, priceList: name, currency: (priceMeta[name] || {}).currency || "" },
+                { key: `price_ttc:${name}`, label: `${name} ${__("TTC")}`, priceList: name, currency: (priceMeta[name] || {}).currency || "" },
+            ]),
+            ...(STATE.selectedBenchmarkPriceLists || []).map((name) => ({ key: `benchmark:${name}`, label: `${__("Benchmark")}: ${name}`, priceList: name, currency: (benchMeta[name] || {}).currency || "" })),
+        ];
     }
 
     function hideStockQty() {
-        return Boolean(STATE.boot?.restricted_agent || STATE.kpis?.hide_stock_qty);
+        return Boolean(STATE.boot?.hide_stock_qty || STATE.kpis?.hide_stock_qty);
     }
 
     function defaultVisibleColumns() {
@@ -338,12 +493,62 @@
     }
 
     function columnFilterValue(row, column) {
-        if (column.key.startsWith("price:")) {
+        if (isPriceHtColumn(column.key)) {
             const value = (row.prices || {})[column.priceList];
+            return value == null ? "" : value;
+        }
+        if (isPriceTtcColumn(column.key)) {
+            const value = (row.ttc_prices || {})[column.priceList];
+            return value == null ? "" : value;
+        }
+        if (column.key.startsWith("benchmark:")) {
+            const value = (row.benchmark_prices || {})[column.priceList];
             return value == null ? "" : value;
         }
         if (column.key === "stock_qty") return formatQty(row.stock_qty);
         return row[column.key] == null ? "" : row[column.key];
+    }
+
+    function isNumericColumn(column) {
+        return !!column && (column.key === "stock_qty" || isPriceHtColumn(column.key) || isPriceTtcColumn(column.key) || column.key.startsWith("benchmark:"));
+    }
+
+    function columnNumericValue(row, column) {
+        if (isPriceHtColumn(column.key)) {
+            return (row.prices || {})[column.priceList];
+        }
+        if (isPriceTtcColumn(column.key)) {
+            return (row.ttc_prices || {})[column.priceList];
+        }
+        if (column.key.startsWith("benchmark:")) {
+            return (row.benchmark_prices || {})[column.priceList];
+        }
+        if (column.key === "stock_qty") return row.stock_qty;
+        return columnFilterValue(row, column);
+    }
+
+    function numericFilterHasOperator(value) {
+        return /^\s*(>=|<=|>|<|=)/.test(String(value || ""));
+    }
+
+    function matchesNumericColumnFilter(actualValue, expression) {
+        const parsed = parseNumericColumnFilter(expression);
+        if (!parsed) return String(actualValue == null ? "" : actualValue).toLowerCase().includes(String(expression || "").toLowerCase());
+        if (actualValue == null || actualValue === "") return false;
+        const actual = toNumber(String(actualValue).replace(",", "."));
+        if (parsed.operator === ">") return actual > parsed.value;
+        if (parsed.operator === ">=") return actual >= parsed.value;
+        if (parsed.operator === "<") return actual < parsed.value;
+        if (parsed.operator === "<=") return actual <= parsed.value;
+        return Math.abs(actual - parsed.value) < 0.0000001;
+    }
+
+    function parseNumericColumnFilter(expression) {
+        const match = String(expression || "").trim().match(/^(>=|<=|>|<|=)\s*(-?\d+(?:[.,]\d+)?)$/);
+        if (!match) return null;
+        const value = Number(match[2].replace(",", "."));
+        if (!Number.isFinite(value)) return null;
+        return { operator: match[1], value };
     }
 
     function sortValue(row, column) {
@@ -360,7 +565,7 @@
         const all = allColumnsForFiltering();
         const visible = new Set(STATE.visibleColumns || []);
         const checks = all.map((column) => {
-            const locked = column.locked || column.key.startsWith("price:");
+            const locked = column.locked || column.key.startsWith("benchmark:");
             const checked = locked || visible.has(column.key);
             return `<label class="${locked ? "locked" : ""}"><input type="checkbox" data-item-column="${attr(column.key)}" ${checked ? "checked" : ""} ${locked ? "disabled" : ""}><span>${esc(column.label || column.key.split(":", 2)[1] || column.key)}</span>${locked ? `<small>${esc(__("Requis"))}</small>` : ""}</label>`;
         }).join("");
@@ -388,8 +593,17 @@
             STATE.pagination.page = 1;
             STATE.selectedItems = [];
             STATE.selectedPriceLists = STATE.priceLists.slice(0, 3).map((row) => row.name).filter(Boolean);
+            STATE.selectedBenchmarkPriceLists = [];
             saveState();
             loadRows(page);
+        });
+        page.main.find("[data-price-mode]").on("click", function () {
+            const mode = $(this).attr("data-price-mode");
+            if (["ht", "ttc", "both"].includes(mode)) {
+                STATE.priceDisplayMode = mode;
+                saveState();
+                render(page);
+            }
         });
         page.main.find("[data-toggle-price-list-dropdown]").on("click", () => { STATE.priceListDropdownOpen = !STATE.priceListDropdownOpen; render(page); });
         page.main.find("[data-price-list-search]").on("input", function () { STATE.priceListSearch = String($(this).val() || ""); render(page, { focusSelector: "[data-price-list-search]" }); });
@@ -398,16 +612,27 @@
             STATE.selectedPriceLists = Array.from(new Set([...(STATE.selectedPriceLists || []), ...visible]));
             STATE.pagination.page = 1;
             saveState();
-            loadRows(page);
+            loadRows(page, { preserveScroll: true });
         });
-        page.main.find("[data-clear-price-lists]").on("click", () => { STATE.selectedPriceLists = []; STATE.pagination.page = 1; saveState(); loadRows(page); });
+        page.main.find("[data-clear-price-lists]").on("click", () => { STATE.selectedPriceLists = []; STATE.pagination.page = 1; saveState(); loadRows(page, { preserveScroll: true }); });
         page.main.find("[data-price-list]").on("change", function () {
             const name = $(this).attr("data-price-list");
             if (this.checked && !STATE.selectedPriceLists.includes(name)) STATE.selectedPriceLists.push(name);
             if (!this.checked) STATE.selectedPriceLists = STATE.selectedPriceLists.filter((value) => value !== name);
             STATE.pagination.page = 1;
             saveState();
-            loadRows(page);
+            loadRows(page, { preserveScroll: true });
+        });
+        page.main.find("[data-toggle-benchmark-dropdown]").on("click", () => { STATE.benchmarkDropdownOpen = !STATE.benchmarkDropdownOpen; render(page); });
+        page.main.find("[data-benchmark-search]").on("input", function () { STATE.benchmarkSearch = String($(this).val() || ""); render(page, { focusSelector: "[data-benchmark-search]" }); });
+        page.main.find("[data-clear-benchmark-lists]").on("click", () => { STATE.selectedBenchmarkPriceLists = []; STATE.pagination.page = 1; saveState(); loadRows(page, { preserveScroll: true }); });
+        page.main.find("[data-benchmark-list]").on("change", function () {
+            const name = $(this).attr("data-benchmark-list");
+            if (this.checked && !STATE.selectedBenchmarkPriceLists.includes(name)) STATE.selectedBenchmarkPriceLists.push(name);
+            if (!this.checked) STATE.selectedBenchmarkPriceLists = STATE.selectedBenchmarkPriceLists.filter((value) => value !== name);
+            STATE.pagination.page = 1;
+            saveState();
+            loadRows(page, { preserveScroll: true });
         });
         page.main.find("[data-catalogue-filter]").on("change", function () {
             const filter = $(this).attr("data-catalogue-filter");
@@ -431,8 +656,8 @@
         page.main.find("[data-page-size]").on("change", function () { STATE.pagination.pageSize = Number($(this).val() || 50); STATE.pagination.page = 1; saveState(); render(page); });
         page.main.find("[data-page-prev]").on("click", () => { STATE.pagination.page = Math.max(1, STATE.pagination.page - 1); saveState(); render(page); });
         page.main.find("[data-page-next]").on("click", () => { STATE.pagination.page += 1; saveState(); render(page); });
-        page.main.find("[data-select-item]").on("change", function () { toggleSelectedItem($(this).attr("data-select-item"), this.checked); render(page); });
-        page.main.find("[data-select-page]").each(function () { this.indeterminate = $(this).attr("data-indeterminate") === "1"; }).on("change", function () { togglePageSelection(paginatedRows(filteredRows()).rows, this.checked); render(page); });
+        page.main.find("[data-select-item]").on("change", function () { toggleSelectedItem($(this).attr("data-select-item"), this.checked); render(page, { preserveScroll: true }); });
+        page.main.find("[data-select-page]").each(function () { this.indeterminate = $(this).attr("data-indeterminate") === "1"; }).on("change", function () { togglePageSelection(paginatedRows(filteredRows()).rows, this.checked); render(page, { preserveScroll: true }); });
         page.main.find("[data-open-item]").on("click", function () {
             const item = $(this).attr("data-open-item");
             if (item) frappe.set_route("Form", "Item", item);
@@ -445,15 +670,28 @@
         return out;
     }
 
+    function benchmarkMetaMap() {
+        const out = {};
+        (STATE.benchmarkPriceLists || []).forEach((row) => { out[row.name] = row; });
+        return out;
+    }
+
     function applyColumnFilterInput(page, input) {
         const key = $(input).attr("data-column-filter");
         const value = String($(input).val() || "").trim();
         STATE.columnFilters = Object.assign({}, STATE.columnFilters || {});
         if (value) STATE.columnFilters[key] = value;
         else delete STATE.columnFilters[key];
+        if (key === "item_group") pruneCatalogueCategoryFilter();
         STATE.pagination.page = 1;
         saveState();
-        render(page, { focusSelector: `[data-column-filter="${selectorAttr(key)}"]` });
+        render(page, { focusSelector: `[data-column-filter="${selectorAttr(key)}"]`, preserveScroll: true });
+    }
+
+    function pruneCatalogueCategoryFilter() {
+        const category = String((STATE.columnFilters || {}).item_category || "").trim();
+        if (!category) return;
+        if (!catalogueFilterOptions("item_category").includes(category)) delete STATE.columnFilters.item_category;
     }
 
     function readSavedState() {
@@ -462,6 +700,8 @@
             if (!raw) return;
             const saved = JSON.parse(raw) || {};
             if (Array.isArray(saved.selectedPriceLists)) STATE.selectedPriceLists = saved.selectedPriceLists.filter(Boolean);
+            if (Array.isArray(saved.selectedBenchmarkPriceLists)) STATE.selectedBenchmarkPriceLists = saved.selectedBenchmarkPriceLists.filter(Boolean);
+            if (Array.isArray(saved.selectedItems)) STATE.selectedItems = saved.selectedItems.filter(Boolean);
             if (saved.filters && typeof saved.filters === "object") {
                 STATE.filters = Object.assign({ in_stock_only: false, show_missing_prices: true }, saved.filters);
             }
@@ -470,6 +710,9 @@
             if (saved.pagination && typeof saved.pagination === "object") {
                 STATE.pagination.pageSize = normalizePageSize(saved.pagination.pageSize);
                 STATE.pagination.page = Math.max(1, Number(saved.pagination.page || 1));
+            }
+            if (saved.priceDisplayMode && ["ht", "ttc", "both"].includes(saved.priceDisplayMode)) {
+                STATE.priceDisplayMode = saved.priceDisplayMode;
             }
         } catch (error) {
             console.warn("Catalogue Prix Articles saved state ignored", error);
@@ -480,10 +723,13 @@
         try {
             localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({
                 selectedPriceLists: STATE.selectedPriceLists || [],
+                selectedBenchmarkPriceLists: STATE.selectedBenchmarkPriceLists || [],
+                selectedItems: STATE.selectedItems || [],
                 filters: STATE.filters || {},
                 columnFilters: activeColumnFilters(),
                 sort: STATE.sort || { key: "", direction: "asc" },
                 pagination: { page: Math.max(1, Number(STATE.pagination.page || 1)), pageSize: normalizePageSize(STATE.pagination.pageSize) },
+                priceDisplayMode: STATE.priceDisplayMode || "both",
             }));
         } catch (error) {
             console.warn("Catalogue Prix Articles state was not saved", error);
@@ -493,6 +739,8 @@
     function normalizeSelectedPriceLists() {
         const available = new Set((STATE.priceLists || []).map((row) => row.name).filter(Boolean));
         STATE.selectedPriceLists = (STATE.selectedPriceLists || []).filter((name) => available.has(name));
+        const benchAvailable = new Set((STATE.benchmarkPriceLists || []).map((row) => row.name).filter(Boolean));
+        STATE.selectedBenchmarkPriceLists = (STATE.selectedBenchmarkPriceLists || []).filter((name) => benchAvailable.has(name));
     }
 
     function exportCsv() {
@@ -533,6 +781,7 @@
     function openPdf(itemCodes) {
         const params = new URLSearchParams();
         params.set("price_lists", JSON.stringify(STATE.selectedPriceLists));
+        if (STATE.selectedBenchmarkPriceLists.length) params.set("benchmark_price_lists", JSON.stringify(STATE.selectedBenchmarkPriceLists));
         params.set("filters", JSON.stringify(STATE.filters));
         params.set("columns", JSON.stringify(tableColumns().map((column) => column.key)));
         params.set("table_search", STATE.tableSearch || "");
@@ -543,7 +792,8 @@
 
     function selectedItemsInFilteredRows() {
         const selected = selectedItemSet();
-        return filteredRows().map((row) => row.item_code).filter((itemCode) => selected.has(itemCode));
+        const visible = new Set(filteredRows().map((row) => row.item_code).filter(Boolean));
+        return Array.from(selected).filter((itemCode) => visible.has(itemCode));
     }
 
     function exportValue(column, row, rowNumber) {
@@ -552,8 +802,19 @@
     }
 
     function csvCell(value) {
-        const text = String(value == null ? "" : value).replace(/"/g, '""');
+        const raw = String(value == null ? "" : value);
+        const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+        const text = safe.replace(/"/g, '""');
         return /[",\n]/.test(text) ? `"${text}"` : text;
+    }
+
+    function isPriceHtColumn(key) {
+        key = String(key || "");
+        return key.startsWith("price_ht:") || key.startsWith("price:");
+    }
+
+    function isPriceTtcColumn(key) {
+        return String(key || "").startsWith("price_ttc:");
     }
 
     function toggleSort(key) {
@@ -565,6 +826,7 @@
     }
 
     function activeColumnFilters() {
+        pruneCatalogueCategoryFilter();
         const out = {};
         Object.entries(STATE.columnFilters || {}).forEach(([key, value]) => {
             const text = String(value || "").trim();
@@ -591,6 +853,7 @@
         if (checked) selected.add(itemCode);
         else selected.delete(itemCode);
         STATE.selectedItems = Array.from(selected);
+        saveState();
     }
 
     function togglePageSelection(rows, checked) {
@@ -601,6 +864,7 @@
             else selected.delete(row.item_code);
         });
         STATE.selectedItems = Array.from(selected);
+        saveState();
     }
 
     function pruneSelectedItems() {
@@ -653,7 +917,8 @@
 
     function columnStyle(column) {
         const width = columnWidth(column);
-        return `width:${width}px;min-width:${width}px`;
+        const minWidth = column.minWidth || 70;
+        return `width:${width}px;min-width:${minWidth}px`;
     }
 
     function tableMinWidth(columns) {
@@ -671,7 +936,7 @@
             STATE.columnWidths[key] = clampNumber(startWidth + moveEvent.clientX - startX, 70, 460);
             const style = document.querySelector("style#cpa-live-widths") || document.createElement("style");
             style.id = "cpa-live-widths";
-            style.textContent = `[data-column=\"${cssEscape(key)}\"]{width:${STATE.columnWidths[key]}px!important;min-width:${STATE.columnWidths[key]}px!important}`;
+            style.textContent = `[data-column=\"${cssEscape(key)}\"]{width:${STATE.columnWidths[key]}px!important;min-width:${column.minWidth || 70}px!important}`;
             if (!style.parentNode) document.head.appendChild(style);
         };
         const up = () => {
@@ -697,12 +962,53 @@
     function esc(value) { return frappe.utils.escape_html(String(value == null ? "" : value)); }
     function attr(value) { return esc(value).replace(/`/g, "&#96;"); }
 
+    function getScrollState(page) {
+        const tableWrap = page?.main?.find(".cpa-table-wrap").get(0);
+        return {
+            windowTop: window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0,
+            tableTop: tableWrap ? tableWrap.scrollTop : 0,
+            tableLeft: tableWrap ? tableWrap.scrollLeft : 0,
+            ancestors: getAncestorScrollState(page),
+        };
+    }
+
+    function getAncestorScrollState(page) {
+        const states = [];
+        const main = page && page.main ? page.main.get(0) : null;
+        let node = main ? main.parentElement : null;
+        while (node && node !== document.body && node !== document.documentElement) {
+            if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) {
+                states.push({ el: node, top: node.scrollTop || 0, left: node.scrollLeft || 0 });
+            }
+            node = node.parentElement;
+        }
+        return states;
+    }
+
+    function restoreScrollState(page, state) {
+        if (!state) return;
+        const restorePositions = () => {
+            ((state || {}).ancestors || []).forEach((entry) => {
+                if (!entry || !entry.el) return;
+                entry.el.scrollTop = entry.top || 0;
+                entry.el.scrollLeft = entry.left || 0;
+            });
+            window.scrollTo(0, state.windowTop || 0);
+            const tableWrap = page?.main?.find(".cpa-table-wrap").get(0);
+            if (!tableWrap) return;
+            tableWrap.scrollTop = state.tableTop || 0;
+            tableWrap.scrollLeft = state.tableLeft || 0;
+        };
+        restorePositions();
+        requestAnimationFrame(restorePositions);
+    }
+
     function restoreFocus(selector) {
         if (!selector) return;
         requestAnimationFrame(() => {
             const element = document.querySelector(selector);
             if (!element) return;
-            element.focus();
+            element.focus({ preventScroll: true });
             if (typeof element.setSelectionRange === "function") {
                 const end = String(element.value || "").length;
                 element.setSelectionRange(end, end);
@@ -717,7 +1023,8 @@
         style.textContent = `
             .cpa-root{background:#f6f8fb;color:#0f172a}.cpa-root,.cpa-root *,.cpa-root *::before,.cpa-root *::after{box-sizing:border-box}.cpa-shell{width:100%;max-width:1540px;margin:0 auto;padding:22px 18px 72px;display:grid;gap:16px}.cpa-hero,.cpa-card{border:1px solid #e2e8f0;border-radius:18px;background:#fff;box-shadow:0 4px 18px rgba(15,23,42,.05)}.cpa-hero{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:16px;padding:20px}.cpa-hero span{display:block;color:#2563eb;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.cpa-hero h1{margin:4px 0;font-size:24px}.cpa-hero p{margin:0;color:#64748b;line-height:1.5}.cpa-kpis{display:grid;grid-template-columns:repeat(4,minmax(88px,1fr));gap:8px}.cpa-kpi{display:grid;gap:4px;border:1px solid #edf2f7;border-radius:12px;background:#f8fafc;padding:10px 12px}.cpa-kpi em{font-style:normal;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase}.cpa-kpi strong{font-size:20px}.cpa-actions,.cpa-inline-actions,.cpa-mini-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.cpa-btn{min-height:34px;border:1px solid transparent;border-radius:10px;padding:0 12px;font-weight:900;cursor:pointer}.cpa-btn.primary{background:#111827;color:#fff}.cpa-btn.ghost{background:#fff;border-color:#cbd5e1;color:#334155}.cpa-btn:disabled{opacity:.45;cursor:not-allowed}.cpa-card{padding:16px;min-width:0}.cpa-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}.cpa-card h2{margin:0;font-size:16px}.cpa-card p{margin:3px 0 0;color:#64748b;line-height:1.45}.cpa-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.cpa-fields label:not(.cpa-check){display:grid;gap:5px;margin:0}.cpa-fields span{font-size:11px;font-weight:900;color:#64748b;text-transform:uppercase}.cpa-fields input,.cpa-fields select,.cpa-table-toolbar input,.cpa-filter-cell input,.cpa-dropdown-panel input{width:100%;height:34px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px}.cpa-price-list-field{grid-column:span 2;min-width:0}.cpa-check{display:flex;align-items:center;gap:8px;min-height:34px;margin:0;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:0 10px}.cpa-root input[type='checkbox']{appearance:none!important;-webkit-appearance:none!important;display:inline-grid!important;place-content:center!important;width:18px!important;height:18px!important;min-width:18px!important;margin:0!important;border:1.5px solid #94a3b8!important;border-radius:6px!important;background:#fff!important;cursor:pointer}.cpa-root input[type='checkbox']::before{content:"";width:9px;height:9px;transform:scale(0);border-radius:3px;background:#2563eb}.cpa-root input[type='checkbox']:checked{border-color:#2563eb!important;background:#eff6ff!important}.cpa-root input[type='checkbox']:checked::before{transform:scale(1)}.cpa-price-dropdown{position:relative;min-width:0}.cpa-dropdown-button{width:100%;height:38px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:0 11px;text-align:left;font-weight:900}.cpa-dropdown-button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#0f172a;text-transform:none;font-size:13px}.cpa-dropdown-button em{font-style:normal;color:#2563eb;font-size:11px}.cpa-dropdown-panel{display:none;position:absolute;z-index:30;top:44px;left:0;width:min(520px,calc(100vw - 56px));max-height:430px;overflow:auto;border:1px solid #cbd5e1;border-radius:14px;background:#fff;box-shadow:0 18px 45px rgba(15,23,42,.18);padding:12px}.cpa-price-dropdown.open .cpa-dropdown-panel{display:grid;gap:9px}.cpa-dropdown-list{display:grid;gap:6px}.cpa-dropdown-row{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:9px;min-height:40px;margin:0;border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:7px 9px;cursor:pointer}.cpa-dropdown-row.selected{border-color:#93c5fd;background:#eff6ff}.cpa-dropdown-row strong,.cpa-dropdown-row small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cpa-dropdown-row small{color:#64748b;font-size:11px}.cpa-link-btn{border:0;background:transparent;color:#1d4ed8;font-weight:900;padding:0;cursor:pointer}.cpa-table-toolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:8px;margin-bottom:10px}.cpa-column-config{position:relative;margin:0 0 10px}.cpa-column-config>summary{display:inline-flex;align-items:center;gap:8px;min-height:34px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#334155;padding:0 12px;font-weight:900;cursor:pointer;list-style:none}.cpa-column-config>summary::-webkit-details-marker{display:none}.cpa-column-config em{font-style:normal;color:#64748b;font-size:12px}.cpa-column-panel{position:absolute;z-index:25;top:42px;left:0;width:min(720px,calc(100vw - 48px));max-height:420px;overflow:auto;border:1px solid #cbd5e1;border-radius:14px;background:#fff;box-shadow:0 18px 45px rgba(15,23,42,.18);padding:14px}.cpa-column-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.cpa-column-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}.cpa-column-list label{display:flex;align-items:center;gap:8px;min-height:36px;margin:0;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:7px 9px;font-weight:800;color:#334155}.cpa-column-list label.locked{background:#eef2ff;color:#3730a3}.cpa-column-list label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cpa-column-list label small{margin-left:auto;color:#64748b;font-size:10px;text-transform:uppercase}.cpa-table-wrap{overflow:auto;border:1px solid #e5e7eb;border-radius:13px;max-height:680px}.cpa-table{width:max-content;border-collapse:separate;border-spacing:0;table-layout:fixed}.cpa-table th{position:sticky;top:0;z-index:8;background:#f8fafc;color:#334155;font-size:11px;text-transform:uppercase;letter-spacing:.03em;box-shadow:0 1px 0 #e5e7eb}.cpa-column-filter-row th{top:36px;z-index:7;background:#fff}.cpa-table th,.cpa-table td{position:relative;padding:9px 10px;border-bottom:1px solid #edf2f7;text-align:left;white-space:nowrap;vertical-align:middle;overflow:hidden;text-overflow:ellipsis}.cpa-table td{font-size:12px}.cpa-table tr:hover td{background:#f8fafc}.cpa-sort-btn{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;min-height:26px;border:0;background:transparent;color:inherit;font:inherit;font-weight:900;text-align:left;padding:0 14px 0 0;cursor:pointer}.cpa-sort-btn.static{cursor:default}.cpa-sort-btn em{min-width:24px;color:#64748b;font-style:normal;font-size:10px}.cpa-column-resizer{position:absolute;top:0;right:-3px;width:12px;height:100%;cursor:col-resize}.cpa-column-resizer::after{content:"";position:absolute;top:8px;bottom:8px;left:5px;width:2px;border-radius:99px;background:#cbd5e1}.cpa-column-resizer:hover::after,.cpa-column-resizing .cpa-column-resizer::after{background:#2563eb}.cpa-column-resizing{cursor:col-resize!important;user-select:none}.cpa-filter-cell input{height:28px;font-size:11px}.cpa-filter-cell span{color:#94a3b8;font-size:10px;font-weight:900;text-transform:uppercase}.cpa-image-cell,.cpa-align-center{text-align:center!important}.cpa-align-right{text-align:right!important}.cpa-wrap{white-space:normal!important}.cpa-image-cell img{width:48px;height:48px;object-fit:contain;border:1px solid #e2e8f0;border-radius:10px;background:#fff}.cpa-no-image{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border:1px dashed #cbd5e1;border-radius:10px;color:#94a3b8;font-size:10px;font-weight:900}.cpa-item-link{border:0;background:transparent;color:#1d4ed8;font-weight:900;text-decoration:underline;text-underline-offset:2px;padding:0;cursor:pointer}.cpa-num{font-variant-numeric:tabular-nums;font-weight:900}.cpa-muted{color:#94a3b8}.cpa-pill{display:inline-flex;align-items:center;justify-content:center;min-height:26px;border-radius:999px;padding:0 9px;font-size:11px;font-weight:900}.cpa-pill.ok{background:#dcfce7;color:#166534}.cpa-pill.bad{background:#fee2e2;color:#991b1b}.cpa-count{display:inline-flex;align-items:center;min-height:30px;border:1px solid #e2e8f0;border-radius:999px;background:#f8fafc;color:#475569;padding:0 10px;font-weight:900}.cpa-error,.cpa-message{border-radius:12px;padding:12px 14px;font-weight:800}.cpa-error{border:1px solid #fecaca;background:#fef2f2;color:#991b1b}.cpa-message{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8}.cpa-empty-cell,.cpa-empty-mini{text-align:center;color:#64748b;font-weight:800;padding:22px}.cpa-empty-mini{padding:14px}
             .cpa-card-head.compact{margin-bottom:10px}.cpa-fields.cpa-fields-price-only{grid-template-columns:minmax(280px,560px)}.cpa-table-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px}.cpa-pagination{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}.cpa-pagination label{display:flex;align-items:center;gap:6px;margin:0;color:#64748b;font-size:12px;font-weight:800}.cpa-pagination select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 8px}.cpa-page-range,.cpa-page-number{color:#475569;font-size:12px;font-weight:800}.cpa-page-btn{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-weight:900;padding:0 9px;cursor:pointer}.cpa-page-btn:disabled{opacity:.45;cursor:not-allowed}.cpa-count.soft{background:#eff6ff;color:#1d4ed8}.cpa-table th{vertical-align:top;padding:7px 8px}.cpa-table td{height:66px;vertical-align:middle}.cpa-th-inner{display:grid;gap:5px;align-content:start;min-height:54px}.cpa-sort-btn{min-height:18px;line-height:1.15}.cpa-header-filter{width:100%;height:28px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 7px;font-size:11px;color:#0f172a}.cpa-header-filter:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.12);outline:none}.cpa-filter-spacer{display:block;height:28px}.cpa-select-head{vertical-align:middle!important}.cpa-select-head input,.cpa-row-check{width:16px;height:16px;margin:0;accent-color:#2563eb}.cpa-image-frame{width:58px;height:58px;margin:0 auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden}.cpa-image-frame img{display:block;width:54px!important;height:54px!important;max-width:54px!important;max-height:54px!important;object-fit:contain}.cpa-no-image{display:flex;align-items:center;justify-content:center;width:58px;height:58px;margin:0 auto;border:1px dashed #cbd5e1;border-radius:10px;color:#94a3b8;font-size:10px;font-weight:800}.cpa-table tbody tr:has(.cpa-row-check:checked){background:#f8fbff}
-            .cpa-fields.cpa-fields-price-only{grid-template-columns:minmax(280px,560px) max-content max-content;align-items:end}.cpa-filter-check{min-height:34px;align-self:end}
+            .cpa-fields.cpa-fields-price-only{grid-template-columns:minmax(280px,560px) max-content max-content;align-items:end}.cpa-filter-check{min-height:34px;align-self:end}.cpa-mode-toggle{display:flex;gap:0;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden;height:34px;min-width:180px}.cpa-mode-btn{flex:1;background:#fff;color:#475569;font-size:12px;font-weight:900;border:none;border-radius:0;padding:0 10px;cursor:pointer;white-space:nowrap}.cpa-mode-btn:not(:last-child){border-right:1px solid #cbd5e1}.cpa-mode-btn:hover{background:#f1f5f9}.cpa-mode-btn.active{background:#111827;color:#fff}.cpa-price-display-mode>span{font-size:11px;font-weight:900;color:#64748b;text-transform:uppercase;display:block;margin-bottom:5px}
+            .cpa-table td.cpa-wrap{white-space:normal!important;overflow-wrap:anywhere;line-height:1.35}.cpa-table th{position:relative}.cpa-column-resizer{z-index:20}
             @media(max-width:1100px){.cpa-hero{grid-template-columns:1fr}.cpa-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cpa-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.cpa-price-list-field{grid-column:span 2}}
             @media(max-width:640px){.cpa-shell{padding:14px 12px 72px}.cpa-fields,.cpa-table-toolbar{grid-template-columns:1fr}.cpa-price-list-field{grid-column:auto}.cpa-kpis{grid-template-columns:1fr}.cpa-card-head{display:grid}.cpa-actions,.cpa-inline-actions{align-items:stretch}.cpa-btn{width:100%}}
         `;

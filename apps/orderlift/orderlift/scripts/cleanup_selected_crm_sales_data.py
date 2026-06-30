@@ -20,6 +20,7 @@ TARGET_DOCTYPES = [
 @frappe.whitelist()
 def run(dry_run: int = 1, confirm: str | None = None, delete_pipeline_todos: int = 1, force: int = 0) -> dict:
     """Delete selected CRM/sales records without touching items, pricing, policies, or logistics docs."""
+    frappe.only_for("System Manager")
     dry_run = cint(dry_run)
     delete_pipeline_todos = cint(delete_pipeline_todos)
     if not dry_run and confirm != CONFIRM_TOKEN:

@@ -6,6 +6,27 @@
         refresh(frm) {
             addItemPricesReportButton(frm);
             addDuplicateButton(frm);
+            _toggle_sharing_table(frm);
+            _render_sharing_info(frm);
+            setTimeout(function () { _filter_company_in_sharing(frm); }, 100);
+        },
+        custom_price_list_type(frm) {
+            if (frm.doc.docstatus !== 0) return;
+            _toggle_sharing_table(frm);
+        },
+        custom_company(frm) {
+            if (frm.doc.docstatus !== 0) return;
+            _toggle_sharing_table(frm);
+            setTimeout(function () { _filter_company_in_sharing(frm); }, 100);
+        },
+    });
+
+    frappe.ui.form.on("Price List Sharing", {
+        form_render(frm, cdt, cdn) {
+            _filter_company_in_sharing(frm);
+        },
+        company(frm, cdt, cdn) {
+            _filter_company_in_sharing(frm);
         },
     });
 
@@ -135,5 +156,83 @@
             indicator: "green",
         }, 8);
         return result;
+    }
+
+    function _toggle_sharing_table(frm) {
+        const isShared = frm.doc.custom_is_shared_from && frm.doc.custom_is_shared_from.trim();
+        const isSelling = frm.doc.custom_price_list_type === "Selling";
+        const hasCompany = frm.doc.custom_company && frm.doc.custom_company.trim();
+        const sharingField = frm.get_field("custom_price_list_sharing");
+        if (!sharingField) return;
+        if (!isSelling || !hasCompany || isShared) {
+            sharingField.df.hidden = 1;
+        } else {
+            sharingField.df.hidden = 0;
+        }
+        sharingField.refresh();
+        _filter_company_in_sharing(frm);
+    }
+
+    function _filter_company_in_sharing(frm) {
+        const grid = frm.fields_dict && frm.fields_dict.custom_price_list_sharing
+            && frm.fields_dict.custom_price_list_sharing.grid;
+        if (!grid) return;
+        const ownCompany = (frm.doc.custom_company || "").trim();
+        if (grid.get_field("company")) {
+            grid.get_field("company").get_query = function () {
+                return {
+                    filters: {
+                        name: ["!=", ownCompany],
+                    },
+                };
+            };
+        }
+        if (grid.get_field("shared_price_list")) {
+            grid.get_field("shared_price_list").get_query = function () {
+                return {
+                    filters: {
+                        custom_price_list_type: "Buying",
+                        custom_is_shared_from: ["is", "set"],
+                    },
+                };
+            };
+        }
+    }
+
+    function _render_sharing_info(frm) {
+        const sharedFrom = (frm.doc.custom_is_shared_from || "").trim();
+        if (!sharedFrom) return;
+        const sharedOn = frm.doc.custom_shared_on
+            ? frappe.datetime.str_to_user(frm.doc.custom_shared_on)
+            : frm.doc.creation
+                ? frappe.datetime.str_to_user(frm.doc.creation)
+                : "";
+        frappe.db.get_value("Price List", sharedFrom, "custom_company", function (r) {
+            const sourceCompany = (r && r.custom_company) ? r.custom_company : "";
+            const html = '<div class="form-section card-section" style="margin-bottom:15px">'
+                + '<div class="clearfix"><h6 class="uppercase">' + __("Sharing Info") + '</h6></div>'
+                + '<div class="row"><div class="col-sm-4"><div class="form-group">'
+                + '<label>' + __("Shared From") + '</label>'
+                + '<div><a href="#Form/Price List/' + sharedFrom + '">' + sharedFrom + '</a></div>'
+                + '</div></div>'
+                + '<div class="col-sm-4"><div class="form-group">'
+                + '<label>' + __("Source Company") + '</label>'
+                + '<div>' + (sourceCompany || "") + '</div>'
+                + '</div></div>'
+                + '<div class="col-sm-4"><div class="form-group">'
+                + '<label>' + __("Shared On") + '</label>'
+                + '<div>' + (sharedOn || "") + '</div>'
+                + '</div></div></div>';
+            const sharingField = frm.get_field("custom_price_list_sharing");
+            if (sharingField && sharingField.wrapper) {
+                sharingField.wrapper.closest(".form-section").insertAdjacentHTML(
+                    "beforebegin", html
+                );
+            } else if (frm.fields_dict.custom_company && frm.fields_dict.custom_company.wrapper) {
+                frm.fields_dict.custom_company.wrapper.closest(".form-section").insertAdjacentHTML(
+                    "afterend", html
+                );
+            }
+        });
     }
 })();

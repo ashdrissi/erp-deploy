@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from orderlift.startup_roles import CAMPAIGN_MANAGER_ROLE, STARTUP_ROLES
+
 
 ALL_USERS_ROLE = "All"
 
@@ -13,7 +15,7 @@ BUSINESS_ROLES = [
     "Finance User",
     "Installation User",
     "Service User",
-]
+] + STARTUP_ROLES
 
 ADMIN_ROLES = ["Orderlift Admin", "Administrator", "System Manager", "Developer"]
 ACCESS_MANAGER_ROLES = ["Orderlift Admin", "System Manager"]
@@ -26,6 +28,7 @@ SAV_ROLES = ["Orderlift Admin", "Service User"]
 SIG_ROLES = ["Orderlift Admin", "Installation User"]
 HR_ROLES = ["Orderlift Admin"]
 B2B_ROLES = ["Orderlift Admin", "Sales User", "Pricing Manager"]
+CAMPAIGN_ROLES = ["Orderlift Admin", CAMPAIGN_MANAGER_ROLE]
 
 
 HOME_LINK = {
@@ -59,9 +62,13 @@ MENU_SECTIONS = [
         "links": [
             {"key": "administration.status_control", "label": "Status Control", "link_type": "Page", "link_to": "status-control"},
             {"key": "administration.document_templates", "label": "Document Templates", "link_type": "Page", "link_to": "document-template-manager"},
+            {"key": "administration.business_delivery", "label": "Business Delivery", "link_type": "Page", "link_to": "business-delivery"},
             {"key": "administration.access_command_center", "label": "Access Command Center", "link_type": "Page", "link_to": "access-command-center", "roles": ACCESS_MANAGER_ROLES},
             {"key": "administration.menu_editor", "label": "Menu Editor", "link_type": "Page", "link_to": "menu-editor", "roles": ACCESS_MANAGER_ROLES},
             {"key": "administration.companies", "label": "Companies", "link_type": "DocType", "link_to": "Company"},
+            {"key": "administration.currency", "label": "Currency List", "link_type": "DocType", "link_to": "Currency"},
+            {"key": "administration.currency_exchange", "label": "Currency Exchange", "link_type": "DocType", "link_to": "Currency Exchange"},
+            {"key": "administration.currency_exchange_settings", "label": "Currency Exchange Settings", "link_type": "DocType", "link_to": "Currency Exchange Settings"},
         ],
     },
     {
@@ -72,8 +79,24 @@ MENU_SECTIONS = [
         "links": [
             {"key": "crm.crm_dashboard", "label": "CRM Dashboard", "link_type": "Page", "link_to": "crm-dashboard"},
             {"key": "crm.projects_list", "label": "Projects List", "link_type": "DocType", "link_to": "Project", "roles": SALES_ROLES + PROJECT_ROLES},
-            {"key": "crm.campaign_manager", "label": "Campaign Manager", "link_type": "Page", "link_to": "campaign-manager"},
-            {"key": "crm.campaign_builder", "label": "Campaign Builder", "link_type": "Page", "link_to": "campaign-editor"},
+            {
+                "key": "crm.campaign_manager",
+                "label": "Campaign Manager",
+                "link_type": "Page",
+                "link_to": "campaign-manager",
+                "roles": CAMPAIGN_ROLES,
+                "required_doctypes": ["Partner Campaign"],
+                "strict_roles": True,
+            },
+            {
+                "key": "crm.campaign_builder",
+                "label": "Campaign Builder",
+                "link_type": "Page",
+                "link_to": "campaign-editor",
+                "roles": CAMPAIGN_ROLES,
+                "required_doctypes": ["Partner Campaign"],
+                "strict_roles": True,
+            },
             {"key": "crm.opportunity_pipeline", "label": "Opportunity Pipeline", "link_type": "Page", "link_to": "opportunity-pipeline"},
             {"key": "crm.lead", "label": "Lead", "link_type": "DocType", "link_to": "Lead"},
             {"key": "crm.opportunity", "label": "Opportunity", "link_type": "DocType", "link_to": "Opportunity"},
@@ -131,14 +154,15 @@ MENU_SECTIONS = [
         "roles": SALES_ROLES + LOGISTICS_ROLES,
         "links": [
             {"key": "items.item", "label": "Item", "link_type": "DocType", "link_to": "Item"},
+            {"key": "items.item_category", "label": "Item Category", "link_type": "DocType", "link_to": "Item Category"},
+            {"key": "items.item_group", "label": "Item Group", "link_type": "DocType", "link_to": "Item Group"},
             {"key": "items.product_bundle", "label": "Product Bundle", "link_type": "DocType", "link_to": "Product Bundle"},
             {"key": "items.dimensioning_sets", "label": "Dimensioning Sets", "link_type": "Page", "link_to": "dimensioning-set-manager"},
             {"key": "items.item_price", "label": "Item Price", "link_type": "DocType", "link_to": "Item Price"},
             {"key": "items.price_list", "label": "Price List", "link_type": "DocType", "link_to": "Price List"},
             {"key": "items.catalogue_prix_articles", "label": "Catalogue Prix Articles", "link_type": "Page", "link_to": "catalogue-prix-articles", "roles": SALES_ROLES},
             {"key": "items.buying_price_builder", "label": "Buying Price Builder", "link_type": "Page", "link_to": "buying-price-builder", "roles": PRICING_MANAGER_ROLES + LOGISTICS_ROLES},
-            {"key": "items.pricing_builder", "label": "Pricing Sheets", "link_type": "Page", "link_to": "pricing-sheet-manager", "roles": PRICING_MANAGER_ROLES},
-            {"key": "items.static_pricing_builder", "label": "Selling Price List Builder", "link_type": "Page", "link_to": "pricing-builder-manager", "roles": PRICING_MANAGER_ROLES},
+            {"key": "items.static_pricing_builder", "label": "Selling Price Builder", "link_type": "Page", "link_to": "pricing-builder-manager", "roles": PRICING_MANAGER_ROLES},
         ],
     },
     {
@@ -227,6 +251,9 @@ MENU_SECTIONS = [
         "roles": LOGISTICS_ROLES,
         "links": [
             {"key": "stock.dashboard", "label": "Stock Dashboard", "link_type": "Page", "link_to": "stock-dashboard"},
+            {"key": "stock.stock_entry", "label": "Stock Entry", "link_type": "DocType", "link_to": "Stock Entry"},
+            {"key": "stock.warehouse_tree", "label": "Warehouse Tree", "link_type": "DocType", "link_to": "Warehouse"},
+            {"key": "stock.warehouse_report", "label": "Warehouse Report", "link_type": "Report", "link_to": "Warehouse Wise Stock Balance"},
             {"key": "stock.balance", "label": "Stock Balance", "link_type": "Report", "link_to": "Stock Balance"},
             {"key": "stock.ledger", "label": "Stock Ledger", "link_type": "Report", "link_to": "Stock Ledger"},
             {"key": "stock.quality_inspection", "label": "Quality Inspection", "link_type": "DocType", "link_to": "Quality Inspection"},
@@ -367,6 +394,8 @@ def _normalize_item(link: dict, *, section: str | None, section_key: str | None,
         "icon": link.get("icon") or "dot",
         "roles": roles,
         "company_scoped": bool(link.get("company_scoped", True)),
+        "required_doctypes": list(link.get("required_doctypes") or []),
+        "strict_roles": bool(link.get("strict_roles")),
     }
 
 
@@ -378,6 +407,7 @@ def _sidebar_link_row(link: dict) -> dict:
         "link_type": link.get("link_type") or "DocType",
         "link_to": link.get("link_to"),
         "url": link.get("url"),
+        "required_doctypes": link.get("required_doctypes") or [],
         "child": link.get("child", 1),
         "icon": link.get("icon") or "dot",
     }

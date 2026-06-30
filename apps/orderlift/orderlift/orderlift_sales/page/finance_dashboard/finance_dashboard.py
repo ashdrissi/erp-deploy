@@ -9,6 +9,7 @@ from frappe.utils import flt, get_first_day, nowdate
 
 @frappe.whitelist()
 def get_dashboard_data():
+    frappe.has_permission("Sales Invoice", "report", throw=True)  # Finance scope gate
     return {
         "kpis": _get_kpis(),
         "recent_docs": _get_recent_docs(),

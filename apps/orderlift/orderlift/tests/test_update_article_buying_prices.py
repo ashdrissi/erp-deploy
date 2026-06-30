@@ -7,6 +7,7 @@ frappe_stub = types.ModuleType("frappe")
 frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.throw = lambda message: (_ for _ in ()).throw(ValueError(message))
+frappe_stub.only_for = lambda *roles: None
 frappe_stub.db = types.SimpleNamespace()
 sys.modules["frappe"] = frappe_stub
 

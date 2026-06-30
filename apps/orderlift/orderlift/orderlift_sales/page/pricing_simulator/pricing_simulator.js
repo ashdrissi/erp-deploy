@@ -598,14 +598,14 @@ function renderComparisonRows(state) {
                 <td>${frappe.utils.escape_html(d.material || s.material || "—")}</td>
                 <td>${frappe.utils.escape_html(d.source_buying_price_list || "—")}</td>
                 <td><span class="psim-pill">${frappe.utils.escape_html(d.resolved_pricing_scenario || "—")}</span></td>
-                <td>${frappe.format(d.buy_price || 0, { fieldtype: "Currency" })}</td>
-                <td>${frappe.format(d.customs_applied || 0, { fieldtype: "Currency" })}</td>
-                <td>${frappe.format(d.customs_base_value || 0, { fieldtype: "Currency" })}</td>
-                <td>${frappe.format(d.tier_modifier_amount || 0, { fieldtype: "Currency" })}</td>
-                <td>${frappe.format(d.zone_modifier_amount || 0, { fieldtype: "Currency" })}</td>
-                <td><strong>${frappe.format(dynFinal, { fieldtype: "Currency" })}</strong></td>
+                <td>${formatCurrency(d.buy_price || 0)}</td>
+                <td>${formatCurrency(d.customs_applied || 0)}</td>
+                <td>${formatCurrency(d.customs_base_value || 0)}</td>
+                <td>${formatCurrency(d.tier_modifier_amount || 0)}</td>
+                <td>${formatCurrency(d.zone_modifier_amount || 0)}</td>
+                <td><strong>${formatCurrency(dynFinal)}</strong></td>
                 <td>${frappe.utils.escape_html(s.selected_price_list || "—")}</td>
-                <td>${frappe.format(staPrice, { fieldtype: "Currency" })}</td>
+                <td>${formatCurrency(staPrice)}</td>
             </tr>`;
     }).join(""));
 
@@ -802,6 +802,10 @@ function docLink(doctype, name, display, q) {
     return `<a href="${url}" class="psim-link" title="Open ${frappe.utils.escape_html(name)}" target="_blank">${highlighted}</a>`;
 }
 
+function formatCurrency(value) {
+    return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : frappe.format(value || 0, { fieldtype: "Currency" });
+}
+
 function dynamicRow(row, q) {
     const policy = row.applied_benchmark_policy || "";
     const rule = row.resolved_benchmark_rule || "";
@@ -811,13 +815,13 @@ function dynamicRow(row, q) {
             <td>${frappe.utils.escape_html(row.material || "—")}</td>
             <td>${frappe.utils.escape_html(row.source_buying_price_list || "—")}</td>
             <td>${docLink("Pricing Scenario", row.resolved_pricing_scenario, row.resolved_pricing_scenario, null)}</td>
-            <td>${frappe.format(row.buy_price || 0, { fieldtype: "Currency" })}</td>
-            <td>${frappe.format(row.customs_applied || 0, { fieldtype: "Currency" })}</td>
-            <td>${frappe.format(row.customs_base_value || 0, { fieldtype: "Currency" })}</td>
-            <td>${frappe.format(row.tier_modifier_amount || 0, { fieldtype: "Currency" })}</td>
-            <td>${frappe.format(row.zone_modifier_amount || 0, { fieldtype: "Currency" })}</td>
-            <td>${row.benchmark_reference ? frappe.format(row.benchmark_reference, { fieldtype: "Currency" }) : "—"}</td>
-            <td><strong>${frappe.format(row.final_sell_unit_price || 0, { fieldtype: "Currency" })}</strong></td>
+            <td>${formatCurrency(row.buy_price || 0)}</td>
+            <td>${formatCurrency(row.customs_applied || 0)}</td>
+            <td>${formatCurrency(row.customs_base_value || 0)}</td>
+            <td>${formatCurrency(row.tier_modifier_amount || 0)}</td>
+            <td>${formatCurrency(row.zone_modifier_amount || 0)}</td>
+            <td>${row.benchmark_reference ? formatCurrency(row.benchmark_reference) : "—"}</td>
+            <td><strong>${formatCurrency(row.final_sell_unit_price || 0)}</strong></td>
             <td>${marginBadge(row.margin_pct)}</td>
             <td${ruleTitle}>${docLink("Pricing Benchmark Policy", policy, policy, null)}</td>
         </tr>`;
@@ -830,7 +834,7 @@ function staticRow(row, q) {
             <td>${row.selected_price_list
             ? `<a href="/app/item-price?price_list=${encodeURIComponent(row.selected_price_list)}" class="psim-link" target="_blank" title="View Item Prices for ${frappe.utils.escape_html(row.selected_price_list)}">${frappe.utils.escape_html(row.selected_price_list)}</a>`
             : "—"}</td>
-            <td>${frappe.format(row.selected_price || 0, { fieldtype: "Currency" })}</td>
+            <td>${formatCurrency(row.selected_price || 0)}</td>
             <td>${row.option_count || 0}</td>
         </tr>`;
 }

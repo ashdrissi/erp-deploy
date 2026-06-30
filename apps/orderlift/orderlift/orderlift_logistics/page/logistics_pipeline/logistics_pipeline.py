@@ -90,7 +90,7 @@ def _forecast_load_plan_cards(
     if shipping_responsibility and shipping_responsibility != "All":
         filters["shipping_responsibility"] = shipping_responsibility
 
-    rows = frappe.get_all(
+    rows = frappe.get_list(
         "Forecast Load Plan",
         filters=filters,
         fields=[

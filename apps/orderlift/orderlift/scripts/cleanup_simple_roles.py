@@ -27,6 +27,7 @@ LEGACY_ORDERLIFT_ROLES = {
 
 @frappe.whitelist()
 def run(dry_run: int = 1) -> dict:
+    frappe.only_for("System Manager")
     dry_run = bool(int(dry_run or 0))
     allowed_roles = set(BUSINESS_ROLES)
 

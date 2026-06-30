@@ -24,6 +24,7 @@ def run(
     start: int | str = 0,
     timeout: int | str = DEFAULT_TIMEOUT_SECONDS,
 ):
+    frappe.only_for("System Manager")
     dry_run = _truthy(dry_run)
     limit = cint(limit or 0)
     start = cint(start or 0)

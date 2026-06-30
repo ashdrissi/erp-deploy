@@ -90,6 +90,7 @@ def run(
     Defaults are intentionally conservative: dry-run is on, suppliers are kept because
     buying item prices and article sourcing can still reference them.
     """
+    frappe.only_for("System Manager")
     dry_run = cint(dry_run)
     if not dry_run and confirm != CONFIRM_TOKEN:
         frappe.throw(_("Pass confirm={0} to run the destructive cleanup.").format(CONFIRM_TOKEN))

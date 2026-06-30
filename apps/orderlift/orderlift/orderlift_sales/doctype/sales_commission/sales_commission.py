@@ -30,13 +30,11 @@ class SalesCommission(Document):
             frappe.throw(_("Commission rate cannot exceed 100%"))
 
     def _calculate_commission_amount(self):
-        """Recalculate commission amount from base_amount and rate."""
-        if self.base_amount and self.commission_rate:
-            calculated = self.base_amount * (self.commission_rate / 100)
-            # Only overwrite if commission_amount was not manually set
-            # or if it differs significantly from expected value
-            if not self.commission_amount or abs(self.commission_amount - calculated) > 0.01:
-                self.commission_amount = calculated
+        """Keep snapshot commission_amount authoritative for Sales Order-driven records."""
+        if self.sales_order:
+            return
+        if self.base_amount and self.commission_rate and not self.commission_amount:
+            self.commission_amount = self.base_amount * (self.commission_rate / 100)
 
     def _set_customer_from_sales_order(self):
         """Fetch customer from Sales Order if not already set."""

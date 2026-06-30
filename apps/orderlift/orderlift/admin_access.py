@@ -1,3 +1,9 @@
+"""Legacy broad-access setup helpers.
+
+This module predates Access Command Center. Keep it blocked unless an explicit
+recovery decision is made with confirm_legacy_access_reset=1.
+"""
+
 import frappe
 
 
@@ -334,7 +340,9 @@ def _apply_profile_to_user(user_name):
 
 
 @frappe.whitelist()
-def ensure_business_admin_access(user_name=None):
+def ensure_business_admin_access(user_name=None, confirm_legacy_access_reset: int | str = 0):
+    frappe.only_for("System Manager")
+    _require_legacy_confirmation(confirm_legacy_access_reset)
     _ensure_role(CLIENT_SHELL_ROLE)
     _ensure_role(ROLE_NAME)
     _ensure_role_profile(PROFILE_NAME, PROFILE_ROLES)
@@ -365,3 +373,12 @@ def ensure_business_admin_access(user_name=None):
         "report_roles": REPORT_ROLES,
         "user": user_summary,
     }
+
+
+def _require_legacy_confirmation(confirm_legacy_access_reset: int | str = 0) -> None:
+    if str(confirm_legacy_access_reset).strip() == "1":
+        return
+    frappe.throw(
+        "This legacy broad-access setup is disabled. Use Access Command Center, "
+        "or rerun with confirm_legacy_access_reset=1 after an explicit recovery decision."
+    )

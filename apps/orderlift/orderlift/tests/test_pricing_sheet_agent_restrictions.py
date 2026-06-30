@@ -8,9 +8,12 @@ frappe_stub._ = lambda value: value
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.validate_and_sanitize_search_inputs = lambda fn: fn
 frappe_stub.session = types.SimpleNamespace(user="sales@example.com")
+frappe_stub.conf = types.SimpleNamespace(orderlift_use_role_capabilities=0)
 frappe_stub.roles_map = {}
 frappe_stub.get_roles = lambda user=None: frappe_stub.roles_map.get(user or frappe_stub.session.user, [])
+frappe_stub.get_meta = lambda doctype: types.SimpleNamespace(get_field=lambda f: types.SimpleNamespace())
 frappe_stub.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(ValueError(message))
+frappe_stub.log_error = lambda *args, **kwargs: None
 frappe_stub.logger = lambda *args, **kwargs: types.SimpleNamespace(info=lambda *a, **kw: None)
 frappe_stub.db = types.SimpleNamespace(
     exists=lambda *args, **kwargs: False,
@@ -18,6 +21,11 @@ frappe_stub.db = types.SimpleNamespace(
     has_column=lambda *args, **kwargs: False,
 )
 sys.modules["frappe"] = frappe_stub
+
+# Ensure price_list_scope / role_capabilities are re-imported with current stub
+for mod in list(sys.modules):
+    if mod.startswith("orderlift.role_capabilities") or mod.endswith(".price_list_scope"):
+        del sys.modules[mod]
 
 utils_stub = types.ModuleType("frappe.utils")
 utils_stub.cint = lambda value=0: int(value or 0)
@@ -63,10 +71,12 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
     def setUp(self):
         frappe_stub._ = lambda value: value
         frappe_stub.session = types.SimpleNamespace(user="sales@example.com")
+        frappe_stub.conf = types.SimpleNamespace(orderlift_use_role_capabilities=0)
         frappe_stub.roles_map = {}
         frappe_stub.get_roles = lambda user=None: frappe_stub.roles_map.get(user or frappe_stub.session.user, [])
         frappe_stub.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(ValueError(message))
         frappe_stub.logger = lambda *args, **kwargs: types.SimpleNamespace(info=lambda *a, **kw: None)
+        frappe_stub.log_error = lambda *args, **kwargs: None
         frappe_stub.db = types.SimpleNamespace(
             exists=lambda *args, **kwargs: False,
             get_value=lambda *args, **kwargs: None,
@@ -77,6 +87,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
     def tearDown(self):
         frappe_stub.roles_map.clear()
         frappe_stub.session.user = "sales@example.com"
+        frappe_stub.conf = types.SimpleNamespace(orderlift_use_role_capabilities=0)
         frappe_stub.db.has_column = lambda *args, **kwargs: False
         frappe_stub.db.get_value = lambda *args, **kwargs: None
 
@@ -85,6 +96,22 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
         sheet = pricing_sheet.PricingSheet()
 
         self.assertTrue(sheet._is_restricted_agent_user())
+
+    def test_commercial_agent_can_generate_quotation_without_extra_role(self):
+        frappe_stub.roles_map["sales@example.com"] = ["Commercial Agent"]
+        sheet = pricing_sheet.PricingSheet()
+
+        self.assertTrue(sheet._is_restricted_agent_user())
+        self.assertTrue(sheet._can_create_quotation_as_commercial_user())
+
+    def test_sales_user_still_needs_quotation_creator_capability(self):
+        frappe_stub.roles_map["sales@example.com"] = ["Sales User"]
+        sheet = pricing_sheet.PricingSheet()
+
+        self.assertFalse(sheet._can_create_quotation_as_commercial_user())
+
+        frappe_stub.roles_map["sales@example.com"] = ["Sales User", "Quotation Creator"]
+        self.assertTrue(sheet._can_create_quotation_as_commercial_user())
 
     def test_pricing_admin_with_sales_user_is_not_restricted(self):
         frappe_stub.roles_map["sales@example.com"] = ["Sales User", "Orderlift Admin"]
@@ -419,7 +446,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
         self.assertEqual(sheet.crm_segment, "Individu")
         self.assertEqual(calls, [{"customer": "CUST-001", "apply": 1}])
 
-    def test_static_recalculate_uses_allowed_margin_source(self):
+    def test_static_recalculate_does_not_calculate_margin_for_unstamped_list(self):
         original_get_prices = pricing_sheet.get_latest_item_prices
         original_apply_expenses = pricing_sheet.apply_expenses
         original_get_currency = pricing_sheet.get_pricing_currency
@@ -447,10 +474,130 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
 
             sheet._recalculate_static({"selling_price_lists": ["Retail Agent"]}, 0)
 
-            self.assertEqual(row.margin_source, "Profile")
+            self.assertEqual(row.margin_source, "Unstamped Static List")
+            self.assertEqual(row.margin_pct, 0)
         finally:
             pricing_sheet.get_latest_item_prices = original_get_prices
             pricing_sheet.apply_expenses = original_apply_expenses
+            pricing_sheet.get_pricing_currency = original_get_currency
+
+    def test_static_recalculate_uses_stamped_builder_margin(self):
+        original_get_records = pricing_sheet.get_latest_item_price_records
+        original_get_currency = pricing_sheet.get_pricing_currency
+        pricing_sheet.get_latest_item_price_records = lambda *args, **kwargs: {
+            "ITEM-001": {
+                "item_code": "ITEM-001",
+                "price_list_rate": 120,
+                "custom_pricing_builder": "PBU-00001",
+                "custom_source_buying_price_list": "Buy USD",
+                "custom_benchmark_rule_label": "Rule A",
+                "custom_target_margin_percent": 15,
+                "custom_final_margin_percent": 12.5,
+                "custom_builder_customs_amount": 8,
+                "custom_builder_price_overridden": 1,
+            }
+        }
+        pricing_sheet.get_pricing_currency = lambda: "USD"
+        try:
+            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, manual_sell_unit_price=0, discount_percent=0)
+            sheet = pricing_sheet.PricingSheet()
+            sheet.lines = [row]
+            sheet.selected_price_list = "Retail Agent"
+            sheet._resolve_static_benchmark_policy = lambda: None
+            sheet._resolve_segmentation_modifiers = lambda: (None, None, "")
+            sheet._resolve_agent_discount_context = lambda: {"max_discount_percent": 100, "commission_rate": 0}
+            sheet._is_restricted_agent_user = lambda: False
+
+            sheet._recalculate_static({"selling_price_lists": ["Retail Agent"]}, 0)
+
+            self.assertEqual(row.margin_source, "Builder Stamp")
+            self.assertEqual(row.pricing_builder, "PBU-00001")
+            self.assertEqual(row.builder_source_buying_price_list, "Buy USD")
+            self.assertEqual(row.resolved_benchmark_rule, "Rule A")
+            self.assertEqual(row.target_margin_percent, 15)
+            self.assertEqual(row.builder_margin_percent, 12.5)
+            self.assertEqual(row.margin_pct, 12.5)
+            self.assertEqual(row.customs_unit_amount, 8)
+            self.assertEqual(row.customs_applied, 8)
+            self.assertEqual(row.builder_price_overridden, 1)
+        finally:
+            pricing_sheet.get_latest_item_price_records = original_get_records
+            pricing_sheet.get_pricing_currency = original_get_currency
+
+    def test_static_manual_override_recalculates_actual_margin(self):
+        original_get_records = pricing_sheet.get_latest_item_price_records
+        original_get_currency = pricing_sheet.get_pricing_currency
+        pricing_sheet.get_latest_item_price_records = lambda *args, **kwargs: {
+            "ITEM-001": {
+                "item_code": "ITEM-001",
+                "price_list_rate": 120,
+                "custom_pricing_builder": "PBU-00001",
+                "custom_target_margin_percent": 20,
+                "custom_final_margin_percent": 20,
+                "custom_benchmark_rule_max_discount_percent": 100,
+                "custom_last_builder_buy_rate": 100,
+                "custom_builder_expense_amount": 10,
+                "custom_builder_customs_amount": 5,
+                "custom_builder_margin_basis": "Base Price",
+            }
+        }
+        pricing_sheet.get_pricing_currency = lambda: "USD"
+        try:
+            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, manual_sell_unit_price=140, discount_percent=0)
+            sheet = pricing_sheet.PricingSheet()
+            sheet.lines = [row]
+            sheet.selected_price_list = "Retail Agent"
+            sheet._resolve_static_benchmark_policy = lambda: None
+            sheet._resolve_segmentation_modifiers = lambda: (None, None, "")
+            sheet._resolve_agent_discount_context = lambda: {"max_discount_percent": 100, "commission_rate": 0}
+            sheet._is_restricted_agent_user = lambda: False
+
+            sheet._recalculate_static({"selling_price_lists": ["Retail Agent"]}, 0)
+
+            self.assertEqual(row.final_sell_unit_price, 140)
+            self.assertEqual(row.margin_unit_amount, 25)
+            self.assertEqual(row.margin_pct, 25)
+            self.assertEqual(row.builder_margin_percent, 25)
+            self.assertEqual(row.target_margin_percent, 20)
+        finally:
+            pricing_sheet.get_latest_item_price_records = original_get_records
+            pricing_sheet.get_pricing_currency = original_get_currency
+
+    def test_static_manual_override_can_show_negative_margin(self):
+        original_get_records = pricing_sheet.get_latest_item_price_records
+        original_get_currency = pricing_sheet.get_pricing_currency
+        pricing_sheet.get_latest_item_price_records = lambda *args, **kwargs: {
+            "ITEM-001": {
+                "item_code": "ITEM-001",
+                "price_list_rate": 120,
+                "custom_pricing_builder": "PBU-00001",
+                "custom_target_margin_percent": 20,
+                "custom_final_margin_percent": 20,
+                "custom_benchmark_rule_max_discount_percent": 100,
+                "custom_last_builder_buy_rate": 100,
+                "custom_builder_expense_amount": 10,
+                "custom_builder_customs_amount": 5,
+                "custom_builder_margin_basis": "Base Price",
+            }
+        }
+        pricing_sheet.get_pricing_currency = lambda: "USD"
+        try:
+            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, manual_sell_unit_price=110, discount_percent=0)
+            sheet = pricing_sheet.PricingSheet()
+            sheet.lines = [row]
+            sheet.selected_price_list = "Retail Agent"
+            sheet._resolve_static_benchmark_policy = lambda: None
+            sheet._resolve_segmentation_modifiers = lambda: (None, None, "")
+            sheet._resolve_agent_discount_context = lambda: {"max_discount_percent": 100, "commission_rate": 0}
+            sheet._is_restricted_agent_user = lambda: False
+
+            sheet._recalculate_static({"selling_price_lists": ["Retail Agent"]}, 0)
+
+            self.assertEqual(row.margin_unit_amount, -5)
+            self.assertEqual(row.margin_pct, -5)
+            self.assertEqual(row.builder_margin_percent, -5)
+        finally:
+            pricing_sheet.get_latest_item_price_records = original_get_records
             pricing_sheet.get_pricing_currency = original_get_currency
 
     def test_static_recalculate_applies_tier_and_territory_modifiers(self):

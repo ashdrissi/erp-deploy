@@ -25,6 +25,8 @@ frappe.provide("orderlift.company_scope");
         "Price List": { company: "custom_company", bt: null },
         Prospect: { company: "company", bt: null },
         Lead: { company: "company", bt: null },
+        Opportunity: { company: "company", bt: "custom_crm_business_type" },
+        Quotation: { company: "company", bt: "custom_crm_business_type" },
         "Pricing Sheet": { company: "custom_company", bt: "crm_business_type" },
         "Pricing Scenario": { company: "custom_company", bt: null },
         "Customer Segmentation Engine": { company: "custom_company", bt: "business_type_filter" },

@@ -103,7 +103,7 @@ def _opportunity_cards(search=None, owner=None, source=None, stage_names=None) -
         if _has_field("Opportunity", custom_field):
             fields.append(custom_field)
 
-    rows = frappe.get_all("Opportunity", filters=filters, fields=fields, order_by="modified desc", limit_page_length=200)
+    rows = frappe.get_list("Opportunity", filters=filters, fields=fields, order_by="modified desc", limit_page_length=200)
     cards = [_card_from_row(row, stage_names=stage_names) for row in rows]
     if search:
         needle = search.strip().lower()

@@ -3,8 +3,15 @@ import json
 import frappe
 from frappe.utils import cint, flt
 
+from orderlift.warehouse_access import stock_warehouse_condition
+
+from orderlift.orderlift_logistics.doctype.container_profile.container_profile import (
+    DEFAULT_INTERNAL_DIMENSIONS_CM,
+    derive_internal_dimensions_cm,
+)
 from orderlift.orderlift_logistics.services.load_planning import (
     _get_item_metrics,
+    _get_packaging_metrics,
     _get_row_metrics,
 )
 from orderlift.orderlift_logistics.services.capacity_math import round3
@@ -18,9 +25,9 @@ from orderlift.orderlift_logistics.services.capacity_math import round3
 # ---------------------------------------------------------------------------
 
 FLOW_SCOPE_ALLOWED_DOCTYPES = {
-    "Inbound": ["Purchase Order"],
-    "Domestic": ["Quotation", "Sales Order", "Delivery Note"],
-    "Outbound": ["Quotation", "Sales Order", "Delivery Note"],
+    "Inbound": ["Purchase Order", "Material Request"],
+    "Domestic": ["Opportunity", "Quotation", "Sales Order", "Delivery Note", "Material Request"],
+    "Outbound": ["Opportunity", "Quotation", "Sales Order", "Delivery Note", "Material Request"],
 }
 
 
@@ -45,6 +52,15 @@ DOCTYPE_CONFIG = {
         "date_field": "transaction_date",
         "items_table": "items",
         "extra_filters": {},
+    },
+    "Opportunity": {
+        "abbr": "OPP",
+        "party_field": "party_name",
+        "party_type": "Customer",
+        "party_link_field": "party_name",
+        "date_field": "transaction_date",
+        "items_table": "items",
+        "extra_filters": {"status": ["not in", ["Closed", "Lost"]]},
     },
     "Sales Order": {
         "abbr": "SO",
@@ -75,6 +91,15 @@ DOCTYPE_CONFIG = {
         "date_field": "posting_date",
         "items_table": "items",
         "extra_filters": {"docstatus": 1},
+    },
+    "Material Request": {
+        "abbr": "MR",
+        "party_field": "company",
+        "party_type": "Company",
+        "party_link_field": "company",
+        "date_field": "transaction_date",
+        "items_table": "items",
+        "extra_filters": {"docstatus": ["!=", 2], "status": ["not in", ["Stopped", "Cancelled"]]},
     },
 }
 
@@ -115,6 +140,9 @@ def _compute_doc_totals(doctype, doc_name, packaging_overrides=None):
             "resolved_uom": metrics.get("resolved_uom") or "",
             "unit_weight_kg": round3(unit_w),
             "unit_volume_m3": round3(unit_v),
+            "length_cm": round3(metrics.get("length_cm")),
+            "width_cm": round3(metrics.get("width_cm")),
+            "height_cm": round3(metrics.get("height_cm")),
             "line_weight_kg": round3(line_w),
             "line_volume_m3": round3(line_v),
         })
@@ -129,6 +157,17 @@ def _compute_doc_totals(doctype, doc_name, packaging_overrides=None):
 
 def _load_packaging_overrides(row):
     raw = getattr(row, "packaging_overrides_json", "") or ""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _load_packaging_layout(doc):
+    raw = getattr(doc, "packaging_layout_json", "") or ""
     if not raw:
         return {}
     try:
@@ -180,14 +219,24 @@ def _get_item_uom_data(item_code):
 
 
 def _compute_single_item_metrics(item_code, qty):
-    """Compute weight/volume for a single item at a given qty."""
-    unit_w, unit_v = _get_item_metrics(item_code)
+    """Compute package-based weight/volume for a single item at a given qty."""
+    metrics = _get_packaging_metrics(item_code=item_code, qty=qty)
+    unit_w = flt(metrics.get("unit_weight_kg") or 0)
+    unit_v = flt(metrics.get("unit_volume_m3") or 0)
     uom_data = _get_item_uom_data(item_code)
     return {
         "unit_weight_kg": round3(unit_w),
         "unit_volume_m3": round3(unit_v),
-        "total_weight_kg": round3(qty * unit_w),
-        "total_volume_m3": round3(qty * unit_v),
+        "total_weight_kg": round3(metrics.get("line_weight_kg")),
+        "total_volume_m3": round3(metrics.get("line_volume_m3")),
+        "package_count": flt(metrics.get("package_count") or 0),
+        "packaging_profile": metrics.get("resolved_profile_name") or "",
+        "packaging_source": metrics.get("packaging_source") or "item_fallback",
+        "packaging_type": metrics.get("packaging_type") or "",
+        "resolved_uom": metrics.get("resolved_uom") or "",
+        "length_cm": round3(metrics.get("length_cm")),
+        "width_cm": round3(metrics.get("width_cm")),
+        "height_cm": round3(metrics.get("height_cm")),
         **uom_data,
     }
 
@@ -199,6 +248,82 @@ def _infer_confidence(doctype, docstatus):
     if docstatus == 1:
         return "committed"
     return "tentative"
+
+
+def _container_dimensions_cm(profile):
+    length = flt(getattr(profile, "length_cm", 0) or 0)
+    width = flt(getattr(profile, "width_cm", 0) or 0)
+    height = flt(getattr(profile, "height_cm", 0) or 0)
+    if length > 0 and width > 0 and height > 0:
+        return length, width, height
+
+    defaults = DEFAULT_INTERNAL_DIMENSIONS_CM.get(getattr(profile, "container_type", "") or "")
+    if defaults:
+        return defaults
+
+    derived = derive_internal_dimensions_cm(getattr(profile, "max_volume_m3", 0) or 0)
+    if all(flt(value) > 0 for value in derived):
+        return derived
+
+    return length, width, height
+
+
+def _has_column(doctype, fieldname):
+    try:
+        return frappe.db.has_column(doctype, fieldname)
+    except Exception:
+        return False
+
+
+def _apply_company_filter(filters, doctype, company):
+    company = (company or "").strip()
+    if not company:
+        return
+    if _has_column(doctype, "company"):
+        filters["company"] = company
+    elif _has_column(doctype, "custom_company"):
+        filters["custom_company"] = company
+
+
+def _price_list_options(kind, company=None):
+    from orderlift.orderlift_sales.utils.price_list_scope import get_item_price_access
+
+    access = get_item_price_access(kind, company=company)
+    if not access.get("permitted"):
+        return []
+    names = access.get("price_lists") or []
+    if not names:
+        return []
+    return frappe.get_all(
+        "Price List",
+        filters={"name": ["in", names]},
+        fields=["name", "currency"],
+        order_by="name asc",
+        limit_page_length=0,
+    )
+
+
+def _price_list_item_codes(price_list, kind, company=None):
+    from orderlift.orderlift_sales.utils.price_list_scope import validate_price_list_scope
+
+    price_list = validate_price_list_scope(price_list, kind=kind, required=False, company=company)
+    if not price_list:
+        return set()
+    filters = {"price_list": price_list}
+    if kind == "selling" and _has_column("Item Price", "selling"):
+        filters["selling"] = 1
+    if kind == "buying" and _has_column("Item Price", "buying"):
+        filters["buying"] = 1
+    return set(frappe.get_all("Item Price", filters=filters, pluck="item_code", limit_page_length=0) or [])
+
+
+@frappe.whitelist()
+def get_planner_price_lists(company=None):
+    company = _active_planner_company(company)
+    return {
+        "selling": _price_list_options("selling", company=company),
+        "buying": _price_list_options("buying", company=company),
+    }
 
 
 @frappe.whitelist()
@@ -233,27 +358,29 @@ def get_forecast_source_queue(company=None, flow_scope=None, shipping_responsibi
             continue
 
         filters = dict(cfg.get("extra_filters") or {})
-        if company:
-            filters["company"] = company
+        _apply_company_filter(filters, dt, company)
 
         # Logistics custom fields (may not exist on Quotation)
-        if flow_scope and frappe.db.has_column(dt, "custom_flow_scope"):
+        if flow_scope and _has_column(dt, "custom_flow_scope"):
             filters["custom_flow_scope"] = flow_scope
-        if shipping_responsibility and frappe.db.has_column(dt, "custom_shipping_responsibility"):
+        if shipping_responsibility and _has_column(dt, "custom_shipping_responsibility"):
             filters["custom_shipping_responsibility"] = shipping_responsibility
-        if destination_zone and frappe.db.has_column(dt, "custom_destination_zone"):
+        if destination_zone and _has_column(dt, "custom_destination_zone"):
             filters["custom_destination_zone"] = destination_zone
 
         fields = [
             "name",
             f"`{cfg['date_field']}` as doc_date",
             "docstatus",
-            "company",
         ]
+        if _has_column(dt, "company"):
+            fields.append("company")
+        elif _has_column(dt, "custom_company"):
+            fields.append("`custom_company` as company")
         # party field
-        if frappe.db.has_column(dt, cfg["party_field"]):
+        if _has_column(dt, cfg["party_field"]):
             fields.append(f"`{cfg['party_field']}` as party_name")
-        if frappe.db.has_column(dt, cfg["party_link_field"]):
+        if _has_column(dt, cfg["party_link_field"]):
             fields.append(f"`{cfg['party_link_field']}` as party_link")
 
         docs = frappe.get_all(
@@ -295,6 +422,7 @@ def get_plan_detail(plan_name):
     profile = None
     if doc.container_profile:
         profile = frappe.get_cached_doc("Container Profile", doc.container_profile)
+    container_length_cm, container_width_cm, container_height_cm = _container_dimensions_cm(profile) if profile else (0, 0, 0)
 
     plan_items = []
     for row in doc.items or []:
@@ -326,12 +454,25 @@ def get_plan_detail(plan_name):
                 "stock_uom": row.stock_uom or "",
                 "purchase_uom": row.purchase_uom or "",
                 "uom_conversion_factor": flt(row.uom_conversion_factor),
+                "package_count": flt(getattr(row, "package_count", 0) or 0),
+                "packaging_profile": getattr(row, "packaging_profile", "") or "",
+                "packaging_source": getattr(row, "packaging_source", "") or "item_fallback",
+                "length_cm": flt(getattr(row, "length_cm", 0) or 0),
+                "width_cm": flt(getattr(row, "width_cm", 0) or 0),
+                "height_cm": flt(getattr(row, "height_cm", 0) or 0),
                 "line_items": [{
                     "item_code": item_code,
                     "item_name": row.item_name or item_code,
                     "qty": flt(row.planned_qty),
+                    "package_count": flt(getattr(row, "package_count", 0) or 0),
+                    "packaging_profile": getattr(row, "packaging_profile", "") or "",
+                    "packaging_source": getattr(row, "packaging_source", "") or "item_fallback",
+                    "resolved_uom": row.purchase_uom or row.stock_uom or "",
                     "unit_weight_kg": flt(row.unit_weight_kg),
                     "unit_volume_m3": flt(row.unit_volume_m3),
+                    "length_cm": flt(getattr(row, "length_cm", 0) or 0),
+                    "width_cm": flt(getattr(row, "width_cm", 0) or 0),
+                    "height_cm": flt(getattr(row, "height_cm", 0) or 0),
                     "line_weight_kg": flt(row.total_weight_kg),
                     "line_volume_m3": flt(row.total_volume_m3),
                 }],
@@ -387,12 +528,16 @@ def get_plan_detail(plan_name):
         "volume_utilization_pct": flt(doc.volume_utilization_pct),
         "notes": doc.notes,
         "items": plan_items,
+        "packaging_layout": _load_packaging_layout(doc),
         "container": {
             "name": profile.name,
             "container_name": profile.container_name,
             "container_type": profile.container_type,
             "max_weight_kg": flt(profile.max_weight_kg),
             "max_volume_m3": flt(profile.max_volume_m3),
+            "length_cm": container_length_cm,
+            "width_cm": container_width_cm,
+            "height_cm": container_height_cm,
         } if profile else None,
         "allowed_doctypes": allowed_doctypes_for_flow(doc.flow_scope),
         "capacity": get_capacity_status(plan_name),
@@ -402,7 +547,7 @@ def get_plan_detail(plan_name):
 def _get_plan_capacity(forecast):
     """Return the container's max volume and weight for a forecast plan."""
     if not forecast.container_profile:
-        return None, None
+        return 0.0, 0.0
     profile = frappe.get_cached_doc("Container Profile", forecast.container_profile)
     return flt(profile.max_volume_m3), flt(profile.max_weight_kg)
 
@@ -412,6 +557,8 @@ def _check_capacity(doc, new_vol=0, new_wt=0):
     Returns (can_add, current_vol, current_wt, max_vol, max_wt, over_vol, over_wt).
     """
     max_vol, max_wt = _get_plan_capacity(doc)
+    max_vol = flt(max_vol)
+    max_wt = flt(max_wt)
     if not max_vol and not max_wt:
         return True, 0, 0, 0, 0, 0, 0  # no limits set
 
@@ -767,13 +914,28 @@ def _ensure_ready_transition(forecast):
 @frappe.whitelist()
 def get_container_profiles():
     """Return active container profiles for sidebar selection."""
-    return frappe.get_all(
+    profiles = frappe.get_all(
         "Container Profile",
         filters={"is_active": 1},
-        fields=["name", "container_name", "container_type", "max_weight_kg", "max_volume_m3"],
+        fields=[
+            "name",
+            "container_name",
+            "container_type",
+            "max_weight_kg",
+            "max_volume_m3",
+            "length_cm",
+            "width_cm",
+            "height_cm",
+        ],
         order_by="cost_rank asc, max_volume_m3 asc",
         limit_page_length=0,
     )
+    for profile in profiles:
+        length, width, height = _container_dimensions_cm(profile)
+        profile.length_cm = length
+        profile.width_cm = width
+        profile.height_cm = height
+    return profiles
 
 
 @frappe.whitelist()
@@ -787,6 +949,7 @@ def add_free_item(plan_name, item_code, planned_qty, party_type="", party=""):
 
     item = frappe.get_cached_doc("Item", item_code)
     metrics = _compute_single_item_metrics(item_code, flt(planned_qty))
+    _assert_complete_packaging_metrics(item_code, metrics)
 
     # Check capacity
     can_add, cur_vol, cur_wt, max_vol, max_wt, over_vol, over_wt = _check_capacity(
@@ -813,6 +976,12 @@ def add_free_item(plan_name, item_code, planned_qty, party_type="", party=""):
         "stock_uom": metrics["stock_uom"],
         "purchase_uom": metrics["purchase_uom"],
         "uom_conversion_factor": metrics["uom_conversion_factor"],
+        "packaging_profile": metrics.get("packaging_profile") or "",
+        "packaging_source": metrics.get("packaging_source") or "item_fallback",
+        "package_count": metrics.get("package_count") or 0,
+        "length_cm": metrics.get("length_cm") or 0,
+        "width_cm": metrics.get("width_cm") or 0,
+        "height_cm": metrics.get("height_cm") or 0,
         "total_weight_kg": metrics["total_weight_kg"],
         "total_volume_m3": metrics["total_volume_m3"],
         "unit_weight_kg": metrics["unit_weight_kg"],
@@ -823,6 +992,19 @@ def add_free_item(plan_name, item_code, planned_qty, party_type="", party=""):
 
     doc.save(ignore_permissions=True)
     return get_plan_detail(plan_name)
+
+
+def _assert_complete_packaging_metrics(item_code: str, metrics: dict) -> None:
+    if metrics.get("packaging_source") == "item_fallback":
+        frappe.throw(f"No active default packaging profile found for {item_code}.")
+    if flt(metrics.get("unit_weight_kg") or 0) <= 0 or flt(metrics.get("unit_volume_m3") or 0) <= 0:
+        frappe.throw(f"Packaging profile for {item_code} must have weight and volume.")
+    if not (
+        flt(metrics.get("length_cm") or 0) > 0
+        and flt(metrics.get("width_cm") or 0) > 0
+        and flt(metrics.get("height_cm") or 0) > 0
+    ):
+        frappe.throw(f"Packaging profile for {item_code} must have length, width, and height for 3D loading.")
 
 
 @frappe.whitelist()
@@ -843,12 +1025,19 @@ def update_item_line_qty(plan_name, row_name, planned_qty):
     for row in doc.items or []:
         if row.name == row_name:
             if row.is_planned:
-                # Free item — recalc from unit metrics
-                unit_w = flt(row.unit_weight_kg)
-                unit_v = flt(row.unit_volume_m3)
+                metrics = _compute_single_item_metrics(row.item_code, new_qty)
+                _assert_complete_packaging_metrics(row.item_code, metrics)
                 row.planned_qty = new_qty
-                row.total_weight_kg = round3(new_qty * unit_w)
-                row.total_volume_m3 = round3(new_qty * unit_v)
+                row.total_weight_kg = metrics["total_weight_kg"]
+                row.total_volume_m3 = metrics["total_volume_m3"]
+                row.unit_weight_kg = metrics["unit_weight_kg"]
+                row.unit_volume_m3 = metrics["unit_volume_m3"]
+                row.packaging_profile = metrics.get("packaging_profile") or ""
+                row.packaging_source = metrics.get("packaging_source") or "item_fallback"
+                row.package_count = metrics.get("package_count") or 0
+                row.length_cm = metrics.get("length_cm") or 0
+                row.width_cm = metrics.get("width_cm") or 0
+                row.height_cm = metrics.get("height_cm") or 0
             else:
                 # Sourced doc — scale the entire doc's contribution
                 # Store the original totals, then scale by ratio
@@ -904,6 +1093,41 @@ def update_source_line_packaging_override(plan_name, row_name, source_row_name, 
 
 
 @frappe.whitelist()
+def save_packaging_layout(plan_name, layout_json=None):
+    """Persist manual package positions for the 3D planner view."""
+    doc = frappe.get_doc("Forecast Load Plan", plan_name)
+    doc.check_permission("write")
+
+    if not frappe.get_meta("Forecast Load Plan").get_field("packaging_layout_json"):
+        frappe.throw("Planner layout storage is not installed yet. Reload after migration.")
+
+    try:
+        layout = json.loads(layout_json or "{}")
+    except Exception:
+        frappe.throw("Invalid planner layout payload.")
+
+    if not isinstance(layout, dict):
+        frappe.throw("Invalid planner layout payload.")
+
+    clean = {}
+    for key, value in layout.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        clean[key[:180]] = {
+            "x": round3(value.get("x")),
+            "y": round3(value.get("y")),
+            "z": round3(value.get("z")),
+            "pl": round3(value.get("pl")),
+            "pw": round3(value.get("pw")),
+            "ph": round3(value.get("ph")),
+        }
+
+    doc.packaging_layout_json = json.dumps(clean, separators=(",", ":")) if clean else ""
+    doc.save(ignore_permissions=True)
+    return {"saved": True, "count": len(clean)}
+
+
+@frappe.whitelist()
 def remove_item_line(plan_name, row_name):
     """Remove a single item row from a Forecast Load Plan.
 
@@ -922,8 +1146,51 @@ def remove_item_line(plan_name, row_name):
     return get_plan_detail(plan_name)
 
 
+def _active_planner_company(company=None):
+    clean = (company or "").strip()
+    if clean:
+        return clean
+    try:
+        from orderlift.menu_access import resolve_current_company
+
+        return (resolve_current_company(user=frappe.session.user) or "").strip()
+    except Exception:
+        return ""
+
+
+def _company_item_codes(company: str) -> set[str]:
+    company = (company or "").strip()
+    if not company:
+        return set()
+    disabled_condition = _warehouse_disabled_condition("w")
+    params = {"company": company}
+    rows = frappe.db.sql(
+        f"""
+        SELECT DISTINCT b.item_code
+        FROM `tabBin` b
+        INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
+        WHERE w.company = %(company)s
+          {disabled_condition}
+          AND b.item_code IS NOT NULL
+          {stock_warehouse_condition("b.warehouse", params)}
+        """,
+        params,
+        as_dict=True,
+    )
+    return {row.item_code for row in rows if row.item_code}
+
+
+def _warehouse_disabled_condition(alias="w"):
+    try:
+        if not frappe.db.has_column("Warehouse", "disabled"):
+            return ""
+    except Exception:
+        return ""
+    return f"AND ifnull({alias}.disabled, 0) = 0"
+
+
 @frappe.whitelist()
-def get_item_search(search_term, item_group=None, limit=50):
+def get_item_search(search_term, item_group=None, limit=50, company=None, selling_price_list=None, buying_price_list=None):
     """Search Item Master for the item picker.
 
     Returns items matching search_term (code or name) with weight/volume/UOM data.
@@ -932,7 +1199,18 @@ def get_item_search(search_term, item_group=None, limit=50):
     if isinstance(search_term, str):
         search_term = json.loads(search_term) if search_term.startswith('"') else search_term
 
-    filters = {"disabled": 0}
+    company = _active_planner_company(company)
+    item_codes = _company_item_codes(company)
+    selling_codes = _price_list_item_codes(selling_price_list, "selling", company=company) if selling_price_list else set()
+    buying_codes = _price_list_item_codes(buying_price_list, "buying", company=company) if buying_price_list else set()
+    if selling_codes:
+        item_codes &= selling_codes
+    if buying_codes:
+        item_codes &= buying_codes
+    if not company or not item_codes:
+        return []
+
+    filters = {"disabled": 0, "name": ["in", sorted(item_codes)]}
     if item_group and item_group != "All":
         filters["item_group"] = item_group
 
@@ -958,6 +1236,7 @@ def get_item_search(search_term, item_group=None, limit=50):
     results = []
     for item in items:
         unit_w, unit_v = _get_item_metrics(item.name)
+        metrics = _get_packaging_metrics(item_code=item.name, qty=1)
         uom_data = _get_item_uom_data(item.name)
         results.append({
             "item_code": item.name,
@@ -969,8 +1248,16 @@ def get_item_search(search_term, item_group=None, limit=50):
             "uom_conversion_factor": uom_data["uom_conversion_factor"],
             "unit_weight_kg": round3(unit_w),
             "unit_volume_m3": round3(unit_v),
+            "package_count": flt(metrics.get("package_count") or 0),
+            "packaging_profile": metrics.get("resolved_profile_name") or "",
+            "packaging_source": metrics.get("packaging_source") or "item_fallback",
+            "packaging_type": metrics.get("packaging_type") or "",
+            "length_cm": round3(metrics.get("length_cm")),
+            "width_cm": round3(metrics.get("width_cm")),
+            "height_cm": round3(metrics.get("height_cm")),
             "has_weight": unit_w > 0,
             "has_volume": unit_v > 0,
+            "has_dimensions": flt(metrics.get("length_cm") or 0) > 0 and flt(metrics.get("width_cm") or 0) > 0 and flt(metrics.get("height_cm") or 0) > 0,
         })
 
     return results
@@ -978,32 +1265,74 @@ def get_item_search(search_term, item_group=None, limit=50):
 
 @frappe.whitelist()
 def get_reorder_suggestions(company=None, limit=20):
-    """Return items below their reorder level — candidates for adding to a plan."""
-    items = frappe.db.sql("""
-        SELECT
-            b.item_code,
-            i.item_name,
-            i.item_group,
-            i.stock_uom,
-            i.purchase_uom,
-            i.min_order_qty,
-            b.actual_qty,
-            ir.warehouse_reorder_level as reorder_level,
-            ir.warehouse_reorder_qty as reorder_qty,
-            i.custom_weight_kg,
-            i.custom_volume_m3
-        FROM `tabBin` b
-        JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
-        JOIN `tabItem` i ON i.name = b.item_code
-        WHERE b.actual_qty <= ir.warehouse_reorder_level
-            AND i.disabled = 0
-        ORDER BY (ir.warehouse_reorder_level - b.actual_qty) DESC
-        LIMIT %s
-    """, (limit,), as_dict=True)
+    """Return company items below safety stock/reorder level — candidates for adding to a plan."""
+    company = _active_planner_company(company)
+    if not company:
+        return []
+    disabled_condition = _warehouse_disabled_condition("w")
+    if _has_column("Item", "safety_stock"):
+        params = {"company": company, "limit": limit}
+        items = frappe.db.sql(f"""
+            SELECT
+                b.item_code,
+                i.item_name,
+                i.item_group,
+                i.stock_uom,
+                i.purchase_uom,
+                i.min_order_qty,
+                sum(b.actual_qty) as actual_qty,
+                max(i.safety_stock) as reorder_level,
+                max(ifnull(ir.warehouse_reorder_qty, 0)) as reorder_qty,
+                i.custom_weight_kg,
+                i.custom_volume_m3,
+                'Safety Stock' as threshold_type
+            FROM `tabBin` b
+            JOIN `tabWarehouse` w ON w.name = b.warehouse
+            JOIN `tabItem` i ON i.name = b.item_code
+            LEFT JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
+            WHERE w.company = %(company)s
+                {disabled_condition}
+                AND i.disabled = 0
+                {stock_warehouse_condition("b.warehouse", params)}
+            GROUP BY b.item_code, i.item_name, i.item_group, i.stock_uom, i.purchase_uom, i.min_order_qty,
+                i.custom_weight_kg, i.custom_volume_m3
+            HAVING reorder_level > 0 AND actual_qty <= reorder_level
+            ORDER BY (reorder_level - actual_qty) DESC
+            LIMIT %(limit)s
+        """, params, as_dict=True)
+    else:
+        params = {"company": company, "limit": limit}
+        items = frappe.db.sql(f"""
+            SELECT
+                b.item_code,
+                i.item_name,
+                i.item_group,
+                i.stock_uom,
+                i.purchase_uom,
+                i.min_order_qty,
+                b.actual_qty,
+                ir.warehouse_reorder_level as reorder_level,
+                ir.warehouse_reorder_qty as reorder_qty,
+                i.custom_weight_kg,
+                i.custom_volume_m3,
+                'Warehouse Reorder' as threshold_type
+            FROM `tabBin` b
+            JOIN `tabWarehouse` w ON w.name = b.warehouse
+            JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
+            JOIN `tabItem` i ON i.name = b.item_code
+            WHERE b.actual_qty <= ir.warehouse_reorder_level
+                AND w.company = %(company)s
+                {disabled_condition}
+                AND i.disabled = 0
+                {stock_warehouse_condition("b.warehouse", params)}
+            ORDER BY (ir.warehouse_reorder_level - b.actual_qty) DESC
+            LIMIT %(limit)s
+        """, params, as_dict=True)
 
     results = []
     for item in items:
         unit_w, unit_v = _get_item_metrics(item.item_code)
+        metrics = _get_packaging_metrics(item_code=item.item_code, qty=flt(item.reorder_qty) or 1)
         uom_data = _get_item_uom_data(item.item_code)
         results.append({
             "item_code": item.item_code,
@@ -1015,9 +1344,17 @@ def get_reorder_suggestions(company=None, limit=20):
             "uom_conversion_factor": uom_data["uom_conversion_factor"],
             "unit_weight_kg": round3(unit_w),
             "unit_volume_m3": round3(unit_v),
+            "package_count": flt(metrics.get("package_count") or 0),
+            "packaging_profile": metrics.get("resolved_profile_name") or "",
+            "packaging_source": metrics.get("packaging_source") or "item_fallback",
+            "packaging_type": metrics.get("packaging_type") or "",
+            "length_cm": round3(metrics.get("length_cm")),
+            "width_cm": round3(metrics.get("width_cm")),
+            "height_cm": round3(metrics.get("height_cm")),
             "actual_qty": flt(item.actual_qty),
             "reorder_level": flt(item.reorder_level),
             "reorder_qty": flt(item.reorder_qty),
+            "threshold_type": item.get("threshold_type") or "Safety Stock",
             "suggested_qty": flt(item.reorder_qty) or (flt(item.reorder_level) - flt(item.actual_qty)),
         })
 

@@ -5,6 +5,12 @@ const PLANNING_COLORS = {
     DN: "#0D6B50",
 };
 
+const PACKAGE_COLOR_PALETTE = [
+    "#185FA5", "#027384", "#884DB7", "#0D6B50", "#E67E22", "#C0392B",
+    "#16A085", "#8E44AD", "#2980B9", "#D35400", "#2C3E50", "#27AE60",
+    "#F39C12", "#7F8C8D", "#E84393", "#6C5CE7", "#00B894", "#E17055",
+];
+
 const PLANNING_CONFIDENCE = {
     committed: { bg: "#D8F2EA", text: "#0D6B50" },
     tentative: { bg: "#FDE8BE", text: "#854F0B" },
@@ -84,7 +90,25 @@ function renderPlanningPage(wrapper) {
         packagingProfileCache: {},
         searchInputValue: "",
         searchGroupFilter: "All",
+        sellingPriceListFilter: "",
+        buyingPriceListFilter: "",
+        plannerPriceLists: { selling: [], buying: [] },
         isLocked: false, // true once status >= Ready
+        packagingLayout: {},
+        packedPackages: [],
+        vizMode: "3d",
+        vizYaw: -35,
+        vizPitch: 28,
+        vizZoom: 1,
+        layerZoom: 1,
+        slicePct: 100,
+        selectedPackageId: null,
+        isDraggingView: false,
+        isDraggingPackage: false,
+        dragStart: null,
+        layoutSaveTimer: null,
+        popupDialog: null,
+        popupRoot: null,
     };
     wrapper._planningState = state;
 
@@ -105,6 +129,7 @@ function loadPlanData(state) {
             const plan = r.message;
             state.planDoc = plan;
             state.container = plan.container;
+            state.packagingLayout = plan.packaging_layout || {};
             state.ready = plan.status === "Ready" || plan.status === "Converted";
 
             state.planItems = (plan.items || []).map((item) => ({
@@ -143,6 +168,9 @@ function loadPlanData(state) {
                     wt: li.line_weight_kg || 0,
                     unit_vol: li.unit_volume_m3 || 0,
                     unit_wt: li.unit_weight_kg || 0,
+                    length_cm: li.length_cm || 0,
+                    width_cm: li.width_cm || 0,
+                    height_cm: li.height_cm || 0,
                 })),
             }));
 
@@ -208,13 +236,42 @@ function loadContainerProfiles(state) {
             renderContainerButtons(state);
         },
     });
+    loadPlannerPriceLists(state);
+}
+
+function loadPlannerPriceLists(state) {
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.get_planner_price_lists",
+        args: { company: state.planDoc?.company || undefined },
+        async: true,
+        callback: (r) => {
+            state.plannerPriceLists = r.message || { selling: [], buying: [] };
+            renderPlannerPriceListFilters(state);
+        },
+    });
+}
+
+function renderPlannerPriceListFilters(state) {
+    const selling = state.root.querySelector("#sellingPriceListFilter");
+    const buying = state.root.querySelector("#buyingPriceListFilter");
+    if (selling) {
+        selling.innerHTML = `<option value="">All Selling Price Lists</option>${(state.plannerPriceLists.selling || []).map((row) => `<option value="${escapeHtml(row.name)}">${escapeHtml(row.name)}</option>`).join("")}`;
+        selling.value = state.sellingPriceListFilter || "";
+    }
+    if (buying) {
+        buying.innerHTML = `<option value="">All Buying Price Lists</option>${(state.plannerPriceLists.buying || []).map((row) => `<option value="${escapeHtml(row.name)}">${escapeHtml(row.name)}</option>`).join("")}`;
+        buying.value = state.buyingPriceListFilter || "";
+    }
 }
 
 function getCapacity(state) {
     if (state.container) {
-        return { maxVol: state.container.max_volume_m3, maxKg: state.container.max_weight_kg };
+        return {
+            maxVol: Number(state.container.max_volume_m3 || 0),
+            maxKg: Number(state.container.max_weight_kg || 0),
+        };
     }
-    return { maxVol: 67.7, maxKg: 26000 };
+    return { maxVol: 0, maxKg: 0 };
 }
 
 function updateTopbar(state) {
@@ -268,8 +325,8 @@ function updateTopbar(state) {
     }
 
     const cap = getCapacity(state);
-    setText(state, ".kpi-sub-cap-vol", `of ${cap.maxVol.toFixed(1)} m3 capacity`);
-    setText(state, ".kpi-sub-cap-wt", `of ${cap.maxKg.toLocaleString()} kg max`);
+    setText(state, ".kpi-sub-cap-vol", cap.maxVol > 0 ? `of ${cap.maxVol.toFixed(1)} m3 capacity` : "no container selected");
+    setText(state, ".kpi-sub-cap-wt", cap.maxKg > 0 ? `of ${cap.maxKg.toLocaleString()} kg max` : "no weight limit");
 
     // Container card header
     const containerTitle = state.root.querySelector(".card-title-container");
@@ -278,7 +335,9 @@ function updateTopbar(state) {
     }
     const cardMeta = state.root.querySelector(".card-meta-container");
     if (cardMeta) {
-        cardMeta.innerHTML = `<span>Cap: <strong>${cap.maxVol.toFixed(1)} m3</strong></span><span>Max: <strong>${cap.maxKg.toLocaleString()} kg</strong></span>${plan.departure_date ? `<span>Dep: <strong>${plan.departure_date}</strong></span>` : ""}`;
+        const volLabel = cap.maxVol > 0 ? `${cap.maxVol.toFixed(1)} m3` : "not set";
+        const weightLabel = cap.maxKg > 0 ? `${cap.maxKg.toLocaleString()} kg` : "not set";
+        cardMeta.innerHTML = `<span>Cap: <strong>${volLabel}</strong></span><span>Max: <strong>${weightLabel}</strong></span>${plan.departure_date ? `<span>Dep: <strong>${plan.departure_date}</strong></span>` : ""}`;
     }
 }
 
@@ -410,8 +469,26 @@ function planningShellHtml(state) {
                         </div>
                         <div class="viz-body">
                             <div class="fill-legend" id="fillLegend"></div>
-                            <div class="container-svg-wrap">
-                                <svg id="containerSvg" width="100%" viewBox="0 0 500 90" preserveAspectRatio="none" style="display:block;border-radius:6px;overflow:hidden;"></svg>
+                            <div class="packer-toolbar">
+                                <div class="packer-tabs">
+                                    <button class="packer-tab active" data-action="packer-view" data-view="3d">3D</button>
+                                    <button class="packer-tab" data-action="packer-view" data-view="layer">Layers</button>
+                                </div>
+                                <label class="slice-control">Slice <input type="range" id="sliceSlider" min="0" max="100" value="100" data-action="slice-height"><span id="sliceLabel">All</span></label>
+                                <div class="packer-zoom">
+                                    <button data-action="packer-zoom" data-delta="-0.15">-</button>
+                                    <span id="packerZoomLabel">1.00x</span>
+                                    <button data-action="packer-zoom" data-delta="0.15">+</button>
+                                </div>
+                                <button class="packer-ghost-btn" data-action="reset-layout">Reset layout</button>
+                                <button class="packer-primary-btn" data-action="open-packer-popup">Agrandir</button>
+                            </div>
+                            <div class="container-3d-wrap">
+                                <svg id="container3dSvg" width="100%" viewBox="0 0 760 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="3D container load visualization"></svg>
+                <div id="layerView" class="packer-layer-view" style="display:none;"></div>
+                <div class="packer-tooltip" id="packerTooltip" style="display:none;"></div>
+                <div class="viewport-hint" id="packerHint">Drag empty space to rotate · wheel/+/− to zoom · drag package to move · Shift+drag or right-drag for layer height</div>
+                <div class="pack-warning" id="packWarning" style="display:none;"></div>
                             </div>
                             <div class="fill-stats">
                                 <div class="fill-stat"><div class="fill-stat-label">Volume loaded</div><div class="fill-stat-val warn" id="fsVol"></div></div>
@@ -434,7 +511,7 @@ function planningShellHtml(state) {
                             <div class="drop-zone" id="dropZone">
                                 <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>
                                 Drag documents here or use Add to Plan
-                                <div class="drop-zone-hint">Drop Sales Orders, Purchase Orders, Quotations, or Delivery Notes</div>
+                                <div class="drop-zone-hint">Drop Sales Orders, Purchase Orders, Opportunities, Quotations, Delivery Notes, or Material Requests</div>
                             </div>
                         </div>
                     </div>
@@ -456,8 +533,10 @@ function planningShellHtml(state) {
                                 ${filterTypeButton("ALL", "All", true)}
                                 ${filterTypeButton("SO", "SO")}
                                 ${filterTypeButton("PO", "PO")}
+                                ${filterTypeButton("OPP", "OPP")}
                                 ${filterTypeButton("QT", "QT")}
                                 ${filterTypeButton("DN", "DN")}
+                                ${filterTypeButton("MR", "MR")}
                             </div>
                             <div class="status-toggle">
                                 ${filterStatusButton("ALL", "All", true)}
@@ -482,6 +561,14 @@ function planningShellHtml(state) {
                                     <option value="All">All Groups</option>
                                 </select>
                             </div>
+                            <div class="add-group-filter add-price-filters">
+                                <select id="sellingPriceListFilter">
+                                    <option value="">All Selling Price Lists</option>
+                                </select>
+                                <select id="buyingPriceListFilter">
+                                    <option value="">All Buying Price Lists</option>
+                                </select>
+                            </div>
                             <div class="add-results" id="itemSearchResults">
                                 <div class="add-placeholder">Search for items to add as free/planning items</div>
                             </div>
@@ -492,7 +579,7 @@ function planningShellHtml(state) {
                     <div class="sp-tab-content" id="spTabSuggest" style="display:${state.activeRightTab === 'suggest' ? 'flex' : 'none'}">
                         <div class="suggest-panel">
                             <div class="suggest-section">
-                                <div class="suggest-header">⚠ Below Reorder Level</div>
+                                <div class="suggest-header">⚠ Below Safety Stock</div>
                                 <div class="suggest-list" id="reorderSuggestions">
                                     <div class="suggest-placeholder">Loading suggestions...</div>
                                 </div>
@@ -528,6 +615,10 @@ function bindPlanningEvents(state) {
         if (action === "add-suggestion") addFreeItem(state, actionNode.dataset.itemcode, parseFloat(actionNode.dataset.qty));
         if (action === "add-all-suggestions") addAllSuggestions(state);
         if (action === "change-line-packaging") openPackagingOverrideDialog(state, actionNode.dataset.row, actionNode.dataset.sourcerow, actionNode.dataset.itemcode);
+        if (action === "packer-view") setPackerView(state, actionNode.dataset.view);
+        if (action === "packer-zoom") changePackerZoom(state, parseFloat(actionNode.dataset.delta || 0));
+        if (action === "open-packer-popup") openPackerPopup(state);
+        if (action === "reset-layout") resetPackagingLayout(state);
     };
 
     root.onchange = (event) => {
@@ -542,6 +633,27 @@ function bindPlanningEvents(state) {
             if (newQty > 0) {
                 updateItemQty(state, rowName, newQty);
             }
+        }
+        if (event.target.matches("#sliceSlider")) {
+            updateSliceHeight(state, parseFloat(event.target.value || 100));
+        }
+        if (event.target.matches("#itemGroupFilter")) {
+            state.searchGroupFilter = event.target.value || "All";
+            if (state.searchInputValue && state.searchInputValue.length >= 2) searchItems(state);
+        }
+        if (event.target.matches("#sellingPriceListFilter")) {
+            state.sellingPriceListFilter = event.target.value || "";
+            if (state.searchInputValue && state.searchInputValue.length >= 2) searchItems(state);
+        }
+        if (event.target.matches("#buyingPriceListFilter")) {
+            state.buyingPriceListFilter = event.target.value || "";
+            if (state.searchInputValue && state.searchInputValue.length >= 2) searchItems(state);
+        }
+    };
+
+    root.oninput = (event) => {
+        if (event.target.matches("#sliceSlider")) {
+            updateSliceHeight(state, parseFloat(event.target.value || 100));
         }
     };
 
@@ -585,10 +697,12 @@ function bindPlanningEvents(state) {
             }
         };
     };
+
+    bindPackerPointerEvents(state);
 }
 
 function refreshPlanning(state) {
-    renderContainerSvg(state);
+    renderContainer3d(state);
     renderLegend(state);
     renderKpis(state);
     renderPlanItems(state);
@@ -596,44 +710,579 @@ function refreshPlanning(state) {
     updateConfidenceCounts(state);
 }
 
-function renderContainerSvg(state) {
+function renderContainer3d(state) {
+    const svgNode = state.root.querySelector("#container3dSvg");
+    if (!svgNode) return;
     const cap = getCapacity(state);
     const totals = getTotals(state.planItems, cap);
-    const fillRatio = Math.min(totals.vol / cap.maxVol, 1);
-    const svgWidth = 500;
-    const innerWidth = svgWidth - 50;
-    const fillWidth = Math.round(innerWidth * fillRatio);
-    let svg = "";
-    let x = 0;
+    const dims = getContainerDimensionsCm(state, cap);
+    const warningNode = state.root.querySelector("#packWarning");
+    updatePackerControls(state, state.root, {
+        tabs: ".packer-tab",
+        slice: "#sliceSlider",
+        sliceLabel: "#sliceLabel",
+        zoomLabel: "#packerZoomLabel",
+    });
+    if (!dims.ready) {
+        svgNode.style.display = "block";
+        svgNode.innerHTML = `<text x="380" y="180" text-anchor="middle" font-size="15" fill="#A0A0A8" font-family="Outfit, sans-serif">${escapeHtml(dims.message)}</text>`;
+        state.packedPackages = [];
+        renderLayerView(state, dims, { placed: [], unplaced: [], missing: [] }, state.root, "#layerView");
+        if (state.popupRoot) renderPopupPacker(state, dims, { placed: [], unplaced: [], missing: [] }, cap, totals);
+        if (warningNode) warningNode.style.display = "none";
+        return;
+    }
 
-    state.planItems.forEach((item) => {
-        const width = Math.max(Math.round(innerWidth * item.volume / cap.maxVol), 2);
-        const color = PLANNING_COLORS[item.type] || "#999";
-        svg += `<rect x="${x}" y="0" width="${width}" height="90" fill="${color}" opacity="0.75"></rect>`;
-        if (width > 30) {
-            const shortId = item.id.split("-").slice(-1)[0];
-            svg += `<text x="${x + width / 2}" y="32" text-anchor="middle" font-size="9" fill="white" font-family="DM Mono, monospace" font-weight="500">${escapeHtml(shortId)}</text>`;
-            svg += `<text x="${x + width / 2}" y="46" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.75)" font-family="DM Mono, monospace">${item.volume.toFixed(1)}m3</text>`;
+    const pack = packPlanItems(state.planItems, dims, state.packagingLayout || {});
+    state.packedPackages = pack.placed;
+    renderLayerView(state, dims, pack, state.root, "#layerView");
+    if (state.popupRoot) renderPopupPacker(state, dims, pack, cap, totals);
+
+    if (state.vizMode === "layer") {
+        svgNode.style.display = "none";
+    } else {
+        svgNode.style.display = "block";
+        const view = createPackerProjection(state, dims);
+        const visiblePackages = visibleBySlice(state, pack.placed, dims);
+        let svg = `<rect x="0" y="0" width="760" height="360" rx="12" fill="#f8fafc"></rect>`;
+        svg += containerWireframe(dims, view.project);
+        visiblePackages
+            .sort((a, b) => (a.x + a.y + a.z) - (b.x + b.y + b.z))
+            .forEach((pkg) => {
+                svg += cuboidSvg(pkg, view.project, pkg.id === state.selectedPackageId);
+            });
+        svg += `<text x="18" y="26" font-size="12" fill="#475569" font-family="Outfit, sans-serif" font-weight="700">Interactive packaging load</text>`;
+        const capacityLabel = cap.maxVol > 0 ? `${cap.maxVol.toFixed(2)} m3` : "no container limit";
+        const slicePct = currentSlicePct(state);
+        const sliceLabel = slicePct >= 100 ? "all layers" : `slice ${Math.round(dims.height * slicePct / 100)} cm`;
+        svg += `<text x="18" y="44" font-size="10" fill="#64748b" font-family="DM Mono, monospace">${totals.vol.toFixed(2)} m3 / ${capacityLabel} · ${pack.placed.length} packages placed · ${sliceLabel}</text>`;
+        svgNode.innerHTML = svg;
+    }
+
+    const warnings = [];
+    if (pack.unplaced.length) warnings.push(`${pack.unplaced.length} packages do not fit in current dimensions`);
+    if (pack.missing.length) warnings.push(`${pack.missing.length} lines missing packaging dimensions`);
+    if (warningNode) {
+        warningNode.textContent = warnings.join(" · ");
+        warningNode.style.display = warnings.length ? "block" : "none";
+    }
+}
+
+function getContainerDimensionsCm(state, cap) {
+    const container = state.container || {};
+    let length = Number(container.length_cm || 0);
+    let width = Number(container.width_cm || 0);
+    let height = Number(container.height_cm || 0);
+    if (length > 0 && width > 0 && height > 0) return { ready: true, length, width, height };
+    return { ready: false, length: 0, width: 0, height: 0, message: "Select a container profile with internal dimensions" };
+}
+
+function packPlanItems(items, dims, savedLayout) {
+    const packages = buildPackageUnits(items);
+    const placed = [];
+    const unplaced = [];
+    const missing = [];
+    const saved = [];
+    const auto = [];
+    packages.sort((a, b) => (b.l * b.w * b.h) - (a.l * a.w * a.h)).forEach((pkg) => {
+        if (!(pkg.l > 0 && pkg.w > 0 && pkg.h > 0)) {
+            missing.push(pkg);
+            return;
         }
-        x += width;
+        if (savedLayout && savedLayout[pkg.id]) saved.push(pkg);
+        else auto.push(pkg);
     });
 
-    if (fillWidth < innerWidth) {
-        svg += `<rect x="${x}" y="0" width="${innerWidth - x}" height="90" fill="#F4F3F0"></rect>`;
-        svg += `<text x="${x + (innerWidth - x) / 2}" y="50" text-anchor="middle" font-size="11" fill="#C0BFB8" font-family="Outfit, sans-serif">Empty ${(100 - fillRatio * 100).toFixed(1)}%</text>`;
+    saved.forEach((pkg) => {
+        const pos = normalizeSavedPackagePosition(pkg, savedLayout[pkg.id]);
+        if (pos && isPlacementValid({ ...pkg, ...pos }, dims, placed, pkg.id)) placed.push({ ...pkg, ...pos, manual: true });
+        else auto.push(pkg);
+    });
+
+    auto.forEach((pkg) => {
+        const pos = tryPlacePackage(pkg, dims, placed);
+        if (!pos) {
+            unplaced.push(pkg);
+            return;
+        }
+        placed.push({ ...pkg, ...pos });
+    });
+    return { placed, unplaced, missing };
+}
+
+function buildPackageUnits(items) {
+    const out = [];
+    let index = 0;
+    items.forEach((item) => {
+        (item.lineItems || []).forEach((line) => {
+            const count = Math.min(Math.max(Math.ceil(Number(line.package_count || 0)), 1), 120);
+            for (let i = 0; i < count; i++) {
+                index += 1;
+                const stableBase = [item.row_name || item.id, line.source_row_name || line.code, line.code].join("::");
+                out.push({
+                    id: `${stableBase}::${i + 1}`,
+                    label: item.id,
+                    itemCode: line.code,
+                    profile: line.packaging_profile || line.resolved_uom || "Packaging",
+                    l: Number(line.length_cm || 0),
+                    w: Number(line.width_cm || 0),
+                    h: Number(line.height_cm || 0),
+                    color: packageColorFor(item, line, i, index),
+                    seq: index,
+                });
+            }
+        });
+    });
+    return out;
+}
+
+function packageColorFor(item, line, packageIndex, globalIndex) {
+    const seed = `${item.row_name || item.id || ""}|${line.code || ""}|${packageIndex}|${globalIndex}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = ((hash * 31) + seed.charCodeAt(i)) >>> 0;
+    const paletteColor = PACKAGE_COLOR_PALETTE[hash % PACKAGE_COLOR_PALETTE.length];
+    return paletteColor || PLANNING_COLORS[item.type] || "#6B6A70";
+}
+
+function tryPlacePackage(pkg, dims, placed) {
+    const rotations = uniqueRotations(pkg.l, pkg.w, pkg.h);
+    let best = null;
+    const xs = uniqueSorted([0, ...placed.map((p) => p.x + p.pl)]);
+    const ys = uniqueSorted([0, ...placed.map((p) => p.y + p.pw)]);
+    const zs = uniqueSorted([0, ...placed.map((p) => p.z + p.ph)]);
+    xs.forEach((x) => {
+        ys.forEach((y) => {
+            zs.forEach((z) => {
+                rotations.forEach(([pl, pw, ph]) => {
+                    const candidate = { ...pkg, x, y, z, pl, pw, ph };
+                    if (!isPlacementValid(candidate, dims, placed, pkg.id)) return;
+                    const score = z * 100000000 + y * 10000 + x;
+                    if (!best || score < best.score) best = { x, y, z, pl, pw, ph, score };
+                });
+            });
+        });
+    });
+    return best ? { x: best.x, y: best.y, z: best.z, pl: best.pl, pw: best.pw, ph: best.ph } : null;
+}
+
+function normalizeSavedPackagePosition(pkg, saved) {
+    if (!saved) return null;
+    const pos = {
+        x: Number(saved.x || 0),
+        y: Number(saved.y || 0),
+        z: Number(saved.z || 0),
+        pl: Number(saved.pl || pkg.l || 0),
+        pw: Number(saved.pw || pkg.w || 0),
+        ph: Number(saved.ph || pkg.h || 0),
+    };
+    return pos.pl > 0 && pos.pw > 0 && pos.ph > 0 ? pos : null;
+}
+
+function isPlacementValid(pkg, dims, placed, ignoreId) {
+    if (pkg.x < 0 || pkg.y < 0 || pkg.z < 0) return false;
+    if (pkg.x + pkg.pl > dims.length || pkg.y + pkg.pw > dims.width || pkg.z + pkg.ph > dims.height) return false;
+    return !placed.some((other) => other.id !== ignoreId && boxesOverlap(pkg, other));
+}
+
+function boxesOverlap(a, b) {
+    return a.x < b.x + b.pl && a.x + a.pl > b.x
+        && a.y < b.y + b.pw && a.y + a.pw > b.y
+        && a.z < b.z + b.ph && a.z + a.ph > b.z;
+}
+
+function uniqueSorted(values) {
+    return [...new Set(values.map((value) => Math.round(Number(value || 0) * 1000) / 1000))]
+        .filter((value) => value >= 0)
+        .sort((a, b) => a - b);
+}
+
+function uniqueRotations(l, w, h) {
+    const seen = new Set();
+    return [[l, w, h], [l, h, w], [w, l, h], [w, h, l], [h, l, w], [h, w, l]].filter((rot) => {
+        const key = rot.join("|");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function createPackerProjection(state, dims) {
+    const yaw = (state.vizYaw || 0) * Math.PI / 180;
+    const pitch = (state.vizPitch || 28) * Math.PI / 180;
+    const diagonal = Math.max(1, dims.length + dims.width);
+    const scale = Math.min(500 / diagonal, 235 / (dims.height + diagonal * 0.22)) * (state.vizZoom || 1);
+    const origin = { x: 380, y: 288 };
+    const project = (x, y, z) => {
+        const cx = x - dims.length / 2;
+        const cy = y - dims.width / 2;
+        const rx = cx * Math.cos(yaw) - cy * Math.sin(yaw);
+        const ry = cx * Math.sin(yaw) + cy * Math.cos(yaw);
+        return {
+            x: origin.x + rx * scale,
+            y: origin.y + ry * scale * Math.sin(pitch) - z * scale * Math.cos(pitch),
+        };
+    };
+    return { project, scale, yaw, pitch };
+}
+
+function visibleBySlice(state, packages, dims) {
+    const slicePct = currentSlicePct(state);
+    if (slicePct >= 100) return packages;
+    const maxZ = dims.height * (slicePct / 100);
+    return packages.filter((pkg) => pkg.z < maxZ);
+}
+
+function currentSlicePct(state) {
+    const pct = Number(state.slicePct);
+    return Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 100;
+}
+
+function containerWireframe(dims, project) {
+    const p = corners(0, 0, 0, dims.length, dims.width, dims.height, project);
+    const edges = [[p.a, p.b], [p.b, p.c], [p.c, p.d], [p.d, p.a], [p.e, p.f], [p.f, p.g], [p.g, p.h], [p.h, p.e], [p.a, p.e], [p.b, p.f], [p.c, p.g], [p.d, p.h]];
+    return edges.map(([a, b]) => `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="#0f766e" stroke-width="1.2" opacity="0.45"></line>`).join("");
+}
+
+function cuboidSvg(pkg, project, selected) {
+    const p = corners(pkg.x, pkg.y, pkg.z, pkg.pl, pkg.pw, pkg.ph, project);
+    const color = pkg.color;
+    const title = `${pkg.label} / ${pkg.itemCode} / ${pkg.profile} / ${pkg.pl}x${pkg.pw}x${pkg.ph} cm`;
+    const stroke = selected ? "#f59e0b" : "rgba(255,255,255,.38)";
+    const width = selected ? 2.5 : 0.8;
+    return `
+        <g class="pack-box${selected ? " selected" : ""}" data-package-id="${escapeHtml(pkg.id)}">
+            <title>${escapeHtml(title)}</title>
+            <polygon points="${points([p.e, p.f, p.g, p.h])}" fill="${color}" opacity="0.82"></polygon>
+            <polygon points="${points([p.d, p.c, p.g, p.h])}" fill="${shadeColor(color, -18)}" opacity="0.88"></polygon>
+            <polygon points="${points([p.b, p.c, p.g, p.f])}" fill="${shadeColor(color, -8)}" opacity="0.9"></polygon>
+            <polyline points="${points([p.e, p.f, p.g, p.h, p.e])}" fill="none" stroke="${stroke}" stroke-width="${width}"></polyline>
+            <polyline points="${points([p.b, p.c, p.g, p.f, p.b])}" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="0.7"></polyline>
+        </g>
+    `;
+}
+
+function corners(x, y, z, l, w, h, project) {
+    return {
+        a: project(x, y, z), b: project(x + l, y, z), c: project(x + l, y + w, z), d: project(x, y + w, z),
+        e: project(x, y, z + h), f: project(x + l, y, z + h), g: project(x + l, y + w, z + h), h: project(x, y + w, z + h),
+    };
+}
+
+function points(list) {
+    return list.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+}
+
+function shadeColor(hex, percent) {
+    const value = String(hex || "#64748b").replace("#", "");
+    const num = parseInt(value.length === 3 ? value.split("").map((c) => c + c).join("") : value, 16);
+    const amt = Math.round(2.55 * percent);
+    const r = Math.max(0, Math.min(255, (num >> 16) + amt));
+    const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + amt));
+    const b = Math.max(0, Math.min(255, (num & 0xff) + amt));
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+function setPackerView(state, view) {
+    state.vizMode = view === "layer" ? "layer" : "3d";
+    refreshPlanning(state);
+}
+
+function changePackerZoom(state, delta) {
+    if (state.vizMode === "layer") state.layerZoom = Math.max(0.5, Math.min(4, state.layerZoom + delta));
+    else state.vizZoom = Math.max(0.45, Math.min(3, state.vizZoom + delta));
+    refreshPlanning(state);
+}
+
+function updateSliceHeight(state, pct) {
+    state.slicePct = Number.isFinite(Number(pct)) ? Math.max(0, Math.min(100, Number(pct))) : 100;
+    refreshPlanning(state);
+}
+
+function updatePackerControls(state, root, selectors) {
+    const host = root || state.root;
+    const cfg = selectors || {
+        tabs: ".packer-tab",
+        slice: "#sliceSlider",
+        sliceLabel: "#sliceLabel",
+        zoomLabel: "#packerZoomLabel",
+    };
+    host.querySelectorAll(cfg.tabs).forEach((node) => node.classList.toggle("active", node.dataset.view === state.vizMode));
+    const slice = host.querySelector(cfg.slice);
+    const slicePct = currentSlicePct(state);
+    if (slice && Number(slice.value) !== slicePct) slice.value = slicePct;
+    const sliceLabel = host.querySelector(cfg.sliceLabel);
+    if (sliceLabel) sliceLabel.textContent = slicePct >= 100 ? "All" : `${Math.round(slicePct)}%`;
+    const zoomLabel = host.querySelector(cfg.zoomLabel);
+    if (zoomLabel) zoomLabel.textContent = `${(state.vizMode === "layer" ? state.layerZoom : state.vizZoom).toFixed(2)}x`;
+}
+
+function renderLayerView(state, dims, pack, root, selector) {
+    const host = root || state.root;
+    const layerNode = host.querySelector(selector || "#layerView");
+    if (!layerNode) return;
+    layerNode.style.display = state.vizMode === "layer" ? "block" : "none";
+    if (state.vizMode !== "layer") return;
+    const visible = visibleBySlice(state, pack.placed || [], dims);
+    if (!visible.length) {
+        layerNode.innerHTML = `<div class="layer-empty">No packages in the current slice.</div>`;
+        return;
+    }
+    const zValues = uniqueSorted(visible.map((pkg) => pkg.z));
+    const scale = Math.min(620 / dims.length, 260 / dims.width) * (state.layerZoom || 1);
+    layerNode.innerHTML = zValues.map((z) => {
+        const layerPackages = visible.filter((pkg) => Math.abs(pkg.z - z) < 0.001);
+        const topZ = Math.max(...layerPackages.map((pkg) => pkg.z + pkg.ph));
+        return `
+            <div class="layer-card">
+                <div class="layer-card-title">Layer Z=${z.toFixed(0)} cm <span>${z.toFixed(0)} → ${topZ.toFixed(0)} cm</span></div>
+                <svg class="layer-svg" viewBox="0 0 ${dims.length} ${dims.width}" style="width:${dims.length * scale}px;height:${dims.width * scale}px;">
+                    <rect x="0" y="0" width="${dims.length}" height="${dims.width}" fill="#1f2937" stroke="#0f766e" stroke-width="2"></rect>
+                    ${layerPackages.map((pkg) => `<g class="layer-pkg" data-package-id="${escapeHtml(pkg.id)}"><rect x="${pkg.x}" y="${pkg.y}" width="${pkg.pl}" height="${pkg.pw}" fill="${pkg.color}" opacity="0.82" stroke="${pkg.id === state.selectedPackageId ? "#f59e0b" : "#ffffff66"}" stroke-width="${pkg.id === state.selectedPackageId ? 3 : 1}"></rect><text x="${pkg.x + pkg.pl / 2}" y="${pkg.y + pkg.pw / 2}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="10">${escapeHtml(shortPackageLabel(pkg))}</text></g>`).join("")}
+                </svg>
+            </div>
+        `;
+    }).join("");
+}
+
+function shortPackageLabel(pkg) {
+    return (pkg.itemCode || pkg.label || "PKG").slice(0, 10);
+}
+
+function bindPackerPointerEvents(state, wrap) {
+    const targetWrap = wrap || state.root.querySelector(".container-3d-wrap");
+    const surface = targetWrap;
+    if (!surface) return;
+    surface.oncontextmenu = (event) => event.preventDefault();
+    surface.onpointerdown = (event) => startPackerPointer(state, event);
+    surface.onpointermove = (event) => movePackerPointer(state, event);
+    surface.onpointerup = (event) => endPackerPointer(state, event);
+    surface.onpointerleave = (event) => endPackerPointer(state, event);
+    surface.onwheel = (event) => {
+        event.preventDefault();
+        changePackerZoom(state, event.deltaY > 0 ? -0.08 : 0.08);
+    };
+}
+
+function startPackerPointer(state, event) {
+    const pkgNode = event.target.closest("[data-package-id]");
+    const pkgId = pkgNode ? pkgNode.dataset.packageId : null;
+    state.selectedPackageId = pkgId;
+    const pkg = pkgId ? state.packedPackages.find((entry) => entry.id === pkgId) : null;
+    state.dragStart = {
+        x: event.clientX,
+        y: event.clientY,
+        yaw: state.vizYaw,
+        pitch: state.vizPitch,
+        pkg: pkg ? { ...pkg } : null,
+        buttons: event.buttons,
+    };
+    state.isDraggingPackage = Boolean(pkg && !state.isLocked);
+    state.isDraggingView = !state.isDraggingPackage && state.vizMode === "3d";
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    refreshPlanning(state);
+}
+
+function movePackerPointer(state, event) {
+    if (!state.dragStart) return;
+    const dx = event.clientX - state.dragStart.x;
+    const dy = event.clientY - state.dragStart.y;
+    if (state.isDraggingView) {
+        state.vizYaw = state.dragStart.yaw + dx * 0.22;
+        state.vizPitch = Math.max(8, Math.min(78, state.dragStart.pitch - dy * 0.14));
+        refreshPlanning(state);
+        return;
+    }
+    if (state.isDraggingPackage && state.dragStart.pkg) moveSelectedPackage(state, dx, dy, event);
+}
+
+function endPackerPointer(state) {
+    if (state.isDraggingPackage) schedulePackagingLayoutSave(state);
+    state.isDraggingView = false;
+    state.isDraggingPackage = false;
+    state.dragStart = null;
+}
+
+function moveSelectedPackage(state, dx, dy, event) {
+    const dims = getContainerDimensionsCm(state, getCapacity(state));
+    if (!dims.ready) return;
+    const startPkg = state.dragStart.pkg;
+    const verticalMode = Boolean(event?.shiftKey || event?.buttons === 2 || state.dragStart.buttons === 2);
+    const snap = 2;
+    let nextX = startPkg.x;
+    let nextY = startPkg.y;
+    let nextZ = startPkg.z;
+
+    if (state.vizMode === "layer") {
+        const layerScale = Math.min(620 / dims.length, 260 / dims.width) * (state.layerZoom || 1);
+        if (verticalMode) {
+            nextZ = Math.round(Math.max(0, Math.min(dims.height - startPkg.ph, startPkg.z - (dy / Math.max(layerScale, 0.1)))) / snap) * snap;
+        } else {
+            nextX = Math.round(Math.max(0, Math.min(dims.length - startPkg.pl, startPkg.x + (dx / Math.max(layerScale, 0.1)))) / snap) * snap;
+            nextY = Math.round(Math.max(0, Math.min(dims.width - startPkg.pw, startPkg.y + (dy / Math.max(layerScale, 0.1)))) / snap) * snap;
+        }
+    } else {
+        const view = createPackerProjection(state, dims);
+        if (verticalMode) {
+            nextZ = Math.round(Math.max(0, Math.min(dims.height - startPkg.ph, startPkg.z - (dy / Math.max(view.scale * Math.cos(view.pitch), 0.1)))) / snap) * snap;
+        } else {
+            const moveX = (dx * Math.cos(view.yaw) + dy * Math.sin(view.yaw) / Math.max(0.2, Math.sin(view.pitch))) / view.scale;
+            const moveY = (-dx * Math.sin(view.yaw) + dy * Math.cos(view.yaw) / Math.max(0.2, Math.sin(view.pitch))) / view.scale;
+            nextX = Math.round(Math.max(0, Math.min(dims.length - startPkg.pl, startPkg.x + moveX)) / snap) * snap;
+            nextY = Math.round(Math.max(0, Math.min(dims.width - startPkg.pw, startPkg.y + moveY)) / snap) * snap;
+        }
     }
 
-    for (let rib = 60; rib < innerWidth; rib += 55) {
-        svg += `<line x1="${rib}" y1="0" x2="${rib}" y2="90" stroke="rgba(0,0,0,0.07)" stroke-width="1"></line>`;
+    const candidate = {
+        ...startPkg,
+        x: nextX,
+        y: nextY,
+        z: nextZ,
+    };
+    const others = state.packedPackages.filter((pkg) => pkg.id !== candidate.id);
+    if (!isPlacementValid(candidate, dims, others, candidate.id)) return;
+    state.packagingLayout = {
+        ...(state.packagingLayout || {}),
+        [candidate.id]: { x: candidate.x, y: candidate.y, z: candidate.z, pl: candidate.pl, pw: candidate.pw, ph: candidate.ph },
+    };
+    refreshPlanning(state);
+}
+
+function schedulePackagingLayoutSave(state) {
+    if (state.isLocked) return;
+    clearTimeout(state.layoutSaveTimer);
+    state.layoutSaveTimer = setTimeout(() => savePackagingLayout(state), 350);
+}
+
+function savePackagingLayout(state) {
+    frappe.call({
+        method: "orderlift.orderlift_logistics.services.forecast_planning.save_packaging_layout",
+        args: { plan_name: state.planName, layout_json: JSON.stringify(state.packagingLayout || {}) },
+        async: true,
+        error: () => frappe.show_alert({ message: __("Could not save package layout"), indicator: "red" }),
+    });
+}
+
+function resetPackagingLayout(state) {
+    if (state.isLocked) return;
+    state.packagingLayout = {};
+    savePackagingLayout(state);
+    refreshPlanning(state);
+}
+
+function openPackerPopup(state) {
+    if (state.popupDialog) {
+        state.popupDialog.show();
+        renderContainer3d(state);
+        return;
     }
+    const dialog = new frappe.ui.Dialog({
+        title: __("Container 3D Visualization"),
+        size: "extra-large",
+        fields: [{ fieldtype: "HTML", fieldname: "preview" }],
+    });
+    dialog.show();
+    state.popupDialog = dialog;
+    const body = dialog.get_field("preview").$wrapper.get(0);
+    body.innerHTML = `
+        <div class="planning-native-root packer-popup-root">
+            <div class="packer-toolbar popup-toolbar">
+                <div class="packer-tabs">
+                    <button class="packer-tab popup-packer-tab active" data-view="3d">3D</button>
+                    <button class="packer-tab popup-packer-tab" data-view="layer">Layers</button>
+                </div>
+                <label class="slice-control">Slice <input type="range" id="popupSliceSlider" min="0" max="100" value="100"><span id="popupSliceLabel">All</span></label>
+                <div class="packer-zoom">
+                    <button type="button" data-popup-zoom="-0.15">-</button>
+                    <span id="popupPackerZoomLabel">1.00x</span>
+                    <button type="button" data-popup-zoom="0.15">+</button>
+                </div>
+                <button type="button" class="packer-ghost-btn" data-popup-reset="1">Reset layout</button>
+            </div>
+            <div class="container-3d-wrap popup-packer-wrap">
+                <svg id="popupPackerSvg" width="100%" viewBox="0 0 760 420" preserveAspectRatio="xMidYMid meet"></svg>
+                <div id="popupLayerView" class="packer-layer-view" style="display:none;"></div>
+                <div class="viewport-hint">Drag empty space to rotate · wheel/+/− to zoom · drag a package to move it</div>
+                <div class="pack-warning" id="popupPackWarning" style="display:none;"></div>
+            </div>
+            <div class="popup-packer-note">This popup stays synchronized with the main planner and saves moved package positions.</div>
+        </div>`;
+    state.popupRoot = body.querySelector(".packer-popup-root");
+    const svgNode = body.querySelector("#popupPackerSvg");
+    const dims = getContainerDimensionsCm(state, getCapacity(state));
+    bindPopupPackerEvents(state);
+    bindPackerPointerEvents(state, body.querySelector(".popup-packer-wrap"));
+    dialog.$wrapper.on("hidden.bs.modal", () => {
+        state.popupDialog = null;
+        state.popupRoot = null;
+    });
+    if (!dims.ready) {
+        svgNode.innerHTML = `<text x="380" y="210" text-anchor="middle" fill="#64748b">${escapeHtml(dims.message)}</text>`;
+        return;
+    }
+    renderContainer3d(state);
+}
 
-    svg += `<rect x="${innerWidth}" y="0" width="50" height="90" fill="#E8E6E0"></rect>`;
-    svg += `<line x1="${innerWidth + 25}" y1="0" x2="${innerWidth + 25}" y2="90" stroke="#C8C6C0" stroke-width="1"></line>`;
-    svg += `<circle cx="${innerWidth + 12}" cy="45" r="4" fill="none" stroke="#B0AEA8" stroke-width="1.5"></circle>`;
-    svg += `<circle cx="${innerWidth + 38}" cy="45" r="4" fill="none" stroke="#B0AEA8" stroke-width="1.5"></circle>`;
-    svg += `<rect x="0" y="0" width="${svgWidth}" height="90" fill="none" stroke="#C8C6C0" stroke-width="1.5" rx="4"></rect>`;
+function bindPopupPackerEvents(state) {
+    if (!state.popupRoot) return;
+    state.popupRoot.onclick = (event) => {
+        const tab = event.target.closest(".popup-packer-tab");
+        if (tab) {
+            setPackerView(state, tab.dataset.view);
+            return;
+        }
+        const zoomBtn = event.target.closest("[data-popup-zoom]");
+        if (zoomBtn) {
+            changePackerZoom(state, parseFloat(zoomBtn.dataset.popupZoom || 0));
+            return;
+        }
+        if (event.target.closest("[data-popup-reset]")) {
+            resetPackagingLayout(state);
+        }
+    };
+    state.popupRoot.oninput = (event) => {
+        if (event.target.matches("#popupSliceSlider")) {
+            updateSliceHeight(state, parseFloat(event.target.value));
+        }
+    };
+}
 
-    state.root.querySelector("#containerSvg").innerHTML = svg;
+function renderPopupPacker(state, dims, pack, cap, totals) {
+    if (!state.popupRoot) return;
+    updatePackerControls(state, state.popupRoot, {
+        tabs: ".popup-packer-tab",
+        slice: "#popupSliceSlider",
+        sliceLabel: "#popupSliceLabel",
+        zoomLabel: "#popupPackerZoomLabel",
+    });
+    renderLayerView(state, dims, pack, state.popupRoot, "#popupLayerView");
+    const svgNode = state.popupRoot.querySelector("#popupPackerSvg");
+    const warningNode = state.popupRoot.querySelector("#popupPackWarning");
+    if (!svgNode) return;
+    if (state.vizMode === "layer") {
+        svgNode.style.display = "none";
+    } else {
+        svgNode.style.display = "block";
+        const popupState = { ...state, vizZoom: Math.max(state.vizZoom, 1.25) };
+        const view = createPackerProjection(popupState, dims);
+        let svg = `<rect x="0" y="0" width="760" height="420" rx="12" fill="#f8fafc"></rect>`;
+        svg += containerWireframe(dims, view.project);
+        visibleBySlice(state, pack.placed, dims)
+            .sort((a, b) => (a.x + a.y + a.z) - (b.x + b.y + b.z))
+            .forEach((pkg) => {
+                svg += cuboidSvg(pkg, view.project, pkg.id === state.selectedPackageId);
+            });
+        const capacityLabel = cap.maxVol > 0 ? `${cap.maxVol.toFixed(2)} m3` : "no container limit";
+        svg += `<text x="18" y="28" font-size="12" fill="#475569" font-family="Outfit, sans-serif" font-weight="700">Interactive packaging load</text>`;
+        svg += `<text x="18" y="46" font-size="10" fill="#64748b" font-family="DM Mono, monospace">${totals.vol.toFixed(2)} m3 / ${capacityLabel} · ${pack.placed.length} packages placed</text>`;
+        svgNode.innerHTML = svg;
+    }
+    if (warningNode) {
+        const warnings = [];
+        if (pack.unplaced.length) warnings.push(`${pack.unplaced.length} packages do not fit in current dimensions`);
+        if (pack.missing.length) warnings.push(`${pack.missing.length} lines missing packaging dimensions`);
+        warningNode.textContent = warnings.join(" · ");
+        warningNode.style.display = warnings.length ? "block" : "none";
+    }
 }
 
 function renderLegend(state) {
@@ -678,7 +1327,7 @@ function renderKpis(state) {
     setText(state, "#fsPct", `${totals.pct.toFixed(1)}%`);
     setText(state, "#fsFree", `${totals.free.toFixed(1)} m3`);
     setText(state, "#sbFree", `${totals.free.toFixed(1)} m3`);
-    setText(state, "#sbWeight", `${((totals.wt / cap.maxKg) * 100).toFixed(1)}%`);
+    setText(state, "#sbWeight", cap.maxKg > 0 ? `${((totals.wt / cap.maxKg) * 100).toFixed(1)}%` : "—");
     setText(state, "#sbQueued", `${state.sourceQueue.length} docs`);
     setText(state, "#itemCount", `${state.planItems.length} documents · ${lineTotal} line items`);
 
@@ -966,6 +1615,7 @@ function applyPlanDetail(state, plan) {
     state.planDoc = plan;
     state.container = plan.container;
     state.capacity = plan.capacity || null;
+    state.packagingLayout = plan.packaging_layout || state.packagingLayout || {};
     state.planItems = (plan.items || []).map((item) => {
         const cfg_abbr = { "Quotation": "QT", "Sales Order": "SO", "Purchase Order": "PO", "Delivery Note": "DN" };
         return {
@@ -1004,6 +1654,9 @@ function applyPlanDetail(state, plan) {
                 wt: li.line_weight_kg || 0,
                 unit_vol: li.unit_volume_m3 || 0,
                 unit_wt: li.unit_weight_kg || 0,
+                length_cm: li.length_cm || 0,
+                width_cm: li.width_cm || 0,
+                height_cm: li.height_cm || 0,
             })),
         };
     });
@@ -1263,7 +1916,13 @@ function searchItems(state) {
 
     frappe.call({
         method: "orderlift.orderlift_logistics.services.forecast_planning.get_item_search",
-        args: { search_term: term, item_group: state.searchGroupFilter || null },
+        args: {
+            search_term: term,
+            item_group: state.searchGroupFilter || null,
+            selling_price_list: state.sellingPriceListFilter || null,
+            buying_price_list: state.buyingPriceListFilter || null,
+            company: state.planDoc?.company || undefined,
+        },
         async: true,
         callback: (r) => {
             state.itemSearchResults = r.message || [];
@@ -1291,6 +1950,7 @@ function renderSearchResults(state) {
             opt.textContent = g;
             groupSelect.appendChild(opt);
         });
+        groupSelect.value = state.searchGroupFilter || "All";
     }
 
     container.innerHTML = state.itemSearchResults.map((item) => {
@@ -1412,12 +2072,12 @@ function renderSuggestions(state) {
     const ctx = flowContext[flowScope] || { show: true, icon: "📋", label: "" };
 
     if (!state.reorderSuggestions.length) {
-        container.innerHTML = `<div class="suggest-placeholder">✓ All items above reorder levels</div>`;
+        container.innerHTML = `<div class="suggest-placeholder">✓ All items above safety stock</div>`;
         return;
     }
 
     let html = `<div class="suggest-header">
-        ${ctx.icon} Below Reorder Level — ${ctx.label}
+        ${ctx.icon} Below Safety Stock — ${ctx.label}
         <span class="suggest-header-count">${available.length} available</span>
     </div>`;
 
@@ -1448,7 +2108,7 @@ function renderSuggestions(state) {
                         <div class="stock-bar-track"><div class="stock-bar-fill" style="width:${pctStock}%;background:${sc.border};"></div></div>
                         <span class="suggest-stock-num">${item.actual_qty} / ${item.reorder_level} ${escapeHtml(item.stock_uom)}</span>
                     </div>
-                    <div class="suggest-meta">Deficit: <strong style="color:${sc.text}">${deficit} ${escapeHtml(item.stock_uom)}</strong> · Reorder qty: ${item.reorder_qty} ${escapeHtml(item.stock_uom)}${item.purchase_uom !== item.stock_uom ? ` · Buy in ${item.purchase_uom}` : ""}</div>
+                    <div class="suggest-meta">Threshold: <strong>${escapeHtml(item.threshold_type || "Safety Stock")}</strong> · Deficit: <strong style="color:${sc.text}">${deficit} ${escapeHtml(item.stock_uom)}</strong> · Reorder qty: ${item.reorder_qty} ${escapeHtml(item.stock_uom)}${item.purchase_uom !== item.stock_uom ? ` · Buy in ${item.purchase_uom}` : ""}</div>
                 </div>
                 <div class="suggest-actions">
                     <button class="btn-add-suggest" data-action="add-suggestion" data-itemcode="${escapeHtml(item.item_code)}" data-qty="${item.suggested_qty}">
@@ -1635,14 +2295,15 @@ function applyPackagingOverride(state, rowName, sourceRowName, packagingProfile)
 // ---------------------------------------------------------------------------
 
 function getTotals(planItems, cap) {
-    if (!cap) cap = { maxVol: 67.7, maxKg: 26000 };
+    if (!cap) cap = { maxVol: 0, maxKg: 0 };
+    const maxVol = Number(cap.maxVol || 0);
     const vol = planItems.reduce((sum, item) => sum + (item.volume || 0), 0);
     const wt = planItems.reduce((sum, item) => sum + (item.weight || 0), 0);
     return {
         vol,
         wt,
-        pct: cap.maxVol > 0 ? (vol / cap.maxVol) * 100 : 0,
-        free: cap.maxVol - vol,
+        pct: maxVol > 0 ? (vol / maxVol) * 100 : 0,
+        free: maxVol > 0 ? maxVol - vol : 0,
     };
 }
 
@@ -1785,7 +2446,39 @@ function injectPlanningStyles() {
         .planning-native-root .fill-legend{display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap;}
         .planning-native-root .fill-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
         .planning-native-root .fill-dot{width:9px;height:9px;border-radius:2px;flex-shrink:0;}
-        .planning-native-root .container-svg-wrap{width:100%;margin-bottom:12px;}
+        .planning-native-root .packer-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+        .planning-native-root .packer-tabs{display:inline-flex;background:var(--bg);border:0.5px solid var(--border);border-radius:8px;padding:2px;}
+        .planning-native-root .packer-tab{border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:600;padding:5px 11px;border-radius:6px;}
+        .planning-native-root .packer-tab.active{background:var(--accent);color:white;}
+        .planning-native-root .slice-control{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);font-weight:600;}
+        .planning-native-root .slice-control input{width:110px;accent-color:var(--accent);}
+        .planning-native-root .packer-zoom{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:0.5px solid var(--border);border-radius:8px;padding:2px 5px;}
+        .planning-native-root .packer-zoom button{width:22px;height:22px;border:0.5px solid var(--border);background:white;border-radius:6px;color:var(--text);font-size:13px;line-height:1;}
+        .planning-native-root .packer-zoom span{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:44px;text-align:center;}
+        .planning-native-root .packer-ghost-btn,.planning-native-root .packer-primary-btn{border-radius:8px;font-size:11px;font-weight:600;padding:5px 10px;}
+        .planning-native-root .packer-ghost-btn{border:0.5px solid var(--border);background:white;color:var(--muted);}
+        .planning-native-root .packer-primary-btn{border:0.5px solid var(--accent);background:var(--accent);color:white;margin-left:auto;}
+        .planning-native-root .container-3d-wrap{width:100%;margin-bottom:12px;border:0.5px solid var(--border);border-radius:var(--r);background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);overflow:hidden;position:relative;}
+        .planning-native-root #container3dSvg{display:block;width:100%;min-height:260px;}
+        .planning-native-root .pack-box{cursor:grab;}
+        .planning-native-root .pack-box:active,.planning-native-root .layer-pkg:active{cursor:grabbing;}
+        .planning-native-root .pack-box.selected polygon{filter:drop-shadow(0 0 5px rgba(245,158,11,.45));}
+        .planning-native-root .pack-box polygon{transition:opacity .12s;}
+        .planning-native-root .pack-box:hover polygon{opacity:1;}
+        .planning-native-root .viewport-hint{position:absolute;right:10px;top:8px;background:rgba(255,255,255,.82);border:0.5px solid var(--border);border-radius:20px;padding:4px 9px;color:var(--muted);font-size:10px;backdrop-filter:blur(8px);}
+        .planning-native-root .pack-warning{position:absolute;left:12px;right:12px;bottom:10px;background:rgba(160,44,44,.08);border:0.5px solid rgba(160,44,44,.2);border-radius:7px;color:var(--red);font-size:11px;padding:6px 8px;}
+        .planning-native-root .packer-layer-view{min-height:260px;max-height:340px;overflow:auto;padding:12px;background:#111827;}
+        .planning-native-root .layer-card{background:#1f2937;border:1px solid #374151;border-radius:10px;padding:10px;margin-bottom:10px;overflow:auto;}
+        .planning-native-root .layer-card-title{font-size:11px;color:#f8fafc;font-weight:700;margin-bottom:8px;}
+        .planning-native-root .layer-card-title span{color:#9ca3af;font-weight:500;margin-left:6px;}
+        .planning-native-root .layer-svg{display:block;background:#111827;border-radius:8px;max-width:none;}
+        .planning-native-root .layer-pkg{cursor:grab;}
+        .planning-native-root .layer-pkg rect{transition:stroke-width .12s, opacity .12s;}
+        .planning-native-root .layer-empty{height:230px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px;}
+        .packer-popup-root{height:auto!important;min-height:0!important;overflow:visible!important;background:transparent!important;}
+        .popup-packer-wrap{height:62vh;margin:0!important;}
+        .popup-packer-wrap svg{height:100%;min-height:520px;}
+        .popup-packer-note{font-size:11px;color:#64748b;margin-top:8px;}
         .planning-native-root .fill-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
         .planning-native-root .fill-stat{background:var(--bg);border-radius:var(--r);padding:9px 12px;}
         .planning-native-root .fill-stat-label{font-size:10px;color:var(--hint);margin-bottom:2px;}

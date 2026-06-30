@@ -7,6 +7,9 @@ from frappe.utils import flt, get_first_day, nowdate
 from orderlift.menu_access import resolve_current_company
 
 
+PRIVILEGED_PRICING_ROLES = {"Administrator", "Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
+
+
 @frappe.whitelist()
 def get_pricing_sheet_manager_data(search=None, customer=None, mode=None, attention=None):
     filters = []
@@ -15,9 +18,12 @@ def get_pricing_sheet_manager_data(search=None, customer=None, mode=None, attent
     mode = (mode or "All").strip()
     attention = (attention or "").strip()
     current_company = _current_company()
+    restricted_sales_person = _restricted_sales_person()
 
     if current_company and _has_custom_company():
         filters.append(["Pricing Sheet", "custom_company", "=", current_company])
+    if restricted_sales_person is not None:
+        filters.append(["Pricing Sheet", "sales_person", "=", restricted_sales_person or "__no_sales_person__"])
     if search:
         filters.append(["Pricing Sheet", "sheet_name", "like", f"%{search}%"])
     if customer and customer != "All":
@@ -56,8 +62,8 @@ def get_pricing_sheet_manager_data(search=None, customer=None, mode=None, attent
     sheets = [_serialize_row(row) for row in rows]
     return {
         "sheets": sheets,
-        "kpis": _get_kpis(current_company),
-        "filters": _get_filters(current_company),
+        "kpis": _get_kpis(current_company, restricted_sales_person),
+        "filters": _get_filters(current_company, restricted_sales_person),
         "current_company": current_company,
     }
 
@@ -160,8 +166,8 @@ def _get_line_totals(pricing_sheet):
     return rows[0] if rows else {}
 
 
-def _get_kpis(current_company=None):
-    filters = _company_filter_dict(current_company)
+def _get_kpis(current_company=None, restricted_sales_person=None):
+    filters = _scope_filter_dict(current_company, restricted_sales_person)
     total = frappe.db.count("Pricing Sheet", filters=filters or None)
     this_month_filters = {"creation": [">=", get_first_day(nowdate())]}
     this_month_filters.update(filters)
@@ -198,9 +204,9 @@ def _get_kpis(current_company=None):
     }
 
 
-def _get_filters(current_company=None):
+def _get_filters(current_company=None, restricted_sales_person=None):
     filters = {"customer": ["is", "set"]}
-    filters.update(_company_filter_dict(current_company))
+    filters.update(_scope_filter_dict(current_company, restricted_sales_person))
     customers = frappe.get_list(
         "Pricing Sheet",
         fields=["customer"],
@@ -229,6 +235,19 @@ def _current_company():
     return resolve_current_company(user=frappe.session.user)
 
 
+def _restricted_sales_person():
+    if frappe.session.user == "Administrator":
+        return None
+    if set(frappe.get_roles(frappe.session.user) or []) & PRIVILEGED_PRICING_ROLES:
+        return None
+    if not frappe.db.exists("DocType", "Sales Person") or not frappe.db.has_column("Sales Person", "user"):
+        return ""
+    filters = {"user": frappe.session.user}
+    if frappe.db.has_column("Sales Person", "enabled"):
+        filters["enabled"] = 1
+    return frappe.db.get_value("Sales Person", filters, "name") or ""
+
+
 def _has_custom_company():
     return frappe.db.has_column("Pricing Sheet", "custom_company")
 
@@ -238,3 +257,10 @@ def _company_filter_dict(current_company=None):
     if current_company and _has_custom_company():
         return {"custom_company": current_company}
     return {}
+
+
+def _scope_filter_dict(current_company=None, restricted_sales_person=None):
+    filters = _company_filter_dict(current_company)
+    if restricted_sales_person is not None:
+        filters["sales_person"] = restricted_sales_person or "__no_sales_person__"
+    return filters

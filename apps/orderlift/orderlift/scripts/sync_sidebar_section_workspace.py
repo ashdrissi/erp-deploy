@@ -40,6 +40,7 @@ def run(
     module: str | None = None,
     icon: str | None = None,
 ):
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     spec = {
         "workspace_name": workspace_name,
         "section_label": section_label,
@@ -53,6 +54,7 @@ def run(
 
 @frappe.whitelist()
 def sync_all(source_sidebar: str = "Main Dashboard"):
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     results = []
     for spec in SECTION_WORKSPACE_SPECS:
         payload = {**spec, "source_sidebar": source_sidebar}

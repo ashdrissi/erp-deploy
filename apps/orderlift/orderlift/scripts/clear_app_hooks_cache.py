@@ -5,6 +5,7 @@ import frappe
 
 @frappe.whitelist()
 def run():
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     frappe.client_cache.delete_value("app_hooks")
     frappe.clear_cache()
     return frappe.get_hooks("app_include_js")

@@ -31,6 +31,7 @@ const OCM2_STATE = {
     campaignSearch: "",
     campaignStatus: "All",
     campaignChannel: "All",
+    showDeletedCampaigns: false,
     targetSearch: "",
     targetType: "All",
     targetStatus: "All",
@@ -63,7 +64,7 @@ async function loadCampaignManagerData(page, campaign = null) {
         const selectedCampaign = campaign || OCM2_STATE.selectedCampaign;
         const res = await frappe.call({
             method: "orderlift.orderlift_crm.api.campaign.get_manager_data",
-            args: selectedCampaign ? { campaign: selectedCampaign } : {},
+            args: Object.assign({ include_archived: OCM2_STATE.showDeletedCampaigns ? 1 : 0 }, selectedCampaign ? { campaign: selectedCampaign } : {}),
         });
         const data = res.message || {};
         OCM2_STATE.campaigns = (data.campaigns || []).map(normalizeCampaignRow);
@@ -100,6 +101,7 @@ function normalizeCampaignRow(row) {
         salesCount: row.sales_order_count || 0,
         salesAmount: row.sales_order_amount || 0,
         updated: row.modified || "",
+        archived: Number(row.archived || 0) ? 1 : 0,
     };
 }
 
@@ -190,6 +192,7 @@ function renderCampaignManager(page) {
                             ${selectMarkup("ocm2-campaign-status", ["All", ...unique(OCM2_STATE.campaigns.map((row) => row.status))], OCM2_STATE.campaignStatus, __("Status"))}
                             ${selectMarkup("ocm2-campaign-channel", ["All", ...unique(OCM2_STATE.campaigns.map((row) => row.channel))], OCM2_STATE.campaignChannel, __("Channel"))}
                         </div>
+                        <label class="ocm2-deleted-toggle"><input type="checkbox" data-show-deleted-campaigns ${OCM2_STATE.showDeletedCampaigns ? "checked" : ""}> <span>${__("Show deleted campaigns")}</span></label>
                     </div>
                     <div class="ocm2-campaign-list">
                         ${OCM2_STATE.loading ? skeletonCards(4) : campaigns.length ? campaigns.map(campaignCard).join("") : emptyPanel(__("No campaigns match the current filters."))}
@@ -218,7 +221,7 @@ function selectedCampaignMarkup(campaign, targets, progress) {
                 <div class="ocm2-selected-actions">
                     <span class="ocm2-status ${statusClass(campaign.status)}">${frappe.utils.escape_html(campaign.status)}</span>
                     <button type="button" class="ocm2-btn ocm2-btn-ghost" data-edit-campaign="${frappe.utils.escape_html(campaign.id)}">${buttonContent("edit", __("Edit Builder"))}</button>
-                    <button type="button" class="ocm2-btn ocm2-btn-danger" data-archive-campaign="${frappe.utils.escape_html(campaign.id)}">${buttonContent("archive", __("Archive"))}</button>
+                    ${campaign.archived ? `<button type="button" class="ocm2-btn ocm2-btn-primary" data-restore-campaign="${frappe.utils.escape_html(campaign.id)}">${buttonContent("restore", __("Restore"))}</button>` : `<button type="button" class="ocm2-btn ocm2-btn-danger" data-archive-campaign="${frappe.utils.escape_html(campaign.id)}">${buttonContent("archive", __("Delete"))}</button>`}
                     ${campaign.channel === "Email" ? `<button type="button" class="ocm2-btn ocm2-btn-ghost" data-bulk-schedule-email="1">${buttonContent("clock", __("Schedule Visible Emails"))}</button>` : ""}
                     ${campaign.channel === "Visit" ? `<button type="button" class="ocm2-btn ocm2-btn-ghost" data-bulk-visit-todos="1">${buttonContent("calendar-check", __("Create Visible Visit ToDos"))}</button>` : ""}
                 </div>
@@ -283,6 +286,16 @@ function bindCampaignManagerEvents(page) {
     page.main.find("[data-archive-campaign]").on("click", function (event) {
         event.stopPropagation();
         archiveSelectedCampaign(page, $(this).data("archive-campaign"));
+    });
+    page.main.find("[data-restore-campaign]").on("click", function (event) {
+        event.stopPropagation();
+        restoreSelectedCampaign(page, $(this).data("restore-campaign"));
+    });
+    page.main.find("[data-show-deleted-campaigns]").on("change", function () {
+        OCM2_STATE.showDeletedCampaigns = this.checked;
+        OCM2_STATE.selectedCampaign = null;
+        OCM2_STATE.expandedTargets.clear();
+        loadCampaignManagerData(page, null);
     });
     bindCampaignSelectionEvents(page);
 
@@ -648,7 +661,7 @@ async function bulkCreateVisitTodos(page) {
 function archiveSelectedCampaign(page, campaign) {
     if (!campaign) return;
     frappe.confirm(
-        __("Archive this campaign? It will be hidden from Campaign Manager lists."),
+        __("Delete this campaign? It will move to Deleted Campaigns and can be restored later."),
         async () => {
             try {
                 await frappe.call({
@@ -656,7 +669,7 @@ function archiveSelectedCampaign(page, campaign) {
                     args: { campaign },
                     freeze: true,
                 });
-                frappe.show_alert({ message: __("Campaign archived"), indicator: "green" });
+                frappe.show_alert({ message: __("Campaign deleted"), indicator: "green" });
                 OCM2_STATE.selectedCampaign = null;
                 OCM2_STATE.expandedTargets.clear();
                 await loadCampaignManagerData(page, null);
@@ -665,6 +678,22 @@ function archiveSelectedCampaign(page, campaign) {
             }
         }
     );
+}
+
+async function restoreSelectedCampaign(page, campaign) {
+    if (!campaign) return;
+    try {
+        await frappe.call({
+            method: "orderlift.orderlift_crm.api.campaign.restore_campaign",
+            args: { campaign },
+            freeze: true,
+        });
+        frappe.show_alert({ message: __("Campaign restored"), indicator: "green" });
+        OCM2_STATE.showDeletedCampaigns = false;
+        await loadCampaignManagerData(page, campaign);
+    } catch (error) {
+        console.error(error);
+    }
 }
 
 function currentCampaigns() {
@@ -693,6 +722,7 @@ function campaignCard(campaign) {
     return `
         <button type="button" class="ocm2-campaign-card ${selected ? "active" : ""}" data-campaign="${frappe.utils.escape_html(campaign.id)}">
             <span class="ocm2-status ${statusClass(campaign.status)}">${frappe.utils.escape_html(campaign.status)}</span>
+            ${campaign.archived ? `<span class="ocm2-status deleted">${frappe.utils.escape_html(__("Deleted"))}</span>` : ""}
             <strong>${frappe.utils.escape_html(campaign.title)}</strong>
             <small>${frappe.utils.escape_html(campaign.owner || __("No owner"))} / ${frappe.utils.escape_html(campaign.channel || __("No channel"))}</small>
             <span class="ocm2-card-metrics">
@@ -824,6 +854,7 @@ function iconSvg(icon) {
         phone: `<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9Z"></path>`,
         plus: `<path d="M12 5v14"></path><path d="M5 12h14"></path>`,
         refresh: `<path d="M21 12a9 9 0 0 1-15 6.7"></path><path d="M3 12a9 9 0 0 1 15-6.7"></path><path d="M3 5v6h6"></path><path d="M21 19v-6h-6"></path>`,
+        restore: `<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v6h6"></path>`,
         send: `<path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path>`,
         "shopping-bag": `<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path>`,
         target: `<circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle>`,
@@ -932,7 +963,8 @@ function unique(values) {
 }
 
 function formatMoney(value) {
-    return `${Number(value || 0).toLocaleString()} DH`;
+    if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(value);
+    return Number(value || 0).toLocaleString();
 }
 
 function injectCampaignManagerStyles() {
@@ -980,8 +1012,15 @@ function injectCampaignManagerStyles() {
         .ocm2-filter-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
         .ocm2-rail label, .ocm2-target-filters label { display: grid; gap: 4px; min-width: 0; margin: 0; }
         .ocm2-rail label span, .ocm2-target-filters label span { color: #64748b; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
-        .ocm2-rail input, .ocm2-rail select, .ocm2-target-filters input, .ocm2-target-filters select, .ocm2-target-status { height: 30px; min-height: 30px; max-height: 30px; width: 100%; border: 1px solid #d8e2ee; border-radius: 9px; background: #f8fafc; color: #102033; padding: 0 8px; font-size: 10.5px; line-height: 30px; font-weight: 800; outline: none; }
-        .ocm2-rail input:focus, .ocm2-rail select:focus, .ocm2-target-filters input:focus, .ocm2-target-filters select:focus, .ocm2-target-status:focus { border-color: #0891b2; background: #fff; box-shadow: 0 0 0 4px rgba(8,145,178,.1); }
+        .ocm2-rail input:not([type="checkbox"]), .ocm2-rail select, .ocm2-target-filters input:not([type="checkbox"]), .ocm2-target-filters select, .ocm2-target-status { height: 30px; min-height: 30px; max-height: 30px; width: 100%; border: 1px solid #d8e2ee; border-radius: 9px; background: #f8fafc; color: #102033; padding: 0 8px; font-size: 10.5px; line-height: 30px; font-weight: 800; outline: none; }
+        .ocm2-rail input:not([type="checkbox"]):focus, .ocm2-rail select:focus, .ocm2-target-filters input:not([type="checkbox"]):focus, .ocm2-target-filters select:focus, .ocm2-target-status:focus { border-color: #0891b2; background: #fff; box-shadow: 0 0 0 4px rgba(8,145,178,.1); }
+        .ocm2-deleted-toggle { display: flex !important; grid-template-columns: none !important; align-items: center; gap: 7px; color: #475569; font-size: 10px; font-weight: 900; }
+        .ocm2-deleted-toggle input { appearance: none !important; -webkit-appearance: none !important; display: inline-grid !important; place-content: center !important; width: 14px !important; height: 14px !important; min-width: 14px !important; min-height: 14px !important; max-height: 14px !important; flex: 0 0 14px; margin: 0; padding: 0; border: 1.5px solid #94a3b8 !important; border-radius: 4px !important; background: #fff !important; background-image: none !important; background-repeat: no-repeat !important; box-shadow: none !important; cursor: pointer; }
+        .ocm2-deleted-toggle input::before { content: ""; width: 7px; height: 7px; transform: scale(0); transition: transform .12s ease; background: #fff; clip-path: polygon(14% 44%, 0 58%, 38% 96%, 100% 20%, 86% 8%, 36% 68%); }
+        .ocm2-deleted-toggle input:checked { border-color: #0891b2 !important; background: #0891b2 !important; }
+        .ocm2-deleted-toggle input:checked::before { transform: scale(1); }
+        .ocm2-deleted-toggle input:focus-visible { outline: 3px solid rgba(8,145,178,.16); outline-offset: 2px; }
+        .ocm2-deleted-toggle span { text-transform: none !important; letter-spacing: 0 !important; }
         .ocm2-campaign-list { display: grid; gap: 6px; padding: 8px; overflow-y: auto; background: #fbfdff; }
         .ocm2-campaign-card { display: grid; gap: 5px; width: 100%; text-align: left; border: 1px solid #d6e0eb; border-left: 3px solid transparent; border-radius: 12px; background: #fff; padding: 8px 9px; cursor: pointer; }
         .ocm2-campaign-card.active { border-color: #06b6d4; border-left-color: #0891b2; background: #f0fdff; box-shadow: 0 6px 18px rgba(8,145,178,.08); }
@@ -1002,6 +1041,7 @@ function injectCampaignManagerStyles() {
         .ocm2-status.is-running, .ocm2-status.is-closed { background: #dcfce7; color: #166534; }
         .ocm2-status.is-ready { background: #dbeafe; color: #1d4ed8; }
         .ocm2-status.is-paused, .ocm2-status.is-draft { background: #fef3c7; color: #92400e; }
+        .ocm2-status.deleted { background: #fee2e2; color: #991b1b; }
         .ocm2-campaign-card .ocm2-status { justify-self: start; padding: 0 7px; }
         .ocm2-progress-grid { display: none; }
         .ocm2-target-filters { grid-template-columns: minmax(220px,1.55fr) repeat(4,minmax(100px,.48fr)); align-items: end; }

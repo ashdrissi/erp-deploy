@@ -9,6 +9,7 @@ from frappe.utils import add_days, nowdate
 
 @frappe.whitelist()
 def get_dashboard_data():
+    frappe.has_permission("SAV Ticket", "read", throw=True)
     return {
         "kpis": _get_kpis(),
         "recent_tickets": _get_recent_tickets(),
@@ -65,7 +66,7 @@ def _get_kpis():
 
 
 def _get_recent_tickets():
-    return frappe.get_all(
+    return frappe.get_list(
         "SAV Ticket",
         fields=["name", "customer", "status", "priority", "assigned_technician",
                 "defect_type", "serial_no", "severity", "sla_breach", "modified"],
@@ -167,7 +168,7 @@ def _get_alerts():
 
 
 def _get_status_breakdown():
-    rows = frappe.get_all("SAV Ticket", fields=["status", "priority", "defect_type"], limit_page_length=500)
+    rows = frappe.get_list("SAV Ticket", fields=["status", "priority", "defect_type"], limit_page_length=500)
     return {
         "status": [{"label": label or _("Unspecified"), "value": value} for label, value in Counter((r.get("status") or "") for r in rows).most_common(6)],
         "priority": [{"label": label or _("Unspecified"), "value": value} for label, value in Counter((r.get("priority") or "") for r in rows).most_common(6)],
@@ -176,7 +177,7 @@ def _get_status_breakdown():
 
 
 def _get_technician_load():
-    rows = frappe.get_all(
+    rows = frappe.get_list(
         "SAV Ticket",
         fields=["assigned_technician", "status", "priority"],
         filters={"status": ["not in", ["Closed"]]},
@@ -187,7 +188,7 @@ def _get_technician_load():
 
 
 def _get_upcoming_interventions():
-    rows = frappe.get_all(
+    rows = frappe.get_list(
         "SAV Ticket",
         fields=["name", "customer", "assigned_technician", "intervention_date", "status", "priority"],
         filters={
@@ -237,7 +238,7 @@ def _get_recent_communications():
 
 def _get_defect_type_breakdown():
     """Breakdown of tickets by defect type: Installation, Product, Supplier."""
-    rows = frappe.get_all(
+    rows = frappe.get_list(
         "SAV Ticket",
         fields=["defect_type", "status"],
         limit_page_length=500,

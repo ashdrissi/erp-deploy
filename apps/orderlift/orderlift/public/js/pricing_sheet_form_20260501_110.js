@@ -1,5 +1,7 @@
 // Active Pricing Sheet form script loaded via hooks.py doctype_js.
 
+const PRICING_SHEET_STOCK_SNAPSHOT_METHOD = "orderlift.orderlift_sales.utils.item_price_tools.get_transaction_stock_snapshot";
+
 function statusBadge(value) {
     const status = value || "";
     const map = {
@@ -46,6 +48,7 @@ function applyNativeLinesGridProperties(frm) {
     const businessListColumns = new Set([
         "item",
         "qty",
+        "custom_current_company_stock_qty",
         "buy_price",
         "expense_total",
         "customs_applied",
@@ -64,6 +67,7 @@ function applyNativeLinesGridProperties(frm) {
     const restrictedColumns = new Set([
         "item",
         "qty",
+        "custom_current_company_stock_qty",
         "final_sell_unit_price",
         "final_sell_total",
         "max_discount_percent_allowed",
@@ -89,9 +93,10 @@ function applyNativeLinesGridProperties(frm) {
     frm.refresh_field("lines");
 }
 
-const PRICING_SHEET_WORKSPACE_STORAGE_KEY = "orderlift.pricing-sheet.workspace-columns.v5";
+const PRICING_SHEET_WORKSPACE_STORAGE_KEY = "orderlift.pricing-sheet.workspace-columns.v6";
 const PRICING_SHEET_AGENT_VISIBLE_COLUMNS = [
     "qty",
+    "custom_current_company_stock_qty",
     "final_sell_unit_price",
     "final_sell_total",
     "max_discount_percent_allowed",
@@ -101,6 +106,7 @@ const PRICING_SHEET_AGENT_VISIBLE_COLUMNS = [
 ];
 const PRICING_SHEET_WORKSPACE_DEFAULT_COLUMNS = [
     "qty",
+    "custom_current_company_stock_qty",
     "buy_price",
     "expense_unit_price",
     "customs_unit_amount",
@@ -190,6 +196,7 @@ const PRICING_SHEET_COLUMN_GROUPS = [
         label: "Pricing",
         fields: [
             "qty",
+            "custom_current_company_stock_qty",
             "buy_price",
             "expense_total",
             "customs_applied",
@@ -276,6 +283,7 @@ function escapePricingSheetText(value) {
 }
 
 function formatPricingSheetCurrency(value) {
+    if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(value);
     return frappe.format(Number(value || 0), { fieldtype: "Currency" });
 }
 
@@ -2187,9 +2195,9 @@ async function openQuotationPreview(frm) {
     const preview = await frm.call("get_quotation_preview");
     const data = preview.message || {};
     const details = `
-        ${__("Total Base")}: ${frappe.format(data.total_buy || 0, { fieldtype: "Currency" })}<br>
-        ${__("Total Final HT")}: ${frappe.format(data.total_final || 0, { fieldtype: "Currency" })}<br>
-        ${__("Customs Total")}: ${frappe.format(data.customs_total || 0, { fieldtype: "Currency" })}<br>
+        ${__("Total Base")}: ${formatPricingSheetCurrency(data.total_buy || 0)}<br>
+        ${__("Total Final HT")}: ${formatPricingSheetCurrency(data.total_final || 0)}<br>
+        ${__("Customs Total")}: ${formatPricingSheetCurrency(data.customs_total || 0)}<br>
         ${__("Lines")}: ${data.line_count || 0}<br>
         ${__("Detailed Rows")}: ${data.detailed_count || 0}<br>
         ${__("Grouped Rows")}: ${data.grouped_count || 0}
@@ -2439,6 +2447,107 @@ async function applyCustomerPricingContext(frm, options = {}) {
     }
 }
 
+function schedulePricingSheetStockSnapshotRefresh(frm) {
+    if (!frm || !frm.fields_dict) return;
+    if (!frm.fields_dict.custom_warehouse_stock_snapshot && !hasPricingSheetLineStockField(frm)) return;
+    window.clearTimeout(frm.__orderlift_stock_snapshot_timer);
+    frm.__orderlift_stock_snapshot_timer = window.setTimeout(() => refreshPricingSheetStockSnapshot(frm), 150);
+}
+
+async function refreshPricingSheetStockSnapshot(frm) {
+    if (!frm || frm.__orderlift_refreshing_stock_snapshot) return;
+    const itemCodes = pricingSheetItemCodes(frm);
+    if (!itemCodes.length) {
+        setPricingSheetStockSnapshot(frm, [], {});
+        return;
+    }
+    frm.__orderlift_refreshing_stock_snapshot = true;
+    try {
+        const response = await frappe.call({
+            method: PRICING_SHEET_STOCK_SNAPSHOT_METHOD,
+            args: { item_codes: JSON.stringify(itemCodes), company: frm.doc.custom_company || frm.doc.company || "" },
+        });
+        const payload = response.message || {};
+        setPricingSheetStockSnapshot(frm, payload.rows || [], payload.totals || {});
+    } catch (error) {
+        console.error("Orderlift Pricing Sheet stock snapshot failed", error);
+    } finally {
+        frm.__orderlift_refreshing_stock_snapshot = false;
+    }
+}
+
+function pricingSheetItemCodes(frm) {
+    const out = [];
+    (frm.doc.lines || []).forEach((row) => {
+        const itemCode = String(row.item || "").trim();
+        if (itemCode && !out.includes(itemCode)) out.push(itemCode);
+    });
+    return out;
+}
+
+function setPricingSheetStockSnapshot(frm, rows, totals) {
+    if (frm.fields_dict.custom_warehouse_stock_snapshot) {
+        syncPricingSheetStockSnapshotTable(frm, rows || []);
+    }
+    if (hasPricingSheetLineStockField(frm)) {
+        let changed = false;
+        (frm.doc.lines || []).forEach((row) => {
+            const itemCode = String(row.item || "").trim();
+            const nextQty = Number((totals || {})[itemCode] || 0);
+            if (Math.abs(Number(row.custom_current_company_stock_qty || 0) - nextQty) < 0.000001) return;
+            row.custom_current_company_stock_qty = nextQty;
+            changed = true;
+        });
+        if (changed) {
+            frm.refresh_field("lines");
+            schedulePricingSheetWorkspaceRefresh(frm);
+        }
+    }
+}
+
+function syncPricingSheetStockSnapshotTable(frm, rows) {
+    const fieldname = "custom_warehouse_stock_snapshot";
+    const nextRows = (rows || []).map(normalizeStockSnapshotRow);
+    if (stockSnapshotRowsMatch(frm.doc[fieldname] || [], nextRows)) return;
+    const wasUnsaved = frm.doc && frm.doc.__unsaved;
+    frappe.model.clear_table(frm.doc, fieldname);
+    nextRows.forEach((values) => {
+        const child = frappe.model.add_child(frm.doc, "Orderlift Transaction Warehouse Stock", fieldname);
+        Object.assign(child, values);
+    });
+    frm.refresh_field(fieldname);
+    if (!wasUnsaved && frm.doc) {
+        frm.doc.__unsaved = 0;
+        frm.wrapper && $(frm.wrapper).find(".indicator-pill.red, .indicator-pill.orange").remove();
+    }
+}
+
+function normalizeStockSnapshotRow(row) {
+    return {
+        item_code: row.item_code || "",
+        item_name: row.item_name || "",
+        warehouse: row.warehouse || "",
+        actual_qty: Number(row.actual_qty || 0),
+    };
+}
+
+function stockSnapshotRowsMatch(currentRows, nextRows) {
+    const current = (currentRows || []).map(normalizeStockSnapshotRow);
+    if (current.length !== nextRows.length) return false;
+    return current.every((row, index) => {
+        const next = nextRows[index] || {};
+        return row.item_code === next.item_code
+            && row.item_name === next.item_name
+            && row.warehouse === next.warehouse
+            && Math.abs(Number(row.actual_qty || 0) - Number(next.actual_qty || 0)) < 0.000001;
+    });
+}
+
+function hasPricingSheetLineStockField(frm) {
+    const grid = frm.fields_dict.lines && frm.fields_dict.lines.grid;
+    return Boolean(grid && grid.get_field && grid.get_field("custom_current_company_stock_qty"));
+}
+
 frappe.ui.form.on("Pricing Sheet", {
     setup(frm) {
         const queryConfig = () => ({
@@ -2511,6 +2620,7 @@ frappe.ui.form.on("Pricing Sheet", {
         if (frm.doc.customer) {
             applyCustomerPricingContext(frm, { silent: true });
         }
+        schedulePricingSheetStockSnapshotRefresh(frm);
     },
 
     validate(frm) {
@@ -2526,10 +2636,16 @@ frappe.ui.form.on("Pricing Sheet", {
 
     lines_add(frm) {
         schedulePricingSheetWorkspaceRefresh(frm);
+        schedulePricingSheetStockSnapshotRefresh(frm);
     },
 
     lines_remove(frm) {
         schedulePricingSheetWorkspaceRefresh(frm);
+        schedulePricingSheetStockSnapshotRefresh(frm);
+    },
+
+    custom_company(frm) {
+        schedulePricingSheetStockSnapshotRefresh(frm);
     },
 
     async customer(frm) {
@@ -2561,8 +2677,11 @@ frappe.ui.form.on("Pricing Sheet Item", {
         const row = locals[cdt][cdn];
         if (!row.item) {
             schedulePricingSheetWorkspaceRefresh(frm);
+            schedulePricingSheetStockSnapshotRefresh(frm);
             return;
         }
+
+        schedulePricingSheetStockSnapshotRefresh(frm);
 
         const resolvedBuyingList = resolveSuggestedBuyingPriceList(frm, row);
         if (!row.source_buying_price_list && resolvedBuyingList) {

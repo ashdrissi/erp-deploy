@@ -13,6 +13,9 @@
     "notes",
     "heading_rules",
     "customs_rules",
+    "customs_delta_tax_section",
+    "enable_customs_value_delta_tax",
+    "customs_value_delta_tax_template",
     "customs_rules_help_section",
     "customs_rules_help_html"
   ],
@@ -63,6 +66,26 @@
       "reqd": 1
     },
     {
+      "fieldname": "customs_delta_tax_section",
+      "fieldtype": "Section Break",
+      "label": "Customs Value Delta Tax",
+      "collapsible": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "enable_customs_value_delta_tax",
+      "fieldtype": "Check",
+      "label": "Apply Tax On Customs Value Difference"
+    },
+    {
+      "depends_on": "eval:doc.enable_customs_value_delta_tax",
+      "description": "If blank, Orderlift uses the Company's Default Sales Tax Template.",
+      "fieldname": "customs_value_delta_tax_template",
+      "fieldtype": "Link",
+      "label": "Tax Template",
+      "options": "Sales Taxes and Charges Template"
+    },
+    {
       "fieldname": "customs_rules_help_section",
       "fieldtype": "Section Break",
       "label": "Customs Rules Help & Examples",
@@ -73,7 +96,7 @@
       "fieldname": "customs_rules_help_html",
       "fieldtype": "HTML",
       "label": "Customs Rules Help",
-      "options": "<div style=\"padding:8px 0 4px;line-height:1.55;\"><p><strong>How each rule is used.</strong></p><p><strong>Tariff Number</strong>: optional exact HS/customs code match.<br><strong>Custom Material</strong>: matches Item Custom Material from the article workbook's <code>DOUANE MATERIAL</code> column.<br><strong>Value Per Kg</strong>: declared customs value per kg.<br><strong>Rate Percent</strong>: customs percent applied to the declared customs value.<br><strong>Sequence</strong>: tie-breaker when multiple matching rules exist. Lower sequence wins.</p><p><strong>Formula</strong><br><code>Customs Fee = Value Per Kg x Total Kg x Rate Percent / 100</code></p><p><strong>Example</strong><br>Custom Material <code>ACIER</code>, Value Per Kg <code>13</code>, Total Weight <code>100 kg</code>, Rate Percent <code>25</code><br><code>Customs Fee = 13 x 100 x 25% = 325</code></p></div>"
+      "options": "<div style=\"padding:8px 0 4px;line-height:1.55;\"><p><strong>How each rule is used.</strong></p><p><strong>Tariff Number</strong>: optional exact HS/customs code match.<br><strong>Custom Material</strong>: matches Item Custom Material from the article workbook's <code>DOUANE MATERIAL</code> column.<br><strong>Value Per Kg</strong>: declared customs value per kg.<br><strong>Rate Percent</strong>: customs percent applied to the declared customs value.<br><strong>Sequence</strong>: tie-breaker when multiple matching rules exist. Lower sequence wins.</p><p><strong>Formula</strong><br><code>Customs Fee = Value Per Kg x Total Kg x Rate Percent / 100</code></p><p><strong>Example</strong><br>Custom Material <code>ACIER</code>, Value Per Kg <code>13</code>, Total Weight <code>100 kg</code>, Rate Percent <code>25</code><br><code>Customs Fee = 13 x 100 x 25% = 325</code></p><hr style=\"margin:10px 0;\"><p><strong>Customs Value Delta Tax</strong></p><p>When <strong>Apply Tax On Customs Value Difference</strong> is enabled, Orderlift calculates an additional tax on the <em>delta</em> between the item's declared customs base value and its buying cost.</p><p><strong>Delta</strong> = (Value Per Kg × Total Weight) − (Qty × Unit Buying Price)<br>If <code>delta &le; 0</code>: no delta tax is applied.<br>If <code>delta > 0</code>: delta tax is charged on the excess.</p><p><strong>Delta Tax</strong> = Delta x Tax Rate / 100</p><p>Tax Rate is taken from <strong>Tax Template</strong> if set; otherwise from the <strong>Company's Default Sales Tax Template</strong>.</p><p><strong>Example</strong><br>Value Per Kg = <code>13</code>, Total Weight = <code>100 kg</code>, Unit Buying Price = <code>2</code><br><code>Customs Base Value = 13 x 100 = 1300</code><br><code>Delta = 1300 - (100 x 2) = 1100</code><br>Tax Rate = <code>20%</code><br><code>Delta Tax = 1100 x 20% = 220</code><br><strong>Total Customs = 325 + 220 = 545</strong></p></div>"
     }
   ],
   "is_submittable": 0,
@@ -104,8 +127,30 @@
       "create": 1,
       "delete": 1,
       "report": 1,
-      "export": 1,
-      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Pricing Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales User",
+      "read": 1,
+      "report": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Orderlift Commercial",
+      "read": 1,
+      "report": 1,
       "print": 1,
       "email": 1
     }

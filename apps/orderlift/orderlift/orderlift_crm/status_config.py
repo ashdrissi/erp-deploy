@@ -1,8 +1,76 @@
 from __future__ import annotations
 
+import json
+
+import frappe
+
 STATUS_COLOR_OPTIONS = ["Gray", "Blue", "Green", "Orange", "Red", "Purple"]
 STATUS_COLOR_OPTIONS_TEXT = "\n".join(STATUS_COLOR_OPTIONS)
 UNASSIGNED_STATUS = "__unassigned__"
+
+PIPELINE_QUICK_ACTION_FIELDS = {
+    "Opportunity": "custom_opportunity_pipeline_quick_actions",
+    "Project": "custom_project_pipeline_quick_actions",
+    "Sales Order": "custom_sales_order_pipeline_quick_actions",
+    "Forecast Load Plan": "custom_forecast_load_plan_pipeline_quick_actions",
+}
+
+PIPELINE_QUICK_ACTIONS = {
+    "Opportunity": [
+        {
+            "key": "pricing-sheet",
+            "label": "Pricing Sheet",
+            "description": "Create a Pricing Sheet with Opportunity context and items.",
+        },
+        {
+            "key": "quotation",
+            "label": "Quotation",
+            "description": "Create a Quotation directly from the Opportunity context.",
+        },
+        {
+            "key": "project",
+            "label": "Project",
+            "description": "Create a Project linked to this Opportunity.",
+        },
+        {
+            "key": "sales-order",
+            "label": "Sales Order",
+            "description": "Create a Sales Order linked to this Opportunity.",
+        },
+    ],
+    "Project": [
+        {
+            "key": "sales-order",
+            "label": "Sales Order",
+            "description": "Create a Sales Order linked to this Project.",
+        },
+        {
+            "key": "purchase-order",
+            "label": "Purchase Order",
+            "description": "Create a Purchase Order linked to this Project.",
+        },
+    ],
+    "Sales Order": [
+        {
+            "key": "delivery-note",
+            "label": "Delivery Note",
+            "description": "Create a Delivery Note from this Sales Order.",
+        },
+        {
+            "key": "sales-invoice",
+            "label": "Sales Invoice",
+            "description": "Create a Sales Invoice from this Sales Order.",
+        },
+    ],
+    "Forecast Load Plan": [],
+}
+
+DEFAULT_PIPELINE_QUICK_ACTIONS = {
+    "Opportunity": ["pricing-sheet", "project"],
+    "Project": ["sales-order", "purchase-order"],
+    "Sales Order": ["delivery-note", "sales-invoice"],
+    "Forecast Load Plan": [],
+}
 
 LOGISTICS_STATUS_SEEDS = [
     {"label": "Planning", "sequence": 10, "color": "Gray", "is_default": 1},
@@ -86,6 +154,7 @@ STATUS_SOURCES = {
         "legacy_label": "ERP Status",
         "legacy_field": "status",
         "seeds": OPPORTUNITY_STAGE_SEEDS,
+        "show_flow_fields": False,
     },
     "Project": {
         "field_label": "Project Status",
@@ -110,6 +179,7 @@ STATUS_SOURCES = {
         "legacy_label": "ERP Project Status",
         "legacy_field": "status",
         "seeds": PROJECT_STATUS_SEEDS,
+        "show_flow_fields": False,
     },
     "Sales Order": {
         "field_label": "Order Status",
@@ -134,6 +204,7 @@ STATUS_SOURCES = {
         "legacy_label": "ERP Sales Status",
         "legacy_field": "status",
         "seeds": SALES_ORDER_STATUS_SEEDS,
+        "show_flow_fields": False,
     },
     "Forecast Load Plan": {
         "field_label": "Logistics Status",
@@ -163,3 +234,64 @@ STATUS_SOURCES = {
         "allow_rename": False,
     },
 }
+
+
+def pipeline_quick_action_field(document_type: str) -> str:
+    return PIPELINE_QUICK_ACTION_FIELDS.get(document_type, "")
+
+
+def pipeline_quick_action_catalog(document_type: str) -> list[dict]:
+    return [dict(action) for action in PIPELINE_QUICK_ACTIONS.get(document_type, [])]
+
+
+def get_company_pipeline_quick_action_keys(document_type: str, company: str | None = None) -> list[str]:
+    fieldname = pipeline_quick_action_field(document_type)
+    catalog = pipeline_quick_action_catalog(document_type)
+    allowed_keys = {action["key"] for action in catalog}
+    default_keys = [key for key in DEFAULT_PIPELINE_QUICK_ACTIONS.get(document_type, []) if key in allowed_keys]
+    company = (company or "").strip()
+    if not fieldname or not company or not frappe.db.exists("Company", company):
+        return default_keys
+    if not getattr(frappe.db, "has_column", None) or not frappe.db.has_column("Company", fieldname):
+        return default_keys
+
+    raw = frappe.db.get_value("Company", company, fieldname)
+    if not raw:
+        return default_keys
+    try:
+        values = json.loads(raw)
+    except Exception:
+        return default_keys
+    if not isinstance(values, list):
+        return default_keys
+
+    seen = set()
+    out = []
+    for value in values:
+        key = str(value or "").strip()
+        if not key or key in seen or key not in allowed_keys:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def get_company_pipeline_quick_actions(document_type: str, company: str | None = None) -> list[dict]:
+    selected = set(get_company_pipeline_quick_action_keys(document_type, company=company))
+    return [action for action in pipeline_quick_action_catalog(document_type) if action["key"] in selected]
+
+
+def save_company_pipeline_quick_action_keys(document_type: str, company: str, keys: list[str] | tuple[str, ...]) -> list[str]:
+    company = (company or "").strip()
+    if not company or not frappe.db.exists("Company", company):
+        frappe.throw(frappe._("Company {0} was not found.").format(company or ""))
+    fieldname = pipeline_quick_action_field(document_type)
+    if not fieldname:
+        return []
+    if not getattr(frappe.db, "has_column", None) or not frappe.db.has_column("Company", fieldname):
+        return []
+    allowed_order = [action["key"] for action in pipeline_quick_action_catalog(document_type)]
+    requested = {str(key or "").strip() for key in (keys or []) if str(key or "").strip()}
+    clean = [key for key in allowed_order if key in requested]
+    frappe.db.set_value("Company", company, fieldname, json.dumps(clean), update_modified=False)
+    return clean

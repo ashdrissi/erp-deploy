@@ -29,9 +29,9 @@ function renderExpenseGuide(frm) {
     const stats = getExpenseStats(rows);
     const transportEnabled = !!frm.doc.transport_is_active;
     const transportMode = frappe.utils.escape_html(frm.doc.transport_allocation_mode || "By Value");
-    const transportPrice = frappe.format(frm.doc.transport_container_price || 0, { fieldtype: "Currency" });
+    const transportPrice = formatCurrency(frm.doc.transport_container_price || 0);
     const storageEnabled = !!frm.doc.storage_is_active;
-    const storageRate = frappe.format(frm.doc.storage_cost_per_m3_per_month || 0, { fieldtype: "Currency" });
+    const storageRate = formatCurrency(frm.doc.storage_cost_per_m3_per_month || 0);
     const storageDuration = frappe.format(frm.doc.storage_duration_months || 0, { fieldtype: "Float" });
 
     const cards = [
@@ -254,6 +254,10 @@ function addStarterButtons(frm) {
             __("Landed-cost helper expenses added")
         );
     }, __("Templates"));
+}
+
+function formatCurrency(value) {
+    return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : frappe.format(value || 0, { fieldtype: "Currency" });
 }
 
 frappe.ui.form.on("Pricing Scenario", {

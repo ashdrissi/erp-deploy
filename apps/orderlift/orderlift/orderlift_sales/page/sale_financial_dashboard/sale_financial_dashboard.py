@@ -29,6 +29,7 @@ def sync_page_roles() -> dict:
 
 @frappe.whitelist()
 def get_dashboard_data(filters: str | dict | None = None):
+    frappe.has_permission("Sales Order", "read", throw=True)
     active_filters = _clean_filters(filters)
     companies = reporting.get_reporting_companies()
     company_names = _selected_company_names(companies, active_filters)

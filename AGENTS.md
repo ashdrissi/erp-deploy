@@ -1,5 +1,55 @@
 # AGENTS.md
 
+## New Session Quickstart
+
+**Every new session: read this first. Do not guess deployment details.**
+
+### Target
+- **Production site:** `erp.ecomepivot.com`
+- **Production containers:**
+  - App: `app-cs08owwk4wcw4k000kw0kg44-083312225264`
+  - Backend: `backend-cs08owwk4wcw4k000kw0kg44-083312256042`
+  - Websocket: `websocket-cs08owwk4wcw4k000kw0kg44-083312275224`
+- **Bench path in containers:** `/home/frappe/frappe-bench`
+- **Site name for bench commands:** `erp.ecomepivot.com`
+
+### Make Changes Live (step-by-step cheat sheet)
+
+```
+# 1. Edit local files under /root/erp-deploy/apps/orderlift/...
+
+# 2. Rebuild assets (if JS/CSS changed)
+docker exec -w /home/frappe/frappe-bench app-cs08owwk4wcw4k000kw0kg44-083312225264 bench build --app orderlift
+
+# 3. Migrate (if schema/custom fields/fixtures changed)
+docker exec -w /home/frappe/frappe-bench app-cs08owwk4wcw4k000kw0kg44-083312225264 bench --site erp.ecomepivot.com migrate
+
+# 4. Clear caches (always)
+docker exec -w /home/frappe/frappe-bench app-cs08owwk4wcw4k000kw0kg44-083312225264 bench --site erp.ecomepivot.com clear-cache
+docker exec -w /home/frappe/frappe-bench app-cs08owwk4wcw4k000kw0kg44-083312225264 bench --site erp.ecomepivot.com clear-website-cache
+
+# 5. Restart (always for Python changes)
+docker restart app-cs08owwk4wcw4k000kw0kg44-083312225264 backend-cs08owwk4wcw4k000kw0kg44-083312256042 websocket-cs08owwk4wcw4k000kw0kg44-083312275224
+
+# 6. Verify
+curl -so /dev/null -w '%{http_code}' https://erp.ecomepivot.com
+```
+
+### Test Commands
+```
+cd apps/orderlift && python3 -m unittest orderlift.tests.test_<module>
+```
+
+### DB / Console
+```
+docker exec -i -w /home/frappe/frappe-bench app-cs08owwk4wcw4k000kw0kg44-083312225264 bench --site erp.ecomepivot.com console <<'PY'
+import frappe
+# ... queries ...
+PY
+```
+
+---
+
 ## Purpose
 - This repository is a Dockerized Frappe/ERPNext bench deployment with custom apps under `apps/`.
 - Main active apps: `apps/orderlift`, `apps/custom_desk_theme`, and `apps/infintrix_theme`.
@@ -21,6 +71,7 @@
 - `apps/orderlift/orderlift/scripts/import_generated_catalog.py`: imports generated catalog CSVs into ERPNext in master-data order.
 - `apps/orderlift/orderlift/scripts/import_item_packaging_profiles.py`: imports packaging profiles from `logistique_export.csv`, creates missing UOMs, and updates item HS codes.
 - `apps/orderlift/orderlift/scripts/setup_workbook_pricing_policies.py`: seeds workbook-derived customs, scenario, and passive benchmark policy records and can verify parity against imported price lists.
+- `apps/orderlift/orderlift/scripts/setup_internal_notifications.py`: seeds enabled internal-only native Frappe `Notification` records for key Orderlift sales, finance, SAV, logistics, project, and commission events.
 - `apps/orderlift/orderlift/scripts/import_workbook_dimensioning_set.py`: parses the pricing workbook formulas and upserts the dynamic Ascenseur Complet Dimensioning Set.
 - `apps/orderlift/orderlift/orderlift_crm/page/opportunity_pipeline`: custom Opportunity kanban using native `Opportunity.sales_stage` as the main editable status.
 - `apps/orderlift/orderlift/orderlift_crm/page/project_pipeline`: custom Project kanban using `Project.custom_project_status` as the main editable status.
@@ -44,19 +95,18 @@
 
 ## Runtime Targets
 - Confirm the target host before running operational commands.
-- Production host is `erp.ecomepivot.com` and is routed by the production `backend` service from `docker-compose.yml`.
-- Dev host is `erp-dev.ecomepivot.com` and is routed by the dev `backend` service from `docker-compose.dev.yml`.
-- Do not assume the first `app-*` container is the right one when both stacks are running.
-- Identify the correct backend container with:
-  `docker inspect <backend-container> --format '{{json .Config.Labels}}'`
-- Match the Traefik host rule:
-  `traefik.http.routers.erp-https.rule=Host(\`erp.ecomepivot.com\`)` for production.
-- Once the backend container is identified, use the matching `app` container from the same Compose project for `bench` commands.
-- In this environment, the production pair is currently named like `backend-cs08...` and `app-cs08...`.
+- **Production host** is `erp.ecomepivot.com` and is routed by the production `backend` service from `docker-compose.yml`.
+- **Production containers** (Coolify project `cs08owwk4wcw4k000kw0kg44`):
+  - `app-cs08owwk4wcw4k000kw0kg44-083312225264`
+  - `backend-cs08owwk4wcw4k000kw0kg44-083312256042`
+  - `websocket-cs08owwk4wcw4k000kw0kg44-083312275224`
+- **Dev host** is `erp-dev.ecomepivot.com` and is routed by the dev `backend` service from `docker-compose.dev.yml`.
+- Do not assume the first `app-*` container is the right one when both stacks are running; match by project name.
+- Use `-w /home/frappe/frappe-bench` with `docker exec` for all bench commands.
 
 ## Preferred Command Entry Points
 - Start by choosing the narrowest command that proves your change.
-- For Frappe app changes, prefer `docker exec <app-container> bash -lc "cd /home/frappe/frappe-bench && ..."`.
+- For Frappe app changes, prefer `docker exec -w /home/frappe/frappe-bench <app-container> ...` (use Quickstart container names for production).
 - For frontend work in `infintrix_theme/public/js/sidebar_menu`, run Node commands from that package directory.
 - Use `./scripts/dev.sh` for common local workflows when it matches the task.
 - For pricing workbook import prep, use `python3 scripts/prepare_erpnext_imports.py --dry-run` to verify counts, then rerun without `--dry-run` to write CSVs under `docs/data/generated`.
@@ -100,11 +150,18 @@
 |---|---|---|
 | Python logic only (`*.py`) | Clear cache + restart `app/backend/websocket` | No `migrate` needed unless schema or fixtures changed |
 | `hooks.py`, `doctype_js`, page wiring | Clear cache + clear hook cache + restart `app/backend/websocket` | Full Desk reload afterward |
+| Page JS (`orderlift_sales/page/*.js`) or `public/js/*` bundled via `build.json` | `bench build --app orderlift` + clear cache + restart | Page JS from app modules needs a build |
 | Existing `orderlift/public/js/*` or `orderlift/public/css/*` | Clear cache first; restart if still stale | Usually no `bench build` needed |
-| DocType JSON, fixtures, custom fields, property setters, patches | `bench --site <site> migrate` | If migrate reports missing `node`, verify `/usr/local/bin/node` points to the nvm Node binary |
-| `setup.py` / `after_migrate` logic | `bench --site <site> migrate` or explicit `bench execute ...after_migrate` | Then clear cache + restart |
-| New workspace/sidebar setup logic | Run the setup hook explicitly | Example: `bench --site <site> execute orderlift.scripts.setup_main_dashboard_sidebar.run --kwargs '{"workspace_name":"Main Dashboard"}'` |
+| DocType JSON, fixtures, custom fields, property setters, patches | `bench --site erp.ecomepivot.com migrate` | Then clear cache + restart |
+| `setup.py` / `after_migrate` logic | `bench --site erp.ecomepivot.com migrate` or explicit `bench execute ...after_migrate` | Then clear cache + restart |
 | New static file not picked up publicly | Verify public asset URL directly with `curl` | Only use direct file copy/patching if mounted source is not enough |
+
+**Production containers:**
+- App: `app-cs08owwk4wcw4k000kw0kg44-083312225264`
+- Backend: `backend-cs08owwk4wcw4k000kw0kg44-083312256042`
+- Websocket: `websocket-cs08owwk4wcw4k000kw0kg44-083312275224`
+
+Always use `-w /home/frappe/frappe-bench` with `docker exec` for bench commands.
 
 ### CRM Status Model
 - `Opportunity.sales_stage` is the single main editable opportunity status for custom CRM pages.
@@ -125,11 +182,107 @@
 
 ### Typical Live Apply Flow
 1. Edit local files under `/root/erp-deploy/apps/orderlift/...`
-2. If schema/fixtures changed: run `bench --site <site> migrate`
-3. Clear site cache
-4. If hooks changed: clear hook cache
-5. Restart `app`, `backend`, and `websocket`
-6. Verify route, asset, or DB record
+2. If schema/fixtures changed: run `bench --site erp.ecomepivot.com migrate`
+3. If page JS or bundled assets changed: run `bench build --app orderlift`
+4. Clear site cache: `bench --site erp.ecomepivot.com clear-cache && bench --site erp.ecomepivot.com clear-website-cache`
+5. If hooks changed: clear hook cache (`frappe.cache.delete_value('app_hooks')`)
+6. Restart `app-cs08owwk4wcw4k000kw0kg44-083312225264`, `backend-cs08owwk4wcw4k000kw0kg44-083312256042`, `websocket-cs08owwk4wcw4k000kw0kg44-083312275224`
+7. Verify: `curl -so /dev/null -w '%{http_code}' https://erp.ecomepivot.com` should return `200`
+
+## Module & Sidebar Organization
+
+### Single Dashboard Model
+The project uses **one unified sidebar** called `Main Dashboard`. All section-specific Frappe Workspaces are deleted — the sidebar is locked to `Main Dashboard` for all business users.
+
+### Sidebar Registry
+- **`orderlift/menu_registry.py`** — central registry of all 17 sidebar sections and their links, organized by business domain. Each section has role-based visibility.
+- **`orderlift/scripts/setup_main_dashboard_sidebar.py`** — builds the registry into the Frappe `Workspace Sidebar` doctype on deployment.
+- **`orderlift/public/js/orderlift_main_sidebar_lock_20260429b.js`** — client-side lock preventing business users from switching workspaces.
+
+### Sidebar Sections (17 sections in `menu_registry.py`)
+
+| Section | Key | Primary Module |
+|---------|-----|---------------|
+| Dashboard (Home) | `home.dashboard` | — |
+| My Work | `my_work` | — |
+| Administration | `administration` | Superadmin-only |
+| CRM & Customers | `crm_customers` | `orderlift_crm` |
+| Sales | `sales` | `orderlift_sales` |
+| Policies & Configs | `policies_configs` | `orderlift_sales` (pricing) |
+| SAV | `sav` | `orderlift_sav` |
+| Items & Price Lists | `items_price_lists` | `orderlift_logistics` |
+| Finance | `finance` | `orderlift_finance` (native doctypes) |
+| Purchasing | `purchasing` | `orderlift_logistics` |
+| HR & Performance | `hr` | `orderlift_hr` |
+| Training | `training` | `orderlift_hr` |
+| Gestion de Projets | `projects` | `orderlift_sig` |
+| Warehouse & Stock | `warehouse_stock` | `orderlift_logistics` |
+| Logistics | `logistics` | `orderlift_logistics` |
+| B2B Portal | `b2b_portal` | `orderlift_client_portal` |
+| SIG | `sig` | `orderlift_sig` |
+
+### Business Roles
+Seven seeded roles in `menu_registry.py`: `Orderlift Admin`, `Sales User`, `Pricing Manager`, `Logistics User`, `Finance User`, `Installation User`, `Service User`. Each role gets different sidebar section visibility.
+
+### Doctype Module Map (~94 custom doctypes)
+
+| Module (`orderlift/orderlift/`) | Domain | Doctypes |
+|------|--------|----------|
+| `orderlift_sales/` | Pricing, selling, commissions, pricing builder | 43 |
+| `orderlift_crm/` | CRM classification, campaigns, statuses | 15 |
+| `orderlift_logistics/` | Container, forecast, item specs | 11 |
+| `orderlift_hr/` | Training, performance, appraisal | 14 |
+| `orderlift_sav/` | After-sales service | 3 |
+| `orderlift_sig/` | Project installation QC, workflow cases | 4 |
+| `orderlift_client_portal/` | B2B portal quote requests | 4 |
+| `orderlift_finance/` | Account governance (no custom doctypes) | 0 |
+
+## Form Customization Conventions
+
+**Prefer native Frappe customization over hardcoded scripts.** Four-layer strategy in priority order:
+
+### Layer 1: Native Customize Form (superadmin-only)
+The Frappe `Customize Form` doctype is available to `Administrator`/`System Manager` for structural form changes (add/remove fields, reorder, change field types). It is blocked from business users via:
+- Server guard: `hooks.py` → `orderlift.restricted_user_guard.block_if_restricted`
+- Client guard: `orderlift/boot.py` strips `Customize Form` from boot info for non-superadmins
+
+### Layer 2: Property Setters + Custom Fields via `after_migrate` (programmatic)
+For cross-environment consistency, structural changes are applied programmatically during migration using `_upsert_property_setter()`:
+- **`orderlift/sales/utils/pricing_setup.py`** — Quotation, Quotation Item, Item field visibility/labels
+- **`orderlift/orderlift_crm/setup.py`** — Opportunity, Project, Customer fields
+- **`orderlift/orderlift_sig/setup.py`** — Project/Sales Order SIG data fields
+- Custom fields export as fixtures (`hooks.py` lines 56-63), property setters filtered by `name like "%-custom_%"`
+
+### Layer 3: `doctype_js` Form Scripts (dynamic behavior only)
+JS form scripts via `hooks.py` `doctype_js` are for dynamic/interactive behavior, NOT static layout. Only add a script when behavior is conditional (hide/show based on field values, real-time calculations, etc.).
+
+| Doctype | Script | Purpose |
+|---------|--------|---------|
+| Quotation | `quotation_form_simplify_20260622a.js` | Hides discount fields, stock snapshot, item buttons |
+| Pricing Sheet | `pricing_sheet_form_20260501_110.js` | Massive pricing logic, status badges, margin math |
+| Customer/Prospect/Lead | `customer_tier_mode.js` | Dynamic tier visibility |
+| Item | `item_form_prices_20260608a.js` | Buying/selling price child tables |
+| Finance doctypes | `finance_account_guard_20260501a.js` | Hides account fields from non-superadmins |
+| (14 more scripts) | see `hooks.py` lines 330-367 | Various form/list enhancements |
+
+**Key rule:** If a form change can be done via Customize Form or a property setter, do NOT add a `doctype_js` script.
+
+### Layer 4: `doctype_list_js` (list view enhancements)
+List view scripts for inline editing, quick-entry, column filters. Registered in `hooks.py` lines 358-362:
+- `item_list_price_helper_20260608g.js` — quick price editing on Item list
+- `price_list_import_list_20260602a.js` — import UI on Price List
+- `portal_quote_request_list.js` — portal quote grid
+
+### When To Use What
+
+| Change | Use |
+|--------|-----|
+| Add a field | Custom Field fixture + `after_migrate` |
+| Hide/show field, rename, reorder | Property Setter via `_upsert_property_setter()` |
+| Conditional visibility (depends on other field value) | `doctype_js` form script |
+| Real-time calculation, interactive logic | `doctype_js` form script |
+| Layout (tabs, section breaks) | Native Customize Form |
+| Document validation/server logic | Python `doc_events` in `hooks.py` |
 
 ## Lint And Format Commands
 - Python lint/format rules are defined only for `apps/infintrix_theme` via Ruff and pre-commit.

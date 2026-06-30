@@ -16,6 +16,7 @@ from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 MAX_WARNING_LINES = 80
 MAX_WARNING_LINE_LENGTH = 240
 MAX_WARNING_TOTAL_LENGTH = 12000
+BUILDER_ITEM_DOCTYPES = ("Pricing Builder Item", "Pricing Builder Manual Item")
 
 
 class PricingBuilder(Document):
@@ -29,6 +30,11 @@ class PricingBuilder(Document):
         if not active_buying_lists:
             frappe.throw(_("Add at least one active sourcing rule with a Buying Price List."))
         existing_overrides = _existing_override_map(self.builder_items or [])
+        selling_price_list_name = (self.selling_price_list_name or "").strip()
+        existing_overrides = _merge_override_maps(
+            _published_item_price_override_map(selling_price_list_name, self.name),
+            existing_overrides,
+        )
         manual_items = []
 
         qty = flt(self.default_qty or 1)
@@ -52,7 +58,6 @@ class PricingBuilder(Document):
         item_details = get_item_details_map(item_codes)
         item_meta = _get_builder_item_meta(item_codes)
         published_map = {}
-        selling_price_list_name = (self.selling_price_list_name or "").strip()
         if selling_price_list_name and frappe.db.exists("Price List", selling_price_list_name):
             published_map = get_latest_item_prices(item_codes, selling_price_list_name, buying=False)
 
@@ -162,6 +167,16 @@ class PricingBuilder(Document):
                 + flt(component_summary.get("policy_expense_unit") or 0)
                 + (flt(customs_calc.get("applied") or 0) / qty if qty else 0)
             )
+            override_selling_price = _existing_override(existing_overrides, item_code, buying_list)
+            if flt(override_selling_price) > 0:
+                final_margin_pct = _override_margin_percent(
+                    override_selling_price,
+                    margin_basis,
+                    base_buy,
+                    cost_before_margin,
+                    final_margin_pct,
+                )
+                total_margin_pct = final_margin_pct
             discount_meta = extract_benchmark_discount_metadata(benchmark_result, benchmark_policy_doc)
             calculation_breakdown = _build_calculation_breakdown(
                 qty=qty,
@@ -210,11 +225,14 @@ class PricingBuilder(Document):
                 "packaging_package_count": flt(customs_calc.get("package_count") or 0),
                 "packaging_profile_source": customs_calc.get("packaging_source") or "",
                 "customs_basis": customs_calc.get("basis") or "",
+                "customs_value_delta": flt(customs_calc.get("customs_value_delta") or 0) / qty if qty else 0,
+                "customs_value_delta_tax_rate": flt(customs_calc.get("customs_value_delta_tax_rate") or 0),
+                "customs_value_delta_tax_amount": flt(customs_calc.get("customs_value_delta_tax_amount") or 0) / qty if qty else 0,
                 "margin_amount": margin_amount,
                 "total_margin_amount": total_margin_amount,
                 "avg_benchmark": benchmark_reference,
                 "projected_price": projected_unit,
-                "override_selling_price": _existing_override(existing_overrides, item_code, buying_list),
+                "override_selling_price": override_selling_price,
                 "final_margin_pct": final_margin_pct,
                 "total_margin_pct": total_margin_pct,
                 "target_margin_percent": discount_meta.get("target_margin_percent"),
@@ -258,6 +276,7 @@ class PricingBuilder(Document):
         updated = 0
         skipped = 0
         errors = []
+        brand_map = _builder_source_brand_map(self.builder_items or [])
 
         for row in self.builder_items or []:
             if selected_only and not cint(row.selected):
@@ -285,8 +304,9 @@ class PricingBuilder(Document):
                         doc.selling = 1
                     if hasattr(doc, "buying"):
                         doc.buying = 0
+                    _set_builder_source_brand(doc, row, brand_map)
                     stamp_item_price_from_builder_row(doc, self.name, row)
-                    doc.save(ignore_permissions=True)
+                    _save_item_price_from_builder(doc)
                     updated += 1
                 else:
                     doc = frappe.new_doc("Item Price")
@@ -303,8 +323,9 @@ class PricingBuilder(Document):
                         doc.uom = frappe.db.get_value("Item", item_code, "stock_uom")
                     if hasattr(doc, "valid_from"):
                         doc.valid_from = nowdate()
+                    _set_builder_source_brand(doc, row, brand_map)
                     stamp_item_price_from_builder_row(doc, self.name, row)
-                    doc.insert(ignore_permissions=True)
+                    _insert_item_price_from_builder(doc)
                     created += 1
                 row.published_price = final_price
             except Exception:
@@ -321,9 +342,72 @@ class PricingBuilder(Document):
         self.missing_items = cint(summary.get("missing_count") or 0)
 
 
+def cleanup_pricing_builder_history(doc, method=None):
+    builder_name = (doc.get("name") or "").strip()
+    if not builder_name:
+        return
+    if frappe.db.exists("DocType", "Pricing Builder History"):
+        frappe.db.delete("Pricing Builder History", {"pricing_builder": builder_name})
+    if frappe.db.has_column("Item Price", "custom_pricing_builder"):
+        frappe.db.sql(
+            """
+            UPDATE `tabItem Price`
+            SET custom_pricing_builder = NULL
+            WHERE custom_pricing_builder = %s
+            """,
+            (builder_name,),
+        )
+    if frappe.db.has_column("Pricing Sheet Item", "pricing_builder"):
+        frappe.db.sql(
+            """
+            UPDATE `tabPricing Sheet Item`
+            SET pricing_builder = NULL
+            WHERE pricing_builder = %s
+            """,
+            (builder_name,),
+        )
+    if frappe.db.has_column("Price List", "custom_pricing_builder"):
+        frappe.db.sql(
+            """
+            UPDATE `tabPrice List`
+            SET custom_pricing_builder = NULL
+            WHERE custom_pricing_builder = %s
+            """,
+            (builder_name,),
+        )
+
+
+def _save_item_price_from_builder(doc):
+    previous_flag = getattr(frappe.flags, "orderlift_pricing_builder_publish", False)
+    frappe.flags.orderlift_pricing_builder_publish = True
+    try:
+        doc.save(ignore_permissions=True)
+    finally:
+        frappe.flags.orderlift_pricing_builder_publish = previous_flag
+
+
+def _insert_item_price_from_builder(doc):
+    previous_flag = getattr(frappe.flags, "orderlift_pricing_builder_publish", False)
+    frappe.flags.orderlift_pricing_builder_publish = True
+    try:
+        doc.insert(ignore_permissions=True)
+    finally:
+        frappe.flags.orderlift_pricing_builder_publish = previous_flag
+
+
+def cleanup_item_builder_rows(doc, method=None):
+    item_code = (doc.get("name") or doc.get("item_code") or "").strip()
+    if not item_code:
+        return
+    for doctype in BUILDER_ITEM_DOCTYPES:
+        if frappe.db.exists("DocType", doctype):
+            frappe.db.delete(doctype, {"item": item_code})
+
+
 @frappe.whitelist()
 def calculate_builder_doc(name):
     doc = frappe.get_doc("Pricing Builder", name)
+    doc.check_permission("write")
     doc.calculate_items()
     doc.save(ignore_permissions=True)
     return {"name": doc.name}
@@ -332,6 +416,7 @@ def calculate_builder_doc(name):
 @frappe.whitelist()
 def publish_builder_doc(name, selected_only=0):
     doc = frappe.get_doc("Pricing Builder", name)
+    doc.check_permission("write")
     out = doc.publish_prices(selected_only=cint(selected_only) == 1)
     doc.save(ignore_permissions=True)
     return out
@@ -580,6 +665,13 @@ def _effective_margin_pct(sell_price, cost_before_margin, fallback_percent=0.0):
     return flt(((flt(sell_price) - flt(cost_before_margin)) / flt(cost_before_margin)) * 100)
 
 
+def _override_margin_percent(override_price, margin_basis, base_buy, cost_before_margin, fallback_percent=0.0):
+    if flt(override_price) <= 0:
+        return flt(fallback_percent)
+    actual_margin = flt(override_price) - flt(cost_before_margin)
+    return compute_margin_percent_for_basis(actual_margin, margin_basis, base_buy, cost_before_margin)
+
+
 def _publish_state(projected_price, published_price):
     projected_price = flt(projected_price)
     published_price = flt(published_price)
@@ -645,6 +737,47 @@ def _existing_override_map(rows):
     return {"exact": exact, "by_item": by_item}
 
 
+def _merge_override_maps(base_overrides, preferred_overrides):
+    merged = {"exact": {}, "by_item": {}}
+    for source in (base_overrides or {}, preferred_overrides or {}):
+        merged["exact"].update(source.get("exact") or {})
+        merged["by_item"].update(source.get("by_item") or {})
+    return merged
+
+
+def _published_item_price_override_map(price_list_name, builder_name):
+    price_list_name = (price_list_name or "").strip()
+    builder_name = (builder_name or "").strip()
+    required = (
+        ("Item Price", "custom_pricing_builder"),
+        ("Item Price", "custom_source_buying_price_list"),
+        ("Item Price", "custom_builder_price_overridden"),
+    )
+    if not price_list_name or not builder_name or not all(_doctype_has_column(dt, field) for dt, field in required):
+        return {"exact": {}, "by_item": {}}
+
+    rows = frappe.get_all(
+        "Item Price",
+        filters={
+            "price_list": price_list_name,
+            "custom_pricing_builder": builder_name,
+            "custom_builder_price_overridden": 1,
+        },
+        fields=["item_code", "custom_source_buying_price_list", "price_list_rate"],
+        limit_page_length=0,
+    )
+    return _existing_override_map(
+        [
+            frappe._dict(
+                item=row.item_code,
+                buying_list=row.custom_source_buying_price_list,
+                override_selling_price=row.price_list_rate,
+            )
+            for row in rows
+        ]
+    )
+
+
 def _existing_override(overrides, item_code, buying_list):
     item_code = (item_code or "").strip()
     buying_list = (buying_list or "").strip()
@@ -657,7 +790,7 @@ def _existing_override(overrides, item_code, buying_list):
 
 
 def _warnings_html(messages):
-    items = [_truncate_warning_line(item) for item in _dedupe_warnings(messages)]
+    items = [_truncate_warning_line(item) for item in _aggregate_warnings(messages)]
     if not items:
         return ""
     overflow = max(0, len(items) - MAX_WARNING_LINES)
@@ -671,6 +804,45 @@ def _warnings_html(messages):
     if len(text) <= MAX_WARNING_TOTAL_LENGTH:
         return text
     return text[: MAX_WARNING_TOTAL_LENGTH - 80].rstrip() + "\n" + _("Additional warnings omitted to keep this record saveable.")
+
+
+def _aggregate_warnings(messages):
+    grouped = {}
+    passthrough = []
+    for msg in _dedupe_warnings(messages):
+        item_code, detail = _split_item_warning(msg)
+        if not item_code or not detail:
+            passthrough.append(msg)
+            continue
+        grouped.setdefault(detail, [])
+        if item_code not in grouped[detail]:
+            grouped[detail].append(item_code)
+
+    out = list(passthrough)
+    for detail, item_codes in grouped.items():
+        out.append(_format_grouped_warning(detail, item_codes))
+    return out
+
+
+def _split_item_warning(message):
+    text = (message or "").strip()
+    if ": " not in text:
+        return "", text
+    item_code, detail = text.split(": ", 1)
+    item_code = item_code.strip()
+    detail = detail.strip()
+    if not item_code or " " in item_code or not detail:
+        return "", text
+    return item_code, detail
+
+
+def _format_grouped_warning(detail, item_codes):
+    visible = list(item_codes or [])[:12]
+    suffix = ""
+    hidden = max(0, len(item_codes or []) - len(visible))
+    if hidden:
+        suffix = _(" and {0} more").format(hidden)
+    return _("{0}: affected articles {1}{2}").format(detail, ", ".join(visible), suffix)
 
 
 def _truncate_warning_line(message):
@@ -819,10 +991,14 @@ def _build_expense_step_breakdown(steps, qty):
 def _build_customs_breakdown(customs_calc, qty, customs_policy):
     customs_calc = customs_calc or {}
     applied = flt(customs_calc.get("applied") or 0)
+    delta_tax_amount = flt(customs_calc.get("customs_value_delta_tax_amount") or 0)
+    base_customs_total = applied - delta_tax_amount
     return {
         "policy": customs_policy or "",
         "unit": applied / qty if qty else 0,
         "total": applied,
+        "base_customs_total": base_customs_total,
+        "base_customs_unit": base_customs_total / qty if qty else 0,
         "basis": customs_calc.get("basis") or "",
         "mode": customs_calc.get("mode") or "",
         "tariff_number": customs_calc.get("tariff_number") or "",
@@ -838,6 +1014,10 @@ def _build_customs_breakdown(customs_calc, qty, customs_policy):
         "rate_percent": flt(customs_calc.get("total_percent") or 0),
         "component_display": customs_calc.get("component_display") or "",
         "warning": customs_calc.get("warning") or "",
+        "customs_value_delta": flt(customs_calc.get("customs_value_delta") or 0),
+        "customs_value_delta_tax_rate": flt(customs_calc.get("customs_value_delta_tax_rate") or 0),
+        "customs_value_delta_tax_amount": delta_tax_amount,
+        "customs_value_delta_tax_template": customs_calc.get("customs_value_delta_tax_template") or "",
     }
 
 
@@ -927,6 +1107,21 @@ def stamp_price_list_from_builder(price_list_name, builder_doc):
 
 
 def stamp_item_price_from_builder_row(doc, builder_name, row, rebuild_time=None):
+    override_price = flt(_row_value(row, "override_selling_price") or 0)
+    final_margin_pct = flt(_row_value(row, "final_margin_pct") or 0)
+    if override_price > 0:
+        projected = flt(_row_value(row, "projected_price") or 0)
+        margin_unit = flt(_row_value(row, "margin_amount") or 0)
+        base_buy = flt(_row_value(row, "base_buy_price") or 0)
+        margin_basis = (_row_value(row, "margin_basis") or "").strip() or "Base Price"
+        cost_before_margin = max(projected - margin_unit, 0)
+        final_margin_pct = _override_margin_percent(
+            override_price,
+            margin_basis,
+            base_buy,
+            cost_before_margin or base_buy,
+            final_margin_pct,
+        )
     values = {
         "custom_pricing_builder": builder_name,
         "custom_source_buying_price_list": _row_value(row, "buying_list"),
@@ -939,13 +1134,132 @@ def stamp_item_price_from_builder_row(doc, builder_name, row, rebuild_time=None)
         "custom_fallback_max_discount_percent": flt(_row_value(row, "fallback_max_discount_percent") or 0),
         "custom_policy_max_discount_percent": flt(_row_value(row, "policy_max_discount_percent") or 0),
         "custom_target_margin_percent": flt(_row_value(row, "target_margin_percent") or 0),
+        "custom_final_margin_percent": flt(final_margin_pct),
         "custom_last_builder_buy_rate": flt(_row_value(row, "base_buy_price") or 0),
         "custom_builder_price_overridden": 1 if flt(_row_value(row, "override_selling_price") or 0) > 0 else 0,
         "custom_last_builder_rebuild_on": rebuild_time or now_datetime(),
+        "custom_builder_expense_amount": flt(_row_value(row, "expenses") or 0),
+        "custom_builder_customs_amount": flt(_row_value(row, "customs_amount") or 0),
+        "custom_builder_margin_basis": (_row_value(row, "margin_basis") or "").strip() or "Base Price",
     }
     for fieldname, value in values.items():
         if _doc_has_field(doc, fieldname):
             setattr(doc, fieldname, value)
+
+
+def backfill_selling_item_price_brands(price_list=None, dry_run=True, limit=0):
+    if not frappe.db.has_column("Item Price", "brand") or not frappe.db.has_column("Item Price", "custom_source_buying_price_list"):
+        return {"updated": 0, "candidates": 0, "dry_run": bool(cint(dry_run)), "sample": []}
+
+    conditions = [
+        "coalesce(sell_pl.selling, 0) = 1",
+        "sell_ip.custom_source_buying_price_list IS NOT NULL",
+        "sell_ip.custom_source_buying_price_list != %(blank)s",
+        "(sell_ip.brand IS NULL OR sell_ip.brand = %(blank)s)",
+        "buy_ip.brand IS NOT NULL",
+        "buy_ip.brand != %(blank)s",
+    ]
+    params = {"blank": ""}
+    if price_list:
+        conditions.append("sell_ip.price_list = %(price_list)s")
+        params["price_list"] = price_list
+    limit_sql = ""
+    if cint(limit) > 0:
+        limit_sql = " LIMIT %(limit)s"
+        params["limit"] = cint(limit)
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT sell_ip.name, sell_ip.item_code, sell_ip.price_list, sell_ip.custom_source_buying_price_list, buy_ip.brand
+        FROM `tabItem Price` sell_ip
+        INNER JOIN `tabPrice List` sell_pl ON sell_pl.name = sell_ip.price_list
+        INNER JOIN `tabItem Price` buy_ip ON buy_ip.item_code = sell_ip.item_code
+            AND buy_ip.price_list = sell_ip.custom_source_buying_price_list
+        WHERE {' AND '.join(conditions)}
+        ORDER BY sell_ip.price_list ASC, sell_ip.item_code ASC, buy_ip.modified DESC
+        {limit_sql}
+        """,
+        params,
+        as_dict=True,
+    )
+
+    seen = set()
+    unique_rows = []
+    for row in rows:
+        if row.name in seen:
+            continue
+        seen.add(row.name)
+        unique_rows.append(row)
+
+    if not cint(dry_run):
+        for row in unique_rows:
+            frappe.db.set_value("Item Price", row.name, "brand", row.brand, update_modified=False)
+        frappe.db.commit()
+
+    return {
+        "updated": 0 if cint(dry_run) else len(unique_rows),
+        "candidates": len(unique_rows),
+        "dry_run": bool(cint(dry_run)),
+        "sample": [dict(row) for row in unique_rows[:10]],
+    }
+
+
+def _builder_source_brand_map(rows):
+    pairs = sorted(
+        {
+            ((_row_value(row, "item") or "").strip(), (_row_value(row, "buying_list") or "").strip())
+            for row in rows or []
+            if (_row_value(row, "item") or "").strip() and (_row_value(row, "buying_list") or "").strip()
+        }
+    )
+    if not pairs or not frappe.db.has_column("Item Price", "brand"):
+        return {}
+
+    item_codes = sorted({item_code for item_code, _buying_list in pairs})
+    buying_lists = sorted({buying_list for _item_code, buying_list in pairs})
+    conditions = [
+        "ip.item_code IN %(item_codes)s",
+        "ip.price_list IN %(buying_lists)s",
+        "ifnull(ip.brand, '') != ''",
+    ]
+    params = {"item_codes": tuple(item_codes), "buying_lists": tuple(buying_lists), "today": nowdate()}
+    if frappe.db.has_column("Item Price", "enabled"):
+        conditions.append("ip.enabled = 1")
+    if frappe.db.has_column("Item Price", "buying"):
+        conditions.append("ip.buying = 1")
+    if frappe.db.has_column("Item Price", "valid_from"):
+        conditions.append("(ip.valid_from IS NULL OR ip.valid_from <= %(today)s)")
+    if frappe.db.has_column("Item Price", "valid_upto"):
+        conditions.append("(ip.valid_upto IS NULL OR ip.valid_upto >= %(today)s)")
+    order_by = "ip.item_code ASC, ip.price_list ASC, ip.modified DESC"
+    if frappe.db.has_column("Item Price", "valid_from"):
+        order_by = "ip.item_code ASC, ip.price_list ASC, ip.valid_from DESC, ip.modified DESC"
+
+    price_rows = frappe.db.sql(
+        f"""
+        SELECT ip.item_code, ip.price_list, ip.brand
+        FROM `tabItem Price` ip
+        WHERE {' AND '.join(conditions)}
+        ORDER BY {order_by}
+        """,
+        params,
+        as_dict=True,
+    )
+    out = {}
+    allowed_pairs = set(pairs)
+    for row in price_rows:
+        key = (row.item_code, row.price_list)
+        if key in allowed_pairs:
+            out.setdefault(key, row.brand)
+    return out
+
+
+def _set_builder_source_brand(doc, row, brand_map):
+    if not _doc_has_field(doc, "brand"):
+        return
+    item_code = (_row_value(row, "item") or "").strip()
+    buying_list = (_row_value(row, "buying_list") or "").strip()
+    doc.brand = brand_map.get((item_code, buying_list)) or getattr(doc, "brand", None) or ""
 
 
 def _format_benchmark_rule_label(rule, is_fallback=0):
@@ -1000,7 +1314,7 @@ def _ensure_selling_price_list(price_list_name):
     if frappe.db.exists("Price List", price_list_name):
         validate_price_list_scope(price_list_name, kind="selling", required=True)
         return price_list_name
-    currency = frappe.defaults.get_global_default("currency") or "MAD"
+    currency = frappe.defaults.get_global_default("currency")
     doc = frappe.new_doc("Price List")
     if hasattr(doc, "price_list_name"):
         doc.price_list_name = price_list_name

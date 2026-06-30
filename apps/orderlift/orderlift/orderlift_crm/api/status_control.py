@@ -9,6 +9,11 @@ from frappe.utils import cint
 
 from orderlift.menu_access import get_company_access_payload, user_can_access_company
 from orderlift.orderlift_crm.status_config import STATUS_COLOR_OPTIONS
+from orderlift.orderlift_crm.status_config import (
+    get_company_pipeline_quick_action_keys,
+    pipeline_quick_action_catalog,
+    save_company_pipeline_quick_action_keys,
+)
 from orderlift.orderlift_crm.status_checks import get_predefined_status_checks
 from orderlift.orderlift_crm.todo_priority import TODO_PRIORITY_OPTIONS, normalize_todo_priority
 from orderlift.orderlift_crm.status_workflow import (
@@ -51,6 +56,8 @@ def get_status_control_data(document_type: str, company: str | None = None) -> d
         "allow_delete": meta.get("allow_delete", True),
         "allow_rename": meta.get("allow_rename", True),
         "show_auto_close_opportunity": bool(meta.get("auto_close_opportunity_field")),
+        "available_quick_actions": pipeline_quick_action_catalog(document_type),
+        "selected_quick_actions": get_company_pipeline_quick_action_keys(document_type, company=selected_company) if selected_company else [],
         "users": users,
         "statuses": statuses,
         "predefined_checks": get_predefined_status_checks(document_type),
@@ -72,6 +79,8 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
     status_value = label if meta.get("fixed_status_values") else internal_label
 
     current_name = (data.get("docname") or data.get("name") or "").strip()
+    if current_name == "new":
+        current_name = ""
     if current_name and not frappe.db.exists(status_doctype, current_name):
         frappe.throw(_("Status {0} was not found.").format(current_name))
 
@@ -164,6 +173,17 @@ def delete_status(document_type: str, status_name: str, company: str | None = No
 
     doc.delete(ignore_permissions=False)
     _validate_status_safety(document_type, company)
+    frappe.db.commit()
+    return get_status_control_data(document_type, company=company)
+
+
+@frappe.whitelist()
+def save_quick_actions(document_type: str, actions: str | list[str] | tuple[str, ...], company: str | None = None) -> dict:
+    company = _require_status_company(company)
+    parsed = _loads(actions)
+    if not isinstance(parsed, list):
+        parsed = []
+    save_company_pipeline_quick_action_keys(document_type, company, parsed)
     frappe.db.commit()
     return get_status_control_data(document_type, company=company)
 

@@ -10,6 +10,7 @@ from frappe import _
 
 @frappe.whitelist()
 def get_dashboard_data():
+    frappe.has_permission("Portal Customer Group Policy", "read", throw=True)
     return {
         "kpis": _get_kpis(),
         "recent_requests": _get_recent_requests(),
@@ -39,7 +40,7 @@ def _get_kpis():
 def _get_recent_requests():
     if not frappe.db.exists("DocType", "Portal Quote Request"):
         return []
-    return frappe.get_all(
+    return frappe.get_list(
         "Portal Quote Request",
         fields=["name", "customer", "customer_group", "portal_user", "status", "total_amount", "currency", "linked_quotation", "modified"],
         order_by="modified desc",
@@ -87,7 +88,7 @@ def _get_group_coverage():
     if not frappe.db.exists("DocType", "Portal Customer Group Policy"):
         return []
     rows = []
-    for policy in frappe.get_all(
+    for policy in frappe.get_list(
         "Portal Customer Group Policy",
         fields=["name", "customer_group", "enabled", "portal_price_list"],
         order_by="modified desc",
@@ -110,6 +111,6 @@ def _get_group_coverage():
 def _get_request_status():
     if not frappe.db.exists("DocType", "Portal Quote Request"):
         return []
-    rows = frappe.get_all("Portal Quote Request", fields=["status"], limit_page_length=500)
+    rows = frappe.get_list("Portal Quote Request", fields=["status"], limit_page_length=500)
     counts = Counter((row.get("status") or _("Unspecified")) for row in rows)
     return [{"label": label, "value": value} for label, value in counts.most_common(8)]

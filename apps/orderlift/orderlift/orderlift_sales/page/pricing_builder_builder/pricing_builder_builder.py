@@ -91,10 +91,11 @@ def save_builder_page_doc(payload, create_history=1, history_label=None):
             doc.append("sourcing_rules", clean)
 
     doc.set("builder_items", [])
+    valid_items = _valid_builder_item_codes(payload.get("builder_items") or [])
     for row in payload.get("builder_items") or []:
         clean = {field: row.get(field) for field in ITEM_FIELDS}
         clean["selected"] = 1 if cint(clean.get("selected")) else 0
-        if clean.get("item"):
+        if clean.get("item") and clean.get("item") in valid_items:
             doc.append("builder_items", clean)
 
     doc.save(ignore_permissions=True)
@@ -111,6 +112,17 @@ def calculate_builder_page_doc(name):
     doc.save(ignore_permissions=True)
     _create_history(doc, _("Calculated"))
     return {"doc": _serialize_doc(doc), "history": _get_history(doc.name)}
+
+
+@frappe.whitelist()
+def compare_recalculated_builder_page_doc(name):
+    doc = frappe.get_doc("Pricing Builder", name)
+    doc.check_permission("read")
+    before = _serialize_doc(doc)
+    doc.calculate_items()
+    after = _serialize_doc(doc)
+    summary = _compare_builder_snapshots(before, after)
+    return {"changed": any(summary.values()), "summary": summary, "doc": after}
 
 
 @frappe.whitelist()
@@ -162,7 +174,7 @@ def _serialize_doc(doc):
         "warnings_html": doc.get("warnings_html") or "",
         "modified": doc.get("modified") or "",
         "sourcing_rules": [_serialize_child(row, RULE_FIELDS) for row in doc.get("sourcing_rules") or []],
-        "builder_items": [_serialize_child(row, ITEM_FIELDS) for row in doc.get("builder_items") or []],
+        "builder_items": [_serialize_builder_item(row) for row in doc.get("builder_items") or []],
     }
 
 
@@ -179,8 +191,11 @@ def _apply_snapshot(doc, snapshot):
     for row in snapshot.get("sourcing_rules") or []:
         doc.append("sourcing_rules", {field: row.get(field) for field in RULE_FIELDS})
     doc.set("builder_items", [])
+    valid_items = _valid_builder_item_codes(snapshot.get("builder_items") or [])
     for row in snapshot.get("builder_items") or []:
-        doc.append("builder_items", {field: row.get(field) for field in ITEM_FIELDS})
+        clean = {field: row.get(field) for field in ITEM_FIELDS}
+        if clean.get("item") and clean.get("item") in valid_items:
+            doc.append("builder_items", clean)
 
 
 def _has_meta_field(doc, fieldname):
@@ -224,6 +239,72 @@ def _serialize_child(row, fields):
         else:
             data[field] = value or ""
     return data
+
+
+def _serialize_builder_item(row):
+    data = _serialize_child(row, ITEM_FIELDS)
+    _apply_customs_delta_fields(data)
+    return data
+
+
+def _apply_customs_delta_fields(data):
+    try:
+        breakdown = frappe.parse_json(data.get("calculation_breakdown_json") or "{}") or {}
+    except Exception:
+        breakdown = {}
+    if not isinstance(breakdown, dict):
+        return
+    customs = breakdown.get("customs") or {}
+    if not isinstance(customs, dict):
+        return
+    for fieldname in ("customs_value_delta", "customs_value_delta_tax_rate", "customs_value_delta_tax_amount"):
+        data[fieldname] = flt(customs.get(fieldname) or 0)
+
+
+def _valid_builder_item_codes(rows):
+    item_codes = sorted({(row.get("item") or "").strip() for row in rows or [] if (row.get("item") or "").strip()})
+    if not item_codes:
+        return set()
+    return set(frappe.get_all("Item", filters={"name": ["in", item_codes]}, pluck="name", limit_page_length=0))
+
+
+def _compare_builder_snapshots(before, after):
+    before_items = _builder_item_snapshot_map(before.get("builder_items") or [])
+    after_items = _builder_item_snapshot_map(after.get("builder_items") or [])
+    keys = sorted(set(before_items) | set(after_items))
+    price_changes = 0
+    status_changes = 0
+    calculated_fields = [
+        "base_buy_price",
+        "expenses",
+        "customs_amount",
+        "margin_amount",
+        "avg_benchmark",
+        "projected_price",
+        "published_price",
+    ]
+    for key in keys:
+        old = before_items.get(key) or {}
+        new = after_items.get(key) or {}
+        if any(abs(flt(old.get(fieldname)) - flt(new.get(fieldname))) > 0.000001 for fieldname in calculated_fields):
+            price_changes += 1
+        if (old.get("status") or "") != (new.get("status") or "") or (old.get("status_note") or "") != (new.get("status_note") or ""):
+            status_changes += 1
+    return {
+        "total_items_changed": 1 if len(before_items) != len(after_items) else 0,
+        "price_changes": price_changes,
+        "status_changes": status_changes,
+        "warning_changed": 1 if (before.get("warnings_html") or "") != (after.get("warnings_html") or "") else 0,
+    }
+
+
+def _builder_item_snapshot_map(rows):
+    out = {}
+    for row in rows or []:
+        key = ((row.get("item") or "").strip(), (row.get("buying_list") or "").strip())
+        if key[0]:
+            out[key] = row
+    return out
 
 
 def _references():

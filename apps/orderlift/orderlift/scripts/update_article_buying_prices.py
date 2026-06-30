@@ -75,6 +75,7 @@ def run(
     update_images: int | str = 0,
     limit: int | str | None = None,
 ) -> dict:
+    frappe.only_for("System Manager")
     """Update imported article buying prices from the refreshed workbook.
 
     This is intentionally separate from import_article_excel_catalog.run(), which creates items.

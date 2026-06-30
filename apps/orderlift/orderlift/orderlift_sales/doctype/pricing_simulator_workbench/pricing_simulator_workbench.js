@@ -426,6 +426,7 @@ function linkToDoc(doctype, name) {
 }
 
 function fmtCurrency(value) {
+    if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(value);
     return frappe.format(value || 0, { fieldtype: "Currency" });
 }
 

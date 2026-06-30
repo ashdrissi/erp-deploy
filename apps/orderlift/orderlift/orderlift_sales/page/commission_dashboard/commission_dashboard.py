@@ -8,8 +8,9 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, flt, getdate, nowdate
 
+from orderlift.startup_roles import COMMISSION_MANAGER_ROLE
 
-COMMISSION_MANAGER_ROLES = {"Orderlift Admin", "Sales Manager", "Orderlift Accountant", "System Manager", "Administrator"}
+COMMISSION_MANAGER_ROLES = {"Orderlift Admin", "Sales Manager", "Orderlift Accountant", "System Manager", "Administrator", COMMISSION_MANAGER_ROLE}
 
 
 @frappe.whitelist()
@@ -70,7 +71,7 @@ def _get_commission_rows():
             return []
         filters["salesperson"] = salesperson
 
-    commissions = frappe.get_all(
+    commissions = frappe.get_list(
         "Sales Commission",
         filters=filters,
         fields=[
@@ -144,7 +145,7 @@ def _get_sales_order_payment_map(order_names):
     if not order_names or not frappe.db.exists("DocType", "Sales Order"):
         return {}
 
-    orders = frappe.get_all(
+    orders = frappe.get_list(
         "Sales Order",
         filters={"name": ["in", order_names], "docstatus": 1},
         fields=["name", "transaction_date"],

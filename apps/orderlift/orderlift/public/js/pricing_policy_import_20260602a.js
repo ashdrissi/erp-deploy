@@ -48,9 +48,6 @@
                     default: sourcePolicy,
                     read_only: sourcePolicy ? 1 : 0,
                     reqd: 1,
-                    get_query: () => ({
-                        filters: currentCompany ? { company: ["!=", currentCompany] } : {},
-                    }),
                 },
                 {
                     fieldname: "target_policy_name",

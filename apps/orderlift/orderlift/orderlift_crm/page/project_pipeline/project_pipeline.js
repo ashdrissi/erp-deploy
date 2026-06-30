@@ -2,6 +2,7 @@
     const COLLAPSED_CARD_KEY = "orderlift.project_pipeline.collapsed_cards";
     const STATE = {
         columns: [],
+        quickActions: [],
         kpis: {},
         filters: { companies: [], owners: [], statuses: [], business_types: [], segments: [] },
         search: "",
@@ -66,6 +67,7 @@
             });
             const data = res.message || {};
             STATE.columns = data.columns || [];
+            STATE.quickActions = data.quick_actions || [];
             applyDefaultCollapsedColumns();
             STATE.kpis = data.kpis || {};
             STATE.filters = data.filters || { companies: [], owners: [], statuses: [], business_types: [], segments: [] };
@@ -74,6 +76,7 @@
         } catch (error) {
             console.error("Project Pipeline failed", error);
             STATE.columns = [];
+            STATE.quickActions = [];
             STATE.kpis = {};
             render(page, true, restore);
         }
@@ -257,7 +260,19 @@
     async function moveProjectCard(page, name, stage, boardScrollLeft) {
         try {
             const res = await updateProjectStage(name, stage);
-            const assignment = (res.message || {}).assignment || {};
+            const payload = res.message || {};
+            if (payload.blocked) {
+                showStageMoveErrorPopup(page, {
+                    record: payload.record || name,
+                    stage: payload.stage || stage,
+                    message: payload.message || __("This project cannot move to {0} yet.", [stage]),
+                    missing_checks: payload.missing_checks || [],
+                    documentLabel: payload.documentLabel || __("Project"),
+                    boardScrollLeft,
+                });
+                return;
+            }
+            const assignment = payload.assignment || {};
             frappe.show_alert({
                 message: assignment.label ? __("Project {0} moved to {1} and assigned to {2}", [name, stage, assignment.label]) : __("Project {0} moved to {1}", [name, stage]),
                 indicator: "green",
@@ -424,7 +439,7 @@
     function showStageMoveErrorPopup(page, details) {
         closeStageMoveErrorPopup();
         const message = details.message || __("Required workflow checks are not complete yet.");
-        const missingChecks = parseMissingChecks(message);
+        const missingChecks = details.missing_checks && details.missing_checks.length ? details.missing_checks : parseMissingChecks(message);
         const modal = $(stageMoveErrorMarkup(details, message, missingChecks));
         $(document.body).append(modal);
 
@@ -737,10 +752,10 @@
 
     function projectActionsMarkup(card) {
         const name = frappe.utils.escape_html(card.name || "");
+        if (!(STATE.quickActions || []).length) return "";
         return `
             <div class="olp-card-actions">
-                <button type="button" data-create-from-project="sales-order" data-card="${name}">${__("Sales Order from project")}</button>
-                <button type="button" data-create-from-project="purchase-order" data-card="${name}">${__("Purchase Order from project")}</button>
+                ${(STATE.quickActions || []).map((action) => `<button type="button" data-create-from-project="${frappe.utils.escape_html(action.key)}" data-card="${name}">${frappe.utils.escape_html(__(action.label || action.key))}</button>`).join("")}
             </div>
         `;
     }

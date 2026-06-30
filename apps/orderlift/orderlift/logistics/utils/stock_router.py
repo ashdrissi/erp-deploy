@@ -12,6 +12,8 @@ Called via hooks.py doc_events on Purchase Receipt (on_submit).
 import frappe
 from frappe.utils import nowdate
 
+from orderlift.warehouse_access import user_can_access_warehouse
+
 
 def route_received_stock(doc, method=None):
     """Route received stock to REAL or RETURN warehouse after QC."""
@@ -158,6 +160,20 @@ def _create_warehouse_transfer(pr_doc, items, destination_type):
             continue
 
         if dest_warehouse == source_warehouse:
+            continue
+
+        if not user_can_access_warehouse(source_warehouse):
+            frappe.log_error(
+                f"Stock Router: user lacks access to source warehouse {source_warehouse}",
+                "Stock Router Access Error",
+            )
+            continue
+
+        if not user_can_access_warehouse(dest_warehouse):
+            frappe.log_error(
+                f"Stock Router: user lacks access to destination warehouse {dest_warehouse}",
+                "Stock Router Access Error",
+            )
             continue
 
         stock_entry = frappe.new_doc("Stock Entry")

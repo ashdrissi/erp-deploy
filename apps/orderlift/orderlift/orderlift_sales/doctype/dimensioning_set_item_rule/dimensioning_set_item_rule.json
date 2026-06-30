@@ -18,7 +18,9 @@
     "compare_question_key",
     "article_section",
     "rule_label",
+    "item_selection_mode",
     "item",
+    "item_filters_json",
     "quantity_mode",
     "fixed_qty",
     "quantity_question_key",
@@ -114,8 +116,23 @@
       "fieldtype": "Link",
       "label": "Item",
       "options": "Item",
-      "reqd": 1,
       "in_list_view": 1
+    },
+    {
+      "fieldname": "item_selection_mode",
+      "fieldtype": "Select",
+      "label": "Selection Mode",
+      "options": "fixed\nfiltered",
+      "default": "fixed",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "item_filters_json",
+      "fieldtype": "Code",
+      "label": "Item Filters JSON",
+      "options": "JSON",
+      "depends_on": "eval:doc.item_selection_mode=='filtered'",
+      "description": "JSON list of Item field/specification filters used when Selection Mode is filtered."
     },
     {
       "fieldname": "qty_formula",

@@ -18,8 +18,13 @@
         itemSort: { key: "", direction: "asc" },
         columnConfiguratorOpen: false,
         sourcingRulesOpen: true,
+        autoRecalculate: false,
+        checkingFreshness: false,
+        autoRecalculateStatus: "",
+        stalePromptKey: "",
     };
     let autosaveTimer = null;
+    let autoRecalculateTimer = null;
     const SOURCING_RULE_FIELDS = ["buying_price_list", "pricing_scenario", "customs_policy", "benchmark_policy"];
     const NUMERIC_FIELDS = new Set([
         "base_buy_price",
@@ -46,10 +51,15 @@
         "fallback_max_discount_percent",
         "policy_max_discount_percent",
         "published_price",
+        "customs_value_delta",
+        "customs_value_delta_tax_rate",
+        "customs_value_delta_tax_amount",
     ]);
     const ITEM_LEGACY_COLUMN_STORAGE_KEY = "orderlift.pricing_builder.visible_item_columns.v1";
     const ITEM_COLUMN_STORAGE_KEY = "orderlift.pricing_builder.item_columns.v2";
     const SOURCING_RULE_STORAGE_KEY = "orderlift.pricing_builder.sourcing_rules_open.v1";
+    const AUTO_RECALCULATE_STORAGE_KEY = "orderlift.pricing_builder.auto_recalculate.v1";
+    const AUTO_RECALCULATE_INTERVAL_MS = 60000;
     const ITEM_COLUMN_CATEGORIES = [
         ["article", () => __("Article")],
         ["source", () => __("Source")],
@@ -62,13 +72,13 @@
         { key: "row_number", label: () => __("#"), width: 58, locked: true, defaultVisible: true, align: "center", noSort: true, noFilter: true, render: (row, entry) => String(toNumber(entry.visibleIndex) + 1) },
         { key: "selected", label: () => __("Select"), width: 74, locked: true, defaultVisible: true, align: "center", render: (row) => `<input type="checkbox" data-item-field="selected" ${toNumber(row.selected) ? "checked" : ""}>` },
         { key: "item", label: () => __("Item"), width: 190, locked: true, defaultVisible: true, render: (row) => itemCell(row) },
-        { key: "item_name", label: () => __("Name"), width: 240, defaultVisible: true, wrap: true, render: (row) => escapeHtml(row.item_name || "") },
-        { key: "item_group", label: () => __("Item Group"), width: 190, defaultVisible: false, render: (row) => escapeHtml(row.item_group || "") },
-        { key: "item_category", label: () => __("Categories d'article"), width: 190, defaultVisible: true, render: (row) => escapeHtml(row.item_category || "") },
-        { key: "material", label: () => __("Material"), width: 140, defaultVisible: false, render: (row) => escapeHtml(row.material || "") },
+        { key: "item_name", label: () => __("Name"), width: 240, minWidth: 96, defaultVisible: true, wrap: true, render: (row) => escapeHtml(row.item_name || "") },
+        { key: "item_group", label: () => __("Item Group"), width: 190, minWidth: 96, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.item_group || "") },
+        { key: "item_category", label: () => __("Categories d'article"), width: 190, minWidth: 96, defaultVisible: true, wrap: true, render: (row) => escapeHtml(row.item_category || "") },
+        { key: "material", label: () => __("Material"), width: 140, minWidth: 88, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.material || "") },
         { key: "customs_tariff_number", label: () => __("Tariff"), width: 130, defaultVisible: false, render: (row) => escapeHtml(row.customs_tariff_number || "") },
-        { key: "origin", label: () => __("Origin"), width: 120, defaultVisible: false, render: (row) => escapeHtml(row.origin || "") },
-        { key: "buying_list", label: () => __("Buying List"), width: 190, defaultVisible: true, render: (row) => escapeHtml(row.buying_list || "") },
+        { key: "origin", label: () => __("Origin"), width: 120, minWidth: 78, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.origin || "") },
+        { key: "buying_list", label: () => __("Buying List"), width: 190, minWidth: 96, defaultVisible: true, wrap: true, render: (row) => escapeHtml(row.buying_list || "") },
         { key: "base_buy_price", label: () => __("Base PU"), width: 120, defaultVisible: true, render: (row) => money(row.base_buy_price) },
         { key: "expenses", label: () => __("Expenses U"), width: 120, defaultVisible: true, render: (row) => money(row.expenses) },
         { key: "customs_amount", label: () => __("Customs U"), width: 120, defaultVisible: true, render: (row) => money(row.customs_amount) },
@@ -82,6 +92,9 @@
         { key: "packaging_package_count", label: () => __("Package Count"), width: 140, defaultVisible: false, render: (row) => toNumber(row.packaging_package_count).toFixed(2) },
         { key: "packaging_profile_source", label: () => __("Packaging Source"), width: 160, defaultVisible: false, render: (row) => escapeHtml(row.packaging_profile_source || "") },
         { key: "customs_basis", label: () => __("Customs Basis"), width: 210, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.customs_basis || "") },
+        { key: "customs_value_delta", label: () => __("Customs Delta"), width: 140, defaultVisible: false, render: (row) => money(row.customs_value_delta) },
+        { key: "customs_value_delta_tax_rate", label: () => __("Delta Tax Rate"), width: 140, defaultVisible: false, render: (row) => `${toNumber(row.customs_value_delta_tax_rate).toFixed(2)}%` },
+        { key: "customs_value_delta_tax_amount", label: () => __("Delta Tax U"), width: 140, defaultVisible: false, render: (row) => money(row.customs_value_delta_tax_amount) },
         { key: "cost_total", label: () => __("Total Cost U"), width: 130, defaultVisible: true, strong: true, render: (row) => money(costBeforeMargin(row)) },
         { key: "margin_amount", label: () => __("Margin U"), width: 120, defaultVisible: true, render: (row) => money(row.margin_amount) },
         { key: "total_margin_amount", label: () => __("Total Margin U"), width: 140, defaultVisible: false, render: (row) => money(row.total_margin_amount) },
@@ -99,9 +112,9 @@
         { key: "benchmark_rule_max_discount_percent", label: () => __("Rule Max Discount %"), width: 170, defaultVisible: false, render: (row) => `${toNumber(row.benchmark_rule_max_discount_percent).toFixed(2)}%` },
         { key: "fallback_max_discount_percent", label: () => __("Fallback Max Discount %"), width: 190, defaultVisible: false, render: (row) => `${toNumber(row.fallback_max_discount_percent).toFixed(2)}%` },
         { key: "policy_max_discount_percent", label: () => __("Policy Max Discount %"), width: 180, defaultVisible: false, render: (row) => `${toNumber(row.policy_max_discount_percent).toFixed(2)}%` },
-        { key: "pricing_scenario", label: () => __("Pricing Scenario"), width: 190, defaultVisible: false, render: (row) => escapeHtml(row.pricing_scenario || "") },
-        { key: "customs_policy", label: () => __("Customs Policy"), width: 190, defaultVisible: false, render: (row) => escapeHtml(row.customs_policy || "") },
-        { key: "benchmark_policy", label: () => __("Benchmark Policy"), width: 190, defaultVisible: false, render: (row) => escapeHtml(row.benchmark_policy || "") },
+        { key: "pricing_scenario", label: () => __("Pricing Scenario"), width: 190, minWidth: 96, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.pricing_scenario || "") },
+        { key: "customs_policy", label: () => __("Customs Policy"), width: 190, minWidth: 96, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.customs_policy || "") },
+        { key: "benchmark_policy", label: () => __("Benchmark Policy"), width: 190, minWidth: 96, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.benchmark_policy || "") },
         { key: "status", label: () => __("Status"), width: 130, defaultVisible: true, render: (row) => `<span class="pbb-pill ${statusClass(displayStatus(row) || "Draft")}" title="${escapeHtml(row.status_note || "")}">${escapeHtml(displayStatus(row) || "Draft")}</span>` },
         { key: "status_note", label: () => __("Status Note"), width: 300, defaultVisible: false, wrap: true, render: (row) => escapeHtml(row.status_note || "") },
     ];
@@ -112,6 +125,7 @@
         page.main.addClass("pbb-root");
         injectStyles();
         STATE.sourcingRulesOpen = readSourcingRulesOpen();
+        STATE.autoRecalculate = readAutoRecalculate();
         applyHeader(page);
         load(page, currentName());
     };
@@ -119,7 +133,12 @@
     frappe.pages["pricing-builder-builder"].on_page_show = function (wrapper) {
         if (!wrapper.page) return;
         applyHeader(wrapper.page);
+        STATE.autoRecalculate = readAutoRecalculate();
         load(wrapper.page, currentName());
+    };
+
+    frappe.pages["pricing-builder-builder"].on_page_hide = function () {
+        stopAutoRecalculateLoop();
     };
 
     function currentName() {
@@ -133,6 +152,7 @@
     }
 
     async function load(page, name) {
+        stopAutoRecalculateLoop();
         STATE.loading = true;
         STATE.error = "";
         render(page);
@@ -147,6 +167,7 @@
             STATE.history = data.history || [];
             STATE.priceListMode = resolvePriceListMode(STATE.doc, STATE.refs);
             ensureBreakdownSelection();
+            startOpenRefreshFlow(page, name);
         } catch (error) {
             console.error("Pricing Builder load failed", error);
             STATE.error = __("Unable to load this builder.");
@@ -185,7 +206,7 @@
             }
             STATE.history = (res.message || {}).history || STATE.history || [];
             ensureBreakdownSelection();
-            if (STATE.doc.name && currentName() !== STATE.doc.name) {
+            if (!options.noRoute && STATE.doc.name && currentName() !== STATE.doc.name) {
                 frappe.set_route("pricing-builder-builder", STATE.doc.name);
             }
             STATE.autosaveStatus = options.autosave ? __("Autosaved") : __("Saved");
@@ -197,20 +218,94 @@
         }
     }
 
-    async function calculate(page) {
-        const doc = await save(page, { freeze: true, showCustomsAlert: false });
+    async function calculate(page, options) {
+        options = options || {};
+        const freeze = options.freeze !== false;
+        const doc = await save(page, { freeze, showCustomsAlert: false, render: options.renderSave !== false, noRoute: options.noRoute });
         if (!doc || !doc.name || doc.name === "new") return;
         const res = await frappe.call({
             method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.calculate_builder_page_doc",
             args: { name: doc.name },
-            freeze: true,
+            freeze,
             freeze_message: __("Calculating builder prices..."),
         });
         STATE.doc = normalizeDoc((res.message || {}).doc || {});
         STATE.history = (res.message || {}).history || [];
         ensureBreakdownSelection();
-        showCustomsIssueAlert(customsIssueRows(customsReviewRows()), __("Customs Review"));
-        render(page);
+        if (options.showCustomsAlert !== false) showCustomsIssueAlert(customsIssueRows(customsReviewRows()), __("Customs Review"));
+        if (options.status) STATE.autoRecalculateStatus = options.status;
+        render(page, { preserveScroll: Boolean(options.preserveScroll) });
+        return STATE.doc;
+    }
+
+    async function checkFreshness(page) {
+        if (!STATE.doc || STATE.doc.name === "new" || STATE.checkingFreshness) return;
+        const checkKey = `${STATE.doc.name}:${STATE.doc.modified || ""}`;
+        if (STATE.stalePromptKey === checkKey) return;
+        STATE.checkingFreshness = true;
+        STATE.autoRecalculateStatus = __("Checking latest calculation...");
+        render(page, { preserveScroll: true });
+        try {
+            const res = await frappe.call({
+                method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.compare_recalculated_builder_page_doc",
+                args: { name: STATE.doc.name },
+            });
+            const out = res.message || {};
+            if (!out.changed) {
+                STATE.autoRecalculateStatus = __("Current calculation is up to date");
+                return;
+            }
+            STATE.stalePromptKey = checkKey;
+            const summary = staleSummary(out.summary || {});
+            frappe.confirm(
+                __("This builder has newer calculated values available. Recalculate now?{0}", [summary ? `<br><br>${summary}` : ""]),
+                async () => calculate(page, { freeze: true, status: __("Recalculated after freshness check"), preserveScroll: true, noRoute: true })
+            );
+        } catch (error) {
+            console.warn("Pricing Builder freshness check failed", error);
+            STATE.autoRecalculateStatus = __("Freshness check failed");
+        } finally {
+            STATE.checkingFreshness = false;
+            render(page, { preserveScroll: true });
+        }
+    }
+
+    function staleSummary(summary) {
+        const parts = [];
+        if (summary.total_items_changed) parts.push(__("items: {0}", [summary.total_items_changed]));
+        if (summary.price_changes) parts.push(__("price changes: {0}", [summary.price_changes]));
+        if (summary.status_changes) parts.push(__("status changes: {0}", [summary.status_changes]));
+        if (summary.warning_changed) parts.push(__("warnings changed"));
+        return parts.length ? escapeHtml(parts.join(" | ")) : "";
+    }
+
+    async function autoRecalculateNow(page) {
+        if (!STATE.autoRecalculate || !STATE.doc || STATE.doc.name === "new" || STATE.loading || STATE.saving) return;
+        STATE.autoRecalculateStatus = __("Auto recalculating...");
+        render(page, { preserveScroll: true });
+        try {
+            await calculate(page, { freeze: false, showCustomsAlert: false, status: __("Auto recalculated {0}", [frappe.datetime.now_time()]), renderSave: false, preserveScroll: true, noRoute: true });
+        } catch (error) {
+            console.error("Pricing Builder auto recalculation failed", error);
+            STATE.autoRecalculateStatus = __("Auto recalculation failed");
+            render(page, { preserveScroll: true });
+        }
+    }
+
+    function startOpenRefreshFlow(page, name) {
+        stopAutoRecalculateLoop();
+        if (!STATE.doc || STATE.doc.name === "new" || (name || "new") === "new") return;
+        if (STATE.autoRecalculate) {
+            setTimeout(() => autoRecalculateNow(page), 0);
+            autoRecalculateTimer = setInterval(() => autoRecalculateNow(page), AUTO_RECALCULATE_INTERVAL_MS);
+        } else {
+            setTimeout(() => checkFreshness(page), 0);
+        }
+    }
+
+    function stopAutoRecalculateLoop() {
+        if (autoRecalculateTimer) clearInterval(autoRecalculateTimer);
+        autoRecalculateTimer = null;
     }
 
     async function publish(page, selectedOnly) {
@@ -287,9 +382,9 @@
                     <em>${__("Selected items: {0}", [selectedRows.length])}</em>
                 </div>
                 ${isUpdate ? `<div class="pbb-update-alert">${__("Existing Item Prices in this list may be changed. Review the current and new prices before confirming.")}</div>` : ""}
-                ${customsAlert}
                 <div class="pbb-preview-table-wrap"><table class="pbb-preview-table"><thead><tr><th>${__("Item")}</th><th>${__("Current")}</th><th>${__("New")}</th><th>${__("Change")}</th><th>${__("Status")}</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
                 ${overflowNote}
+                ${customsAlert}
             </div>`);
         dialog.show();
     }
@@ -354,6 +449,8 @@
                 <section class="pbb-hero">
                     <div><button type="button" class="pbb-link" data-back>${__("Back to builders")}</button><h1>${escapeHtml(doc.builder_name || __("New Pricing Builder"))}</h1><p>${escapeHtml(doc.selling_price_list_name || __("No selling price list selected"))}</p></div>
                     <div class="pbb-hero-actions">
+                        <label class="pbb-auto-recalc"><input type="checkbox" data-auto-recalculate ${STATE.autoRecalculate ? "checked" : ""}><span>${__("Auto recalculate")}</span></label>
+                        <span class="pbb-auto-recalc-status">${escapeHtml(STATE.autoRecalculateStatus || (STATE.autoRecalculate ? __("Runs while this builder is open") : __("Checks for stale prices on open")))}</span>
                         <span class="pbb-autosave-status">${escapeHtml(STATE.autosaveStatus || __("Autosave enabled"))}</span>
                     </div>
                 </section>
@@ -468,7 +565,7 @@
             <div class="pbb-breakdown-metrics">
                 ${breakdownMetric(__("Base PU"), money(row.base_buy_price))}
                 ${breakdownMetric(__("Expenses U"), money(row.expenses))}
-                ${breakdownMetric(__("Customs U"), money(row.customs_amount))}
+                ${breakdownMetric(__("Customs U"), money(row.customs_amount))}${toNumber(row.customs_value_delta_tax_amount) > 0 ? breakdownMetric(__("Delta Tax U"), money(row.customs_value_delta_tax_amount)) : ""}
                 ${breakdownMetric(__("Total Cost U"), money(costUnit), "highlight")}
                 ${breakdownMetric(__("Margin U"), money(row.margin_amount))}
                 ${breakdownMetric(__("Total Margin U"), money(row.total_margin_amount))}
@@ -541,13 +638,24 @@
         const unit = pickNumber(customs.unit, row.customs_amount);
         const rate = toNumber(customs.rate_percent);
         const rateLabel = customs.component_display ? `${escapeHtml(customs.component_display)}% = ${percent(rate)}` : percent(rate);
-        const formula = total > 0 ? customsFormula(customs, total, rateLabel, qty) : escapeHtml(customs.warning || __("No customs amount applied."));
+        const deltaTaxAmount = toNumber(customs.customs_value_delta_tax_amount);
+        const hasDeltaTax = deltaTaxAmount > 0;
+        const baseCustomsTotal = hasDeltaTax ? pickNumber(customs.base_customs_total, total - deltaTaxAmount) : total;
+        const baseCustomsUnit = hasDeltaTax ? pickNumber(customs.base_customs_unit, baseCustomsTotal / (qty || 1)) : unit;
+        const formula = total > 0 ? customsFormula(customs, baseCustomsTotal, rateLabel, qty, hasDeltaTax, deltaTaxAmount) : escapeHtml(customs.warning || __("No customs amount applied."));
+        let detailRows = `${detail(__("Tariff"), customs.tariff_number || row.customs_tariff_number)}${detail(__("Material"), customs.material || row.material)}${detail(__("Basis"), customs.basis || row.customs_basis)}${detail(__("Weight"), `${toNumber(customs.weight_kg || row.customs_line_weight_kg).toFixed(3)} kg`)}${detail(__("Value / Kg"), money(customs.value_per_kg || row.customs_value_per_kg))}${detail(__("Rate"), rateLabel)}${detail(__("Total"), money(total))}${detail(__("Per Unit"), money(unit))}`;
+        if (hasDeltaTax) {
+            const deltaRate = toNumber(customs.customs_value_delta_tax_rate);
+            const delta = toNumber(customs.customs_value_delta);
+            detailRows += `${detail(__("Base Customs"), money(baseCustomsTotal))}${detail(__("Base Customs U"), money(baseCustomsUnit))}${detail(__("Delta"), `(${money(customs.base_value)} − ${money(delta > 0 ? customs.base_value - delta : 0)}) = ${money(delta)}`)}${detail(__("Delta Tax Rate"), `${deltaRate.toFixed(2)}%`)}${detail(__("Delta Tax"), money(deltaTaxAmount))}${detail(__("Delta Tax U"), money(deltaTaxAmount / (qty || 1)))}`;
+            if (customs.customs_value_delta_tax_template) detailRows += `${detail(__("Delta Tax Template"), escapeHtml(customs.customs_value_delta_tax_template))}`;
+        }
         return `<section class="pbb-calc-section">
             <h3>${__("Customs")}</h3>
             <p>${escapeHtml(__("Policy: {0}. Unit customs: {1}.", [customs.policy || row.customs_policy || "-", money(unit)]))}</p>
             <div class="pbb-calc-note">${formula}</div>
             <div class="pbb-calc-facts">
-                ${detail(__("Tariff"), customs.tariff_number || row.customs_tariff_number)}${detail(__("Material"), customs.material || row.material)}${detail(__("Basis"), customs.basis || row.customs_basis)}${detail(__("Weight"), `${toNumber(customs.weight_kg || row.customs_line_weight_kg).toFixed(3)} kg`)}${detail(__("Value / Kg"), money(customs.value_per_kg || row.customs_value_per_kg))}${detail(__("Rate"), rateLabel)}${detail(__("Total"), money(total))}${detail(__("Per Unit"), money(unit))}
+                ${detailRows}
             </div>
         </section>`;
     }
@@ -576,11 +684,22 @@
         return `${money(step.value)} ${escapeHtml(scope || __("Per Unit"))}`;
     }
 
-    function customsFormula(customs, total, rateLabel, qty) {
-        if (customs.mode === "buying_amount_fallback") {
-            return `${escapeHtml(__("Buying amount fallback"))}: ${money(customs.base_value)} × ${rateLabel} = ${money(total)}; ${money(total)} ÷ ${qty} = ${money(total / qty)} / ${escapeHtml(__("unit"))}`;
+    function customsFormula(customs, baseCustomsTotal, rateLabel, qty, hasDeltaTax, deltaTaxAmount) {
+        const buyAmount = toNumber(customs.base_value) - toNumber(customs.customs_value_delta || 0);
+        if (hasDeltaTax) {
+            const delta = toNumber(customs.customs_value_delta);
+            const deltaRate = toNumber(customs.customs_value_delta_tax_rate);
+            const baseCustomsUnit = baseCustomsTotal / (qty || 1);
+            const deltaTaxUnit = deltaTaxAmount / (qty || 1);
+            if (customs.mode === "buying_amount_fallback") {
+                return `${escapeHtml(__("Buying amount fallback"))}: ${money(customs.base_value)} × ${rateLabel} = ${money(baseCustomsTotal)}; ${money(baseCustomsTotal)} ÷ ${qty} = ${money(baseCustomsUnit)} / ${escapeHtml(__("unit"))}<br><strong>${__("Delta Tax")}:</strong> (${money(customs.base_value)} − ${money(buyAmount)}) = ${money(delta)}; ${money(delta)} × ${percent(deltaRate)} = ${money(deltaTaxAmount)}; ${money(deltaTaxAmount)} ÷ ${qty} = ${money(deltaTaxUnit)} / ${escapeHtml(__("unit"))}`;
+            }
+            return `${toNumber(customs.weight_kg).toFixed(3)} kg × ${money(customs.value_per_kg)} = ${money(customs.base_value)}; ${money(customs.base_value)} × ${rateLabel} = ${money(baseCustomsTotal)}; ${money(baseCustomsTotal)} ÷ ${qty} = ${money(baseCustomsUnit)} / ${escapeHtml(__("unit"))}<br><strong>${__("Delta Tax")}:</strong> (${money(customs.base_value)} − ${money(buyAmount)}) = ${money(delta)}; ${money(delta)} × ${percent(deltaRate)} = ${money(deltaTaxAmount)}; ${money(deltaTaxAmount)} ÷ ${qty} = ${money(deltaTaxUnit)} / ${escapeHtml(__("unit"))}`;
         }
-        return `${toNumber(customs.weight_kg).toFixed(3)} kg × ${money(customs.value_per_kg)} = ${money(customs.base_value)}; ${money(customs.base_value)} × ${rateLabel} = ${money(total)}; ${money(total)} ÷ ${qty} = ${money(total / qty)} / ${escapeHtml(__("unit"))}`;
+        if (customs.mode === "buying_amount_fallback") {
+            return `${escapeHtml(__("Buying amount fallback"))}: ${money(customs.base_value)} × ${rateLabel} = ${money(baseCustomsTotal)}; ${money(baseCustomsTotal)} ÷ ${qty} = ${money(baseCustomsTotal / qty)} / ${escapeHtml(__("unit"))}`;
+        }
+        return `${toNumber(customs.weight_kg).toFixed(3)} kg × ${money(customs.value_per_kg)} = ${money(customs.base_value)}; ${money(customs.base_value)} × ${rateLabel} = ${money(baseCustomsTotal)}; ${money(baseCustomsTotal)} ÷ ${qty} = ${money(baseCustomsTotal / qty)} / ${escapeHtml(__("unit"))}`;
     }
 
     function benchmarkMarginText(margin) {
@@ -666,7 +785,35 @@
     function itemFilterCell(column) {
         const value = (STATE.itemColumnFilters || {})[column.key] || "";
         if (column.noFilter || column.key === "selected") return `<th data-column="${escapeHtml(column.key)}" class="pbb-column-filter-cell pbb-align-center" style="${itemColumnStyle(column)}"><span class="pbb-filter-lock">${__("Filter")}</span></th>`;
-        return `<th data-column="${escapeHtml(column.key)}" class="pbb-column-filter-cell" style="${itemColumnStyle(column)}"><input type="search" data-column-filter="${escapeHtml(column.key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(__("Filter"))}" aria-label="${escapeHtml(__("Filter {0}", [column.label()]))}"></th>`;
+        if (["item_group", "item_category"].includes(column.key)) {
+            const options = builderItemFilterOptions(column.key);
+            return `<th data-column="${escapeHtml(column.key)}" class="pbb-column-filter-cell" style="${itemColumnStyle(column)}"><select data-column-filter="${escapeHtml(column.key)}" aria-label="${escapeHtml(__("Filter {0}", [column.label()]))}"><option value="">${escapeHtml(__("All"))}</option>${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></th>`;
+        }
+        return `<th data-column="${escapeHtml(column.key)}" class="pbb-column-filter-cell" style="${itemColumnStyle(column)}"><input type="search" data-column-filter="${escapeHtml(column.key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(itemFilterPlaceholder(column))}" aria-label="${escapeHtml(__("Filter {0}", [column.label()]))}"></th>`;
+    }
+
+    function builderItemFilterOptions(key) {
+        const selectedGroup = String((STATE.itemColumnFilters || {}).item_group || "").trim();
+        const values = (STATE.doc?.builder_items || [])
+            .filter((row) => key !== "item_category" || !selectedGroup || row.item_group === selectedGroup)
+            .map((row) => row[key]);
+        return uniqueBuilderItemOptions(values);
+    }
+
+    function uniqueBuilderItemOptions(values) {
+        const out = [];
+        const seen = new Set();
+        (values || []).forEach((value) => {
+            const clean = String(value || "").trim();
+            if (!clean || seen.has(clean)) return;
+            seen.add(clean);
+            out.push(clean);
+        });
+        return out.sort((a, b) => a.localeCompare(b));
+    }
+
+    function itemFilterPlaceholder(column) {
+        return itemColumnSupportsNumericFilter(column) ? __("Filter e.g. >0") : __("Filter");
     }
 
     function itemBodyCell(column, row, entry) {
@@ -676,12 +823,13 @@
 
     function itemColumnStyle(column) {
         const width = itemColumnWidth(column);
-        return `width:${width}px;min-width:${width}px`;
+        const minWidth = column.minWidth || 72;
+        return `width:${width}px;min-width:${minWidth}px`;
     }
 
     function itemColumnWidth(column) {
         ensureItemColumnState();
-        return clampNumber(STATE.itemColumnWidths[column.key] || column.width || 130, 72, 420);
+        return clampNumber(STATE.itemColumnWidths[column.key] || column.width || 130, column.minWidth || 72, 420);
     }
 
     function itemTableMinWidth(columns) {
@@ -862,7 +1010,7 @@
             document.body.classList.add("pbb-column-resizing");
             $(document).off("pointermove.pbbResize pointerup.pbbResize pointercancel.pbbResize");
             $(document).on("pointermove.pbbResize", (moveEvent) => {
-                const width = clampNumber(startWidth + moveEvent.clientX - startX, 68, 720) || column.width || 130;
+                const width = clampNumber(startWidth + moveEvent.clientX - startX, column.minWidth || 68, 720) || column.width || 130;
                 STATE.itemColumnWidths[key] = width;
                 applyItemColumnWidth(page, key, width);
             });
@@ -875,7 +1023,8 @@
     }
 
     function applyItemColumnWidth(page, key, width) {
-        page.main.find(`[data-column="${cssEscape(key)}"]`).css({ width: `${width}px`, minWidth: `${width}px` });
+        const column = ITEM_TABLE_COLUMNS.find((candidate) => candidate.key === key) || {};
+        page.main.find(`[data-column="${cssEscape(key)}"]`).css({ width: `${width}px`, minWidth: `${column.minWidth || 72}px` });
         const table = page.main.find(".pbb-items-table");
         if (table.length) table.css("min-width", `${itemTableMinWidth(itemTableColumns())}px`);
     }
@@ -894,7 +1043,7 @@
         if (["selected", "published_price", "status", "status_note"].includes(key)) return "publish";
         if (["buying_list", "origin", "pricing_scenario"].includes(key)) return "source";
         if (["base_buy_price", "expenses", "cost_total", "projected_price", "sell_price", "override_selling_price"].includes(key)) return "cost";
-        if (["customs_tariff_number", "customs_amount", "customs_base_value", "customs_value_per_kg", "customs_weight_kg", "customs_line_weight_kg", "customs_unit_weight_kg", "customs_package_weight_kg", "packaging_units_per_package", "packaging_package_count", "packaging_profile_source", "customs_basis", "customs_policy"].includes(key)) return "customs";
+        if (["customs_tariff_number", "customs_amount", "customs_base_value", "customs_value_per_kg", "customs_weight_kg", "customs_line_weight_kg", "customs_unit_weight_kg", "customs_package_weight_kg", "packaging_units_per_package", "packaging_package_count", "packaging_profile_source", "customs_basis", "customs_policy", "customs_value_delta", "customs_value_delta_tax_rate", "customs_value_delta_tax_amount"].includes(key)) return "customs";
         if (["margin_amount", "total_margin_amount", "avg_benchmark", "final_margin_pct", "total_margin_pct", "target_margin_percent", "margin_basis", "benchmark_is_fallback", "benchmark_rule_label", "benchmark_rule_max_discount_percent", "fallback_max_discount_percent", "policy_max_discount_percent", "benchmark_policy"].includes(key)) return "margin";
         return "article";
     }
@@ -922,6 +1071,22 @@
         }
     }
 
+    function readAutoRecalculate() {
+        try {
+            return window.localStorage.getItem(AUTO_RECALCULATE_STORAGE_KEY) === "1";
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function saveAutoRecalculate(enabled) {
+        try {
+            window.localStorage.setItem(AUTO_RECALCULATE_STORAGE_KEY, enabled ? "1" : "0");
+        } catch (error) {
+            // Local preference only.
+        }
+    }
+
     function summaryPanel(doc) {
         const cards = [
             [__("Items"), doc.total_items],
@@ -936,7 +1101,7 @@
     function warningsPanel(doc) {
         const rows = String(doc.warnings_html || "").split("\n").map((row) => row.trim()).filter(Boolean);
         if (!rows.length) return `<h2>${__("Warnings")}</h2><div class="pbb-warning empty">${__("No warnings. The builder is ready to calculate or publish.")}</div>`;
-        return `<h2>${__("Warnings")}</h2><div class="pbb-warning"><ul>${rows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul></div>`;
+        return `<details class="pbb-warning-details"><summary><h2>${__("Warnings")}</h2><span>${escapeHtml(__("{0} warning(s)", [rows.length]))}</span></summary><div class="pbb-warning"><ul>${rows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul></div></details>`;
     }
 
     function bind(page) {
@@ -945,6 +1110,14 @@
         page.main.find("[data-save]").on("click", () => save(page, { freeze: true }));
         page.main.find("[data-calculate]").on("click", () => calculate(page));
         page.main.find("[data-preview-publish]").on("click", () => previewPublish(page));
+        page.main.find("[data-auto-recalculate]").on("change", function () {
+            STATE.autoRecalculate = $(this).is(":checked");
+            saveAutoRecalculate(STATE.autoRecalculate);
+            STATE.autoRecalculateStatus = STATE.autoRecalculate ? __("Auto recalculate enabled while this builder is open") : __("Auto recalculate disabled") ;
+            if (STATE.autoRecalculate) startOpenRefreshFlow(page, STATE.doc ? STATE.doc.name : "new");
+            else stopAutoRecalculateLoop();
+            render(page, { preserveScroll: true });
+        });
         page.main.find("[data-tab]").on("click", function () { STATE.activeTab = $(this).attr("data-tab") || "items"; render(page); });
         page.main.find("[data-toggle-rules]").on("click", function () {
             syncVisibleInputs(page);
@@ -1039,7 +1212,7 @@
         page.main.find("[data-clear-selected]").on("click", () => { filteredItems(STATE.doc.builder_items || []).forEach((entry) => { entry.row.selected = 0; }); render(page); scheduleAutosave(page); });
         page.main.find("[data-filter]").on("input", function () { STATE.filter = String($(this).val() || "").trim(); render(page, { focusFilter: true, preserveScroll: true }); });
         page.main.find("[data-status-filter]").on("change", function () { STATE.status = String($(this).val() || "").trim(); render(page); });
-        page.main.find("[data-column-filter]").on("input", function () {
+        page.main.find("[data-column-filter]").on("input change", function () {
             setItemColumnFilter($(this).attr("data-column-filter"), $(this).val());
             render(page, { focusColumnFilter: $(this).attr("data-column-filter"), preserveScroll: true });
         });
@@ -1277,7 +1450,14 @@
         const text = String(value || "").trim();
         if (text) STATE.itemColumnFilters[key] = text;
         else delete STATE.itemColumnFilters[key];
+        if (key === "item_group") pruneBuilderItemCategoryFilter();
         saveItemColumnConfig();
+    }
+
+    function pruneBuilderItemCategoryFilter() {
+        const category = String((STATE.itemColumnFilters || {}).item_category || "").trim();
+        if (!category) return;
+        if (!builderItemFilterOptions("item_category").includes(category)) delete STATE.itemColumnFilters.item_category;
     }
 
     function hasItemColumnFilters() {
@@ -1285,6 +1465,7 @@
     }
 
     function activeItemColumnFilters() {
+        pruneBuilderItemCategoryFilter();
         return normalizeItemColumnFilters(STATE.itemColumnFilters || {});
     }
 
@@ -1292,10 +1473,45 @@
         for (const [key, value] of Object.entries(filters || {})) {
             const column = ITEM_TABLE_COLUMNS.find((candidate) => candidate.key === key);
             if (!column) continue;
+            if (itemColumnSupportsNumericFilter(column) && numericFilterHasOperator(value)) {
+                if (!matchesNumericColumnFilter(itemFilterValue(column, row), value)) return false;
+                continue;
+            }
             const actual = String(itemFilterValue(column, row)).toLowerCase();
+            if (["item_group", "item_category"].includes(key)) {
+                if (actual !== String(value || "").toLowerCase()) return false;
+                continue;
+            }
             if (!actual.includes(String(value || "").toLowerCase())) return false;
         }
         return true;
+    }
+
+    function itemColumnSupportsNumericFilter(column) {
+        return !!column && (NUMERIC_FIELDS.has(column.key) || ["cost_total", "sell_price"].includes(column.key));
+    }
+
+    function numericFilterHasOperator(value) {
+        return /^\s*(>=|<=|>|<|=)/.test(String(value || ""));
+    }
+
+    function matchesNumericColumnFilter(actualValue, expression) {
+        const parsed = parseNumericColumnFilter(expression);
+        if (!parsed) return String(actualValue == null ? "" : actualValue).toLowerCase().includes(String(expression || "").toLowerCase());
+        const actual = toNumber(actualValue);
+        if (parsed.operator === ">") return actual > parsed.value;
+        if (parsed.operator === ">=") return actual >= parsed.value;
+        if (parsed.operator === "<") return actual < parsed.value;
+        if (parsed.operator === "<=") return actual <= parsed.value;
+        return Math.abs(actual - parsed.value) < 0.0000001;
+    }
+
+    function parseNumericColumnFilter(expression) {
+        const match = String(expression || "").trim().match(/^(>=|<=|>|<|=)\s*(-?\d+(?:[.,]\d+)?)$/);
+        if (!match) return null;
+        const value = Number(match[2].replace(",", "."));
+        if (!Number.isFinite(value)) return null;
+        return { operator: match[1], value };
     }
 
     function itemFilterValue(column, row) {
@@ -1403,12 +1619,12 @@
     function cssEscape(value) { return window.CSS && CSS.escape ? CSS.escape(String(value || "")) : String(value || "").replace(/"/g, "\\\""); }
     function costBeforeMargin(row) { return toNumber(row.base_buy_price) + toNumber(row.expenses) + toNumber(row.customs_amount); }
     function finalSellUnit(row) { return toNumber(row.override_selling_price) || toNumber(row.projected_price); }
-    function money(value) { return normalizeCurrencyText(textFromHtml(frappe.format(toNumber(value), { fieldtype: "Currency" }))); }
+    function money(value) { return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : normalizeCurrencyText(textFromHtml(frappe.format(toNumber(value), { fieldtype: "Currency" }))); }
 
     function normalizeCurrencyText(value) {
         return String(value || "")
             .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
-            .replace(/د\.م\./g, "MAD")
+            .replace(/د\.م\./g, window.orderlift?.getActiveCompanyCurrency?.() || "MAD")
             .replace(/\s+/g, " ")
             .trim();
     }
@@ -1457,6 +1673,12 @@
             .pbb-column-config-panel{width:min(780px,calc(100vw - 48px))}.pbb-column-config-grid{grid-template-columns:minmax(260px,.48fr) minmax(280px,.52fr)!important}.pbb-column-order-row{grid-template-columns:minmax(0,1fr) minmax(82px,auto) auto auto auto!important}.pbb-column-filter-row th{position:sticky;top:36px;z-index:7;background:#fff;box-shadow:0 1px 0 #e5e7eb}.pbb-column-filter-cell input{width:100%;height:28px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 8px;font-size:11px}.pbb-filter-lock{display:inline-flex;color:#94a3b8;font-size:10px;font-weight:900;text-transform:uppercase}.pbb-sort-btn{padding-right:24px!important}.pbb-column-width-badge{display:none;position:absolute;right:12px;bottom:3px;border-radius:999px;background:#e0f2fe;color:#075985;padding:1px 5px;font-size:9px;font-weight:900}.pbb-items-table th:hover .pbb-column-width-badge,.pbb-column-resizing .pbb-column-width-badge{display:inline-flex}.pbb-column-resizer{right:-3px!important;width:14px!important}.pbb-column-resizer::after{left:6px!important;width:2px!important;border-radius:99px}.pbb-column-resizer:hover::after,.pbb-column-resizing .pbb-column-resizer::after{background:#2563eb!important}.pbb-column-resizing{cursor:col-resize!important;user-select:none}.pbb-item-cell{position:relative;display:inline-block;min-width:0}.pbb-item-link{display:grid;gap:2px;max-width:100%;border:0;background:transparent;color:#1d4ed8;text-align:left;padding:0;cursor:pointer}.pbb-item-link strong{text-decoration:underline;text-underline-offset:2px}.pbb-item-link small{color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pbb-item-popover{display:none;position:absolute;z-index:40;top:calc(100% + 8px);left:0;width:300px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;box-shadow:0 18px 45px rgba(15,23,42,.18);padding:12px;white-space:normal;color:#0f172a}.pbb-item-cell:hover .pbb-item-popover,.pbb-item-cell:focus-within .pbb-item-popover{display:grid;gap:8px}.pbb-item-popover span{color:#475569;font-size:12px}.pbb-item-popover dl{display:grid;grid-template-columns:82px minmax(0,1fr);gap:5px 8px;margin:0}.pbb-item-popover dt{color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase}.pbb-item-popover dd{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis}.pbb-item-popover button{justify-self:start;min-height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#f8fafc;color:#1d4ed8;padding:0 10px;font-weight:900}.pbb-list-price{display:grid;gap:1px}.pbb-list-price strong{font-weight:900}.pbb-list-price small{color:#64748b;font-size:10px;font-weight:800}.pbb-list-price.is-overridden strong,.pbb-list-price.is-overridden small{color:#047857}.pbb-filters{grid-template-columns:minmax(240px,1fr) minmax(170px,220px) auto!important;align-items:center}@media(max-width:900px){.pbb-filters{grid-template-columns:1fr!important}.pbb-item-popover{position:fixed;left:16px;right:16px;top:auto;bottom:16px;width:auto}}
         `;
         style.textContent += `
+            .pbb-column-resizer{z-index:20!important}.pbb-items-table th[data-column="item_category"] .pbb-column-resizer{right:-5px!important;width:18px!important;z-index:24!important}.pbb-items-table th[data-column="item_category"] .pbb-sort-btn{padding-right:28px!important}
+        `;
+        style.textContent += `
+            .pbb-column-filter-cell select{width:100%;height:28px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 8px;font-size:11px}
+        `;
+        style.textContent += `
             .pbb-item-popover{width:244px!important;gap:7px!important;border-radius:11px!important;padding:9px!important;box-shadow:0 12px 28px rgba(15,23,42,.16)!important}.pbb-item-popover-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.pbb-item-popover-head strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.pbb-item-popover-head button{height:24px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#1d4ed8;padding:0 8px;font-size:11px;font-weight:900}.pbb-item-popover-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#475569;font-size:11px}.pbb-item-popover dl{display:grid!important;grid-template-columns:64px minmax(0,1fr)!important;gap:3px 7px!important;margin:0!important;font-size:11px!important}.pbb-item-popover dt{color:#64748b!important;font-weight:900!important;text-transform:uppercase!important}.pbb-item-popover dd{margin:0!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;color:#0f172a!important}
         `;
         style.textContent += `
@@ -1467,6 +1689,12 @@
         `;
         style.textContent += `
             .pbb-override-cell{display:grid;grid-template-columns:minmax(86px,1fr) 30px;gap:5px;align-items:center}.pbb-override-cell input{width:100%!important;min-width:0!important}.pbb-override-apply{height:30px;width:30px;border:1px solid #86efac;border-radius:9px;background:#f0fdf4;color:#166534;font-weight:900;line-height:1;cursor:pointer}.pbb-override-apply:hover{background:#dcfce7;border-color:#22c55e}.pbb-override-apply:focus{outline:2px solid #22c55e;outline-offset:2px}
+        `;
+        style.textContent += `
+            .pbb-warning-details>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}.pbb-warning-details>summary::-webkit-details-marker{display:none}.pbb-warning-details>summary h2{margin:0}.pbb-warning-details>summary span{display:inline-flex;align-items:center;min-height:28px;border:1px solid #fed7aa;border-radius:999px;background:#fff7ed;color:#9a3412;padding:0 10px;font-size:12px;font-weight:900}.pbb-warning-details .pbb-warning{margin-top:10px}
+        `;
+        style.textContent += `
+            .pbb-auto-recalc{display:inline-flex;align-items:center;gap:7px;min-height:30px;margin:0;border:1px solid #bfdbfe;border-radius:999px;background:#eff6ff;color:#1e40af;padding:0 10px;font-size:12px;font-weight:900}.pbb-auto-recalc-status{display:inline-flex;align-items:center;min-height:30px;border:1px solid #e0e7ff;border-radius:999px;background:#eef2ff;color:#3730a3;padding:0 11px;font-size:12px;font-weight:800}
         `;
         document.head.appendChild(style);
     }

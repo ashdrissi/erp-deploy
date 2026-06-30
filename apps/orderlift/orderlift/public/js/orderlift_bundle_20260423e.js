@@ -1129,17 +1129,19 @@ orderlift = {
 
     /**
      * Format a number as a French-style currency string.
-     * e.g. 12345.6 → "12 345,60 MAD"
+     * e.g. 12345.6 → "12 345,60 TRY"
      */
     format_currency_fr: function (amount, currency) {
-        currency = currency || "MAD";
+        if (window.orderlift?.formatCurrencyFr && window.orderlift.formatCurrencyFr !== this.format_currency_fr) {
+            return window.orderlift.formatCurrencyFr(amount, currency);
+        }
+        currency = currency || frappe.defaults?.get_default?.("currency") || "";
         return (
             new Intl.NumberFormat("fr-FR", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
             }).format(amount) +
-            " " +
-            currency
+            (currency ? " " + currency : "")
         );
     },
 };

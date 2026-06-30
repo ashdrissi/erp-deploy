@@ -4,6 +4,7 @@ import frappe
 @frappe.whitelist()
 def get_dashboard_data():
     """Return container planning data for the dashboard."""
+    frappe.has_permission("Forecast Load Plan", "read", throw=True)
     kpis = {
         "planning_count": frappe.db.count("Forecast Load Plan", {"status": "Planning"}),
         "ready_count": frappe.db.count("Forecast Load Plan", {"status": "Ready"}),
@@ -14,7 +15,7 @@ def get_dashboard_data():
     }
 
     # Recent containers ordered by departure date
-    containers = frappe.get_all(
+    containers = frappe.get_list(
         "Forecast Load Plan",
         filters={"status": ["not in", ["Cancelled"]]},
         fields=[

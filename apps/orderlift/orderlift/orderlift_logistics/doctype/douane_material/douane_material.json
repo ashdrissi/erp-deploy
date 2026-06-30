@@ -1,0 +1,92 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:material_name",
+  "creation": "2026-06-07 00:00:00.000000",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": [
+    "material_name",
+    "material_code",
+    "aliases",
+    "is_active",
+    "description"
+  ],
+  "fields": [
+    {
+      "fieldname": "material_name",
+      "fieldtype": "Data",
+      "label": "Material Name",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "material_code",
+      "fieldtype": "Data",
+      "label": "Material Code",
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "aliases",
+      "fieldtype": "Small Text",
+      "label": "Aliases",
+      "description": "Optional comma-separated workbook aliases for this customs material."
+    },
+    {
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active",
+      "default": "1",
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    }
+  ],
+  "links": [],
+  "modified": "2026-06-07 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Douane Material",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "Orderlift Admin",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "import": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1,
+      "share": 1,
+      "print": 1,
+      "email": 1
+    }
+  ],
+  "search_fields": "material_name,material_code,aliases",
+  "sort_field": "material_name",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "material_name"
+}

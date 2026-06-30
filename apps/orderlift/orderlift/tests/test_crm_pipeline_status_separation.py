@@ -41,6 +41,7 @@ frappe_stub.get_all = lambda *args, **kwargs: []
 frappe_stub.get_doc = lambda *args, **kwargs: None
 frappe_stub.get_meta = lambda doctype: types.SimpleNamespace(get_field=lambda fieldname: True)
 frappe_stub.throw = lambda message: (_ for _ in ()).throw(Exception(message))
+frappe_stub.ValidationError = Exception
 frappe_stub.db = types.SimpleNamespace(sql=lambda *args, **kwargs: [], exists=lambda *args, **kwargs: False, get_value=lambda *args, **kwargs: None, commit=lambda: None)
 sys.modules["frappe"] = frappe_stub
 
@@ -52,9 +53,15 @@ sys.modules["frappe.utils"] = frappe_utils_stub
 
 from orderlift.orderlift_crm import status_workflow
 from orderlift.orderlift_crm.api import installation, pipeline
+from orderlift.orderlift_crm.status_checks import StatusCheckBlockedError
 
 
 class TestCrmPipelineStatusSeparation(unittest.TestCase):
+    def setUp(self):
+        pipeline.frappe = frappe_stub
+        installation.frappe = frappe_stub
+        status_workflow.frappe = frappe_stub
+
     def test_opportunity_stage_uses_stored_pipeline_status_only(self):
         statuses = [
             {"name": "New", "is_default": 1},
@@ -180,19 +187,53 @@ class TestCrmPipelineStatusSeparation(unittest.TestCase):
             pipeline.list_editable_statuses = original_list
             pipeline._opportunity_card = original_card
 
+    def test_status_lookup_matches_prefixed_and_short_stage_names(self):
+        doc = _FakeDoc()
+        doc.company = "Orderlift Maroc Distribution"
+        original_list = pipeline.list_editable_statuses
+        try:
+            pipeline.list_editable_statuses = lambda *args, **kwargs: [
+                {
+                    "name": "Orderlift Maroc Distribution - 2. Prise de mesure en cours",
+                    "label": "2. Prise de mesure en cours",
+                    "is_active": 1,
+                    "required_checks": [],
+                }
+            ]
+
+            status = pipeline._validate_status_for_document("Opportunity", "Distribution - 2. Prise de mesure en cours", doc)
+            self.assertEqual(
+                status["name"],
+                "Orderlift Maroc Distribution - 2. Prise de mesure en cours",
+            )
+
+            status = pipeline._validate_status_for_document("Opportunity", "Orderlift Maroc Distribution - 2. Prise de mesure en cours", doc)
+            self.assertEqual(
+                status["name"],
+                "Orderlift Maroc Distribution - 2. Prise de mesure en cours",
+            )
+        finally:
+            pipeline.list_editable_statuses = original_list
+
     def test_blocked_pipeline_move_does_not_change_status_or_todos(self):
         doc = _FakeDoc()
         original_get_doc = pipeline.frappe.get_doc
         original_validate = pipeline._validate_status_for_document
         original_sync = pipeline.sync_pipeline_status_assignment
+        original_get_status_meta = pipeline.get_status_meta
         try:
             pipeline.frappe.get_doc = lambda doctype, name: doc
-            pipeline._validate_status_for_document = lambda *args, **kwargs: (_ for _ in ()).throw(Exception("Blocked"))
+            pipeline._validate_status_for_document = lambda *args, **kwargs: (_ for _ in ()).throw(
+                StatusCheckBlockedError("Opportunity", doc.name, {"label": "Qualified"}, ["has_quotation"])
+            )
             pipeline.sync_pipeline_status_assignment = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ToDo sync should not run"))
+            pipeline.get_status_meta = lambda document_type: {"target_doctype": document_type}
 
-            with self.assertRaisesRegex(Exception, "Blocked"):
-                pipeline.update_opportunity_stage("OPP-1", "Qualified")
+            result = pipeline.update_opportunity_stage("OPP-1", "Qualified")
 
+            self.assertEqual(result["blocked"], 1)
+            self.assertEqual(result["record"], "OPP-1")
+            self.assertIn("quotation", result["missing_checks"][0].lower())
             self.assertEqual(doc.sales_stage, "New")
             self.assertEqual(doc.status, "Open")
             self.assertFalse(doc.saved)
@@ -200,6 +241,7 @@ class TestCrmPipelineStatusSeparation(unittest.TestCase):
             pipeline.frappe.get_doc = original_get_doc
             pipeline._validate_status_for_document = original_validate
             pipeline.sync_pipeline_status_assignment = original_sync
+            pipeline.get_status_meta = original_get_status_meta
 
 
 if __name__ == "__main__":

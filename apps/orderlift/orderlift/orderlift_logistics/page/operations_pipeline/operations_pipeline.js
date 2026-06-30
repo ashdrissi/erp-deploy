@@ -79,6 +79,7 @@ function bootVue(state) {
 
     function formatCurrency(val) {
         if (!val) return "—";
+        if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(val);
         var html = frappe.format(val, { fieldtype: "Currency" });
         // frappe.format returns wrapped HTML — extract plain text
         var div = document.createElement("div");

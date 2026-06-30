@@ -94,6 +94,38 @@ def after_migrate():
                     "insert_after": "uoms",
                 },
                 {
+                    "fieldname": "custom_buying_item_prices_section",
+                    "label": "Buying Prices",
+                    "fieldtype": "Section Break",
+                    "insert_after": "supplier_details",
+                    "collapsible": 0,
+                    "collapsed": 0,
+                },
+                {
+                    "fieldname": "custom_buying_item_prices",
+                    "label": "Buying Prices",
+                    "fieldtype": "Table",
+                    "options": "Orderlift Item Buying Price",
+                    "insert_after": "custom_buying_item_prices_section",
+                    "description": "Native Item price rows synced to Buying Item Price records on save.",
+                },
+                {
+                    "fieldname": "custom_selling_item_prices_section",
+                    "label": "Selling Prices",
+                    "fieldtype": "Section Break",
+                    "insert_after": "max_discount",
+                    "collapsible": 0,
+                    "collapsed": 0,
+                },
+                {
+                    "fieldname": "custom_selling_item_prices",
+                    "label": "Selling Prices",
+                    "fieldtype": "Table",
+                    "options": "Orderlift Item Selling Price",
+                    "insert_after": "custom_selling_item_prices_section",
+                    "description": "Native Item price rows synced to Selling Item Price records on save.",
+                },
+                {
                     "fieldname": "custom_volume_m3",
                     "label": "Volume (m3)",
                     "fieldtype": "Float",
@@ -135,11 +167,46 @@ def after_migrate():
                     "in_standard_filter": 1,
                 },
                 {
+                    "fieldname": "custom_current_company_stock_qty",
+                    "label": "Stock (Company Session)",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_inventory_flag",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "description": "Read-only Item list value populated from stock in warehouses of the active company session.",
+                },
+                {
+                    "fieldname": "custom_company_stock_section",
+                    "label": "Stock par dépôt",
+                    "fieldtype": "Section Break",
+                    "insert_after": "custom_current_company_stock_qty",
+                    "collapsible": 1,
+                    "collapsed": 0,
+                    "description": "Lecture seule: stock par dépôt pour la société active.",
+                },
+                {
+                    "fieldname": "custom_company_warehouse_stock",
+                    "label": "Stock par dépôt",
+                    "fieldtype": "Table",
+                    "options": "Orderlift Item Warehouse Stock",
+                    "insert_after": "custom_company_stock_section",
+                    "read_only": 1,
+                    "description": "Quantités disponibles dans les dépôts de la société active.",
+                },
+                {
+                    "fieldname": "custom_company_stock_total",
+                    "label": "Total Stock (Company Session)",
+                    "fieldtype": "Float",
+                    "insert_after": "custom_company_warehouse_stock",
+                    "read_only": 1,
+                    "description": "Somme des quantités du tableau Stock par dépôt pour la société active.",
+                },
+                {
                     "fieldname": "custom_specifications",
                     "label": "Spécifications",
                     "fieldtype": "Table",
                     "options": "Item Specification Value",
-                    "insert_after": "custom_inventory_flag",
+                    "insert_after": "custom_company_stock_total",
                     "description": "Attributs techniques dynamiques de l'article.",
                 },
                 {
@@ -450,7 +517,10 @@ def after_migrate():
         update=True,
     )
     seed_item_categories()
+    backfill_item_category_item_groups()
     seed_item_specification_attributes()
+    seed_douane_materials_from_items()
+    enforce_item_price_child_table_fields()
     arrange_item_specification_fields()
     label_item_specifications_section()
     apply_item_field_order()
@@ -519,6 +589,45 @@ def seed_item_categories():
             doc.insert(ignore_permissions=True)
 
 
+def seed_douane_materials_from_items():
+    if not frappe.db.exists("DocType", "Douane Material"):
+        return
+
+    values = set(frappe.get_all(
+        "Item",
+        filters={"custom_customs_material": ["not in", ["", None]]},
+        pluck="custom_customs_material",
+        distinct=True,
+        limit_page_length=0,
+    ))
+    if frappe.db.exists("DocType", "Pricing Customs Rule"):
+        values.update(
+            row.material
+            for row in frappe.get_all("Pricing Customs Rule", fields=["material"], limit_page_length=0)
+            if (row.material or "").strip()
+        )
+    for value in values:
+        material_name = (value or "").strip().upper()
+        if not material_name or frappe.db.exists("Douane Material", material_name):
+            continue
+        doc = frappe.new_doc("Douane Material")
+        doc.material_name = material_name
+        doc.material_code = material_name
+        doc.is_active = 1
+        doc.insert(ignore_permissions=True)
+
+
+def enforce_item_price_child_table_fields():
+    for doctype in ("Orderlift Item Buying Price", "Orderlift Item Selling Price"):
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        field_name = frappe.db.get_value("DocField", {"parent": doctype, "fieldname": "price_list_rate"}, "name")
+        if field_name:
+            frappe.db.set_value("DocField", field_name, "fieldtype", "Float", update_modified=False)
+        _upsert_property_setter(doctype, "price_list_rate", "fieldtype", "Float", "Data")
+        frappe.clear_cache(doctype=doctype)
+
+
 def arrange_item_specification_fields():
     for fieldname in ["Item-custom_import_key", "Item-custom_legacy_item_code", "Item-custom_item_settings_section"]:
         if frappe.db.exists("Custom Field", fieldname):
@@ -532,7 +641,7 @@ def arrange_item_specification_fields():
         ("Item-custom_secondary_item_name_language", "custom_secondary_item_name", 10),
         ("Item-custom_specifications_section", "asset_naming_series", 17),
         ("Item-custom_material", "custom_specifications_section", 18),
-        ("Item-custom_customs_material", "custom_material", 19),
+        ("Item-custom_customs_material", "customs_tariff_number", 19),
         ("Item-custom_weight_kg", "custom_customs_material", 20),
         ("Item-custom_volume_m3", "custom_weight_kg", 21),
         ("Item-custom_length_cm", "custom_volume_m3", 22),
@@ -542,8 +651,12 @@ def arrange_item_specification_fields():
         ("Item-custom_specifications", "custom_inventory_flag", 26),
         ("Item-custom_specification_search_text", "custom_specifications", 27),
         ("Item-custom_packaging_profiles", "uoms", 30),
-        ("Item-custom_item_add_guide_section", "brand", 34),
-        ("Item-custom_item_add_guide_html", "custom_item_add_guide_section", 35),
+        ("Item-custom_buying_item_prices_section", "supplier_details", 31),
+        ("Item-custom_buying_item_prices", "custom_buying_item_prices_section", 32),
+        ("Item-custom_selling_item_prices_section", "max_discount", 33),
+        ("Item-custom_selling_item_prices", "custom_selling_item_prices_section", 34),
+        ("Item-custom_item_add_guide_section", "brand", 35),
+        ("Item-custom_item_add_guide_html", "custom_item_add_guide_section", 36),
     ]
 
     for name, insert_after, idx in ordering:
@@ -554,6 +667,50 @@ def arrange_item_specification_fields():
                 {"insert_after": insert_after, "idx": idx},
                 update_modified=False,
             )
+
+
+def backfill_item_category_item_groups():
+    if not frappe.db.exists("DocType", "Item Category"):
+        return
+    if not frappe.db.has_column("Item Category", "item_group"):
+        return
+    if not frappe.db.has_column("Item", "custom_item_category"):
+        return
+
+    rows = frappe.db.sql(
+        """
+        SELECT custom_item_category AS category, item_group, COUNT(*) AS item_count
+        FROM `tabItem`
+        WHERE COALESCE(custom_item_category, '') != ''
+          AND COALESCE(item_group, '') != ''
+        GROUP BY custom_item_category, item_group
+        ORDER BY custom_item_category, item_count DESC
+        """,
+        as_dict=True,
+    )
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row.category, []).append(row)
+
+    ambiguous = []
+    for category, category_rows in grouped.items():
+        if not frappe.db.exists("Item Category", category):
+            continue
+        current_group = (frappe.db.get_value("Item Category", category, "item_group") or "").strip()
+        if current_group:
+            continue
+        groups = [row.item_group for row in category_rows if row.item_group]
+        if len(set(groups)) == 1:
+            frappe.db.set_value("Item Category", category, "item_group", groups[0], update_modified=False)
+        else:
+            ambiguous.append(f"{category}: {', '.join(groups[:5])}")
+
+    if ambiguous:
+        frappe.logger("orderlift").warning(
+            "Ambiguous Item Category item_group backfill skipped for %s categor(ies): %s",
+            len(ambiguous),
+            "; ".join(ambiguous[:20]),
+        )
 
 
 def label_item_specifications_section():
@@ -596,6 +753,9 @@ def label_item_specifications_section():
 
     _upsert_property_setter("Item", "section_break_gjns", "hidden", "1", "Check")
     _upsert_property_setter("Item", "section_break_znra", "hidden", "1", "Check")
+    _upsert_property_setter("Item", "country_of_origin", "hidden", "1", "Check")
+    _upsert_property_setter("Item", "supplier_details", "collapsed", "0", "Check")
+    _upsert_property_setter("Item", "supplier_items", "hidden", "1", "Check")
     _upsert_property_setter("Item", "item_code", "read_only", "1", "Check")
     _upsert_property_setter("Item", "item_code", "default", "AUTO", "Data")
     _upsert_property_setter(
@@ -639,7 +799,6 @@ def apply_item_field_order():
         "asset_naming_series",
         "custom_specifications_section",
         "custom_material",
-        "custom_customs_material",
         "custom_weight_kg",
         "custom_volume_m3",
         "custom_length_cm",
@@ -652,9 +811,22 @@ def apply_item_field_order():
         "stock_uom",
         "uoms",
         "custom_packaging_profiles",
+        "foreign_trade_details",
+        "customs_tariff_number",
+        "custom_customs_material",
+        "country_of_origin",
         "section_break_11",
         "description",
         "brand",
+        "supplier_details",
+        "custom_buying_item_prices_section",
+        "custom_buying_item_prices",
+        "supplier_items",
+        "sales_details",
+        "is_sales_item",
+        "max_discount",
+        "custom_selling_item_prices_section",
+        "custom_selling_item_prices",
         "custom_item_add_guide_section",
         "custom_item_add_guide_html",
     ]

@@ -38,6 +38,7 @@ def run(
     article_sheet_name: str = DEFAULT_ARTICLE_SHEET,
     include_article_placeholders: int | str = 0,
 ):
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     path = Path(workbook_path or DEFAULT_WORKBOOK)
     if not path.exists():
         frappe.throw(_("Workbook not found: {0}").format(path))

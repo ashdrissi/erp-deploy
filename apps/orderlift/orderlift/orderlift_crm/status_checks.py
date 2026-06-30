@@ -238,6 +238,25 @@ CHECK_LABELS_BY_DOCUMENT_TYPE = {
 }
 
 
+class StatusCheckBlockedError(frappe.ValidationError):
+    def __init__(self, document_type: str, document_name: str, status_info: dict, failed_checks: list[str]):
+        self.document_type = document_type
+        self.document_name = document_name
+        self.status_info = status_info or {}
+        self.failed_checks = failed_checks or []
+        labels = [CHECK_LABELS_BY_DOCUMENT_TYPE.get(document_type, {}).get(check, check) for check in self.failed_checks]
+        self.failed_labels = labels
+        message = _(
+            "Cannot move {0} {1} to {2}. Missing required checks: {3}"
+        ).format(
+            document_type,
+            document_name,
+            self.status_info.get("label") or self.status_info.get("name") or "status",
+            ", ".join(labels),
+        )
+        super().__init__(message)
+
+
 def get_predefined_status_checks(document_type: str) -> list[dict]:
     return CHECKS_BY_DOCUMENT_TYPE.get(document_type, [])
 
@@ -252,15 +271,7 @@ def validate_status_checks(document_type: str, doc, status_info: dict) -> None:
     if not failed:
         return
 
-    labels = [CHECK_LABELS_BY_DOCUMENT_TYPE.get(document_type, {}).get(check, check) for check in failed]
-    frappe.throw(
-        _("Cannot move {0} {1} to {2}. Missing required checks: {3}").format(
-            document_type,
-            doc.name,
-            status_info.get("label") or status_info.get("name") or "status",
-            ", ".join(labels),
-        )
-    )
+    raise StatusCheckBlockedError(document_type, doc.name, status_info, failed)
 
 
 def _status_check_context(document_type: str, doc) -> dict:

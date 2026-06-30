@@ -162,6 +162,7 @@ def get_pipeline_data(
     date_filter=None,
 ):
     """Return the 6-column Kanban pipeline with deal cards and health metadata."""
+    frappe.has_permission("Sales Order", "read", throw=True)
     cards = []
     cards.extend(_get_leads(company, date_filter))
     cards.extend(_get_opportunities(company, date_filter))
@@ -206,6 +207,7 @@ def get_trace_data(entity_type, entity_name):
     Walk the document graph from a starting node.
     Returns: { focused_node, nodes[], edges[], health_summary, communications[] }
     """
+    frappe.has_permission(entity_type, "read", throw=True)
     visited = set()
     nodes = []
     edges = []
@@ -318,6 +320,7 @@ def get_trace_data(entity_type, entity_name):
 @frappe.whitelist()
 def get_document_preview(doctype, name):
     """Return generic preview data for a trace document popup."""
+    frappe.has_permission(doctype, "read", throw=True)
     doc = _fetch_doc(doctype, name)
     if not doc:
         frappe.throw(frappe._("{0} {1} not found").format(doctype, name))
@@ -436,7 +439,7 @@ def _get_leads(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Lead", filters=filters,
         fields=_query_fields(
             "Lead",
@@ -453,7 +456,7 @@ def _get_opportunities(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Opportunity", filters=filters,
         fields=_query_fields(
             "Opportunity",
@@ -477,7 +480,7 @@ def _get_quotations(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Quotation", filters=filters,
         fields=_query_fields(
             "Quotation",
@@ -507,7 +510,7 @@ def _get_sales_orders(company, flow_scope, shipping_resp, date_filter):
     if shipping_resp:
         filters["custom_shipping_responsibility"] = shipping_resp
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Sales Order", filters=filters,
         fields=_query_fields(
             "Sales Order",
@@ -558,7 +561,7 @@ def _get_purchase_orders(company, flow_scope, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Purchase Order", filters=filters,
         fields=_query_fields(
             "Purchase Order",
@@ -585,7 +588,7 @@ def _get_material_requests(company, date_filter):
     if company and _doctype_has_field("Material Request", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Material Request", filters=filters,
         fields=_query_fields(
             "Material Request",
@@ -605,7 +608,7 @@ def _get_pick_lists(company, date_filter):
     if company and _doctype_has_field("Pick List", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Pick List", filters=filters,
         fields=_query_fields(
             "Pick List",
@@ -622,7 +625,7 @@ def _get_delivery_notes(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Delivery Note", filters=filters,
         fields=_query_fields(
             "Delivery Note",
@@ -639,7 +642,7 @@ def _get_delivery_trips(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Delivery Trip", filters=filters,
         fields=_query_fields(
             "Delivery Trip",
@@ -688,7 +691,7 @@ def _get_sales_invoices(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Sales Invoice", filters=filters,
         fields=_query_fields(
             "Sales Invoice",
@@ -711,7 +714,7 @@ def _get_purchase_invoices(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Purchase Invoice", filters=filters,
         fields=_query_fields(
             "Purchase Invoice",
@@ -734,7 +737,7 @@ def _get_payment_entries(company, date_filter):
     if company and _doctype_has_field("Payment Entry", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Payment Entry", filters=filters,
         fields=_query_fields(
             "Payment Entry",
@@ -779,7 +782,7 @@ def _get_projects(company, date_filter):
     if company:
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Project", filters=filters,
         fields=_query_fields(
             "Project",
@@ -803,7 +806,7 @@ def _get_sav_tickets(company, date_filter):
     if company and _doctype_has_field("SAV Ticket", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "SAV Ticket", filters=filters,
         fields=_query_fields(
             "SAV Ticket",
@@ -848,7 +851,7 @@ def _get_issues(company, date_filter):
     if company and _doctype_has_field("Issue", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Issue", filters=filters,
         fields=_query_fields(
             "Issue",
@@ -868,7 +871,7 @@ def _get_maintenance_schedules(company, date_filter):
     if company and _doctype_has_field("Maintenance Schedule", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Maintenance Schedule", filters=filters,
         fields=_query_fields(
             "Maintenance Schedule",
@@ -888,7 +891,7 @@ def _get_maintenance_visits(company, date_filter):
     if company and _doctype_has_field("Maintenance Visit", "company"):
         filters["company"] = company
 
-    docs = frappe.get_all(
+    docs = frappe.get_list(
         "Maintenance Visit", filters=filters,
         fields=_query_fields(
             "Maintenance Visit",

@@ -106,6 +106,15 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
     project.custom_qc_status = "Not Started"
     copy_crm_classification(so, project)
 
+    # Carry the source opportunity so the project fans out to sibling Sales
+    # Orders / Quotations of the same opportunity (see project_linkage).
+    if project.meta.get_field("custom_source_opportunity"):
+        from orderlift.orderlift_crm.api.pipeline import _sales_order_source_opportunity
+
+        opportunity = _sales_order_source_opportunity(so.name)
+        if opportunity:
+            project.custom_source_opportunity = opportunity
+
     # Copy delivery address if available
     if so.shipping_address_name:
         addr = frappe.db.get_value(

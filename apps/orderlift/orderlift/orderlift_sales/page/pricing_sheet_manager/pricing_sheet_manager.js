@@ -317,7 +317,7 @@
     }
 
     function formatCurrency(value) {
-        return textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" }));
+        return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" }));
     }
 
     function textFromHtml(value) {

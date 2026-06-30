@@ -151,14 +151,28 @@ class TestPolicyImport(unittest.TestCase):
         self.assertEqual(target.customs_rules[0].tariff_number, "8431310000")
         self.assertEqual(target.customs_rules[0].material, "ACIER")
 
-    def test_import_rejects_same_target_company(self):
-        with self.assertRaisesRegex(ValueError, "already belongs"):
-            policy_import.import_policy_from_existing(
-                policy_doctype="Pricing Customs Policy",
-                source_policy="PCPOL-00001",
-                target_policy_name="Source Customs Copy",
-                target_company="Orderlift Distribution",
-            )
+    def test_import_allows_same_target_company_with_unique_name(self):
+        result = policy_import.import_policy_from_existing(
+            policy_doctype="Pricing Customs Policy",
+            source_policy="PCPOL-00001",
+            target_policy_name="Source Customs Copy",
+            target_company="Orderlift Distribution",
+        )
+
+        target = DB["Pricing Customs Policy"][result["policy"]]
+        self.assertEqual(result["target_company"], "Orderlift Distribution")
+        self.assertEqual(target.policy_name, "Source Customs Copy")
+        self.assertEqual(target.company, "Orderlift Distribution")
+        self.assertEqual(len(target.customs_rules), 1)
+
+    def test_policy_import_context_allows_single_company_duplicate(self):
+        policy_import.get_allowed_companies = lambda user=None: ["Orderlift Distribution"]
+        policy_import.resolve_current_company = lambda **kwargs: "Orderlift Distribution"
+
+        context = policy_import.get_policy_import_context("Pricing Customs Policy")
+
+        self.assertTrue(context["can_import"])
+        self.assertEqual(context["current_company"], "Orderlift Distribution")
 
     def _exists(self, doctype, name=None, *args, **kwargs):
         if isinstance(name, dict):

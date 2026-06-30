@@ -22,7 +22,10 @@
         "default_customs_policy",
         "section_static",
         "static_help_html",
-        "allocated_price_lists"
+        "allocated_price_lists",
+        "section_benchmark",
+        "benchmark_help_html",
+        "allocated_benchmark_price_lists"
     ],
     "fields": [
         {
@@ -142,6 +145,23 @@
             "fieldtype": "Table",
             "label": "Allocated Selling Price Lists",
             "options": "Agent Allocated Price List"
+        },
+        {
+            "fieldname": "section_benchmark",
+            "fieldtype": "Section Break",
+            "label": "Allocated Benchmark Price Lists"
+        },
+        {
+            "fieldname": "benchmark_help_html",
+            "fieldtype": "HTML",
+            "label": "Benchmark Help",
+            "options": "<p style='font-size:13px;color:var(--text-muted);margin-bottom:16px;'>Benchmark lists are visible to this agent for benchmark policies, catalogue benchmark columns, and benchmark-aware pricing tools. They are never transactional selling or buying lists.</p>"
+        },
+        {
+            "fieldname": "allocated_benchmark_price_lists",
+            "fieldtype": "Table",
+            "label": "Allocated Benchmark Price Lists",
+            "options": "Agent Allocated Benchmark Price List"
         }
     ],
     "is_submittable": 0,
@@ -171,7 +191,13 @@
             "create": 1,
             "delete": 1,
             "report": 1,
-            "share": 1,
+            "print": 1,
+            "email": 1
+        },
+        {
+            "role": "Sales User",
+            "read": 1,
+            "report": 1,
             "print": 1,
             "email": 1
         }

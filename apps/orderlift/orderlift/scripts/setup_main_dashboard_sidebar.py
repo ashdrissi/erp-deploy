@@ -173,12 +173,11 @@ SIDEBAR_GROUPS = [
 SECTION_ICONS = {section["label"]: section.get("icon") or "folder" for section in _CENTRAL_MENU_SECTIONS}
 
 REMOVED_SECTION_LABELS = {"Dashboards"}
-REMOVED_LINK_LABELS = {"Container Load Plan", "Dimensioning Set Builder", "Dimensioning Set Builder Mock", "Operations Pipeline", "Forecast Load Plan", "Forecast Plans", "Pricing Sheet"}
+REMOVED_LINK_LABELS = {"Container Load Plan", "Dimensioning Set Builder", "Operations Pipeline", "Forecast Load Plan", "Forecast Plans", "Pricing Sheet"}
 REMOVED_LINK_TARGETS = {
     "Container Load Plan",
     "Dimensioning Set",
     "dimensioning-set-builder",
-    "dimensioning-set-builder-mock",
     "operations-pipeline",
     "Forecast Load Plan",
     "forecast-load-plan",
@@ -192,6 +191,7 @@ HIDDEN_DESKTOP_ICON_APPS = {"erpnext"}
 
 @frappe.whitelist()
 def run(workspace_name: str = "Main Dashboard"):
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     sidebar = frappe.get_doc("Workspace Sidebar", workspace_name)
     updated_items = [
         row

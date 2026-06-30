@@ -27,7 +27,7 @@ def sync_customer_tier_mode(doc, method=None):
             _set_if_field(doc, "tier_source", doc.get("tier_source") or "Dynamic Segmentation")
         return
 
-    manual_tier = (doc.get("tier") or doc.get("manual_tier") or "").strip() or DEFAULT_MANUAL_TIER
+    manual_tier = (doc.get("manual_tier") or doc.get("tier") or "").strip() or DEFAULT_MANUAL_TIER
 
     allowed = _get_allowed_tiers()
     if allowed and manual_tier not in allowed:

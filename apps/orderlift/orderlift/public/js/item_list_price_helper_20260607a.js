@@ -133,7 +133,7 @@
             <td>${esc(row.item_name || "")}</td>
             <td><input data-quick-field="uom" value="${attr(row.uom || row.stock_uom || "")}"></td>
             <td><input data-quick-field="price_list_rate" type="number" step="0.01" min="0" value="${attr(rate)}" placeholder="0.00"></td>
-            <td><input data-quick-field="currency" value="${attr(row.currency || "")}"></td>
+            <td><input data-quick-field="currency" value="${attr(row.currency || "")}" readonly></td>
         </tr>`;
     }
 
@@ -150,7 +150,6 @@
                 item_code: source.item_code || "",
                 uom: String($(this).find('[data-quick-field="uom"]').val() || source.stock_uom || "").trim(),
                 price_list_rate: Number(rateInput || 0),
-                currency: String($(this).find('[data-quick-field="currency"]').val() || "").trim(),
             });
         });
         return out;
@@ -178,7 +177,7 @@
         const style = document.createElement("style");
         style.id = "orderlift-item-list-price-helper-style";
         style.textContent = `
-            .olq-help{border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;color:#1e3a8a;padding:9px 10px;margin-bottom:10px;font-weight:600}.olq-table-wrap{max-height:520px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px}.olq-table{width:100%;border-collapse:collapse}.olq-table th,.olq-table td{padding:8px;border-bottom:1px solid #edf2f7;vertical-align:middle}.olq-table th{position:sticky;top:0;background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;z-index:1}.olq-table input{height:32px;border:1px solid #cbd5e1;border-radius:7px;padding:0 8px;background:#fff}.olq-table input[data-quick-field='price_list_rate']{text-align:right;min-width:120px}.olq-empty{color:#64748b;text-align:center;padding:18px}.olq-error{border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#991b1b;padding:10px}
+            .olq-help{border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;color:#1e3a8a;padding:9px 10px;margin-bottom:10px;font-weight:600}.olq-table-wrap{max-height:520px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px}.olq-table{width:100%;border-collapse:collapse}.olq-table th,.olq-table td{padding:8px;border-bottom:1px solid #edf2f7;vertical-align:middle}.olq-table th{position:sticky;top:0;background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;z-index:1}.olq-table input{height:32px;border:1px solid #cbd5e1;border-radius:7px;padding:0 8px;background:#fff}.olq-table input[readonly]{background:#f8fafc;color:#64748b}.olq-table input[data-quick-field='price_list_rate']{text-align:right;min-width:120px}.olq-empty{color:#64748b;text-align:center;padding:18px}.olq-error{border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#991b1b;padding:10px}
         `;
         document.head.appendChild(style);
     }

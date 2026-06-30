@@ -110,7 +110,11 @@ function renderRequests(page, rows) {
         page.main.find("#bpdb-requests").html(`<div class="bpdb-empty">${__("No portal requests yet.")}</div>`);
         return;
     }
-    page.main.find("#bpdb-requests").html(rows.map((r) => `<a class="bpdb-row" href="/app/portal-quote-request/${frappe.utils.escape_html(r.name)}"><div><strong>${frappe.utils.escape_html(r.name)}</strong><div class="bpdb-meta">${frappe.utils.escape_html(r.customer || "")} · ${frappe.utils.escape_html(r.customer_group || "")} · ${frappe.utils.escape_html(r.status || "")}</div></div><div class="bpdb-amount">${frappe.format(r.total_amount || 0, {fieldtype:'Currency'}, {only_value:true})}</div></a>`).join(""));
+    page.main.find("#bpdb-requests").html(rows.map((r) => `<a class="bpdb-row" href="/app/portal-quote-request/${frappe.utils.escape_html(r.name)}"><div><strong>${frappe.utils.escape_html(r.name)}</strong><div class="bpdb-meta">${frappe.utils.escape_html(r.customer || "")} · ${frappe.utils.escape_html(r.customer_group || "")} · ${frappe.utils.escape_html(r.status || "")}</div></div><div class="bpdb-amount">${formatCurrency(r.total_amount || 0)}</div></a>`).join(""));
+}
+
+function formatCurrency(value) {
+    return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : frappe.format(value || 0, {fieldtype: "Currency"}, {only_value: true});
 }
 
 function renderAlerts(page, rows) {

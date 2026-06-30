@@ -10,6 +10,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, nowdate, today
 
+from orderlift.warehouse_access import stock_warehouse_condition
+
 try:
     from frappe.utils import now
 except ImportError:  # Unit tests use a small frappe.utils stub.
@@ -21,7 +23,7 @@ except ImportError:  # pragma: no cover - Frappe images include requests.
     requests = None
 
 from orderlift.company_scope import company_field_for
-from orderlift.menu_access import resolve_current_company
+from orderlift.menu_access import get_allowed_business_types, resolve_current_company, user_can_access_all_business_types
 from orderlift.orderlift_crm.status_workflow import get_default_status_name
 from orderlift.orderlift_crm.doctype.partner_campaign.partner_campaign import (
     clean_date_value,
@@ -30,6 +32,7 @@ from orderlift.orderlift_crm.doctype.partner_campaign.partner_campaign import (
     validate_target_status,
 )
 from orderlift.orderlift_crm.todo_priority import DEFAULT_TODO_PRIORITY
+from orderlift.startup_roles import STOCK_QUANTITY_VIEWER_ROLE
 
 
 def _scope_company() -> str:
@@ -38,6 +41,18 @@ def _scope_company() -> str:
         return resolve_current_company() or ""
     except Exception:
         return ""
+
+
+def _scope_currency() -> str:
+    company = _scope_company()
+    if company:
+        try:
+            return frappe.db.get_value("Company", company, "default_currency") or ""
+        except Exception:
+            pass
+    defaults = getattr(frappe, "defaults", None)
+    getter = getattr(defaults, "get_global_default", None)
+    return getter("currency") if callable(getter) else ""
 
 
 def _apply_company_filter(filters: dict, doctype: str) -> dict:
@@ -51,6 +66,11 @@ def _apply_company_filter(filters: dict, doctype: str) -> dict:
     return filters
 
 
+def _apply_campaign_scope_filters(filters: dict) -> dict:
+    _apply_company_filter(filters, "Partner Campaign")
+    return filters
+
+
 def _campaign_company_in_scope(campaign: str) -> bool:
     field = company_field_for("Partner Campaign")
     if not _has_field("Partner Campaign", field):
@@ -60,6 +80,102 @@ def _campaign_company_in_scope(campaign: str) -> bool:
         return True
     campaign_company = frappe.db.get_value("Partner Campaign", campaign, field)
     return not campaign_company or campaign_company == company
+
+
+def _campaign_business_type_in_scope(campaign: str) -> bool:
+    allowed = _user_allowed_business_types()
+    if allowed is None:
+        return True
+    field = "business_type_filter"
+    if not _has_field("Partner Campaign", field):
+        return True
+    business_type = (frappe.db.get_value("Partner Campaign", campaign, field) or "").strip()
+    return not business_type or business_type in allowed
+
+
+def _get_campaign_doc(campaign: str, ptype: str = "read", include_archived: int | str = 0):
+    if not campaign or not frappe.db.exists("Partner Campaign", campaign):
+        frappe.throw(_("Campaign was not found."))
+    if not _campaign_is_visible(campaign, include_archived=include_archived):
+        frappe.throw(_("Campaign is outside your active company or business scope."))
+    doc = frappe.get_doc("Partner Campaign", campaign)
+    if not frappe.has_permission("Partner Campaign", ptype=ptype, doc=doc):
+        frappe.throw(_("Not permitted to access campaign {0}.").format(campaign), frappe.PermissionError)
+    return doc
+
+
+def _selling_price_list_access() -> dict:
+    from orderlift.orderlift_sales.utils.price_list_scope import get_item_price_access
+
+    return get_item_price_access("selling", company=_scope_company() or None)
+
+
+def _allowed_selling_price_lists() -> list[str]:
+    access = _selling_price_list_access()
+    if not access.get("permitted"):
+        return []
+    return list(access.get("price_lists") or [])
+
+
+def _validate_campaign_price_list(price_list: str | None, required: bool = False) -> str:
+    from orderlift.orderlift_sales.utils.price_list_scope import validate_price_list_scope
+
+    resolved = validate_price_list_scope(
+        price_list,
+        kind="selling",
+        required=required,
+        company=_scope_company() or None,
+    )
+    if not resolved:
+        return ""
+
+    access = _selling_price_list_access()
+    allowed = set(access.get("price_lists") or [])
+    if not access.get("permitted") or resolved not in allowed:
+        frappe.throw(_("Selling Price List {0} is not available for your campaign scope.").format(resolved))
+    return resolved
+
+
+def _can_view_stock_qty() -> bool:
+    user = getattr(frappe.session, "user", "")
+    if user == "Administrator":
+        return True
+    return STOCK_QUANTITY_VIEWER_ROLE in set(frappe.get_roles(user) or [])
+
+
+def _user_allowed_business_types() -> set[str] | None:
+    user = getattr(frappe.session, "user", None)
+    if user_can_access_all_business_types(user):
+        return None
+    return set(get_allowed_business_types(user) or [])
+
+
+def _validate_campaign_business_type(business_type: str | None) -> str:
+    clean = (business_type or "").strip()
+    allowed = _user_allowed_business_types()
+    if clean and allowed is not None and clean not in allowed:
+        frappe.throw(_("Business Type {0} is outside your campaign scope.").format(clean))
+    return clean
+
+
+def _validate_campaign_segment(segment: str | None) -> str:
+    clean = (segment or "").strip()
+    if not clean:
+        return ""
+    business_type = _segment_business_type(clean)
+    if business_type:
+        _validate_campaign_business_type(business_type)
+    return clean
+
+
+def _effective_business_type_filter(business_type: str | None):
+    clean = _validate_campaign_business_type(business_type)
+    if clean:
+        return clean
+    allowed = _user_allowed_business_types()
+    if allowed is None:
+        return None
+    return sorted(allowed) or ["__none__"]
 
 
 CAMPAIGN_ACTION_TYPES = {"Email", "WhatsApp", "Call", "Visit", "Other"}
@@ -87,14 +203,19 @@ ALLOWED_TEMPLATE_KEYS = {
 
 
 @frappe.whitelist()
-def get_manager_data(campaign: str | None = None) -> dict:
-    selected_campaign = campaign if campaign and _campaign_is_visible(campaign) else _latest_campaign_name()
+def get_manager_data(campaign: str | None = None, include_archived: int | str = 0) -> dict:
+    include_archived = cint(include_archived)
+    selected_campaign = (
+        campaign
+        if campaign and _campaign_is_visible(campaign, include_archived=include_archived) and _campaign_has_permission(campaign)
+        else _latest_campaign_name(include_archived=include_archived)
+    )
     return {
         "kpis": _global_campaign_kpis(),
-        "campaigns": _campaign_rows(),
+        "campaigns": _campaign_rows(include_archived=include_archived),
         "selected_campaign": selected_campaign,
-        "selected_campaign_doc": _campaign_doc_dict(selected_campaign) if selected_campaign else {},
-        "targets": _campaign_targets(selected_campaign) if selected_campaign else [],
+        "selected_campaign_doc": _campaign_doc_dict(selected_campaign, include_archived=include_archived) if selected_campaign else {},
+        "targets": _campaign_targets(selected_campaign, include_archived=include_archived) if selected_campaign else [],
         "statuses": get_target_statuses(),
         "segments": get_partner_segments(),
     }
@@ -102,15 +223,24 @@ def get_manager_data(campaign: str | None = None) -> dict:
 
 @frappe.whitelist()
 def archive_campaign(campaign: str) -> dict:
-    if not campaign or not frappe.db.exists("Partner Campaign", campaign):
-        frappe.throw(_("Campaign was not found."))
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     if not doc.meta.get_field("archived"):
         frappe.throw(_("Campaign archive field is not available. Run migration and try again."))
     doc.archived = 1
     doc.save(ignore_permissions=False)
     frappe.db.commit()
     return {"name": doc.name, "archived": 1}
+
+
+@frappe.whitelist()
+def restore_campaign(campaign: str) -> dict:
+    doc = _get_campaign_doc(campaign, ptype="write", include_archived=1)
+    if not doc.meta.get_field("archived"):
+        frappe.throw(_("Campaign archive field is not available. Run migration and try again."))
+    doc.archived = 0
+    doc.save(ignore_permissions=False)
+    frappe.db.commit()
+    return {"name": doc.name, "archived": 0}
 
 
 @frappe.whitelist()
@@ -202,7 +332,7 @@ def save_campaign(payload: str | dict) -> dict:
     data = _loads(payload)
     _normalize_campaign_action_payload(data)
     name = data.get("name")
-    doc = frappe.get_doc("Partner Campaign", name) if name else frappe.new_doc("Partner Campaign")
+    doc = _get_campaign_doc(name, ptype="write") if name else frappe.new_doc("Partner Campaign")
     _ensure_campaign_action_field(doc, data.get("campaign_action_type"))
 
     for fieldname in [
@@ -254,12 +384,22 @@ def save_campaign(payload: str | dict) -> dict:
         doc.crm_segment_filter = crm_segment
     if doc.meta.get_field("partner_segment_filter"):
         doc.partner_segment_filter = ""
+    doc.price_list_filter = _validate_campaign_price_list(doc.price_list_filter, required=False)
+    _validate_campaign_business_type(doc.business_type_filter)
+    _validate_campaign_segment(doc.crm_segment_filter)
 
     doc.set("items", [])
     for row in data.get("items") or []:
         if row.get("selected") is False:
             continue
-        doc.append("items", _campaign_item_payload(row))
+        doc.append(
+            "items",
+            _campaign_item_payload(
+                row,
+                price_list=doc.price_list_filter,
+                supplier_payment_mode=doc.supplier_payment_mode_filter,
+            ),
+        )
 
     doc.set("targets", [])
     for row in data.get("targets") or []:
@@ -276,7 +416,7 @@ def save_campaign(payload: str | dict) -> dict:
 
 @frappe.whitelist()
 def render_campaign_content(campaign: str, target_row: str | None = None, action_type: str | None = None) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign)
     row = _find_target_row(doc, target_row) if target_row else None
     return _render_campaign_content_for_doc(doc, row, action_type)
 
@@ -298,7 +438,7 @@ def get_campaign_send_preflight(
     if payload:
         doc = _campaign_doc_from_payload(_loads(payload))
     elif campaign:
-        doc = frappe.get_doc("Partner Campaign", campaign)
+        doc = _get_campaign_doc(campaign)
     else:
         frappe.throw(_("Campaign or payload is required."))
     return _campaign_send_preflight(doc, target_rows=target_rows, action_type=action_type)
@@ -381,7 +521,7 @@ def send_campaign_email(campaign: str, target_row: str, scheduled_at: str | None
 @frappe.whitelist()
 def bulk_schedule_campaign_email(campaign: str, target_rows: str | list | None = None, scheduled_at: str | None = None) -> dict:
     rows = _loads(target_rows) if isinstance(target_rows, str) else target_rows
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign)
     _ensure_campaign_can_send(doc, rows, "Email", scheduled_at=scheduled_at)
     target_names = set(rows or [row.name for row in doc.targets or []])
     return _bulk_target_action(doc, target_names, lambda row: send_campaign_email(campaign, row.name, scheduled_at))
@@ -475,14 +615,14 @@ def create_visit_todo(campaign: str, target_row: str) -> dict:
 @frappe.whitelist()
 def bulk_create_visit_todos(campaign: str, target_rows: str | list | None = None) -> dict:
     rows = _loads(target_rows) if isinstance(target_rows, str) else target_rows
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign)
     target_names = set(rows or [row.name for row in doc.targets or [] if row.visit_date])
     return _bulk_target_action(doc, target_names, lambda row: create_visit_todo(campaign, row.name))
 
 
 @frappe.whitelist()
 def update_target_status(campaign: str, target_row: str, status: str) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     status = validate_target_status(status)
     row = _find_target_row(doc, target_row)
     row.target_status = status
@@ -495,7 +635,7 @@ def update_target_status(campaign: str, target_row: str, status: str) -> dict:
 
 @frappe.whitelist()
 def update_target_note(campaign: str, target_row: str, note: str | None = None) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     row = _find_target_row(doc, target_row)
     row.target_note = (note or "").strip()
     doc.save(ignore_permissions=False)
@@ -505,7 +645,7 @@ def update_target_note(campaign: str, target_row: str, note: str | None = None) 
 
 @frappe.whitelist()
 def create_prospect_from_target(campaign: str, target_row: str) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     row = _find_target_row(doc, target_row)
     if row.prospect:
         return {"name": row.prospect}
@@ -545,12 +685,13 @@ def create_prospect_from_target(campaign: str, target_row: str) -> dict:
 
 @frappe.whitelist()
 def create_opportunity_from_target(campaign: str, target_row: str) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     row = _find_target_row(doc, target_row)
     if row.opportunity:
         return {"name": row.opportunity}
 
     opportunity = frappe.new_doc("Opportunity")
+    opportunity.company = _campaign_company(doc) or _default_company()
     opportunity.opportunity_from = row.party_type
     opportunity.party_name = row.party_name
     opportunity.customer_name = row.display_name
@@ -583,13 +724,13 @@ def create_opportunity_from_target(campaign: str, target_row: str) -> dict:
 
 @frappe.whitelist()
 def create_quotation_from_target(campaign: str, target_row: str) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     row = _find_target_row(doc, target_row)
     if row.quotation:
         return {"name": row.quotation}
 
     quotation = frappe.new_doc("Quotation")
-    quotation.company = _default_company()
+    quotation.company = _campaign_company(doc) or _default_company()
     quotation.quotation_to = row.party_type
     quotation.party_name = row.party_name
     quotation.customer_name = row.display_name
@@ -626,8 +767,18 @@ def get_article_candidates(
     limit: int = 80,
     start: int = 0,
 ) -> list[dict]:
+    price_list = _validate_campaign_price_list(price_list, required=False)
+    allowed_price_lists = _allowed_selling_price_lists()
+    if not allowed_price_lists:
+        return []
     item_codes = _container_item_codes(container)
-    price_list_item_codes = _price_list_item_codes(price_list, supplier_payment_mode=supplier_payment_mode)
+    price_list_item_codes = _price_list_item_codes(
+        price_list,
+        supplier_payment_mode=supplier_payment_mode,
+        allowed_price_lists=allowed_price_lists,
+    )
+    if not price_list_item_codes:
+        return []
     filters: dict[str, Any] = {"disabled": 0}
     if item_codes:
         filters["name"] = ["in", item_codes]
@@ -661,6 +812,7 @@ def get_article_candidates(
             price_list=price_list,
             container=container,
             supplier_payment_mode=supplier_payment_mode,
+            allowed_price_lists=allowed_price_lists,
         )
         for row in items
     ]
@@ -675,6 +827,8 @@ def get_target_candidates(
     limit: int = 80,
     start: int = 0,
 ) -> list[dict]:
+    business_type = _effective_business_type_filter(business_type)
+    segment = _validate_campaign_segment(segment)
     parties = [party_type] if party_type in {"Lead", "Prospect", "Customer"} else ["Lead", "Prospect", "Customer"]
     rows = []
     for current_type in parties:
@@ -709,9 +863,15 @@ def get_target_statuses() -> list[dict]:
 def get_partner_segments() -> list[dict]:
     if not frappe.db.exists("DocType", "CRM Segment"):
         return []
+    filters = {"is_active": 1}
+    allowed = _user_allowed_business_types()
+    if allowed is not None:
+        if not allowed:
+            return []
+        filters["business_type"] = ["in", sorted(allowed)]
     return frappe.get_all(
         "CRM Segment",
-        filters={"is_active": 1},
+        filters=filters,
         fields=["name", "segment_name", "business_type", "sequence"],
         order_by="sequence asc, segment_name asc",
         limit_page_length=0,
@@ -722,9 +882,15 @@ def get_partner_segments() -> list[dict]:
 def get_business_types() -> list[dict]:
     if not frappe.db.exists("DocType", "CRM Business Type"):
         return []
+    filters = {"is_active": 1}
+    allowed = _user_allowed_business_types()
+    if allowed is not None:
+        if not allowed:
+            return []
+        filters["name"] = ["in", sorted(allowed)]
     return frappe.get_all(
         "CRM Business Type",
-        filters={"is_active": 1},
+        filters=filters,
         fields=["name", "type_name", "sequence"],
         order_by="sequence asc, type_name asc",
         limit_page_length=0,
@@ -743,6 +909,21 @@ def get_party_campaign_history(party_type: str, party_name: str) -> list[dict]:
     if party_type == "Prospect":
         extra_condition = " OR pct.prospect = %s"
         values.append(party_name)
+    scope_conditions = []
+    company = _scope_company()
+    company_field = company_field_for("Partner Campaign")
+    if company and _has_field("Partner Campaign", company_field):
+        scope_conditions.append(f"pc.`{company_field}` = %s")
+        values.append(company)
+    allowed_business_types = _user_allowed_business_types()
+    if allowed_business_types is not None:
+        if not allowed_business_types:
+            return []
+        scope_conditions.append("pct.business_type in %s")
+        values.append(tuple(sorted(allowed_business_types)))
+    scope_sql = ""
+    if scope_conditions:
+        scope_sql = " AND " + " AND ".join(scope_conditions)
     rows = frappe.db.sql(
         f"""
         SELECT
@@ -762,6 +943,7 @@ def get_party_campaign_history(party_type: str, party_name: str) -> list[dict]:
         FROM `tabPartner Campaign Target` pct
         INNER JOIN `tabPartner Campaign` pc ON pc.name = pct.parent
         WHERE (pct.party_type = %s AND pct.party_name = %s){extra_condition}
+        {scope_sql}
         ORDER BY COALESCE(pc.campaign_date, pc.modified) DESC, pct.idx ASC
         LIMIT 50
         """,
@@ -829,33 +1011,38 @@ def _linked_quotation_names_from_sales_order(doc) -> list[str]:
     return quotation_names
 
 
-def _campaign_rows() -> list[dict]:
+def _campaign_rows(include_archived: int | str = 0) -> list[dict]:
     if not frappe.db.exists("DocType", "Partner Campaign"):
         return []
-    filters = {"archived": 0} if _campaign_archive_available() else {}
-    _apply_company_filter(filters, "Partner Campaign")
-    rows = frappe.get_all(
+    include_archived = cint(include_archived)
+    filters = {"archived": include_archived} if _campaign_archive_available() else {}
+    _apply_campaign_scope_filters(filters)
+    fields = [
+        "name",
+        "campaign_name",
+        "campaign_action_type",
+        "status",
+        "campaign_owner",
+        "default_channel",
+        "start_date",
+        "end_date",
+        "opportunity_count",
+        "quotation_count",
+        "quotation_amount",
+        "sales_order_count",
+        "sales_order_amount",
+        "modified",
+    ]
+    if _campaign_archive_available():
+        fields.append("archived")
+    rows = frappe.get_list(
         "Partner Campaign",
         filters=filters,
-        fields=[
-            "name",
-            "campaign_name",
-            "campaign_action_type",
-            "status",
-            "campaign_owner",
-            "default_channel",
-            "start_date",
-            "end_date",
-            "opportunity_count",
-            "quotation_count",
-            "quotation_amount",
-            "sales_order_count",
-            "sales_order_amount",
-            "modified",
-        ],
+        fields=fields,
         order_by="modified desc",
         limit_page_length=50,
     )
+    rows = [row for row in rows if _campaign_business_type_in_scope(row.name)]
     target_counts = _campaign_target_counts([row.name for row in rows])
     for row in rows:
         row["target_count"] = target_counts.get(row.name, 0)
@@ -878,8 +1065,8 @@ def _campaign_target_counts(campaigns: list[str]) -> dict[str, int]:
     return counts
 
 
-def _campaign_targets(campaign: str) -> list[dict]:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+def _campaign_targets(campaign: str, include_archived: int | str = 0) -> list[dict]:
+    doc = _get_campaign_doc(campaign, include_archived=include_archived)
     return [_target_row_dict(row) for row in doc.targets or []]
 
 
@@ -916,13 +1103,21 @@ def _target_row_dict(row) -> dict:
     }
 
 
-def _campaign_doc_dict(campaign: str) -> dict:
-    doc = frappe.get_doc("Partner Campaign", campaign)
+def _campaign_doc_dict(campaign: str, include_archived: int | str = 0) -> dict:
+    doc = _get_campaign_doc(campaign, include_archived=include_archived)
     data = doc.as_dict()
     data["crm_segment_filter"] = _campaign_crm_segment_filter(data)
     data["partner_segment_filter"] = ""
-    data["items"] = [row.as_dict() for row in doc.items or []]
+    data["items"] = [_campaign_item_row_dict(row) for row in doc.items or []]
     data["targets"] = [_target_row_dict(row) for row in doc.targets or []]
+    return data
+
+
+def _campaign_item_row_dict(row) -> dict:
+    data = row.as_dict() if hasattr(row, "as_dict") else dict(row)
+    if not _can_view_stock_qty():
+        data.pop("available_qty_snapshot", None)
+        data["display_available_qty"] = 0
     return data
 
 
@@ -965,41 +1160,74 @@ def _global_campaign_kpis() -> dict:
     }
 
 
-def _latest_campaign_name() -> str | None:
+def _latest_campaign_name(include_archived: int | str = 0) -> str | None:
     if not frappe.db.exists("DocType", "Partner Campaign"):
         return None
-    filters = {"archived": 0} if _campaign_archive_available() else {}
-    _apply_company_filter(filters, "Partner Campaign")
-    return frappe.db.get_value("Partner Campaign", filters, "name", order_by="modified desc")
+    include_archived = cint(include_archived)
+    filters = {"archived": include_archived} if _campaign_archive_available() else {}
+    _apply_campaign_scope_filters(filters)
+    rows = frappe.get_list(
+        "Partner Campaign",
+        filters=filters,
+        fields=["name"],
+        order_by="modified desc",
+        limit_page_length=20,
+    )
+    for row in rows:
+        if _campaign_business_type_in_scope(row.name) and _campaign_has_permission(row.name):
+            return row.name
+    return None
 
 
-def _campaign_is_visible(campaign: str) -> bool:
+def _campaign_is_visible(campaign: str, include_archived: int | str = 0) -> bool:
     if not campaign or not frappe.db.exists("Partner Campaign", campaign):
         return False
     if not _campaign_company_in_scope(campaign):
         return False
+    if not _campaign_business_type_in_scope(campaign):
+        return False
     if not _campaign_archive_available():
         return True
-    return not cint(frappe.db.get_value("Partner Campaign", campaign, "archived"))
+    return cint(frappe.db.get_value("Partner Campaign", campaign, "archived")) == cint(include_archived)
+
+
+def _campaign_has_permission(campaign: str, ptype: str = "read") -> bool:
+    try:
+        doc = frappe.get_doc("Partner Campaign", campaign)
+        return bool(frappe.has_permission("Partner Campaign", ptype=ptype, doc=doc))
+    except Exception:
+        return False
 
 
 def _campaign_archive_available() -> bool:
     return bool(frappe.get_meta("Partner Campaign").get_field("archived")) if frappe.db.exists("DocType", "Partner Campaign") else False
 
 
-def _campaign_item_payload(row: dict) -> dict:
+def _campaign_item_payload(
+    row: dict,
+    price_list: str | None = None,
+    supplier_payment_mode: str | None = None,
+) -> dict:
+    item_code = row.get("item_code") or row.get("code") or row.get("name")
+    supplier_payment_mode = row.get("supplier_payment_mode") or supplier_payment_mode
+    price = _item_price(item_code, price_list=price_list, supplier_payment_mode=supplier_payment_mode) if item_code else {}
+    show_stock_qty = _can_view_stock_qty()
+    display_price = bool(row.get("display_price", row.get("withPrice", True)))
+    if item_code and display_price and not price:
+        frappe.throw(_("Item {0} has no allowed selling price for this campaign scope.").format(item_code))
+    display_available_qty = bool(row.get("display_available_qty", row.get("withQty", True))) and show_stock_qty
     return {
-        "item_code": row.get("item_code") or row.get("code") or row.get("name"),
+        "item_code": item_code,
         "item_name": row.get("item_name"),
         "container": row.get("container"),
-        "supplier_payment_mode": row.get("supplier_payment_mode"),
+        "supplier_payment_mode": supplier_payment_mode,
         "sold_qty_period": flt(row.get("sold_qty_period") or row.get("sold")),
-        "available_qty_snapshot": flt(row.get("available_qty_snapshot") or row.get("stock")),
-        "price_snapshot": flt(row.get("price_snapshot") or row.get("price")),
-        "currency": row.get("currency"),
-        "display_price": 1 if row.get("display_price", row.get("withPrice", True)) else 0,
-        "display_available_qty": 1 if row.get("display_available_qty", row.get("withQty", True)) else 0,
-        "source_item_price": row.get("source_item_price"),
+        "available_qty_snapshot": flt(row.get("available_qty_snapshot") or row.get("stock")) if show_stock_qty else 0,
+        "price_snapshot": flt(price.get("price_list_rate") if price else 0),
+        "currency": price.get("currency") if price else row.get("currency"),
+        "display_price": 1 if display_price else 0,
+        "display_available_qty": 1 if display_available_qty else 0,
+        "source_item_price": price.get("name") if price else "",
     }
 
 
@@ -1016,7 +1244,7 @@ def _campaign_target_payload(row: dict) -> dict:
         business_type = business_type or resolved_business_type
         crm_segment = resolved_crm_segment
     business_type = business_type or _segment_business_type(crm_segment)
-    return {
+    payload = {
         "party_type": party_type,
         "party_name": party_name,
         "display_name": row.get("display_name") or snapshot.get("display_name"),
@@ -1041,13 +1269,57 @@ def _campaign_target_payload(row: dict) -> dict:
         "visit_todo": row.get("visit_todo"),
         "last_order_date": clean_date_value(row.get("last_order_date")) or clean_date_value(snapshot.get("last_order_date")),
     }
+    _validate_campaign_target_scope(payload)
+    return payload
+
+
+def _validate_campaign_target_scope(payload: dict) -> None:
+    party_type = payload.get("party_type")
+    party_name = payload.get("party_name")
+    if party_type not in {"Lead", "Prospect", "Customer"} or not party_name:
+        frappe.throw(_("Campaign target must be a Lead, Prospect, or Customer."))
+    if not frappe.db.exists("DocType", party_type):
+        return
+    if not frappe.db.exists(party_type, party_name):
+        frappe.throw(_("Campaign target {0} {1} was not found.").format(party_type, party_name))
+    if not _party_company_in_scope(party_type, party_name):
+        frappe.throw(_("Campaign target {0} is outside your active company.").format(party_name))
+
+    allowed = _user_allowed_business_types()
+    if allowed is None:
+        return
+    business_type = (payload.get("business_type") or "").strip()
+    if not business_type:
+        frappe.throw(_("Campaign target {0} has no allowed CRM Business Type.").format(party_name))
+    if business_type not in allowed:
+        frappe.throw(_("Campaign target {0} is outside your CRM Business Type scope.").format(party_name))
+
+
+def _party_company_in_scope(party_type: str, party_name: str) -> bool:
+    company = _scope_company()
+    if not company:
+        return True
+    field = company_field_for(party_type)
+    if not _has_field(party_type, field):
+        return True
+    party_company = frappe.db.get_value(party_type, party_name, field)
+    return not party_company or party_company == company
 
 
 def _campaign_doc_from_payload(data: dict):
     _normalize_campaign_action_payload(data)
     doc = frappe._dict(data)
     doc.name = doc.get("name") or "Draft Campaign"
-    doc["items"] = [frappe._dict(_campaign_item_payload(row)) for row in data.get("items") or []]
+    doc["items"] = [
+        frappe._dict(
+            _campaign_item_payload(
+                row,
+                price_list=data.get("price_list_filter"),
+                supplier_payment_mode=data.get("supplier_payment_mode_filter"),
+            )
+        )
+        for row in data.get("items") or []
+    ]
     doc["targets"] = []
     for row in data.get("targets") or []:
         target = _campaign_target_payload(row)
@@ -1076,29 +1348,56 @@ def _first_payload_target(doc):
     return rows[0] if rows else None
 
 
-def _article_candidate(row, from_date=None, to_date=None, price_list=None, container=None, supplier_payment_mode=None) -> dict:
-    price = _item_price(row.name, price_list=price_list, supplier_payment_mode=supplier_payment_mode)
-    return {
+def _article_candidate(
+    row,
+    from_date=None,
+    to_date=None,
+    price_list=None,
+    container=None,
+    supplier_payment_mode=None,
+    allowed_price_lists=None,
+) -> dict:
+    price = _item_price(
+        row.name,
+        price_list=price_list,
+        supplier_payment_mode=supplier_payment_mode,
+        allowed_price_lists=allowed_price_lists,
+    )
+    show_stock_qty = _can_view_stock_qty()
+    payload = {
         "item_code": row.name,
         "item_name": row.item_name,
         "item_group": row.get("item_group"),
         "container": container,
         "supplier_payment_mode": price.get("supplier_payment_mode"),
         "sold_qty_period": _sold_qty(row.name, from_date, to_date),
-        "available_qty_snapshot": _available_qty(row.name),
         "price_snapshot": price.get("price_list_rate"),
         "currency": price.get("currency"),
         "source_item_price": price.get("name"),
         "display_price": 1,
-        "display_available_qty": 1,
+        "display_available_qty": 1 if show_stock_qty else 0,
         "selected": False,
     }
+    if show_stock_qty:
+        payload["available_qty_snapshot"] = _available_qty(row.name)
+    return payload
 
 
-def _item_price(item_code: str, price_list: str | None = None, supplier_payment_mode: str | None = None) -> dict:
+def _item_price(
+    item_code: str,
+    price_list: str | None = None,
+    supplier_payment_mode: str | None = None,
+    allowed_price_lists: list[str] | None = None,
+) -> dict:
+    price_list = _validate_campaign_price_list(price_list, required=False)
+    allowed_price_lists = allowed_price_lists if allowed_price_lists is not None else _allowed_selling_price_lists()
+    if not allowed_price_lists:
+        return {}
     filters: dict[str, Any] = {"item_code": item_code, "selling": 1}
     if price_list:
         filters["price_list"] = price_list
+    else:
+        filters["price_list"] = ["in", allowed_price_lists]
     if supplier_payment_mode and _has_field("Item Price", "custom_supplier_payment_mode"):
         filters["custom_supplier_payment_mode"] = supplier_payment_mode
     fields = ["name", "price_list", "price_list_rate", "currency"]
@@ -1134,7 +1433,16 @@ def _sold_qty(item_code: str, from_date: str | None, to_date: str | None) -> flo
 
 
 def _available_qty(item_code: str) -> float:
-    result = frappe.db.sql("SELECT COALESCE(SUM(actual_qty), 0) FROM `tabBin` WHERE item_code = %s", item_code)
+    params = {"item_code": item_code}
+    result = frappe.db.sql(
+        f"""
+        SELECT COALESCE(SUM(actual_qty), 0)
+        FROM `tabBin`
+        WHERE item_code = %(item_code)s
+        {stock_warehouse_condition("warehouse", params)}
+        """,
+        params,
+    )
     return flt(result[0][0]) if result else 0.0
 
 
@@ -1155,7 +1463,7 @@ def _target_candidates_for_type(party_type: str, segment=None, business_type=Non
     filters = _party_filters(party_type, segment=segment, business_type=business_type, search=search)
     or_filters = _party_search_or_filters(party_type, search=search)
     fields = _party_fields(party_type)
-    rows = frappe.get_all(party_type, filters=filters, or_filters=or_filters, fields=fields, order_by="modified desc", limit_page_length=limit)
+    rows = frappe.get_list(party_type, filters=filters, or_filters=or_filters, fields=fields, order_by="modified desc", limit_page_length=limit)
     return [_candidate_row(party_type, row) for row in rows]
 
 
@@ -1238,7 +1546,7 @@ def _find_target_row(doc, target_row: str):
 
 
 def _reload_campaign_target(campaign: str, target_row: str):
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     return doc, _find_target_row(doc, target_row)
 
 
@@ -1495,7 +1803,7 @@ def _normalize_whatsapp_mode(mode: str | None) -> str:
 
 
 def _get_campaign_and_target(campaign: str, target_row: str):
-    doc = frappe.get_doc("Partner Campaign", campaign)
+    doc = _get_campaign_doc(campaign, ptype="write")
     return doc, _find_target_row(doc, target_row)
 
 
@@ -1529,16 +1837,17 @@ def _render_template(template: str | None, context: dict) -> str:
 
 def _selected_articles_text(campaign_doc) -> str:
     lines = []
+    show_stock_qty = _can_view_stock_qty()
     for item in _child_rows(campaign_doc, "items"):
         if not item.item_code:
             continue
         parts = [item.item_code]
         if item.item_name:
             parts.append(item.item_name)
-        if item.display_available_qty:
+        if item.display_available_qty and show_stock_qty:
             parts.append(_("Available: {0}").format(flt(item.available_qty_snapshot)))
         if item.display_price:
-            parts.append(_("Price: {0} {1}").format(flt(item.price_snapshot), item.currency or "DH"))
+            parts.append(_("Price: {0} {1}").format(flt(item.price_snapshot), item.currency or _scope_currency()))
         lines.append(" - ".join(str(part) for part in parts if part is not None))
     return "\n".join(lines)
 
@@ -1878,8 +2187,15 @@ def _parties_matching_crm_filter(party_type: str, business_type=None, segment=No
     conditions = ["parenttype = %s"]
     values: list[Any] = [party_type]
     if business_type:
-        conditions.append("business_type = %s")
-        values.append(business_type)
+        if isinstance(business_type, (list, tuple, set)):
+            business_types = [bt for bt in business_type if bt]
+            if not business_types:
+                return []
+            conditions.append("business_type in %s")
+            values.append(tuple(business_types))
+        else:
+            conditions.append("business_type = %s")
+            values.append(business_type)
     if segment:
         conditions.append("segment = %s")
         values.append(segment)
@@ -1990,6 +2306,13 @@ def _default_company() -> str:
     return frappe.get_all("Company", pluck="name", limit_page_length=1)[0]
 
 
+def _campaign_company(campaign_doc) -> str:
+    field = company_field_for("Partner Campaign")
+    if hasattr(campaign_doc, "get"):
+        return campaign_doc.get(field) or _scope_company()
+    return getattr(campaign_doc, field, None) or _scope_company()
+
+
 def _loads(payload: str | dict) -> dict:
     if isinstance(payload, str):
         return json.loads(payload or "{}")
@@ -1999,6 +2322,7 @@ def _loads(payload: str | dict) -> dict:
 def _merge_selected_items(candidates: list[dict], selected_rows: list[dict]) -> list[dict]:
     candidate_map = {row.get("item_code"): {**row, "selected": False} for row in candidates}
     for row in selected_rows:
+        row = _campaign_item_row_dict(row)
         item_code = row.get("item_code")
         selected = {
             **row,
@@ -2029,9 +2353,12 @@ def _merge_selected_targets(candidates: list[dict], selected_rows: list[dict]) -
 
 
 def _price_list_options() -> list[dict]:
-    return frappe.get_all(
+    allowed = _allowed_selling_price_lists()
+    if not allowed:
+        return []
+    return frappe.get_list(
         "Price List",
-        filters={"enabled": 1, "selling": 1},
+        filters={"enabled": 1, "selling": 1, "name": ["in", allowed]},
         fields=["name", "currency"],
         order_by="name asc",
         limit_page_length=0,
@@ -2051,7 +2378,7 @@ def _item_group_options() -> list[dict]:
 def _container_options() -> list[dict]:
     if not frappe.db.exists("DocType", "Forecast Load Plan"):
         return []
-    return frappe.get_all(
+    return frappe.get_list(
         "Forecast Load Plan",
         fields=["name", "plan_label", "status", "departure_date"],
         order_by="modified desc",
@@ -2059,10 +2386,17 @@ def _container_options() -> list[dict]:
     )
 
 
-def _price_list_item_codes(price_list: str | None, supplier_payment_mode: str | None = None) -> list[str]:
-    if not price_list:
+def _price_list_item_codes(
+    price_list: str | None,
+    supplier_payment_mode: str | None = None,
+    allowed_price_lists: list[str] | None = None,
+) -> list[str]:
+    allowed_price_lists = allowed_price_lists if allowed_price_lists is not None else _allowed_selling_price_lists()
+    if not allowed_price_lists:
         return []
-    filters: dict[str, Any] = {"price_list": price_list, "selling": 1}
+    price_list = _validate_campaign_price_list(price_list, required=False)
+    filters: dict[str, Any] = {"selling": 1}
+    filters["price_list"] = price_list if price_list else ["in", allowed_price_lists]
     if supplier_payment_mode and _has_field("Item Price", "custom_supplier_payment_mode"):
         filters["custom_supplier_payment_mode"] = supplier_payment_mode
     return frappe.get_all("Item Price", filters=filters, pluck="item_code", limit_page_length=0)

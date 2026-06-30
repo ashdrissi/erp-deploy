@@ -7,6 +7,9 @@
         "discount_amount",
         "base_discount_amount",
         "referral_sales_partner",
+    ];
+
+    const TAX_FIELDS = [
         "taxes_section",
         "tax_category",
         "taxes_and_charges",
@@ -23,14 +26,77 @@
 
     frappe.ui.form.on("Quotation", {
         setup(frm) {
+            showOpportunityField(frm);
+            showTaxFields(frm);
             hideNativeDiscountAndTaxFields(frm);
+            setupOpportunityQuery(frm);
+        },
+        onload(frm) {
+            applyOpportunityRouteOption(frm);
+        },
+        onload_post_render(frm) {
+            showOpportunityField(frm);
+            showTaxFields(frm);
         },
         refresh(frm) {
+            showOpportunityField(frm);
+            showTaxFields(frm);
+            applyOpportunityRouteOption(frm);
             hideNativeDiscountAndTaxFields(frm);
+            setupOpportunityQuery(frm);
             addBulkQuantityButton(frm);
             addBulkQuantityGridButton(frm);
         },
     });
+
+    function showOpportunityField(frm) {
+        if (!frm || !frm.fields_dict || !frm.fields_dict.opportunity) return;
+        const field = frm.get_field && frm.get_field("opportunity");
+        frm.set_df_property("opportunity", "hidden", 0);
+        frm.set_df_property("opportunity", "read_only", 0);
+        frm.toggle_display("opportunity", true);
+        if (frm.toggle_enable) frm.toggle_enable("opportunity", true);
+        frm.refresh_field("opportunity");
+        if (field && field.wrapper) $(field.wrapper).show();
+        setTimeout(() => {
+            const refreshedField = frm.get_field && frm.get_field("opportunity");
+            if (refreshedField && refreshedField.wrapper) $(refreshedField.wrapper).show();
+        }, 0);
+    }
+
+    function showTaxFields(frm) {
+        if (!frm || !frm.fields_dict) return;
+        TAX_FIELDS.forEach((fieldname) => {
+            if (!frm.fields_dict[fieldname]) return;
+            frm.set_df_property(fieldname, "hidden", 0);
+            frm.toggle_display(fieldname, true);
+            frm.refresh_field(fieldname);
+            const field = frm.get_field && frm.get_field(fieldname);
+            if (field && field.wrapper) $(field.wrapper).show();
+        });
+    }
+
+    function applyOpportunityRouteOption(frm) {
+        if (
+            !frm || !frm.is_new || !frm.is_new() || !frm.fields_dict.opportunity
+            || frm.doc.opportunity || frm.__orderlift_opportunity_route_applied
+        ) return;
+        const options = frappe.route_options || {};
+        const opportunity = options.opportunity || "";
+        if (!opportunity) return;
+        frm.__orderlift_opportunity_route_applied = true;
+        frm.set_value("opportunity", opportunity);
+    }
+
+    function setupOpportunityQuery(frm) {
+        if (!frm || !frm.set_query || !frm.fields_dict.opportunity) return;
+        frm.set_query("opportunity", () => {
+            const filters = { docstatus: ["<", 2] };
+            const company = frm.doc.company || "";
+            if (company) filters.company = company;
+            return { filters };
+        });
+    }
 
     function hideNativeDiscountAndTaxFields(frm) {
         HIDDEN_FIELDS.forEach((fieldname) => {

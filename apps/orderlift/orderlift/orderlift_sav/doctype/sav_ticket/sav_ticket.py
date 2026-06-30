@@ -16,6 +16,7 @@ from orderlift.orderlift_sav.doctype.sav_ticket.auto_fill import (
     _count_recurrences,
     _resolve_site_address,
 )
+from orderlift.warehouse_access import get_allowed_warehouses, user_can_access_warehouse
 
 
 class SAVTicket(Document):
@@ -121,6 +122,7 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def resolve_serial_no(self, serial_no):
         """Cascade resolve from Serial No — called from client-side."""
+        frappe.has_permission("SAV Ticket", "read", throw=True)
         from orderlift.orderlift_sav.doctype.sav_ticket.auto_fill import resolve_from_serial_no
 
         return resolve_from_serial_no(serial_no)
@@ -128,6 +130,7 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def resolve_sales_order(self, sales_order):
         """Cascade resolve from Sales Order."""
+        frappe.has_permission("SAV Ticket", "read", throw=True)
         from orderlift.orderlift_sav.doctype.sav_ticket.auto_fill import resolve_from_sales_order
 
         return resolve_from_sales_order(sales_order)
@@ -135,6 +138,7 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def resolve_delivery_note(self, delivery_note):
         """Cascade resolve from Delivery Note."""
+        frappe.has_permission("SAV Ticket", "read", throw=True)
         from orderlift.orderlift_sav.doctype.sav_ticket.auto_fill import resolve_from_delivery_note
 
         return resolve_from_delivery_note(delivery_note)
@@ -142,6 +146,8 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def create_task_for_technician(self):
         """Create a Task linked to this SAV Ticket."""
+        self.check_permission("write")
+        frappe.has_permission("Task", "create", throw=True)
         if not self.assigned_technician:
             frappe.throw(_("A technician must be assigned before creating a task."))
 
@@ -172,6 +178,8 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def create_stock_entry(self, action_type, target_warehouse=None):
         """Create a Stock Entry for replacement or return."""
+        self.check_permission("write")
+        frappe.has_permission("Stock Entry", "create", throw=True)
         if not self.item_concerned:
             frappe.throw(_("An item is required to create a stock movement."))
 
@@ -204,7 +212,11 @@ class SAVTicket(Document):
         return stock_entry.name
 
     def _get_default_source_warehouse(self):
-        return frappe.db.get_value("Stock Settings", None, "default_warehouse") or "Stores - OL"
+        default_warehouse = frappe.db.get_value("Stock Settings", None, "default_warehouse") or "Stores - OL"
+        if user_can_access_warehouse(default_warehouse):
+            return default_warehouse
+        allowed = get_allowed_warehouses()
+        return allowed[0] if allowed else default_warehouse
 
     def _get_default_target_warehouse(self, action_type):
         warehouse_map = {
@@ -215,11 +227,13 @@ class SAVTicket(Document):
         }
         suffix = warehouse_map.get(action_type, "REAL")
         company = self._get_company()
-        warehouses = frappe.db.sql_list("""
+        all_matching = frappe.db.sql_list("""
             SELECT name FROM `tabWarehouse`
             WHERE name LIKE %(suffix)s AND company = %(company)s AND is_group = 0
         """, {"suffix": f"%{suffix}%", "company": company})
-        return warehouses[0] if warehouses else None
+        allowed = set(get_allowed_warehouses())
+        accessible = [wh for wh in all_matching if wh in allowed]
+        return accessible[0] if accessible else None
 
     def _get_company(self):
         if self.installation_project:
@@ -233,6 +247,7 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def assign_technician(self, technician, intervention_date=None):
         """Assign a technician and move ticket to Assigned status."""
+        self.check_permission("write")
         self.assigned_technician = technician
         self.status = "Assigned"
         if intervention_date:
@@ -251,6 +266,7 @@ class SAVTicket(Document):
     @frappe.whitelist()
     def reject_closure(self, manager_comment):
         """Reject a Resolved ticket — returns it to In Progress with a manager comment."""
+        self.check_permission("write")
         if self.status != "Resolved":
             frappe.throw(_("Only tickets in 'Resolved' status can be rejected."))
 

@@ -8,9 +8,12 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, nowdate, add_days, get_first_day
 
+from orderlift.warehouse_access import get_allowed_warehouses, stock_warehouse_condition
+
 
 @frappe.whitelist()
 def get_dashboard_data():
+    frappe.has_permission("Bin", "read", throw=True)
     return {
         "warehouses": _get_warehouse_cards(),
         "kpis": _get_kpis(),
@@ -27,6 +30,7 @@ def get_dashboard_data():
 
 @frappe.whitelist()
 def get_stock_overview(search=None, warehouse=None, only_in_stock=1, limit=80):
+    frappe.has_permission("Bin", "read", throw=True)
     return {"rows": _get_stock_overview(search=search, warehouse=warehouse, only_in_stock=only_in_stock, limit=limit)}
 
 
@@ -69,6 +73,7 @@ def _get_stock_overview(search=None, warehouse=None, only_in_stock=1, limit=80):
         FROM `tabItem` i
         LEFT JOIN `tabBin` b ON b.item_code = i.name {warehouse_join}
         WHERE {' AND '.join(conditions)}
+        {stock_warehouse_condition("b.warehouse", params)}
         GROUP BY i.name, i.item_name, i.item_group, i.stock_uom
         {having}
         ORDER BY SUM(COALESCE(b.actual_qty, 0)) DESC, i.name ASC
@@ -110,12 +115,36 @@ def _stock_row_status(actual_qty, available_qty):
     return "available"
 
 
+def _stock_entry_warehouse_condition(params: dict, alias: str = "se", detail_alias: str = "sed", key: str = "entry_warehouses") -> str:
+    warehouses = get_allowed_warehouses()
+    if not warehouses:
+        return " AND 1 = 0"
+    params[key] = tuple(warehouses)
+    return (
+        f" AND ({alias}.from_warehouse IN %({key})s "
+        f"OR {alias}.to_warehouse IN %({key})s "
+        f"OR EXISTS (SELECT 1 FROM `tabStock Entry Detail` {detail_alias} "
+        f"WHERE {detail_alias}.parent = {alias}.name "
+        f"AND ({detail_alias}.s_warehouse IN %({key})s OR {detail_alias}.t_warehouse IN %({key})s)))"
+    )
+
+
+def _warehouse_filter_or_empty(fieldname: str = "warehouse"):
+    warehouses = get_allowed_warehouses()
+    if not warehouses:
+        return {fieldname: "__no_allowed_warehouse__"}
+    return {fieldname: ["in", warehouses]}
+
+
 # ── Warehouse cards ────────────────────────────────────────────────────────────
 
 def _get_warehouse_cards():
+    allowed_warehouses = get_allowed_warehouses()
+    if not allowed_warehouses:
+        return []
     warehouses = frappe.get_all(
         "Warehouse",
-        filters={"disabled": 0, "is_group": 0},
+        filters={"disabled": 0, "is_group": 0, "name": ["in", allowed_warehouses]},
         fields=["name", "warehouse_name", "company", "parent_warehouse"],
         order_by="warehouse_name asc",
         limit=8,
@@ -171,36 +200,53 @@ def _get_warehouse_cards():
 # ── KPIs ───────────────────────────────────────────────────────────────────────
 
 def _get_kpis():
+    params = {}
     # Total stock units across all warehouses
     total_units_row = frappe.db.sql(
-        "SELECT COALESCE(SUM(actual_qty), 0) FROM `tabBin` WHERE actual_qty > 0",
+        f"""
+        SELECT COALESCE(SUM(actual_qty), 0)
+        FROM `tabBin`
+        WHERE actual_qty > 0
+        {stock_warehouse_condition("warehouse", params)}
+        """,
+        params,
         as_list=True,
     )
     total_units = int(flt(total_units_row[0][0] if total_units_row else 0))
 
     # Stockout alerts: items with actual_qty = 0 that have a reorder level
     stockout = frappe.db.sql(
-        """
+        f"""
         SELECT COUNT(DISTINCT b.item_code) FROM `tabBin` b
         JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
         WHERE b.actual_qty <= 0
+        {stock_warehouse_condition("b.warehouse", params, key="stockout_warehouses")}
         """,
+        params,
         as_list=True,
     )[0][0]
 
     # Low stock: actual_qty > 0 but <= reorder level
     low_stock = frappe.db.sql(
-        """
+        f"""
         SELECT COUNT(DISTINCT b.item_code) FROM `tabBin` b
         JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
         WHERE b.actual_qty > 0 AND b.actual_qty <= ir.warehouse_reorder_level
+        {stock_warehouse_condition("b.warehouse", params, key="low_stock_warehouses")}
         """,
+        params,
         as_list=True,
     )[0][0]
 
     # Items in transit
     in_transit_row = frappe.db.sql(
-        "SELECT COALESCE(SUM(actual_qty), 0) FROM `tabBin` WHERE warehouse LIKE '%TRANSIT%'",
+        f"""
+        SELECT COALESCE(SUM(actual_qty), 0)
+        FROM `tabBin`
+        WHERE warehouse LIKE '%%TRANSIT%%'
+        {stock_warehouse_condition("warehouse", params, key="transit_warehouses")}
+        """,
+        params,
         as_list=True,
     )
     in_transit = int(flt(in_transit_row[0][0] if in_transit_row else 0))
@@ -209,21 +255,31 @@ def _get_kpis():
     # Uses Stock Ledger Entry actual_qty changes
     ninety_days_ago = add_days(nowdate(), -90)
     outgoing = frappe.db.sql(
-        """
+        f"""
         SELECT COALESCE(ABS(SUM(actual_qty)), 0)
         FROM `tabStock Ledger Entry`
-        WHERE actual_qty < 0 AND posting_date >= %s AND is_cancelled = 0
+        WHERE actual_qty < 0 AND posting_date >= %(posting_date)s AND is_cancelled = 0
+        {stock_warehouse_condition("warehouse", params, key="outgoing_warehouses")}
         """,
-        ninety_days_ago, as_list=True,
+        {**params, "posting_date": ninety_days_ago}, as_list=True,
     )
     total_outgoing = flt(outgoing[0][0] if outgoing else 0)
     avg_rotation = round(total_outgoing / max(total_units, 1) * (365 / 90), 1) if total_units else 0
 
     # Pending transfers
-    pending_transfers = frappe.db.count(
-        "Stock Entry",
-        {"stock_entry_type": "Material Transfer", "docstatus": 0},
+    pending_params = {}
+    pending_row = frappe.db.sql(
+        f"""
+        SELECT COUNT(*) AS count
+        FROM `tabStock Entry` se
+        WHERE se.stock_entry_type = 'Material Transfer'
+        AND se.docstatus = 0
+        {_stock_entry_warehouse_condition(pending_params, key="pending_warehouses")}
+        """,
+        pending_params,
+        as_dict=True,
     )
+    pending_transfers = cint(pending_row[0].count if pending_row else 0)
 
     return {
         "total_units": total_units,
@@ -238,8 +294,9 @@ def _get_kpis():
 # ── Critical stock ─────────────────────────────────────────────────────────────
 
 def _get_critical_stock():
+    params = {}
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT
             b.item_code,
             i.item_name,
@@ -251,9 +308,11 @@ def _get_critical_stock():
         JOIN `tabItem` i ON i.name = b.item_code
         JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
         WHERE b.actual_qty <= ir.warehouse_reorder_level
+        {stock_warehouse_condition("b.warehouse", params)}
         ORDER BY (b.actual_qty / GREATEST(ir.warehouse_reorder_level, 1)) ASC
         LIMIT 8
         """,
+        params,
         as_dict=True,
     )
 
@@ -280,20 +339,22 @@ def _get_critical_stock():
 
 def _get_rotation_by_category():
     ninety_days_ago = add_days(nowdate(), -90)
+    params = {"ninety_days_ago": ninety_days_ago}
 
     # Two simple queries + Python-side sort to avoid MariaDB aggregate alias errors.
     # Query 1: total outgoing qty per item group in the last 90 days
     outgoing_rows = frappe.db.sql(
-        """
+        f"""
         SELECT i.item_group, ABS(SUM(sle.actual_qty)) AS total_out
         FROM `tabStock Ledger Entry` sle
         JOIN `tabItem` i ON i.name = sle.item_code
         WHERE sle.actual_qty < 0
-          AND sle.posting_date >= %s
+          AND sle.posting_date >= %(ninety_days_ago)s
           AND sle.is_cancelled = 0
+          {stock_warehouse_condition("sle.warehouse", params)}
         GROUP BY i.item_group
         """,
-        ninety_days_ago, as_dict=True,
+        params, as_dict=True,
     )
 
     if not outgoing_rows:
@@ -307,16 +368,18 @@ def _get_rotation_by_category():
     placeholders = ", ".join(["%s"] * len(groups))
 
     # Query 2: average actual stock per item group from Bin
+    avg_params = {"groups": tuple(groups)}
     avg_rows = frappe.db.sql(
         f"""
         SELECT i.item_group, AVG(b.actual_qty) AS avg_qty
         FROM `tabBin` b
         JOIN `tabItem` i ON i.name = b.item_code
-        WHERE i.item_group IN ({placeholders})
+        WHERE i.item_group IN %(groups)s
           AND b.actual_qty > 0
+          {stock_warehouse_condition("b.warehouse", avg_params)}
         GROUP BY i.item_group
         """,
-        groups, as_dict=True,
+        avg_params, as_dict=True,
     )
     avg_map = {r.item_group: max(flt(r.avg_qty), 1) for r in avg_rows}
 
@@ -339,18 +402,21 @@ def _get_rotation_by_category():
 
 def _get_live_alerts():
     alerts = []
+    params = {}
 
     # Stockout alerts
     stockouts = frappe.db.sql(
-        """
+        f"""
         SELECT b.item_code, i.item_name, b.warehouse, b.actual_qty
         FROM `tabBin` b
         JOIN `tabItem` i ON i.name = b.item_code
         JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
         WHERE b.actual_qty <= 0
+        {stock_warehouse_condition("b.warehouse", params)}
         ORDER BY b.item_code
         LIMIT 3
         """,
+        params,
         as_dict=True,
     )
     for s in stockouts:
@@ -364,15 +430,17 @@ def _get_live_alerts():
 
     # Critical stock (below 30% of reorder level)
     critical = frappe.db.sql(
-        """
+        f"""
         SELECT b.item_code, i.item_name, b.warehouse, b.actual_qty, ir.warehouse_reorder_level
         FROM `tabBin` b
         JOIN `tabItem` i ON i.name = b.item_code
         JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
         WHERE b.actual_qty > 0
           AND b.actual_qty <= (ir.warehouse_reorder_level * 0.3)
+          {stock_warehouse_condition("b.warehouse", params, key="critical_warehouses")}
         LIMIT 2
         """,
+        params,
         as_dict=True,
     )
     for c in critical:
@@ -388,12 +456,19 @@ def _get_live_alerts():
         })
 
     # Pending transfers awaiting validation
-    pending = frappe.get_all(
-        "Stock Entry",
-        filters={"stock_entry_type": "Material Transfer", "docstatus": 0},
-        fields=["name", "from_warehouse", "to_warehouse", "posting_date"],
-        order_by="modified desc",
-        limit=2,
+    pending_params = {}
+    pending = frappe.db.sql(
+        f"""
+        SELECT se.name, se.from_warehouse, se.to_warehouse, se.posting_date
+        FROM `tabStock Entry` se
+        WHERE se.stock_entry_type = 'Material Transfer'
+        AND se.docstatus = 0
+        {_stock_entry_warehouse_condition(pending_params, key="alert_transfer_warehouses")}
+        ORDER BY se.modified DESC
+        LIMIT 2
+        """,
+        pending_params,
+        as_dict=True,
     )
     for p in pending:
         alerts.append({
@@ -414,12 +489,18 @@ def _get_live_alerts():
 # ── Recent transfers ───────────────────────────────────────────────────────────
 
 def _get_recent_transfers():
-    rows = frappe.get_all(
-        "Stock Entry",
-        filters={"stock_entry_type": "Material Transfer"},
-        fields=["name", "from_warehouse", "to_warehouse", "posting_date", "docstatus", "total_incoming_value", "modified"],
-        order_by="posting_date desc, modified desc",
-        limit=8,
+    params = {}
+    rows = frappe.db.sql(
+        f"""
+        SELECT se.name, se.from_warehouse, se.to_warehouse, se.posting_date, se.docstatus, se.total_incoming_value, se.modified
+        FROM `tabStock Entry` se
+        WHERE se.stock_entry_type = 'Material Transfer'
+        {_stock_entry_warehouse_condition(params, key="recent_transfer_warehouses")}
+        ORDER BY se.posting_date DESC, se.modified DESC
+        LIMIT 8
+        """,
+        params,
+        as_dict=True,
     )
 
     result = []
@@ -442,8 +523,9 @@ def _get_recent_transfers():
 # ── Reorder queue ──────────────────────────────────────────────────────────────
 
 def _get_reorder_queue():
+    params = {}
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT
             b.item_code,
             i.item_name,
@@ -456,9 +538,11 @@ def _get_reorder_queue():
         JOIN `tabItem` i ON i.name = b.item_code
         JOIN `tabItem Reorder` ir ON ir.parent = b.item_code AND ir.warehouse = b.warehouse
         WHERE b.actual_qty <= ir.warehouse_reorder_level
+        {stock_warehouse_condition("b.warehouse", params)}
         ORDER BY b.actual_qty ASC
         LIMIT 6
         """,
+        params,
         as_dict=True,
     )
 
@@ -497,7 +581,7 @@ def _find_existing_open_po(item_code, supplier):
     if not supplier:
         return ""
 
-    purchase_orders = frappe.get_all(
+    purchase_orders = frappe.get_list(
         "Purchase Order",
         filters={
             "supplier": supplier,
@@ -539,8 +623,9 @@ def _get_flagged_items():
 
 
 def _get_qc_routing_receipts():
-    receipts = frappe.get_all(
+    receipts = frappe.get_list(
         "Purchase Receipt",
+        filters=_warehouse_filter_or_empty("set_warehouse"),
         fields=["name", "supplier", "posting_date", "custom_qc_routed", "docstatus", "set_warehouse"],
         order_by="posting_date desc, modified desc",
         limit_page_length=8,

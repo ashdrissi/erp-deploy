@@ -38,6 +38,18 @@ class TestDimensioning(unittest.TestCase):
         self.assertEqual(evaluate_formula('concat("(", levels)', variables), "(4")
         self.assertEqual(evaluate_formula("int(3.8)", variables), 3)
 
+    def test_formula_helpers_match_builder_helpers(self):
+        variables = {"brand": "Akis", "delta": -2.2}
+
+        self.assertEqual(evaluate_formula("lower(brand)", variables), "akis")
+        self.assertEqual(evaluate_formula("upper(brand)", variables), "AKIS")
+        self.assertEqual(evaluate_formula("ceil(abs(delta))", variables), 3)
+
+    def test_formula_supports_dimensioning_quantity_expression(self):
+        variables = {"hauteur_de_la_gaine": 8}
+
+        self.assertEqual(evaluate_formula("(hauteur_de_la_gaine + 3) * 4 + 5", variables), 49)
+
     def test_coerce_dimensioning_values(self):
         self.assertEqual(coerce_dimensioning_value("Int", "4"), 4)
         self.assertEqual(coerce_dimensioning_value("Float", "4.5"), 4.5)

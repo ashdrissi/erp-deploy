@@ -1,6 +1,9 @@
 """
+LEGACY DANGEROUS SCRIPT.
+
 Grant Orderlift Admin full CRUD on ALL doctypes except system/build ones.
 This is the nuclear option — full business access, zero system access.
+Do not use for normal access management; use Access Command Center instead.
 """
 import frappe
 
@@ -15,7 +18,8 @@ BLOCKED_DOCTYPES = set(HIDDEN_DOCTYPES) - {"Role"}
 BLOCKED_DOCTYPES.update({"Print Style", "DocType Action", "DocType Link", "DocType State"})
 
 
-def run():
+def run(confirm_legacy_access_reset: int | str = 0):
+    _require_legacy_confirmation(confirm_legacy_access_reset)
     remove_blocked_docperms()
 
     # Get every DocType that exists
@@ -175,3 +179,12 @@ def remove_blocked_docperms():
         )
         for name in names:
             frappe.delete_doc("Custom DocPerm", name, ignore_permissions=True)
+
+
+def _require_legacy_confirmation(confirm_legacy_access_reset: int | str = 0) -> None:
+    if str(confirm_legacy_access_reset).strip() == "1":
+        return
+    frappe.throw(
+        "This legacy broad-access script is disabled. Use Access Command Center, "
+        "or rerun with confirm_legacy_access_reset=1 after an explicit recovery decision."
+    )

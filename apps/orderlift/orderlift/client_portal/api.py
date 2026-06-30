@@ -113,7 +113,7 @@ def submit_quote_request(payload: str) -> dict:
         request.crm_segment = ctx.crm_segment
     request.contact = ctx.contact
     request.portal_user = ctx.user
-    request.currency = policy.currency or frappe.db.get_value("Price List", policy.portal_price_list, "currency") or "MAD"
+    request.currency = policy.currency or frappe.db.get_value("Price List", policy.portal_price_list, "currency") or frappe.defaults.get_global_default("currency")
     request.status = "Submitted"
     request.request_notes = (data.get("request_notes") or "").strip()
     request.submitted_on = now()
@@ -315,7 +315,7 @@ def get_my_quotations() -> list[dict]:
                 "transaction_date": quotation.get("transaction_date"),
                 "valid_till": quotation.get("valid_till"),
                 "grand_total": quotation.get("grand_total") or 0,
-                "currency": quotation.get("currency") or "MAD",
+                "currency": quotation.get("currency") or frappe.defaults.get_global_default("currency"),
                 "pdf_url": f"/api/method/orderlift.orderlift_client_portal.api.download_request_quotation_pdf?name={request.name}",
                 "request_name": request.name,
             }

@@ -24,6 +24,7 @@
     "total_volume_m3",
     "weight_utilization_pct",
     "volume_utilization_pct",
+    "packaging_layout_json",
     "section_items",
     "items",
     "notes"
@@ -156,6 +157,13 @@
       "fieldtype": "Percent",
       "label": "Volume Utilization (%)",
       "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "packaging_layout_json",
+      "fieldtype": "Long Text",
+      "label": "Packaging Layout JSON",
+      "hidden": 1,
       "read_only": 1
     },
     {

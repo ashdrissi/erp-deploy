@@ -29,6 +29,7 @@ def run(
     Dry-run is enabled by default. Destructive execution requires CONFIRM_TOKEN.
     Transaction cleanup runs first so Item deletion is not blocked by linked documents.
     """
+    frappe.only_for("System Manager")
 
     dry_run = cint(dry_run)
     force = cint(force)

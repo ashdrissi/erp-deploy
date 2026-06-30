@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_first_day, nowdate
 
+from orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder import cleanup_pricing_builder_history
 from orderlift.orderlift_sales.utils.price_list_scope import current_company
 
 
@@ -57,6 +58,7 @@ def delete_pricing_builders(pricing_builders=None):
         try:
             doc = frappe.get_doc("Pricing Builder", name)
             doc.check_permission("delete")
+            cleanup_pricing_builder_history(doc)
             frappe.delete_doc("Pricing Builder", name)
             deleted.append(name)
         except Exception as exc:
@@ -64,6 +66,26 @@ def delete_pricing_builders(pricing_builders=None):
     if errors and not deleted:
         frappe.throw("<br>".join(errors))
     return {"deleted": deleted, "errors": errors}
+
+
+@frappe.whitelist()
+def recalculate_pricing_builders(pricing_builders=None):
+    names = _parse_names(pricing_builders)
+    if not names:
+        frappe.throw(_("Select at least one Pricing Builder to recalculate."))
+    recalculated = []
+    errors = []
+    from orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder import calculate_builder_page_doc
+
+    for name in names:
+        try:
+            calculate_builder_page_doc(name)
+            recalculated.append(name)
+        except Exception as exc:
+            errors.append(_("{0}: {1}").format(name, frappe.bold(str(exc))))
+    if errors and not recalculated:
+        frappe.throw("<br>".join(errors))
+    return {"recalculated": recalculated, "errors": errors}
 
 
 @frappe.whitelist()

@@ -14,6 +14,7 @@ from orderlift.menu_registry import (
     default_roles_for_key,
     get_menu_sections,
     iter_menu_items,
+    menu_item_by_key,
     menu_item_for_row,
     page_menu_map,
 )
@@ -164,11 +165,13 @@ def get_menu_access_payload() -> list[dict]:
     payload = []
     for item in iter_menu_items():
         rule = rules.get(item["key"])
+        enabled = _rule_enabled(rule)
         payload.append(
             {
                 **item,
-                "enabled": _rule_enabled(rule),
-                "allowed_roles": _rule_roles(rule, item["key"]),
+                "enabled": enabled,
+                "allowed_roles": _rule_roles(rule, item["key"]) if enabled else [],
+                "denied_roles": _rule_denied_roles(rule) if enabled else [],
                 "default_roles": item.get("roles") or [],
             }
         )
@@ -191,19 +194,32 @@ def save_menu_access_for_role(role: str, menu_keys: list[str] | str) -> dict:
         if not doc:
             continue
         roles = _rule_roles(doc, menu_key)
+        denied_roles = _rule_denied_roles(doc)
         next_roles = list(roles)
-        if menu_key in selected_keys and role not in next_roles:
-            next_roles.append(role)
-        elif menu_key not in selected_keys and role in next_roles:
-            next_roles.remove(role)
+        next_denied_roles = list(denied_roles)
+        values = {}
+        selected = menu_key in selected_keys
+        if selected:
+            if role in next_denied_roles:
+                next_denied_roles.remove(role)
+            if ALL_USERS_ROLE not in next_roles and role not in next_roles:
+                next_roles.append(role)
+        else:
+            if ALL_USERS_ROLE in next_roles and role not in next_denied_roles:
+                next_denied_roles.append(role)
+            elif role in next_roles:
+                next_roles.remove(role)
+            elif role in next_denied_roles and ALL_USERS_ROLE not in next_roles:
+                next_denied_roles.remove(role)
+        if selected and not _rule_enabled(doc):
+            values["enabled"] = 1
         next_roles = _sanitize_allowed_roles_for_item(item, next_roles)
         if next_roles != roles:
-            frappe.db.set_value(
-                MENU_ACCESS_DOCTYPE,
-                doc.name,
-                "allowed_roles_json",
-                json.dumps(next_roles),
-            )
+            values["allowed_roles_json"] = json.dumps(next_roles)
+        if next_denied_roles != denied_roles:
+            values["denied_roles_json"] = json.dumps(next_denied_roles)
+        if values:
+            frappe.db.set_value(MENU_ACCESS_DOCTYPE, doc.name, values)
             changed += 1
 
     frappe.clear_cache()
@@ -227,6 +243,8 @@ def user_can_access_menu_key(
     if not _rule_enabled(rule):
         return False
     allowed_roles = _rule_roles(rule, menu_key)
+    if roles.intersection(_rule_denied_roles(rule)):
+        return False
     return _roles_allow(allowed_roles, roles)
 
 
@@ -243,7 +261,16 @@ def user_can_access_page(page_name: str, user: str | None = None, rules: dict[st
     if not menu_keys:
         return True
     rules = rules if rules is not None else _menu_rule_map()
-    if not any(user_can_access_menu_key(menu_key, user=user, roles=roles, rules=rules) for menu_key in menu_keys):
+    visible_items = [
+        item
+        for menu_key in menu_keys
+        if user_can_access_menu_key(menu_key, user=user, roles=roles, rules=rules)
+        for item in [menu_item_by_key(menu_key)]
+        if item
+    ]
+    if not visible_items:
+        return False
+    if not any(_required_doctypes_allowed(item.get("required_doctypes"), user=user) for item in visible_items):
         return False
 
     page_roles = _page_roles(page_name)
@@ -330,7 +357,12 @@ def get_boot_menu_access(user: str | None = None) -> dict:
     rules = _menu_rule_map()
     visible_keys = []
     for item in iter_menu_items():
-        if user_can_access_menu_key(item["key"], user=user, roles=roles, rules=rules):
+        if user_can_access_menu_key(item["key"], user=user, roles=roles, rules=rules) and _link_target_allowed(
+            item,
+            user=user,
+            roles=roles,
+            rules=rules,
+        ):
             visible_keys.append(item["key"])
     return {
         "visible_menu_keys": visible_keys,
@@ -359,7 +391,33 @@ def get_company_access_payload(user: str | None = None, requested_company: str |
             allowed_companies=companies,
         ),
         "user_default_company": user_default_company if user_default_company in companies else "",
+        "company_currencies": get_company_currency_map(companies),
     }
+
+
+def get_company_currency_map(companies: list[str] | tuple[str, ...] | None = None) -> dict[str, str]:
+    companies = [company for company in (companies or []) if company]
+    if not companies or not _doctype_available(COMPANY_DOCTYPE):
+        return {}
+
+    currencies: dict[str, str] = {}
+    rows = frappe.get_all(
+        COMPANY_DOCTYPE,
+        filters={"name": ["in", companies]},
+        fields=["name", "default_currency"],
+        limit_page_length=0,
+    )
+    for row in rows:
+        name = row.get("name") if hasattr(row, "get") else getattr(row, "name", "")
+        currency = row.get("default_currency") if hasattr(row, "get") else getattr(row, "default_currency", "")
+        if name:
+            currencies[name] = currency or ""
+    return currencies
+
+
+@_frappe_whitelist()
+def get_current_company_access_payload() -> dict:
+    return get_company_access_payload(user=frappe.session.user)
 
 
 @_frappe_whitelist()
@@ -611,6 +669,12 @@ def _rule_roles(rule, menu_key: str) -> list[str]:
     return roles
 
 
+def _rule_denied_roles(rule) -> list[str]:
+    if rule is None:
+        return []
+    return _clean_list(rule.get("denied_roles_json"))
+
+
 def _roles_allow(allowed_roles: list[str], user_roles: set[str]) -> bool:
     if ALL_USERS_ROLE in allowed_roles:
         return True
@@ -632,12 +696,7 @@ def _sanitize_allowed_roles_for_item(item: dict, roles: list[str]) -> list[str]:
         return roles
 
     allowed_admin_roles = set(ADMIN_ROLES) | {"Orderlift Admin", "Administrator", "System Manager", "Developer"}
-    sanitized = [role for role in roles if role in allowed_admin_roles]
-    defaults = item.get("roles") or []
-    for role in defaults:
-        if role in allowed_admin_roles and role not in sanitized:
-            sanitized.append(role)
-    return sanitized
+    return [role for role in roles if role in allowed_admin_roles]
 
 
 def _link_target_allowed(row: dict, *, user: str, roles: set[str], rules: dict[str, object] | None = None) -> bool:
@@ -652,10 +711,28 @@ def _link_target_allowed(row: dict, *, user: str, roles: set[str], rules: dict[s
             return bool(frappe.has_permission(link_to, "read", user=user))
         return False
     if link_type == "Page":
-        return user_can_access_page(link_to, user=user, rules=rules)
+        if not user_can_access_page(link_to, user=user, rules=rules):
+            return False
+        return _page_required_doctypes_allowed(row, user=user)
     if link_type == "Report":
         report_roles = _child_roles("Report", link_to)
         return not report_roles or bool(roles.intersection(report_roles))
+    return True
+
+
+def _page_required_doctypes_allowed(row: dict, *, user: str) -> bool:
+    item = menu_item_for_row(row) or {}
+    return _required_doctypes_allowed(item.get("required_doctypes") or row.get("required_doctypes"), user=user)
+
+
+def _required_doctypes_allowed(required_doctypes, *, user: str) -> bool:
+    required_doctypes = _clean_list(required_doctypes)
+    for doctype in required_doctypes:
+        with suppress(Exception):
+            if not frappe.has_permission(doctype, "read", user=user):
+                return False
+            continue
+        return False
     return True
 
 

@@ -1,6 +1,6 @@
 (function () {
     const xhr = new XMLHttpRequest();
-    xhr.open("GET", "/assets/orderlift/js/project_sig.js?v=20260429d", false);
+    xhr.open("GET", "/assets/orderlift/js/project_sig.js?v=20260629f", false);
     xhr.send(null);
     if (xhr.status >= 200 && xhr.status < 300) {
         (0, eval)(xhr.responseText);

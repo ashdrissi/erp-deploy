@@ -39,7 +39,7 @@ def get_price(item_code, qty, customer, include_transport=False):
     return {
         "unit_price": unit_price,
         "total_price": unit_price * qty,
-        "currency": price.currency or policy.currency or "MAD",
+        "currency": price.currency or policy.currency or frappe.defaults.get_global_default("currency"),
         "business_type": crm_context.get("business_type") or "",
         "crm_segment": crm_context.get("crm_segment") or "",
         "price_list": policy.portal_price_list,

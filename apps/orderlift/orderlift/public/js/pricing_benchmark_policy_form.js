@@ -34,6 +34,13 @@ const RULES_HELP = `
 </div>`;
 
 function applyCrmSegmentQueries(frm) {
+    const sourcePriceListField = frm.fields_dict.benchmark_sources?.grid?.get_field("price_list");
+    if (sourcePriceListField) {
+        sourcePriceListField.get_query = () => ({
+            filters: benchmarkPriceListFilters(),
+        });
+    }
+
     const benchmarkSegmentField = frm.fields_dict.benchmark_rules?.grid?.get_field("crm_segment");
     if (benchmarkSegmentField) {
         benchmarkSegmentField.get_query = (doc, cdt, cdn) => {
@@ -54,6 +61,15 @@ function applyCrmSegmentQueries(frm) {
     if (tierField) {
         tierField.get_query = () => ({ filters: { is_active: 1 } });
     }
+}
+
+function benchmarkPriceListFilters() {
+    const filters = { custom_price_list_type: "Benchmark" };
+    if (frappe.defaults && frappe.defaults.get_default) {
+        const company = frappe.defaults.get_default("company");
+        if (company) filters.custom_company = company;
+    }
+    return filters;
 }
 
 function crmSegmentQuery(businessType) {

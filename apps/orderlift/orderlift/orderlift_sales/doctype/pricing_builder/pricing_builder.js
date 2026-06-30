@@ -179,9 +179,15 @@ function renderBuilderItemFilters(frm) {
     if (!itemsGrid?.wrapper) return;
 
     const rows = frm.doc.builder_items || [];
+    const itemGroupOptions = uniqueBuilderValues(rows.map((row) => row.item_group));
+    const selectedGroup = (frm.__builderFilterState || {}).item_group || "";
+    const itemCategoryOptions = uniqueBuilderValues(rows
+        .filter((row) => !selectedGroup || row.item_group === selectedGroup)
+        .map((row) => row.item_category));
     const materialOptions = [...new Set(rows.map((row) => (row.material || "").trim()).filter(Boolean))].sort();
     const statusOptions = [...new Set(rows.map((row) => (row.status || "").trim()).filter(Boolean))].sort();
-    const state = frm.__builderFilterState || { search: "", material: "", status: "" };
+    const state = frm.__builderFilterState || { search: "", item_group: "", item_category: "", material: "", status: "" };
+    if (state.item_category && !itemCategoryOptions.includes(state.item_category)) state.item_category = "";
     frm.__builderFilterState = state;
 
     itemsGrid.wrapper.find(".pb-filterbar").remove();
@@ -193,6 +199,14 @@ function renderBuilderItemFilters(frm) {
             </div>
             <div class="pb-filter-controls">
                 <input class="form-control pb-filter-search" placeholder="${__("Search item, name, group, buying list...")}" value="${frappe.utils.escape_html(state.search || "")}">
+                <select class="form-control pb-filter-item-group">
+                    <option value="">${__("All Item Groups")}</option>
+                    ${itemGroupOptions.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${state.item_group === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
+                </select>
+                <select class="form-control pb-filter-item-category">
+                    <option value="">${__("All Categories")}</option>
+                    ${itemCategoryOptions.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${state.item_category === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
+                </select>
                 <select class="form-control pb-filter-material">
                     <option value="">${__("All Materials")}</option>
                     ${materialOptions.map((value) => `<option value="${frappe.utils.escape_html(value)}" ${state.material === value ? "selected" : ""}>${frappe.utils.escape_html(value)}</option>`).join("")}
@@ -211,6 +225,16 @@ function renderBuilderItemFilters(frm) {
         frm.__builderFilterState.search = ($(this).val() || "").trim();
         applyBuilderItemFilters(frm);
     });
+    html.find(".pb-filter-item-group").on("change", function () {
+        frm.__builderFilterState.item_group = $(this).val() || "";
+        frm.__builderFilterState.item_category = "";
+        renderBuilderItemFilters(frm);
+        applyBuilderItemFilters(frm);
+    });
+    html.find(".pb-filter-item-category").on("change", function () {
+        frm.__builderFilterState.item_category = $(this).val() || "";
+        applyBuilderItemFilters(frm);
+    });
     html.find(".pb-filter-material").on("change", function () {
         frm.__builderFilterState.material = $(this).val() || "";
         applyBuilderItemFilters(frm);
@@ -220,7 +244,7 @@ function renderBuilderItemFilters(frm) {
         applyBuilderItemFilters(frm);
     });
     html.find(".pb-filter-clear").on("click", function () {
-        frm.__builderFilterState = { search: "", material: "", status: "" };
+        frm.__builderFilterState = { search: "", item_group: "", item_category: "", material: "", status: "" };
         renderBuilderItemFilters(frm);
         applyBuilderItemFilters(frm);
     });
@@ -228,11 +252,25 @@ function renderBuilderItemFilters(frm) {
     applyBuilderItemFilters(frm);
 }
 
+function uniqueBuilderValues(values) {
+    const out = [];
+    const seen = new Set();
+    (values || []).forEach((value) => {
+        const clean = (value || "").trim();
+        if (!clean || seen.has(clean)) return;
+        seen.add(clean);
+        out.push(clean);
+    });
+    return out.sort();
+}
+
 function applyBuilderItemFilters(frm) {
     const itemsGrid = frm.get_field("builder_items")?.grid;
     if (!itemsGrid) return;
     const state = frm.__builderFilterState || {};
     const search = (state.search || "").toLowerCase();
+    const itemGroup = (state.item_group || "").toLowerCase();
+    const itemCategory = (state.item_category || "").toLowerCase();
     const material = (state.material || "").toLowerCase();
     const status = (state.status || "").toLowerCase();
 
@@ -250,6 +288,8 @@ function applyBuilderItemFilters(frm) {
             row.pricing_scenario,
         ].filter(Boolean).join(" ").toLowerCase();
         const show = (!search || haystack.includes(search))
+            && (!itemGroup || (row.item_group || "").toLowerCase() === itemGroup)
+            && (!itemCategory || (row.item_category || "").toLowerCase() === itemCategory)
             && (!material || (row.material || "").toLowerCase() === material)
             && (!status || (row.status || "").toLowerCase() === status);
         $(gridRow.wrapper).toggle(show);
@@ -269,6 +309,8 @@ function applyBuilderItemFilters(frm) {
             row.pricing_scenario,
         ].filter(Boolean).join(" ").toLowerCase();
         const show = (!search || haystack.includes(search))
+            && (!itemGroup || (row.item_group || "").toLowerCase() === itemGroup)
+            && (!itemCategory || (row.item_category || "").toLowerCase() === itemCategory)
             && (!material || (row.material || "").toLowerCase() === material)
             && (!status || (row.status || "").toLowerCase() === status);
         $(rowEl).toggle(show);
@@ -344,6 +386,7 @@ function builderBreakdownPanel(frm) {
     const finalUnit = flt(row.override_selling_price || 0) || flt(row.projected_price || 0);
     const finalTotal = finalUnit * qty;
     const costUnit = builderCostUnit(row);
+    const marginUnit = builderActualMarginAmount(row);
     const costTotal = costUnit * qty;
     const options = rows.map((candidate, index) => {
         const key = builderRowKey(candidate, index);
@@ -367,7 +410,7 @@ function builderBreakdownPanel(frm) {
                 ${builderBreakdownMetric(__("Expenses U"), formatBuilderCurrency(row.expenses))}
                 ${builderBreakdownMetric(__("Customs U"), formatBuilderCurrency(row.customs_amount))}
                 ${builderBreakdownMetric(__("Total Cost U"), formatBuilderCurrency(costUnit), true)}
-                ${builderBreakdownMetric(__("Margin U"), formatBuilderCurrency(row.margin_amount))}
+                ${builderBreakdownMetric(__("Margin U"), formatBuilderCurrency(marginUnit))}
                 ${builderBreakdownMetric(__("Sell Price U"), formatBuilderCurrency(finalUnit), true)}
                 ${builderBreakdownMetric(__("Total Cost"), formatBuilderCurrency(costTotal))}
                 ${builderBreakdownMetric(__("Total Sell"), formatBuilderCurrency(finalTotal), true)}
@@ -471,8 +514,8 @@ function bindBuilderItemsTable(frm) {
         if (row.doctype && row.name) frappe.model.set_value(row.doctype, row.name, field, value);
         else row[field] = value;
         if (field === "override_selling_price") {
-            const marginPct = builderMarginPct(row, flt(row.margin_amount || 0));
-            const totalMarginPct = builderMarginPct(row, flt(row.total_margin_amount || row.margin_amount || 0));
+            const marginPct = builderActualMarginPct(row);
+            const totalMarginPct = marginPct;
             if (row.doctype && row.name) frappe.model.set_value(row.doctype, row.name, "final_margin_pct", marginPct);
             else row.final_margin_pct = marginPct;
             if (row.doctype && row.name) frappe.model.set_value(row.doctype, row.name, "total_margin_pct", totalMarginPct);
@@ -540,6 +583,8 @@ function builderCellValue(frm, row, key) {
     if (key === "qty") return qty;
     if (key === "projected_price") return builderCostUnit(row);
     if (key === "projected_total_price") return builderCostUnit(row) * qty;
+    if (key === "margin_amount" || key === "total_margin_amount") return builderActualMarginAmount(row);
+    if (key === "final_margin_pct" || key === "total_margin_pct") return builderActualMarginPct(row);
     if (key === "final_sell_unit_price") return finalUnit;
     if (key === "final_sell_total") return finalUnit * qty;
     return row[key];
@@ -547,6 +592,15 @@ function builderCellValue(frm, row, key) {
 
 function builderCostUnit(row) {
     return flt(row.base_buy_price || 0) + flt(row.expenses || 0) + flt(row.customs_amount || 0);
+}
+
+function builderActualMarginAmount(row) {
+    const finalUnit = flt(row.override_selling_price || 0) || flt(row.projected_price || 0);
+    return finalUnit - builderCostUnit(row);
+}
+
+function builderActualMarginPct(row) {
+    return builderMarginPct(row, builderActualMarginAmount(row));
 }
 
 function builderMarginPct(row, marginAmount) {
@@ -659,7 +713,16 @@ function bindBuilderColumnDrag(wrapper) {
 }
 
 function formatBuilderCurrency(value) {
-    return textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" }));
+    if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(value);
+    return normalizeCurrencyText(textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" })));
+}
+
+function normalizeCurrencyText(value) {
+    return String(value || "")
+        .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
+        .replace(/د\.م\./g, window.orderlift?.getActiveCompanyCurrency?.() || "MAD")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 function textFromHtml(value) {
@@ -898,10 +961,9 @@ frappe.ui.form.on("Pricing Builder Item", {
     },
     override_selling_price(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
-        const effectivePrice = flt(row.override_selling_price || 0) || flt(row.projected_price || 0);
-        const costBeforeMargin = flt(row.base_buy_price || 0) + flt(row.expenses || 0) + flt(row.customs_amount || 0);
-        const marginPct = costBeforeMargin > 0 ? ((effectivePrice - costBeforeMargin) / costBeforeMargin) * 100 : 0;
+        const marginPct = builderActualMarginPct(row);
         frappe.model.set_value(cdt, cdn, "final_margin_pct", marginPct);
+        frappe.model.set_value(cdt, cdn, "total_margin_pct", marginPct);
         setTimeout(() => renderBuilderItemFilters(frm), 0);
     },
 });

@@ -6,9 +6,9 @@
         company: "",
         data: { statuses: [], legacy_statuses: [], colors: [], todo_priorities: [], users: [], predefined_checks: [] },
         draft: { label: "", sequence: 100, color: "Blue", assigned_user: "", todo_priority: "Important Non Urgent", auto_collapse: 0, auto_close_opportunity: 0, required_checks: [], confirmation_message: "", is_active: 1, is_default: 0, applies_distribution: 1, applies_installation: 1 },
+        quickActionsDraft: [],
         statusSearch: "",
         statusFilter: "All",
-        flowFilter: "All",
     };
 
     frappe.pages["status-control"].on_page_load = function (wrapper) {
@@ -45,6 +45,7 @@
         });
         STATE.data = res.message || { statuses: [], legacy_statuses: [], colors: [], todo_priorities: [], users: [], predefined_checks: [] };
         STATE.company = STATE.data.selected_company || STATE.company || "";
+        STATE.quickActionsDraft = [...(STATE.data.selected_quick_actions || [])];
         render(page);
     }
 
@@ -85,6 +86,8 @@
                     ${summaryCard(__("Used"), stats.used, __("documents with status"), "orange")}
                 </section>
 
+                ${quickActionsSection(data)}
+
                 <section class="osc-grid">
                     <article class="osc-panel osc-panel--main">
                         <div class="osc-panel-head"><h2>${frappe.utils.escape_html(data.page_title || __("Statuses"))}</h2><span>${__("Dense editor for pipeline statuses")}</span></div>
@@ -93,9 +96,6 @@
                             <input id="osc-status-search" type="search" placeholder="${__("Search status, color, or usage")}" value="${frappe.utils.escape_html(STATE.statusSearch)}" />
                             <select id="osc-status-filter">
                                 ${["All", "Active", "Inactive", "Default", "Used", "Unused"].map((option) => `<option value="${option}" ${option === STATE.statusFilter ? "selected" : ""}>${frappe.utils.escape_html(__(option))}</option>`).join("")}
-                            </select>
-                            <select id="osc-flow-filter">
-                                ${["All", "Distribution", "Installation"].map((option) => `<option value="${option}" ${option === STATE.flowFilter ? "selected" : ""}>${frappe.utils.escape_html(__(option))}</option>`).join("")}
                             </select>
                             <span class="osc-visible-count"><strong>${filteredStatuses.length}</strong> ${__("visible")}</span>
                         </div>
@@ -127,21 +127,27 @@
             STATE.draft = defaultDraft(STATE.documentType);
             STATE.statusSearch = "";
             STATE.statusFilter = "All";
-            STATE.flowFilter = "All";
             load(page);
         });
         page.main.find("#osc-status-search").on("input", function () {
             STATE.statusSearch = String($(this).val() || "").trim().toLowerCase();
             updateStatusResults(page);
         });
-        page.main.find("#osc-status-filter, #osc-flow-filter").on("change", function () {
+        page.main.find("#osc-status-filter").on("change", function () {
             STATE.statusFilter = page.main.find("#osc-status-filter").val();
-            STATE.flowFilter = page.main.find("#osc-flow-filter").val();
             updateStatusResults(page);
         });
         page.main.find("[data-save-new]").on("click", async function () {
             STATE.draft = collectRow(page.main.find("[data-row='new']"));
             await saveStatus(STATE.draft, page);
+        });
+        page.main.find("[data-quick-action]").on("change", function () {
+            STATE.quickActionsDraft = page.main.find("[data-quick-action]:checked").map(function () {
+                return String($(this).val() || "");
+            }).get();
+        });
+        page.main.find("[data-save-quick-actions]").on("click", async function () {
+            await saveQuickActions(page);
         });
         bindStatusRowActions(page);
     }
@@ -191,10 +197,7 @@
                 || (STATE.statusFilter === "Default" && status.is_default)
                 || (STATE.statusFilter === "Used" && status.usage_count)
                 || (STATE.statusFilter === "Unused" && !status.usage_count);
-            const matchesFlow = STATE.flowFilter === "All"
-                || (STATE.flowFilter === "Distribution" && status.applies_distribution)
-                || (STATE.flowFilter === "Installation" && status.applies_installation);
-            return matchesSearch && matchesState && matchesFlow;
+            return matchesSearch && matchesState;
         });
     }
 
@@ -218,6 +221,33 @@
         `;
     }
 
+    function quickActionsSection(data) {
+        const actions = data.available_quick_actions || [];
+        if (!STATE.company) return "";
+        if (!actions.length) {
+            return `<section class="osc-panel osc-panel--compact"><div class="osc-panel-head"><h2>${__("Card Quick Actions")}</h2><span>${__("No quick actions available for this document type")}</span></div></section>`;
+        }
+        const selected = new Set(STATE.quickActionsDraft || []);
+        return `
+            <section class="osc-panel osc-panel--compact">
+                <div class="osc-panel-head"><h2>${__("Card Quick Actions")}</h2><span>${__("Company-wide actions for this pipeline document type")}</span></div>
+                <div class="osc-helper-note">${__("These buttons appear on every pipeline card for the selected document type and company, regardless of status.")}</div>
+                <div class="osc-quick-actions-grid">
+                    ${actions.map((action) => `
+                        <label class="osc-quick-action-card">
+                            <input data-quick-action type="checkbox" value="${frappe.utils.escape_html(action.key)}" ${selected.has(action.key) ? "checked" : ""} />
+                            <div>
+                                <strong>${frappe.utils.escape_html(__(action.label || action.key))}</strong>
+                                <small>${frappe.utils.escape_html(__(action.description || ""))}</small>
+                            </div>
+                        </label>
+                    `).join("")}
+                </div>
+                <div class="osc-row-actions"><button class="osc-btn-primary" data-save-quick-actions="1">${__("Save Quick Actions")}</button></div>
+            </section>
+        `;
+    }
+
     function statusListMarkup(statuses, colors) {
         return statuses.map((status) => statusRow(status, colors)).join("") || `<div class="osc-empty">${__("No statuses match the current filters.")}</div>`;
     }
@@ -238,6 +268,24 @@
         load(page);
     }
 
+    async function saveQuickActions(page) {
+        if (!STATE.company) {
+            frappe.show_alert({ message: __("Select a company first"), indicator: "orange" });
+            return;
+        }
+        await frappe.call({
+            method: "orderlift.orderlift_crm.api.status_control.save_quick_actions",
+            args: {
+                document_type: STATE.documentType,
+                actions: STATE.quickActionsDraft,
+                company: STATE.company,
+            },
+            freeze: true,
+        });
+        frappe.show_alert({ message: __("Quick actions saved"), indicator: "green" });
+        load(page);
+    }
+
     async function setCurrentCompany(page, company) {
         if (!company) {
             load(page);
@@ -252,6 +300,7 @@
     }
 
     function defaultDraft(documentType) {
+        const showFlowFields = ((STATE.data || {}).show_flow_fields) !== false;
         return {
             label: "",
             sequence: 100,
@@ -264,15 +313,19 @@
             confirmation_message: "",
             is_active: 1,
             is_default: 0,
-            applies_distribution: documentType === "Project" ? 0 : 1,
-            applies_installation: documentType === "Sales Order" ? 0 : 1,
+            applies_distribution: showFlowFields ? (documentType === "Project" ? 0 : 1) : 1,
+            applies_installation: showFlowFields ? (documentType === "Sales Order" ? 0 : 1) : 1,
         };
     }
 
     function collectRow(row) {
+        const showFlowFields = ((STATE.data || {}).show_flow_fields) !== false;
+        const isNewRow = String(row.data("row") || "") === "new";
+        const rowName = isNewRow ? "" : (row.data("name") || "");
+        const docname = isNewRow ? "" : (row.data("docname") || rowName || "");
         return {
-            name: row.data("name") || "",
-            docname: row.data("docname") || row.data("name") || "",
+            name: rowName,
+            docname,
             label: row.find("[data-field='label']").val(),
             sequence: Number(row.find("[data-field='sequence']").val() || 100),
             color: row.find("[data-field='color']").val(),
@@ -284,8 +337,8 @@
             confirmation_message: row.find("[data-field='confirmation_message']").val(),
             is_active: row.find("[data-field='is_active']").is(":checked") ? 1 : 0,
             is_default: row.find("[data-field='is_default']").is(":checked") ? 1 : 0,
-            applies_distribution: row.find("[data-field='applies_distribution']").is(":checked") ? 1 : 0,
-            applies_installation: row.find("[data-field='applies_installation']").is(":checked") ? 1 : 0,
+            applies_distribution: showFlowFields ? (row.find("[data-field='applies_distribution']").is(":checked") ? 1 : 0) : 1,
+            applies_installation: showFlowFields ? (row.find("[data-field='applies_installation']").is(":checked") ? 1 : 0) : 1,
         };
     }
 
@@ -461,6 +514,12 @@
             .osc-status-toolbar input, .osc-status-toolbar select { min-height: 36px; border: 1px solid #dbe4f4; border-radius: 999px; padding: 0 12px; font-weight: 800; color: #1f3f75; background: #fff; outline: none; }
             .osc-visible-count { justify-self: end; color: #64748b; font-size: 11px; font-weight: 900; }
             .osc-visible-count strong { color: #1d4ed8; }
+            .osc-panel--compact { padding: 16px 18px; }
+            .osc-quick-actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+            .osc-quick-action-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; min-height: 74px; padding: 12px; border-radius: 14px; border: 1px solid #dbe4f4; background: #fff; cursor: pointer; }
+            .osc-quick-action-card input { margin-top: 4px; }
+            .osc-quick-action-card strong { display: block; color: #111827; font-size: 13px; font-weight: 900; }
+            .osc-quick-action-card small { display: block; margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; }
             .osc-status-list { display: grid; gap: 8px; }
             .osc-status-card { min-width: 0; overflow: hidden; border: 1px solid #e5ebf7; border-radius: 14px; padding: 10px; background: #fbfdff; }
             .osc-status-card--new { margin-bottom: 10px; background: #fffdf8; border-color: #fed7aa; }

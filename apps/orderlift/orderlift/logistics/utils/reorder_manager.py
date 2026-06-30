@@ -11,12 +11,21 @@ import frappe
 from frappe.utils import nowdate, flt, get_first_day, add_months
 from datetime import datetime
 
+from orderlift.warehouse_access import get_allowed_warehouses, user_can_access_warehouse
+
 
 def check_reorder_levels():
     """Check all reorder rules and create draft POs where stock is low."""
 
+    allowed_warehouses = get_allowed_warehouses()
+    if not allowed_warehouses:
+        return
+
+    allowed_set = set(allowed_warehouses)
+    wh_placeholder = ", ".join(["%s"] * len(allowed_warehouses))
+
     # Get all items with reorder rules where stock is below reorder level
-    reorder_items = frappe.db.sql("""
+    reorder_items = frappe.db.sql(f"""
         SELECT
             b.item_code,
             i.item_name,
@@ -32,8 +41,9 @@ def check_reorder_levels():
         WHERE b.actual_qty <= ir.warehouse_reorder_level
             AND i.is_purchase_item = 1
             AND i.disabled = 0
+            AND b.warehouse IN ({wh_placeholder})
         ORDER BY b.item_code, b.warehouse
-    """, as_dict=True)
+    """, tuple(allowed_warehouses), as_dict=True)
 
     if not reorder_items:
         return
@@ -50,6 +60,12 @@ def check_reorder_levels():
     skipped_items = []
 
     for item_code, warehouse_rows in reorder_map.items():
+        # Keep only rows whose warehouse the user can access
+        allowed_set = set(get_allowed_warehouses())
+        warehouse_rows = [row for row in warehouse_rows if row.warehouse in allowed_set]
+        if not warehouse_rows:
+            continue
+
         item_doc = frappe.get_doc("Item", item_code)
         suppliers = item_doc.supplier or []
 

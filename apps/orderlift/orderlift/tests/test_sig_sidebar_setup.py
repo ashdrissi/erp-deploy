@@ -26,7 +26,8 @@ class TestSigSidebarSetup(unittest.TestCase):
 
         self.assertEqual(labels[labels.index("Administration") + 1], "Status Control")
         self.assertEqual(labels[labels.index("Administration") + 2], "Document Templates")
-        self.assertEqual(labels[labels.index("Administration") + 3], "Access Command Center")
+        self.assertEqual(labels[labels.index("Administration") + 3], "Business Delivery")
+        self.assertEqual(labels[labels.index("Administration") + 4], "Access Command Center")
         self.assertEqual(labels[labels.index("CRM & Customers") + 1], "CRM Dashboard")
         self.assertEqual(labels[labels.index("CRM & Customers") + 2], "Projects List")
         self.assertEqual(labels[labels.index("Finance") + 1], "Sale Financial Dashboard")

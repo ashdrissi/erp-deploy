@@ -76,7 +76,7 @@ function renderQueue(page, rows) {
           <div class="prb-row-title">${frappe.utils.escape_html(row.name)}</div>
           <div class="prb-row-sub">${frappe.utils.escape_html(row.customer || "")} · ${frappe.utils.escape_html(row.customer_group || "")} · ${frappe.utils.escape_html(row.status || "")}</div>
         </div>
-        <div class="prb-row-amount">${frappe.format(row.total_amount || 0, {fieldtype:'Currency'}, {only_value:true})}</div>
+        <div class="prb-row-amount">${formatCurrency(row.total_amount || 0)}</div>
         <div class="prb-actions">${row.linked_quotation ? `<a class="btn btn-default btn-sm" href="/app/quotation/${frappe.utils.escape_html(row.linked_quotation)}">${__("Quotation")}</a>` : ""}<button class="btn btn-default btn-sm" data-open-request="${frappe.utils.escape_html(row.name)}">${__("Review")}</button></div>
       </div>
     `).join(""));
@@ -92,7 +92,7 @@ async function openRequest(name) {
           <div class="prb-head"><div class="prb-head-title">${frappe.utils.escape_html(req.name || "")}</div><button id="prb-close" class="prb-close">&times;</button></div>
           <div class="prb-body">
             <div class="prb-summary">${frappe.utils.escape_html(req.customer || "")} · ${frappe.utils.escape_html(req.customer_group || "")} · ${frappe.utils.escape_html(req.status || "")}</div>
-            <div class="prb-lines">${(req.items || []).map((row) => `<div class="prb-line"><strong>${frappe.utils.escape_html(row.item_name || row.item_code || "")}</strong><span>${row.qty} × ${frappe.format(row.unit_price || 0, {fieldtype:'Currency'}, {only_value:true})}</span><em>${frappe.format(row.line_total || 0, {fieldtype:'Currency'}, {only_value:true})}</em></div>`).join("")}</div>
+            <div class="prb-lines">${(req.items || []).map((row) => `<div class="prb-line"><strong>${frappe.utils.escape_html(row.item_name || row.item_code || "")}</strong><span>${row.qty} × ${formatCurrency(row.unit_price || 0)}</span><em>${formatCurrency(row.line_total || 0)}</em></div>`).join("")}</div>
             <textarea id="prb-comment" class="form-control" rows="4" placeholder="${__("Review comment")}">${frappe.utils.escape_html(req.review_comment || req.request_notes || "")}</textarea>
             <div class="prb-inline-actions">
               <button class="btn btn-default" data-review-action="reject" data-request-name="${frappe.utils.escape_html(req.name || "")}">${__("Reject")}</button>
@@ -103,6 +103,10 @@ async function openRequest(name) {
         </div>
       </div>
     `;
+}
+
+function formatCurrency(value) {
+    return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : frappe.format(value || 0, {fieldtype: "Currency"}, {only_value: true});
 }
 
 async function submitAction(action, name) {

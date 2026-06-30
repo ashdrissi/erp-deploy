@@ -13,6 +13,7 @@ TARGET_ROUTE_OPTIONS = json.dumps({"sidebar": "CRM"})
 
 @frappe.whitelist()
 def run(workspace_name: str = "CRM"):
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     sidebar = frappe.get_doc("Workspace Sidebar", workspace_name)
 
     target_row = None

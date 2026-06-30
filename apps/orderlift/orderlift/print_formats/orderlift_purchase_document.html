@@ -1,0 +1,694 @@
+{% set co = get_company_info(doc.company) %}
+{% set co_addr = get_company_address(doc.company) %}
+{% set company_logo = frappe.db.get_value('Company', doc.company, 'company_logo') or '/files/logo.png' %}
+{% set items = doc.items %}
+{% set total_items = items | length %}
+{% set ol_price_mode = orderlift_price_display_mode if orderlift_price_display_mode is defined else 'HT' %}
+{% set ol_print_ttc = ol_price_mode in ('TTC', 'PRIX_UNITAIRE') %}
+{% set ol_simple_ttc = ol_price_mode == 'PRIX_UNITAIRE' %}
+{% set ol_ttc = get_ttc_print_context(doc) %}
+{% set ol_show_images = orderlift_show_images if orderlift_show_images is defined else 'true' %}
+{% set ol_show_images_bool = ol_show_images == 'true' %}
+{% set doc_title = get_doc_print_title(doc.doctype) %}
+{% set is_purchase_order = doc.doctype == 'Purchase Order' %}
+{% set is_purchase_invoice = doc.doctype == 'Purchase Invoice' %}
+{% set is_purchase_receipt = doc.doctype == 'Purchase Receipt' %}
+{% set is_supplier_quotation = doc.doctype == 'Supplier Quotation' %}
+{% set payment_terms = get_print_payment_terms(doc) %}
+{% set trade_terms = get_print_trade_terms(doc) %}
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@page {
+  size: A4;
+  margin: 15mm 10mm 22mm 10mm;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: #1f2937;
+  background: #f3f4f6;
+  padding: 20px;
+}
+
+.ol-page {
+  position: relative;
+  width: 100%;
+  max-width: 190mm;
+  height: 250mm;
+  border: none;
+  padding: 1px 0 0 0;
+  margin: 0 auto 30px auto;
+  background: white;
+  page-break-after: always;
+  box-sizing: border-box;
+}
+
+.ol-page-inner {
+  position: relative;
+  width: 100%;
+  height: 228mm;
+  border: 1.5px solid #9ca3af;
+  margin-top: 10mm;
+  padding: 20px 15px 15px 15px;
+  box-sizing: border-box;
+  background: white;
+}
+
+@media print {
+  body {
+    padding: 0;
+    background: white;
+  }
+  .ol-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0;
+    padding: 1px 0 0 0 !important;
+    box-shadow: none;
+    border: none !important;
+    height: 250mm !important;
+  }
+  .ol-page-inner {
+    width: 100% !important;
+    height: 228mm !important;
+    border: 1.5px solid #9ca3af !important;
+    margin-top: 12mm !important;
+  }
+}
+
+.ol-logo-container {
+  position: absolute;
+  top: -22px;
+  left: 15px;
+  background: white;
+  padding: 0 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+}
+
+.ol-logo-container img {
+  max-height: 38px;
+  object-fit: contain;
+}
+
+.ol-logo-text {
+  font-size: 16px;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.5px;
+}
+
+.ol-header-right {
+  position: absolute;
+  top: -9px;
+  right: 15px;
+  background: white;
+  padding: 0 12px;
+  z-index: 10;
+  font-size: 9.5px;
+  color: #6b7280;
+}
+
+.ol-header-right a {
+  color: #4b5563;
+  text-decoration: none;
+}
+
+.ol-title-container {
+  margin-top: 15px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.ol-title-text {
+  font-size: 18px;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: 0.5px;
+}
+
+.ol-title-date {
+  font-size: 11px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.ol-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 25px;
+}
+
+.ol-info-title {
+  font-size: 9px;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.ol-info-supplier-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 4px;
+}
+
+.ol-info-supplier-details {
+  font-size: 10px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.ol-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ol-meta-table td {
+  padding: 3px 0;
+  font-size: 10px;
+  color: #4b5563;
+}
+
+.ol-meta-label {
+  font-weight: 600;
+  width: 110px;
+  color: #374151;
+}
+
+table.ol-items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  margin-bottom: 15px;
+}
+
+table.ol-items thead tr {
+  background-color: #f3f4f6;
+  border-top: 1px solid #d1d5db;
+  border-bottom: 1px solid #d1d5db;
+}
+
+table.ol-items th {
+  padding: 6px 8px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+
+table.ol-items td {
+  padding: 8px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.ol-item-code {
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.ol-item-img {
+  max-width: 45px;
+  max-height: 45px;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  border-radius: 3px;
+}
+
+.ol-item-img-placeholder {
+  width: 45px;
+  height: 45px;
+  background-color: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.ol-item-name {
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 2px;
+}
+
+.ol-item-desc {
+  font-size: 8.5px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.ol-totals-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 15px;
+}
+
+.ol-totals-table {
+  width: 250px;
+  border-collapse: collapse;
+}
+
+.ol-totals-table td {
+  padding: 4px 8px;
+  font-size: 10px;
+  color: #4b5563;
+}
+
+.ol-totals-value {
+  text-align: right;
+  font-weight: 600;
+  color: #111827;
+}
+
+.ol-totals-grand-row td {
+  padding: 8px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #111827;
+  border-top: 1px solid #9ca3af;
+  border-bottom: 1px solid #9ca3af;
+  background-color: #f9fafb;
+}
+
+.ol-terms-container {
+  margin-top: 10px;
+  margin-bottom: 15px;
+}
+
+.ol-terms-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.ol-terms-text {
+  font-size: 9px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.ol-sig-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.ol-sig-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  border-bottom: 1px solid #d1d5db;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.ol-sig-placeholder {
+  height: 85px;
+  display: flex;
+  align-items: center;
+}
+
+.ol-sig-details {
+  font-size: 9px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.ol-footer {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  line-height: 1.4;
+  color: #1f2937;
+  font-size: 9.5px;
+}
+
+.ol-footer-company {
+  font-weight: 800;
+  font-size: 11px;
+  color: #111827;
+  letter-spacing: 0.5px;
+  margin-bottom: 1px;
+}
+
+.ol-footer-address, .ol-footer-meta {
+  font-weight: 500;
+}
+
+.ol-footer-meta a {
+  color: #1f2937;
+  text-decoration: underline;
+}
+
+.tr { text-align: right; }
+.tc { text-align: center; }
+.tl { text-align: left; }
+</style>
+
+{# ==================== MACROS ==================== #}
+{% macro render_header() %}
+<div class="ol-logo-container">
+    {%- if company_logo and ol_show_images_bool -%}
+    <img src="{{ company_logo }}" alt="{{ doc.company }}">
+  {%- else -%}
+    <div class="ol-logo-text">{{ doc.company }}</div>
+  {%- endif -%}
+</div>
+<div class="ol-header-right">
+  {%- if co.email %}<a href="mailto:{{ co.email }}">{{ co.email }}</a>{% endif %}
+  {%- if co.website %} | <a href="{{ co.website }}" target="_blank">{{ co.website | replace('https://', '') | replace('http://', '') }}</a>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro render_footer() %}
+<div class="ol-footer">
+  <div class="ol-footer-company">{{ co.company_name or doc.company }}</div>
+  {%- if co_addr %}<div class="ol-footer-address">{{ _("Adresse") }} : {{ co_addr }}</div>{% endif -%}
+  <div class="ol-footer-meta">
+    {%- if co.tax_id %}{{ _("ICE") }} : {{ co.tax_id }}{% endif -%}
+    {%- if co.email %}{% if co.tax_id %} - {% endif %}{{ _("Email") }} : <a href="mailto:{{ co.email }}">{{ co.email }}</a>{% endif -%}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro render_info_grid() %}
+<div class="ol-title-container">
+  <div class="ol-title-text">{{ _(doc_title) }}</div>
+  <div class="ol-title-date">{{ _("Date") }}: {{ frappe.utils.formatdate(doc.transaction_date) }}</div>
+</div>
+
+<table class="ol-info-table">
+  <tr>
+    <td style="width: 50%; vertical-align: top; padding-right: 15px;">
+      <div class="ol-info-title">{{ _("Supplier") }}</div>
+      <div class="ol-info-supplier-name">{{ doc.supplier_name }}</div>
+      <div class="ol-info-supplier-details">
+        {%- if doc.address_display -%}
+          {{ doc.address_display | replace('\n', '<br>') }}
+        {%- endif -%}
+      </div>
+    </td>
+    <td style="width: 50%; vertical-align: top; padding-left: 15px;">
+      <div class="ol-info-title">{{ _("Information") }}</div>
+      <table class="ol-meta-table">
+        {%- if doc.contact_mobile or doc.contact_phone -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Phone") }}</td>
+          <td>: {{ doc.contact_mobile or doc.contact_phone }}</td>
+        </tr>
+        {%- endif -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Date") }}</td>
+          <td>: {{ frappe.utils.formatdate(doc.transaction_date) }}</td>
+        </tr>
+        <tr>
+          <td class="ol-meta-label">{{ _("No.") }} {{ _(doc_title) }}</td>
+          <td>: <b>{{ doc.name }}</b></td>
+        </tr>
+        {%- if is_purchase_invoice and doc.due_date -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Due Date") }}</td>
+          <td>: <b>{{ frappe.utils.formatdate(doc.due_date) }}</b></td>
+        </tr>
+        {%- endif -%}
+        {%- if is_purchase_order and doc.schedule_date -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Expected Delivery") }}</td>
+          <td>: {{ frappe.utils.formatdate(doc.schedule_date) }}</td>
+        </tr>
+        {%- endif -%}
+        {%- if is_purchase_receipt and doc.posting_date -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Received On") }}</td>
+          <td>: {{ frappe.utils.formatdate(doc.posting_date) }}</td>
+        </tr>
+        {%- endif -%}
+        {%- if doc.owner -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Created By") }}</td>
+          <td>: {{ frappe.db.get_value('User', doc.owner, 'full_name') or doc.owner }}</td>
+        </tr>
+        {%- endif -%}
+        {%- if trade_terms -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Incoterms") }}</td>
+          <td>: {{ trade_terms }}</td>
+        </tr>
+        {%- endif -%}
+      </table>
+    </td>
+  </tr>
+</table>
+{% endmacro %}
+
+{% macro render_items_table(items_list, start_idx) %}
+<table class="ol-items">
+  <thead>
+    <tr>
+      <th class="tc" style="width: 40px;">No</th>
+      <th class="tl" style="width: 100px;">{{ _("Code") }}</th>
+      {%- if ol_show_images_bool %}
+      <th class="tc" style="width: 60px;">{{ _("Image") }}</th>
+      {%- endif %}
+      <th class="tl">{{ _("Description") }}</th>
+      <th class="tc" style="width: 35px;">U</th>
+      <th class="tc" style="width: 45px;">{{ _("Qty") }}</th>
+      <th class="tr" style="width: 105px;">{{ _("Unit Price") if ol_simple_ttc else _("Unit Price Incl. Tax") if ol_print_ttc else _("Unit Price Excl. Tax") }}</th>
+      <th class="tr" style="width: 105px;">{{ _("Total") if ol_simple_ttc else _("Amount Incl. Tax") if ol_print_ttc else _("Amount Excl. Tax") }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {%- for item in items_list %}
+    {%- set item_ = frappe.get_doc('Item', item.item_code) if frappe.db.exists('Item', item.item_code) else None %}
+    {%- set item_image = item_.image if item_ else '' %}
+    {%- set item_ttc = ol_ttc.rows_by_name.get(item.name) or ol_ttc.rows_by_idx.get((item.idx or loop.index) ~ '') or {} %}
+    {%- set display_unit = item_ttc.get('unit') if ol_print_ttc else item.rate %}
+    {%- set display_total = item_ttc.get('total') if ol_print_ttc else item.amount %}
+    <tr>
+      <td class="tc">{{ start_idx + loop.index }}</td>
+      <td class="ol-item-code">{{ item.item_code }}</td>
+      {%- if ol_show_images_bool %}
+      <td class="tc">
+        {%- if item_image %}
+          <img class="ol-item-img" src="{{ item_image }}" alt="{{ item.item_code }}">
+        {%- else %}
+          <div class="ol-item-img-placeholder">&#128247;</div>
+        {%- endif %}
+      </td>
+      {%- endif %}
+      <td>
+        <div class="ol-item-name">{{ item.item_name }}</div>
+        {%- if item.description and item.description != item.item_name %}
+          <div class="ol-item-desc">{{ item.description }}</div>
+        {%- endif %}
+      </td>
+      <td class="tc" style="font-weight: 500;">{{ item.uom or item.stock_uom }}</td>
+      <td class="tc" style="font-weight: 600;">{{ item.qty | int if item.qty == (item.qty | int) else item.qty }}</td>
+      <td class="tr">{{ format_currency_fr(display_unit, doc.currency) }}</td>
+      <td class="tr" style="font-weight: 700;">{{ format_currency_fr(display_total, doc.currency) }}</td>
+    </tr>
+    {%- endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro render_totals_and_signatures() %}
+<div class="ol-totals-container">
+  <table class="ol-totals-table">
+    {%- if ol_simple_ttc %}
+    <tr class="ol-totals-grand-row">
+      <td class="tr"><b>{{ _("Total") }}</b> ({{ doc.currency }}) :</td>
+      <td class="ol-totals-value"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></td>
+    </tr>
+    {%- elif ol_print_ttc %}
+    <tr class="ol-totals-grand-row">
+      <td class="tr"><b>{{ _("Grand Total Incl. Tax") }}</b> ({{ doc.currency }}) :</td>
+      <td class="ol-totals-value"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></td>
+    </tr>
+    {%- for tax in doc.taxes %}
+    <tr>
+      <td class="tr">{{ tax.description }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</td>
+    </tr>
+    {%- endfor %}
+    {%- if not doc.taxes and ol_ttc.total_tax %}
+    <tr>
+      <td class="tr">{{ _("Tax") }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(ol_ttc.total_tax, doc.currency) }}</td>
+    </tr>
+    {%- endif %}
+    {%- if doc.discount_amount %}
+    <tr>
+      <td class="tr">{{ _("Discount") }} :</td>
+      <td class="ol-totals-value">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</td>
+    </tr>
+    {%- endif %}
+    <tr>
+      <td class="tr">{{ _("Total Excl. Tax") }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(ol_ttc.total_ht, doc.currency) }}</td>
+    </tr>
+    {%- else %}
+    <tr>
+      <td class="tr">{{ _("Total Excl. Tax") }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(doc.total, doc.currency) }}</td>
+    </tr>
+    {%- for tax in doc.taxes %}
+    <tr>
+      <td class="tr">{{ tax.description }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</td>
+    </tr>
+    {%- endfor %}
+    {%- if doc.discount_amount %}
+    <tr>
+      <td class="tr">{{ _("Discount") }} :</td>
+      <td class="ol-totals-value">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</td>
+    </tr>
+    {%- endif %}
+    <tr class="ol-totals-grand-row">
+      <td class="tr"><b>{{ _("Grand Total Incl. Tax") }}</b> ({{ doc.currency }}) :</td>
+      <td class="ol-totals-value"><b>{{ format_currency_fr(doc.grand_total, doc.currency) }}</b></td>
+    </tr>
+    {%- endif %}
+  </table>
+</div>
+
+{%- if payment_terms -%}
+<div class="ol-payment-terms">
+  {{ _("Payment Terms") }} : {{ payment_terms | join(' / ') }}
+</div>
+{%- endif -%}
+
+{%- if doc.terms -%}
+<div class="ol-terms-container">
+  <div class="ol-terms-title">{{ _("Terms and Conditions") }}</div>
+  <div class="ol-terms-text">{{ doc.terms }}</div>
+</div>
+{%- endif -%}
+
+<table class="ol-sig-table">
+  <tr>
+    <td style="width: 48%; vertical-align: top; border-top: 1px solid #d1d5db; padding-top: 10px;">
+      <div class="ol-sig-title">{{ _("Buyer (Signature and Stamp)") }}</div>
+      <div class="ol-sig-placeholder"></div>
+      <div class="ol-sig-details">
+        <b>{{ doc.company }}</b>
+      </div>
+    </td>
+    <td style="width: 4%;"></td>
+    <td style="width: 48%; vertical-align: top; border-top: 1px solid #d1d5db; padding-top: 10px;">
+      <div class="ol-sig-title">{{ _("Supplier (Signature and Stamp)") }}</div>
+      <div class="ol-sig-placeholder"></div>
+      <div class="ol-sig-details" style="font-style: italic; color: #9ca3af;">
+        {{ _("Approved for agreement") }}
+      </div>
+    </td>
+  </tr>
+</table>
+{% endmacro %}
+
+{# ==================== PAGES RENDERING ==================== #}
+
+{% set MAX_FIRST_TOTALS = 4 %}
+{% set MAX_FIRST = 7 %}
+{% set MAX_NORMAL = 11 %}
+{% set MAX_LAST = 4 %}
+
+{% if total_items <= MAX_FIRST_TOTALS %}
+  <div class="ol-page">
+    <div class="ol-page-inner">
+      {{ render_header() }}
+      {{ render_info_grid() }}
+      {{ render_items_table(items, 0) }}
+      {{ render_totals_and_signatures() }}
+    </div>
+    {{ render_footer() }}
+  </div>
+{% else %}
+  {% set first_page_count = MAX_FIRST %}
+  {% if total_items == MAX_FIRST %}
+    {% set first_page_count = MAX_FIRST - 1 %}
+  {% endif %}
+
+  <div class="ol-page">
+    <div class="ol-page-inner">
+      {{ render_header() }}
+      {{ render_info_grid() }}
+      {{ render_items_table(items[0:first_page_count], 0) }}
+    </div>
+    {{ render_footer() }}
+  </div>
+
+  {% set ns = namespace(idx=first_page_count, totals_printed=false) %}
+
+  {% for i in range(100) %}
+    {% if not ns.totals_printed %}
+
+      {% set items_left = total_items - ns.idx %}
+
+      {% if items_left == 0 %}
+        <div class="ol-page">
+          <div class="ol-page-inner">
+            {{ render_header() }}
+            <div style="height: 15px;"></div>
+            {{ render_totals_and_signatures() }}
+          </div>
+          {{ render_footer() }}
+        </div>
+        {% set ns.totals_printed = true %}
+
+      {% elif items_left <= MAX_LAST %}
+        <div class="ol-page">
+          <div class="ol-page-inner">
+            {{ render_header() }}
+            <div style="height: 15px;"></div>
+            {{ render_items_table(items[ns.idx:ns.idx + items_left], ns.idx) }}
+            {{ render_totals_and_signatures() }}
+          </div>
+          {{ render_footer() }}
+        </div>
+        {% set ns.idx = ns.idx + items_left %}
+        {% set ns.totals_printed = true %}
+
+      {% else %}
+        {% set chunk = MAX_NORMAL %}
+        {% if items_left <= MAX_NORMAL %}
+          {% set chunk = items_left - 1 %}
+        {% endif %}
+
+        <div class="ol-page">
+          <div class="ol-page-inner">
+            {{ render_header() }}
+            <div style="height: 15px;"></div>
+            {{ render_items_table(items[ns.idx:ns.idx + chunk], ns.idx) }}
+          </div>
+          {{ render_footer() }}
+        </div>
+        {% set ns.idx = ns.idx + chunk %}
+
+      {% endif %}
+
+    {% endif %}
+  {% endfor %}
+{% endif %}

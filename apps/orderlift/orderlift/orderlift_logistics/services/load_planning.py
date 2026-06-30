@@ -18,45 +18,64 @@ STATUS_OVER_CAPACITY = "over_capacity"
 
 
 def _get_item_metrics(item_code):
-    """Get weight and volume for an item, preferring packaging profiles."""
-    resolution = get_packaging_resolution(item_code=item_code, packaging_profile=None, qty=0, uom=None)
+    """Get default packaging weight and volume for an item.
 
-    weight_kg = resolution["weight_kg"]
-    volume_m3 = resolution["volume_m3"]
+    Container planning intentionally does not use Item master dimensions because
+    shipping capacity is driven by the selected/default packaging format.
+    """
+    if not item_code:
+        return 0.0, 0.0
+    metrics = _get_packaging_metrics(item_code=item_code, qty=1)
+    return metrics["unit_weight_kg"], metrics["unit_volume_m3"]
 
-    if weight_kg <= 0 or volume_m3 <= 0:
-        values = frappe.db.get_value(
-            "Item",
-            item_code,
-            [
-                "custom_weight_kg",
-                "custom_volume_m3",
-                "custom_length_cm",
-                "custom_width_cm",
-                "custom_height_cm",
-            ],
-            as_dict=True,
-        )
-        if not values:
-            return 0.0, 0.0
 
-        item_weight_kg = flt(values.custom_weight_kg)
-        item_volume_m3 = flt(values.custom_volume_m3)
+def _get_packaging_metrics(item_code, qty=0, uom=None, packaging_profile=None):
+    if not item_code:
+        return _empty_packaging_metrics(uom=uom)
+    resolution = get_packaging_resolution(
+        item_code=item_code,
+        packaging_profile=packaging_profile,
+        qty=qty,
+        uom=uom,
+    )
+    source = resolution.get("resolved_source") or "item_fallback"
+    if source == "item_fallback":
+        return _empty_packaging_metrics(uom=uom)
 
-        if weight_kg <= 0:
-            weight_kg = item_weight_kg
+    package_weight_kg = flt(resolution.get("weight_kg") or 0)
+    package_volume_m3 = flt(resolution.get("volume_m3") or 0)
+    package_count = flt(resolution.get("package_count") or 0)
+    return {
+        "unit_weight_kg": package_weight_kg,
+        "unit_volume_m3": package_volume_m3,
+        "line_weight_kg": package_count * package_weight_kg,
+        "line_volume_m3": package_count * package_volume_m3,
+        "package_count": package_count,
+        "packaging_source": source,
+        "resolved_profile_name": resolution.get("resolved_profile_name") or "",
+        "packaging_type": resolution.get("packaging_type") or "",
+        "resolved_uom": resolution.get("resolved_uom") or uom or "",
+        "length_cm": flt(resolution.get("length_cm") or 0),
+        "width_cm": flt(resolution.get("width_cm") or 0),
+        "height_cm": flt(resolution.get("height_cm") or 0),
+    }
 
-        if item_volume_m3 <= 0:
-            length_cm = flt(values.custom_length_cm)
-            width_cm = flt(values.custom_width_cm)
-            height_cm = flt(values.custom_height_cm)
-            if length_cm > 0 and width_cm > 0 and height_cm > 0:
-                item_volume_m3 = (length_cm * width_cm * height_cm) / 1000000
 
-        if volume_m3 <= 0:
-            volume_m3 = item_volume_m3
-
-    return weight_kg, volume_m3
+def _empty_packaging_metrics(uom=None):
+    return {
+        "unit_weight_kg": 0.0,
+        "unit_volume_m3": 0.0,
+        "line_weight_kg": 0.0,
+        "line_volume_m3": 0.0,
+        "package_count": 0.0,
+        "packaging_source": "item_fallback",
+        "resolved_profile_name": "",
+        "packaging_type": "",
+        "resolved_uom": uom or "",
+        "length_cm": 0.0,
+        "width_cm": 0.0,
+        "height_cm": 0.0,
+    }
 
 
 def _get_row_metrics(row, parent_doctype=None, packaging_profile=None):
@@ -72,45 +91,12 @@ def _get_row_metrics(row, parent_doctype=None, packaging_profile=None):
     uom = getattr(row, "uom", None) or None
     packaging_profile = packaging_profile or getattr(row, "custom_packaging_profile", None) or None
 
-    if parent_doctype == "Purchase Order" or packaging_profile:
-        resolution = get_packaging_resolution(
-            item_code=item_code,
-            packaging_profile=packaging_profile,
-            qty=qty,
-            uom=uom,
-        )
-
-        package_weight_kg = flt(resolution.get("weight_kg") or 0)
-        package_volume_m3 = flt(resolution.get("volume_m3") or 0)
-        package_count = flt(resolution.get("package_count") or 0)
-
-        if resolution.get("resolved_source") != "item_fallback" and package_count > 0:
-            line_weight_kg = package_count * package_weight_kg
-            line_volume_m3 = package_count * package_volume_m3
-            return {
-                "unit_weight_kg": package_weight_kg,
-                "unit_volume_m3": package_volume_m3,
-                "line_weight_kg": line_weight_kg,
-                "line_volume_m3": line_volume_m3,
-                "package_count": package_count,
-                "packaging_source": resolution.get("resolved_source") or "item_fallback",
-                "resolved_profile_name": resolution.get("resolved_profile_name") or "",
-                "packaging_type": resolution.get("packaging_type") or "",
-                "resolved_uom": resolution.get("resolved_uom") or uom or "",
-            }
-
-    unit_weight_kg, unit_volume_m3 = _get_item_metrics(item_code)
-    return {
-        "unit_weight_kg": unit_weight_kg,
-        "unit_volume_m3": unit_volume_m3,
-        "line_weight_kg": qty * unit_weight_kg,
-        "line_volume_m3": qty * unit_volume_m3,
-        "package_count": qty,
-        "packaging_source": "item_fallback",
-        "resolved_profile_name": "",
-        "packaging_type": "",
-        "resolved_uom": uom or "",
-    }
+    return _get_packaging_metrics(
+        item_code=item_code,
+        packaging_profile=packaging_profile,
+        qty=qty,
+        uom=uom,
+    )
 
 
 def compute_delivery_note_totals(delivery_note_name):
@@ -126,7 +112,7 @@ def compute_delivery_note_totals(delivery_note_name):
         unit_weight_kg = flt(metrics["unit_weight_kg"])
         unit_volume_m3 = flt(metrics["unit_volume_m3"])
 
-        if unit_weight_kg <= 0 or unit_volume_m3 <= 0:
+        if unit_weight_kg <= 0 or unit_volume_m3 <= 0 or _missing_packaging_dimensions(metrics):
             missing_data_items.append(row.item_code)
 
         line_weight_kg = flt(metrics["line_weight_kg"])
@@ -146,6 +132,9 @@ def compute_delivery_note_totals(delivery_note_name):
                 "resolved_uom": metrics.get("resolved_uom") or "",
                 "unit_weight_kg": round3(unit_weight_kg),
                 "unit_volume_m3": round3(unit_volume_m3),
+                "length_cm": round3(metrics.get("length_cm")),
+                "width_cm": round3(metrics.get("width_cm")),
+                "height_cm": round3(metrics.get("height_cm")),
                 "line_weight_kg": round3(line_weight_kg),
                 "line_volume_m3": round3(line_volume_m3),
             }
@@ -180,7 +169,7 @@ def compute_purchase_order_totals(purchase_order_name):
         unit_weight_kg = flt(metrics["unit_weight_kg"])
         unit_volume_m3 = flt(metrics["unit_volume_m3"])
 
-        if unit_weight_kg <= 0 or unit_volume_m3 <= 0:
+        if unit_weight_kg <= 0 or unit_volume_m3 <= 0 or _missing_packaging_dimensions(metrics):
             missing_data_items.append(row.item_code)
 
         line_weight_kg = flt(metrics["line_weight_kg"])
@@ -200,6 +189,9 @@ def compute_purchase_order_totals(purchase_order_name):
                 "resolved_uom": metrics.get("resolved_uom") or "",
                 "unit_weight_kg": round3(unit_weight_kg),
                 "unit_volume_m3": round3(unit_volume_m3),
+                "length_cm": round3(metrics.get("length_cm")),
+                "width_cm": round3(metrics.get("width_cm")),
+                "height_cm": round3(metrics.get("height_cm")),
                 "line_weight_kg": round3(line_weight_kg),
                 "line_volume_m3": round3(line_volume_m3),
             }
@@ -213,6 +205,14 @@ def compute_purchase_order_totals(purchase_order_name):
         "items": items_summary,
         "missing_data_items": sorted(set(missing_data_items)),
     }
+
+
+def _missing_packaging_dimensions(metrics) -> bool:
+    return not (
+        flt(metrics.get("length_cm") or 0) > 0
+        and flt(metrics.get("width_cm") or 0) > 0
+        and flt(metrics.get("height_cm") or 0) > 0
+    )
 
 
 def get_active_containers(destination_zone=None, departure_date=None):

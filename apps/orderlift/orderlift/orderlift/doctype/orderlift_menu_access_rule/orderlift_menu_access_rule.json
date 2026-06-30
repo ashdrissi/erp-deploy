@@ -18,6 +18,7 @@
         "icon",
         "company_scoped",
         "allowed_roles_json",
+        "denied_roles_json",
         "default_roles_json"
     ],
     "fields": [
@@ -92,6 +93,13 @@
             "fieldname": "allowed_roles_json",
             "fieldtype": "Code",
             "label": "Allowed Roles JSON",
+            "options": "JSON"
+        },
+        {
+            "description": "JSON array of roles explicitly hidden when Allowed Roles JSON includes All.",
+            "fieldname": "denied_roles_json",
+            "fieldtype": "Code",
+            "label": "Denied Roles JSON",
             "options": "JSON"
         },
         {

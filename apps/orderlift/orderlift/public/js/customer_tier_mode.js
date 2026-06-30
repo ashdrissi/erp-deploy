@@ -167,8 +167,8 @@ async function ensureManualTierDefault(frm) {
 }
 
 async function refreshTierModeUI(frm) {
-    const isProspect = frm.doctype === "Prospect";
-    if (isProspect) {
+    const isSimpleParty = ["Lead", "Prospect"].includes(frm.doctype);
+    if (isSimpleParty) {
         await applyPricingTierOptions(frm);
         if (frm.fields_dict.enable_dynamic_segmentation) {
             frm.set_value("enable_dynamic_segmentation", 0);
@@ -252,6 +252,28 @@ function addPortalActions(frm) {
     }, __("B2B Portal"));
 }
 
+function canManagePricingRules() {
+    const adminRoles = ["Administrator", "System Manager", "Developer", "Orderlift Admin"];
+    return adminRoles.some((role) => frappe.user && frappe.user.has_role && frappe.user.has_role(role));
+}
+
+function hidePricingRuleActions(frm) {
+    if (canManagePricingRules()) return;
+
+    const removePricingRuleButtons = () => {
+        const wrapper = frm.page && frm.page.wrapper ? $(frm.page.wrapper) : $(document);
+        wrapper.find("button, a.dropdown-item").each(function () {
+            const text = ($(this).text() || "").trim();
+            const normalized = text.toLowerCase();
+            if (normalized === __("Pricing Rule").toLowerCase() || normalized.includes(__("create pricing rule").toLowerCase())) {
+                $(this).remove();
+            }
+        });
+    };
+
+    [0, 250, 900].forEach((delay) => setTimeout(removePricingRuleButtons, delay));
+}
+
 frappe.ui.form.on("Customer", {
     async setup(frm) {
         applyPricingTierQueries(frm);
@@ -262,6 +284,7 @@ frappe.ui.form.on("Customer", {
         await refreshTierModeUI(frm);
         setTimeout(() => refreshTierModeUI(frm), 100);
         addPortalActions(frm);
+        hidePricingRuleActions(frm);
     },
 
     async customer_group(frm) {
@@ -304,6 +327,21 @@ frappe.ui.form.on("Prospect", {
     },
 
     async customer_group(frm) {
+        await refreshTierModeUI(frm);
+    },
+
+    manual_tier(frm) {
+        frm.set_value("tier", frm.doc.manual_tier || "");
+    },
+});
+
+frappe.ui.form.on("Lead", {
+    async setup(frm) {
+        applyPricingTierQueries(frm);
+        await applyPricingTierOptions(frm);
+    },
+
+    async refresh(frm) {
         await refreshTierModeUI(frm);
     },
 

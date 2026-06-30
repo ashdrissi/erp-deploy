@@ -1,23 +1,35 @@
 (function () {
     const METHOD = "orderlift.orderlift.page.access_command_center.access_command_center";
-    const PERMISSION_FIELDS = ["select", "read", "write", "create", "delete", "submit", "cancel", "amend", "report", "import", "export", "print", "email", "share", "if_owner"];
+    const PERMISSION_FIELDS = ["select", "read", "write", "create", "delete", "submit", "cancel", "amend", "report", "import", "export", "print", "email", "share"];
     const TABS = [
         ["users", "Users"],
         ["roles", "Roles"],
+        ["policy", "How Access Works"],
         ["menu", "Menu Access"],
         ["matrix", "Permissions Matrix"],
+        ["reports", "Report Access"],
         ["audit", "Audit Log"],
     ];
+    let matrixSearchTimer = null;
+    let reportSearchTimer = null;
     const STATE = {
         activeTab: "users",
         search: "",
         userFilter: "all",
         doctypeSearch: "",
+        reportSearch: "",
+        matrixSearchInput: "",
+        matrixSearchPending: false,
         selectedRole: "System Manager",
         selectedUser: "",
         selectedUserDetail: null,
         data: null,
         matrixDraft: {},
+        matrixDraftRole: "",
+        matrixView: "grouped",
+        matrixExpandedGroups: {},
+        reportExpandedGroups: {},
+        selectedReports: {},
         hiddenUserColumns: [],
         loading: false,
     };
@@ -40,11 +52,16 @@
         try {
             const res = await frappe.call({
                 method: `${METHOD}.get_access_command_center_data`,
-                args: { search: STATE.search, selected_role: STATE.selectedRole, doctype_search: STATE.doctypeSearch },
+                args: { search: STATE.search, selected_role: STATE.selectedRole, report_search: STATE.reportSearch },
             });
             STATE.data = res.message || {};
             STATE.selectedRole = STATE.data.selected_role || STATE.selectedRole;
-            if (!STATE.selectedUser && (STATE.data.users || []).length) STATE.selectedUser = STATE.data.users[0].name;
+            const users = STATE.data.users || [];
+            if (STATE.selectedUser && !users.some((user) => user.name === STATE.selectedUser)) {
+                STATE.selectedUser = users[0]?.name || "";
+                STATE.selectedUserDetail = null;
+            }
+            if (!STATE.selectedUser && users.length) STATE.selectedUser = users[0].name;
             if (STATE.selectedUser) await loadUserDetail(STATE.selectedUser, false);
             render(page);
         } catch (error) {
@@ -171,8 +188,10 @@
     function centerMarkup(data) {
         if (STATE.activeTab === "users") return usersTableMarkup(data);
         if (STATE.activeTab === "roles") return rolesMarkup(data.roles || [], __("All Roles"), true);
+        if (STATE.activeTab === "policy") return policyMarkup();
         if (STATE.activeTab === "menu") return menuAccessMarkup(data);
         if (STATE.activeTab === "matrix") return matrixMarkup(data);
+        if (STATE.activeTab === "reports") return reportsAccessManagerMarkup(data);
         if (STATE.activeTab === "audit") return auditMarkup(data.audit_log || []);
         return usersTableMarkup(data.users || []);
     }
@@ -241,11 +260,11 @@
     }
 
     function menuAccessMarkup(data) {
-        const roles = data.roles || [];
+        const roles = availableRoles();
         const selectedRole = STATE.selectedRole || (roles[0] && roles[0].name) || "";
         const grouped = groupBySection(data.menu_access || []);
-        const selectedCount = (data.menu_access || []).filter((item) => (item.allowed_roles || []).includes(selectedRole)).length;
-        return panelShell(__("Menu Access"), __("Control which Main Dashboard sections and links each role can see. Admin roles still bypass menu restrictions."), `
+        const selectedCount = (data.menu_access || []).filter((item) => menuItemSelectedForRole(item, selectedRole)).length;
+        return panelShell(__("Menu Access"), __("Control which Main Dashboard sections and links each role can see. Platform admin roles still bypass menu restrictions."), `
             <div class="acc-matrix-toolbar">
                 <label><span>${__("Role")}</span><select data-menu-role-selector>${roles.map((role) => `<option value="${escapeHtml(role.name)}" ${role.name === selectedRole ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select></label>
                 <span class="acc-count-pill"><strong>${selectedCount}</strong> ${__("visible menu items")}</span>
@@ -263,7 +282,7 @@
             <p>${items.length} ${__("managed links")}</p>
             <div class="acc-role-toggle-list acc-menu-toggle-list">
                 ${items.map((item) => {
-                    const checked = (item.allowed_roles || []).includes(selectedRole);
+                    const checked = menuItemSelectedForRole(item, selectedRole);
                     const helper = [item.link_type, item.link_to || item.url].filter(Boolean).join(" · ");
                     return `<label class="acc-role-toggle ${checked ? "selected" : ""}"><input type="checkbox" data-menu-key="${escapeHtml(item.key)}" ${checked ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(helper)}</small></span>${item.enabled ? "" : badge(__("Disabled"), "gray")}</label>`;
                 }).join("")}
@@ -271,21 +290,118 @@
         </article>`;
     }
 
+    function policyMarkup() {
+        const gateCards = [
+            [__("1"), __("Role says yes"), __("The role must allow this document and action."), __("Example: no Quotation permission means no linked Quotations.")],
+            [__("2"), __("Company matches"), __("The record must belong to an allowed company."), __("No selected company means no company documents.")],
+            [__("3"), __("Business type matches"), __("Distribution / Installation narrows records inside the company."), __("Blank business type stays visible.")],
+            [__("4"), __("Special scope matches"), __("Warehouse and price-list rules apply where relevant."), __("Stock uses warehouses. Catalogue uses allowed price lists.")],
+            [__("5"), __("Concerned link exists"), __("If concerned-only is on, the user must be business owner, assigned, responsible, or linked through an allowed source document."), __("Opportunity uses opportunity_owner; Customer uses account manager, Sales Team, assignments, or visible Opportunities.")],
+        ];
+        const chains = [
+            [__("Sales"), __("Opportunity -> Quotation -> Sales Order -> Sales Invoice / Delivery Note")],
+            [__("Purchasing"), __("Sales Order / Project -> Material Request -> Purchase Order -> Purchase Receipt / Purchase Invoice")],
+            [__("Campaigns"), __("Campaign owner, assigned campaign target, or target linked to a visible Lead, Prospect, Customer, Opportunity, Quotation, or Sales Order")],
+            [__("SAV"), __("Assigned technician or linked Customer, Sales Order, Delivery Note, Sales Invoice, Purchase Receipt, or Project")],
+            [__("Pricing"), __("Pricing Sheet owner, sales person, linked Opportunity, or visible Lead / Prospect / Customer")],
+        ];
+        const examples = [
+            [__("Agent commissions"), __("A sales agent sees only commissions for their own Sales Person. Managers can see broader team data.")],
+            [__("Items in catalogue"), __("A restricted static agent sees an item only when that item has a price in one of the selected allowed selling price lists.")],
+            [__("Price lists"), __("Price List and Item Price rows are limited to allowed selling, buying, or benchmark lists.")],
+            [__("Purchase orders"), __("A purchase user with concerned-only access sees owned, assigned, or linked Purchase Orders. A sales user still needs Purchase Order permission first.")],
+            [__("SAV tickets"), __("A ticket is visible if it is assigned to the user or connected to a document the user is allowed to see.")],
+            [__("Customer records"), __("A visible sale does not reveal the Customer unless the role also grants Customer access.")],
+            [__("Pipeline assignments"), __("Assignments use Orderlift ToDos and linked-document policy, not native DocShare or if_owner.")],
+        ];
+        const hiddenReasons = [
+            __("The role does not allow this document type or action."),
+            __("The record belongs to another company."),
+            __("The record has a business type outside the user's scope."),
+            __("The user is not business owner, assigned, responsible, or connected through an allowed source document."),
+            __("The record uses a warehouse or price list outside the user's special scope."),
+            __("The record is related to another document, but the role lacks permission for this related document type."),
+        ];
+        return panelShell(__("How Access Works"), __("A plain-language guide for why a user can or cannot see business records."), `
+            <div class="acc-policy-grid">
+                <article class="acc-policy-card acc-policy-hero-card">
+                    <span class="acc-policy-kicker">${__("Fast Rule")}</span>
+                    <h3>${__("No role, no record. No link, no record.")}</h3>
+                    <p>${__("Access is a chain of yes/no gates. The user must pass role, company, business type, special scope, and concerned-document checks. Related records never bypass role permission.")}</p>
+                </article>
+                <article class="acc-policy-card">
+                    <h3>${__("Can This User See It?")}</h3>
+                    <div class="acc-policy-steps">
+                        ${gateCards.map(([step, title, text, example]) => `<div class="acc-policy-step"><strong>${escapeHtml(step)}</strong><span><b>${escapeHtml(title)}</b><small>${escapeHtml(text)}</small><em>${escapeHtml(example)}</em></span></div>`).join("")}
+                    </div>
+                </article>
+                <article class="acc-policy-card">
+                    <h3>${__("Document Chains")}</h3>
+                    <div class="acc-policy-examples">
+                        ${chains.map(([title, text]) => `<div><b>${escapeHtml(title)}</b><small>${escapeHtml(text)}</small></div>`).join("")}
+                    </div>
+                </article>
+                <article class="acc-policy-card">
+                    <h3>${__("Real Examples")}</h3>
+                    <div class="acc-policy-examples">
+                        ${examples.map(([title, text]) => `<div><b>${escapeHtml(title)}</b><small>${escapeHtml(text)}</small></div>`).join("")}
+                    </div>
+                </article>
+                <article class="acc-policy-card acc-policy-wide">
+                    <h3>${__("Why Is It Hidden?")}</h3>
+                    <div class="acc-policy-checklist">
+                        ${hiddenReasons.map((reason) => `<span>${ICONS.lock}${escapeHtml(reason)}</span>`).join("")}
+                    </div>
+                </article>
+                <article class="acc-policy-card acc-policy-wide acc-policy-cheat-card">
+                    <h3>${__("Admin Controls")}</h3>
+                    <div class="acc-policy-cheats">
+                        <span><b>${__("Menu Access")}</b><small>${__("Controls what links appear in Main Dashboard.")}</small></span>
+                        <span><b>${__("Permissions Matrix")}</b><small>${__("Controls what records and actions each role can use.")}</small></span>
+                        <span><b>${__("User Panel")}</b><small>${__("Controls roles, companies, warehouses, business types, and concerned-only mode.")}</small></span>
+                        <span><b>${__("Agent Pricing Rules")}</b><small>${__("Controls allocated selling, buying, and benchmark price lists.")}</small></span>
+                    </div>
+                </article>
+                <article class="acc-policy-card acc-policy-wide acc-policy-cheat-card">
+                    <h3>${__("Capabilities")}</h3>
+                    <p>${__("Capabilities are role-level flags that override specific pricing and access gates. They are currently in shadow mode — legacy hardcoded role checks remain authoritative until the site flag <code>orderlift_use_role_capabilities</code> is enabled.")}</p>
+                    <div class="acc-policy-cheats">
+                        <span><b>${__("Privileged Pricing")}</b><small>${__("See all active-company price lists without agent allocation caps. Access item cost and margin data.")}</small></span>
+                        <span><b>${__("Quotation Override")}</b><small>${__("Set any price or discount on quotations and pricing sheets. Bypass max-discount caps, floor-price validation, and auto-repricing.")}</small></span>
+                        <span><b>${__("Purchasing Access")}</b><small>${__("View buying price lists and supplier cost data. Gated behind purchase roles.")}</small></span>
+                    </div>
+                </article>
+            </div>
+        `);
+    }
+
     function matrixMarkup(data) {
         const matrix = data.permission_matrix || { rows: [] };
-        const roles = data.roles || [];
+        const roles = availableRoles();
         const dirtyCount = Object.keys(STATE.matrixDraft).length;
+        const allRows = functionalMatrixRows(matrix.rows || []);
+        const displayRows = filteredMatrixRows(allRows, STATE.doctypeSearch);
+        const groups = groupedMatrixRows(displayRows);
+        const searchValue = STATE.matrixSearchInput || STATE.doctypeSearch;
+        const searchActive = Boolean(normalizeMatrixSearch(STATE.doctypeSearch).length);
+        const autoExpandGroups = searchActive && displayRows.length <= 80 && groups.length <= 6;
+        const bodyMarkup = STATE.matrixView === "technical"
+            ? displayRows.map((row) => matrixRow(row)).join("")
+            : groups.map((group) => matrixGroup(group, autoExpandGroups)).join("");
         return panelShell(__("Permissions Matrix"), __("Control read, edit, create, remove, approval, import, export, and sharing access through safe Custom DocPerm overrides."), `
             <div class="acc-matrix-toolbar">
                 <label><span>${__("Role")}</span><select data-role-selector>${roles.map((role) => `<option value="${escapeHtml(role.name)}" ${role.name === STATE.selectedRole ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select></label>
-                <label><span>${__("DocType or Module")}</span><input data-doctype-search type="search" value="${escapeHtml(STATE.doctypeSearch)}" placeholder="${__("Search DocType")}" /></label>
+                <label><span>${__("Search groups, modules, doctypes")}</span><input data-doctype-search type="search" value="${escapeHtml(searchValue)}" placeholder="${__("Item, Catalog, Child Table, high...")}" /></label>
+                ${searchActive ? `<button class="acc-row-action" data-clear-doctype-search>${__("Clear Search")}</button>` : ""}
+                <label><span>${__("View")}</span><select data-matrix-view><option value="grouped" ${STATE.matrixView !== "technical" ? "selected" : ""}>${__("Business Groups")}</option><option value="technical" ${STATE.matrixView === "technical" ? "selected" : ""}>${__("Technical DocTypes")}</option></select></label>
+                <span class="acc-matrix-search-status ${STATE.matrixSearchPending ? "active" : ""}" data-matrix-search-status>${STATE.matrixSearchPending ? `<b></b>${__("Searching")}` : ""}</span>
                 <span class="acc-source-legend"><b class="custom"></b>${__("Custom override")} <b class="standard"></b>${__("System permission")} <b class="none"></b>${__("No access")}</span>
-                <span class="acc-count-pill"><strong>${matrix.rows.length}</strong> ${__("doctypes")}</span>
+                <span class="acc-count-pill"><strong>${displayRows.length}</strong>${searchActive ? `/${allRows.length}` : ""} ${__("doctypes")} · <strong>${groups.length}</strong> ${__("groups")}</span>
             </div>
             <div class="acc-matrix-wrap">
                 <table class="acc-matrix">
                     <thead><tr><th class="sticky-col">${__("DocType")}</th><th>${__("Level")}</th><th>${__("Source")}</th><th>${__("Risk")}</th>${PERMISSION_FIELDS.map((field) => `<th>${labelPermission(field)}</th>`).join("")}<th>${__("Action")}</th></tr></thead>
-                    <tbody>${matrix.rows.map(matrixRow).join("") || tableEmpty(__("No permissions found"), __("Try another role or search."))}</tbody>
+                    <tbody>${bodyMarkup || tableEmpty(__("No permissions found"), __("Try another role or search."))}</tbody>
                 </table>
             </div>
             <div class="acc-page-report-grid">
@@ -296,15 +412,164 @@
         `);
     }
 
+    function filteredMatrixRows(rows, search) {
+        const tokens = normalizeMatrixSearch(search);
+        if (!tokens.length) return rows || [];
+        const groupMatches = new Set();
+        (rows || []).forEach((row) => {
+            const groupText = matrixGroupSearchText(row);
+            if (tokens.every((token) => groupText.includes(token))) groupMatches.add(row.group_key || `module:${row.module || "Unassigned"}`);
+        });
+        return (rows || []).filter((row) => {
+            const groupKey = row.group_key || `module:${row.module || "Unassigned"}`;
+            if (groupMatches.has(groupKey)) return true;
+            const rowText = matrixSearchText(row);
+            return tokens.every((token) => rowText.includes(token));
+        });
+    }
+
+    function normalizeMatrixSearch(search) {
+        return String(search || "").toLowerCase().trim().split(/\s+/).filter(Boolean);
+    }
+
+    function matrixSearchText(row) {
+        return [
+            row.doctype,
+            row.module,
+            row.group_label,
+            row.group_key,
+            row.group_relation,
+            row.group_parent_doctype,
+            row.source,
+            row.risk,
+            Number(row.is_child_table || 0) ? "child table child" : "primary parent",
+            Number(row.is_custom_doctype || 0) ? "custom doctype" : "standard doctype",
+        ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function matrixGroupSearchText(row) {
+        return [row.module, row.group_label, row.group_key].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function groupedMatrixRows(rows) {
+        const groups = new Map();
+        (rows || []).forEach((row) => {
+            const key = row.group_key || `module:${row.module || "Unassigned"}`;
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key,
+                    label: row.group_label || row.module || __("Unassigned"),
+                    order: Number(row.group_order ?? 1000),
+                    module: row.module || "",
+                    rows: [],
+                });
+            }
+            groups.get(key).rows.push(row);
+        });
+        return Array.from(groups.values()).sort((a, b) => {
+            if (a.order !== b.order) return a.order - b.order;
+            return String(a.label).localeCompare(String(b.label));
+        });
+    }
+
+    function matrixGroup(group, autoExpand) {
+        const expanded = Boolean(STATE.matrixExpandedGroups[group.key]) || Boolean(autoExpand);
+        const activeCount = group.rows.filter(rowHasPermission).length;
+        const childCount = group.rows.filter((row) => Number(row.is_child_table || 0)).length;
+        const customCount = group.rows.filter((row) => row.source === "custom" || STATE.matrixDraft[row.row_key || `${row.doctype}::${row.permlevel || 0}`]).length;
+        const risk = groupRisk(group.rows);
+        return `
+            <tr class="acc-matrix-group-row risk-${risk}" data-matrix-group="${escapeHtml(group.key)}">
+                <td class="sticky-col">
+                    <button class="acc-group-toggle" data-toggle-matrix-group="${escapeHtml(group.key)}" aria-expanded="${expanded ? "true" : "false"}"><span>${expanded ? "-" : "+"}</span><strong>${escapeHtml(group.label)}</strong></button>
+                    <small>${activeCount}/${group.rows.length} ${__("active")} · ${childCount} ${__("child tables")} · ${customCount} ${__("custom/draft")}</small>
+                </td>
+                <td>${badge(String(group.rows.length), "gray")}</td>
+                <td>${groupSourceBadge(group.rows)}</td>
+                <td>${badge(risk, risk === "critical" ? "red" : risk === "high" ? "amber" : risk === "medium" ? "blue" : "gray")}</td>
+                ${PERMISSION_FIELDS.map((field) => groupPermissionToggle(group, field)).join("")}
+                <td><button class="acc-row-action" data-toggle-matrix-group="${escapeHtml(group.key)}">${expanded ? __("Collapse") : __("Expand")}</button></td>
+            </tr>
+            ${expanded ? group.rows.map((row) => matrixRow(row, true)).join("") : ""}
+        `;
+    }
+
+    function groupPermissionToggle(group, field) {
+        const state = groupPermissionState(group.rows, field);
+        const title = state.disabled ? __("Disabled for this group") : __("Apply {0} to all visible DocTypes in this group", [labelPermission(field)]);
+        return `<td><label class="acc-perm-toggle acc-group-perm-toggle ${state.disabled ? "disabled" : ""}" title="${escapeHtml(title)}"><input type="checkbox" data-group-permission-field="${field}" data-group-key="${escapeHtml(group.key)}" ${state.checked ? "checked" : ""} data-mixed="${state.mixed ? 1 : 0}" ${state.disabled ? "disabled" : ""} /><span></span></label></td>`;
+    }
+
+    function groupPermissionState(rows, field) {
+        const editable = (rows || []).filter((row) => !(row.disabled_permission_fields || []).includes(field));
+        if (!editable.length) return { checked: false, mixed: false, disabled: true };
+        const checkedCount = editable.filter((row) => Number(rowPermissionValues(row)[field] || 0)).length;
+        return { checked: checkedCount === editable.length, mixed: checkedCount > 0 && checkedCount < editable.length, disabled: false };
+    }
+
+    function rowPermissionValues(row) {
+        const rowKey = row.row_key || `${row.doctype}::${row.permlevel || 0}`;
+        return STATE.matrixDraft[rowKey] || row.effective || {};
+    }
+
+    function groupRisk(rows) {
+        const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+        return (rows || []).reduce((current, row) => (rank[row.risk] < rank[current] ? row.risk : current), "low");
+    }
+
+    function groupSourceBadge(rows) {
+        if ((rows || []).some((row) => row.source === "custom")) return sourceBadge("custom");
+        if ((rows || []).some((row) => row.source === "standard")) return sourceBadge("standard");
+        return sourceBadge("none");
+    }
+
+    function functionalMatrixRows(rows) {
+        const byDoctype = new Map();
+        (rows || []).forEach((row) => {
+            if (!row.doctype) return;
+            const existing = byDoctype.get(row.doctype);
+            if (!existing || matrixRowRank(row) < matrixRowRank(existing)) byDoctype.set(row.doctype, row);
+        });
+        return Array.from(byDoctype.values());
+    }
+
+    function matrixRowRank(row) {
+        const sourceRank = { custom: 0, standard: 1, none: 2 }[row.source] ?? 3;
+        const activeRank = hasEffectivePermission(row) ? 0 : 1;
+        return sourceRank * 100 + activeRank * 10 + Number(row.permlevel || 0);
+    }
+
+    function hasEffectivePermission(row) {
+        const effective = row.effective || {};
+        return PERMISSION_FIELDS.some((field) => Number(effective[field] || 0));
+    }
+
+    function rowHasPermission(row) {
+        const values = rowPermissionValues(row);
+        return PERMISSION_FIELDS.some((field) => Number(values[field] || 0));
+    }
+
+    function menuItemSelectedForRole(item, role) {
+        if (!item || !role || !item.enabled) return false;
+        const allowedRoles = item.allowed_roles || [];
+        const deniedRoles = item.denied_roles || [];
+        if (deniedRoles.includes(role)) return false;
+        return allowedRoles.includes(role) || allowedRoles.includes("All");
+    }
+
     function detailPanelMarkup(data) {
         const user = STATE.selectedUserDetail;
-        const roles = data.roles || [];
+        const roles = availableRoles();
         const companies = data.companies || [];
         if (!user) return emptyState(__("No user selected"), __("Select a user to review details, roles, permissions, and warnings."), ICONS.users);
         const assigned = new Set(user.roles || []);
         const assignedCompanies = new Set(user.allowed_companies || []);
+        const warehouses = data.warehouses || [];
+        const assignedWarehouses = new Set(user.allowed_warehouses || []);
         const businessTypes = data.business_types || [];
         const assignedBusinessTypes = new Set(user.allowed_business_types || []);
+        const scopedBusinessTypes = businessTypesForCompanies(data, assignedCompanies);
+        const scopedWarehouses = warehousesForCompanies(warehouses, assignedCompanies);
         return `
             <div class="acc-detail-head">
                 <div class="acc-avatar">${initials(user.full_name || user.email)}</div>
@@ -321,6 +586,7 @@
                 <label class="acc-field"><span>${__("Full Name")}</span><input data-user-field="full_name" value="${escapeHtml(user.full_name || "")}" /></label>
                 <label class="acc-field"><span>${__("User Type")}</span><select data-user-field="user_type"><option ${user.user_type === "System User" ? "selected" : ""}>System User</option><option ${user.user_type === "Website User" ? "selected" : ""}>Website User</option></select></label>
                 <label class="acc-toggle-line"><input data-user-field="enabled" type="checkbox" ${user.enabled ? "checked" : ""} /> ${__("User is enabled")}</label>
+                <label class="acc-toggle-line"><input data-user-field="custom_owned_documents_only" type="checkbox" ${user.custom_owned_documents_only ? "checked" : ""} /> ${__("Owned / assigned CRM documents only")}</label>
                 <button class="acc-btn acc-btn-primary full" data-save-user>${__("Save User Details")}</button>
                 <button class="acc-btn acc-btn-danger full" data-delete-user>${__("Delete User")}</button>
             </div>
@@ -335,17 +601,70 @@
                 <button class="acc-btn acc-btn-secondary full" data-save-user-companies>${__("Save Company Access")}</button>
             </div>
             <div class="acc-detail-section">
+                <h3>${__("Warehouse Access")}</h3>
+                <p class="acc-section-hint">${__("Warehouses are filtered by selected companies. Leave all unchecked for company-level warehouse access.")}</p>
+                <div class="acc-role-toggle-list acc-warehouse-toggle-list">${scopedWarehouses.map((warehouse) => warehouseAccessRow(warehouse, assignedWarehouses)).join("") || `<div class="acc-empty-inline">${__("Select company access first to choose warehouses.")}</div>`}</div>
+                <button class="acc-btn acc-btn-secondary full" data-save-user-warehouses>${__("Save Warehouse Access")}</button>
+            </div>
+            <div class="acc-detail-section">
                 <h3>${__("Business Type Access")}</h3>
-                <p class="acc-section-hint">${__("Limit this user to specific business types within their assigned companies. Leave all unchecked for full access to every business type (default).")}</p>
-                <div class="acc-role-toggle-list acc-business-type-toggle-list">${businessTypes.map((businessType) => businessTypeAccessRow(businessType, assignedBusinessTypes)).join("") || `<div class="acc-empty-inline">${__("No business types found.")}</div>`}</div>
+                <p class="acc-section-hint">${__("Business types are filtered by selected companies, so Distribution users cannot receive Installation-only access.")}</p>
+                <div class="acc-role-toggle-list acc-business-type-toggle-list">${scopedBusinessTypes.map((businessType) => businessTypeAccessRow(businessType, assignedBusinessTypes)).join("") || `<div class="acc-empty-inline">${__("Select company access first to choose business types.")}</div>`}</div>
                 <button class="acc-btn acc-btn-secondary full" data-save-user-business-types>${__("Save Business Type Access")}</button>
             </div>
         `;
     }
 
+    function selectedCompanySet(page) {
+        const root = page && page.main ? page.main : $(document);
+        const checked = root.find("[data-user-company]:checked").map(function () { return $(this).data("user-company"); }).get();
+        if (checked.length) return new Set(checked);
+        return new Set((STATE.selectedUserDetail || {}).allowed_companies || []);
+    }
+
+    function refreshCompanyScopedAccessOptions(page) {
+        if (!STATE.selectedUserDetail || !STATE.data) return;
+        const companySet = selectedCompanySet(page);
+        const currentWarehouses = new Set(page.main.find("[data-user-warehouse]:checked").map(function () { return $(this).data("user-warehouse"); }).get());
+        const currentBusinessTypes = new Set(page.main.find("[data-user-business-type]:checked").map(function () { return $(this).data("user-business-type"); }).get());
+        const warehouses = warehousesForCompanies(STATE.data.warehouses || [], companySet);
+        const businessTypes = businessTypesForCompanies(STATE.data, companySet);
+        page.main.find(".acc-warehouse-toggle-list").html(
+            warehouses.map((warehouse) => warehouseAccessRow(warehouse, currentWarehouses)).join("") || `<div class="acc-empty-inline">${__("Select company access first to choose warehouses.")}</div>`
+        );
+        page.main.find(".acc-business-type-toggle-list").html(
+            businessTypes.map((businessType) => businessTypeAccessRow(businessType, currentBusinessTypes)).join("") || `<div class="acc-empty-inline">${__("Select company access first to choose business types.")}</div>`
+        );
+    }
+
+    function businessTypesForCompanies(data, companySet) {
+        const companies = data.companies || [];
+        const selected = companySet || new Set();
+        const values = [];
+        companies.forEach((company) => {
+            if (!selected.has(company.name)) return;
+            (company.business_types || []).forEach((businessType) => {
+                if (businessType && !values.includes(businessType)) values.push(businessType);
+            });
+        });
+        return values.sort();
+    }
+
+    function warehousesForCompanies(warehouses, companySet) {
+        const selected = companySet || new Set();
+        return (warehouses || []).filter((warehouse) => selected.has(warehouse.company));
+    }
+
     function businessTypeAccessRow(businessType, assignedBusinessTypes) {
         const isAssigned = assignedBusinessTypes.has(businessType);
         return `<label class="acc-role-toggle ${isAssigned ? "selected" : ""}"><input type="checkbox" data-user-business-type="${escapeHtml(businessType)}" ${isAssigned ? "checked" : ""} /><span>${escapeHtml(businessType)}</span></label>`;
+    }
+
+    function warehouseAccessRow(warehouse, assignedWarehouses) {
+        const name = warehouse.name || "";
+        const isAssigned = assignedWarehouses.has(name);
+        const label = warehouse.warehouse_name && warehouse.warehouse_name !== name ? `${warehouse.warehouse_name} (${name})` : name;
+        return `<label class="acc-role-toggle ${isAssigned ? "selected" : ""}"><input type="checkbox" data-user-warehouse="${escapeHtml(name)}" data-user-warehouse-company="${escapeHtml(warehouse.company || "")}" ${isAssigned ? "checked" : ""} /><span>${escapeHtml(label)}</span><small>${escapeHtml(warehouse.company || "")}</small></label>`;
     }
 
     function auditMarkup(rows) {
@@ -383,13 +702,19 @@
         const customActions = role.is_protected
             ? `<a class="acc-text-link" href="/app/role/${encodeURIComponent(role.name)}">${__("Open Role form")}</a>`
             : `<div class="acc-role-actions"><button class="acc-btn acc-btn-secondary" data-edit-role="${escapeHtml(role.name)}">${__("Edit")}</button><button class="acc-btn acc-btn-danger" data-delete-role="${escapeHtml(role.name)}" ${role.users ? "disabled" : ""}>${__("Delete")}</button></div>`;
-        return `<article class="acc-role-card ${role.access_level === "Admin Level" ? "critical" : role.access_level === "High Access" ? "elevated" : ""}"><div class="acc-card-top"><div class="acc-card-icon">${ICONS.role}</div><div class="acc-role-badges">${badge(role.is_system ? __("System") : __("Custom"), role.is_system ? "blue" : "violet")}${role.is_protected ? badge(__("Protected"), "gray") : badge(__("Editable"), "green")}</div></div><h3>${escapeHtml(role.name)}</h3><p>${role.access_level === "Admin Level" ? __("Administrator-level role. Changes require review.") : role.access_level === "High Access" ? __("High access role with elevated permissions.") : __("Managed business access role.")}</p><div class="acc-card-metrics"><span><strong>${role.users || 0}</strong>${__("users")}</span><span><strong>${role.disabled ? __("Off") : __("On")}</strong>${__("status")}</span></div><div class="acc-role-card-actions"><button class="acc-btn acc-btn-secondary full" data-tab-jump="matrix" data-role-jump="${escapeHtml(role.name)}">${__("Open Matrix")}</button>${customActions}</div></article>`;
+        const capabilityLabels = roleCapabilityLabels(role.capabilities || []);
+        return `<article class="acc-role-card ${role.access_level === "Admin Level" ? "critical" : role.access_level === "High Access" ? "elevated" : ""}"><div class="acc-card-top"><div class="acc-card-icon">${ICONS.role}</div><div class="acc-role-badges">${badge(role.is_system ? __("System") : __("Custom"), role.is_system ? "blue" : "violet")}${role.is_protected ? badge(__("Protected"), "gray") : badge(__("Editable"), "green")}</div></div><h3>${escapeHtml(role.name)}</h3><p>${role.access_level === "Admin Level" ? __("Administrator-level role. Changes require review.") : role.access_level === "High Access" ? __("High access role with elevated permissions.") : __("Managed business access role.")}</p><div class="acc-role-capability-row">${capabilityLabels.map((label) => badge(label, "blue")).join("") || badge(__("No app capabilities"), "gray")}</div><div class="acc-card-metrics"><span><strong>${role.users || 0}</strong>${__("users")}</span><span><strong>${role.disabled ? __("Off") : __("On")}</strong>${__("status")}</span></div><div class="acc-role-card-actions"><button class="acc-btn acc-btn-secondary full" data-tab-jump="matrix" data-role-jump="${escapeHtml(role.name)}">${__("Open Matrix")}</button>${customActions}</div></article>`;
     }
 
-    function matrixRow(row) {
+    function matrixRow(row, isGroupedChild) {
         const rowKey = row.row_key || `${row.doctype}::${row.permlevel || 0}`;
-        const draft = STATE.matrixDraft[rowKey] || row.effective || {};
-        return `<tr class="risk-${row.risk} ${STATE.matrixDraft[rowKey] ? "draft" : ""}" data-matrix-row="${escapeHtml(rowKey)}" data-doctype="${escapeHtml(row.doctype)}" data-permlevel="${row.permlevel || 0}"><td class="sticky-col"><div class="acc-doctype-cell"><strong>${escapeHtml(row.doctype)}</strong><small>${escapeHtml(row.module || "")} ${row.is_custom_doctype ? " · " + __("Custom DocType") : ""}${row.is_child_table ? " · " + __("Child Table") : ""}</small></div></td><td>${badge(String(row.permlevel || 0), "gray")}</td><td>${sourceBadge(row.source)}</td><td>${badge(row.risk || "low", row.risk === "critical" ? "red" : row.risk === "high" ? "amber" : row.risk === "medium" ? "blue" : "gray")}</td>${PERMISSION_FIELDS.map((field) => `<td><label class="acc-perm-toggle" title="${escapeHtml(labelPermission(field))}"><input type="checkbox" data-permission-field="${field}" ${draft[field] ? "checked" : ""} /><span></span></label></td>`).join("")}<td><button class="acc-row-action" data-reset-docperm="${escapeHtml(row.doctype)}" data-reset-permlevel="${row.permlevel || 0}" ${row.source !== "custom" ? "disabled" : ""}>${__("Reset")}</button></td></tr>`;
+        const draft = rowPermissionValues(row);
+        const disabledFields = new Set(row.disabled_permission_fields || []);
+        return `<tr class="risk-${row.risk} ${STATE.matrixDraft[rowKey] ? "draft" : ""} ${isGroupedChild ? "acc-matrix-child-row" : ""}" data-matrix-row="${escapeHtml(rowKey)}" data-doctype="${escapeHtml(row.doctype)}" data-permlevel="${row.permlevel || 0}"><td class="sticky-col"><div class="acc-doctype-cell"><strong>${escapeHtml(row.doctype)}</strong><small>${escapeHtml(row.module || "")} ${row.group_relation ? " · " + escapeHtml(row.group_relation) : ""}${row.is_custom_doctype ? " · " + __("Custom DocType") : ""}${row.is_child_table ? " · " + __("Child Table") : ""}</small></div></td><td>${badge(String(row.permlevel || 0), "gray")}</td><td>${sourceBadge(row.source)}</td><td>${badge(row.risk || "low", row.risk === "critical" ? "red" : row.risk === "high" ? "amber" : row.risk === "medium" ? "blue" : "gray")}</td>${PERMISSION_FIELDS.map((field) => {
+            const disabled = disabledFields.has(field);
+            const title = disabled ? __("Disabled for Orderlift-managed business documents") : labelPermission(field);
+            return `<td><label class="acc-perm-toggle ${disabled ? "disabled" : ""}" title="${escapeHtml(title)}"><input type="checkbox" data-permission-field="${field}" ${draft[field] && !disabled ? "checked" : ""} ${disabled ? "disabled" : ""} /><span></span></label></td>`;
+        }).join("")}<td><button class="acc-row-action" data-reset-docperm="${escapeHtml(row.doctype)}" data-reset-permlevel="${row.permlevel || 0}" ${row.source !== "custom" ? "disabled" : ""}>${__("Reset")}</button></td></tr>`;
     }
 
     function pageAccessMarkup(rows) {
@@ -400,13 +725,91 @@
         return `<article class="acc-access-card"><h3>${__("Report Access")}</h3><p>${__("Reports also use role access rows.")}</p>${rows.slice(0, 8).map((row) => `<div class="acc-access-row"><span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.ref_doctype || row.report_type || "")}</small></span><span>${(row.roles || []).slice(0, 3).map(roleChip).join("") || badge(__("No roles"), "gray")}</span><button class="acc-row-action" data-edit-report-access="${escapeHtml(row.name)}">${__("Edit")}</button></div>`).join("") || emptyMini(__("No reports found"))}</article>`;
     }
 
+    function reportsAccessManagerMarkup(data) {
+        const roles = availableRoles();
+        const selectedRole = STATE.selectedRole || (roles[0] && roles[0].name) || "";
+        const rows = data.report_access || [];
+        const granted = rows.filter((row) => (row.roles || []).includes(selectedRole)).length;
+        const groups = groupedReportRows(rows);
+        const selectedCount = selectedReportNames().length;
+        const searchActive = Boolean(String(STATE.reportSearch || "").trim());
+        return panelShell(__("Report Access"), __("Grant roles to ERPNext and Orderlift reports. Report access is separate from DocType permissions."), `
+            <div class="acc-matrix-toolbar">
+                <label><span>${__("Role")}</span><select data-role-selector>${roles.map((role) => `<option value="${escapeHtml(role.name)}" ${role.name === selectedRole ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select></label>
+                <label><span>${__("Search reports")}</span><input data-report-search type="search" value="${escapeHtml(STATE.reportSearch)}" placeholder="${__("General Ledger, GL Entry, Sales...")}" /></label>
+                ${STATE.reportSearch ? `<button class="acc-row-action" data-clear-report-search>${__("Clear Search")}</button>` : ""}
+                <button class="acc-row-action" data-report-bulk="grant" ${selectedCount ? "" : "disabled"}>${__("Grant Selected")}</button>
+                <button class="acc-row-action danger" data-report-bulk="revoke" ${selectedCount ? "" : "disabled"}>${__("Revoke Selected")}</button>
+                <button class="acc-row-action" data-clear-report-selection ${selectedCount ? "" : "disabled"}>${__("Clear Selection")}</button>
+                <span class="acc-count-pill"><strong>${granted}</strong> ${__("granted to")} ${escapeHtml(selectedRole || __("role"))} · <strong>${rows.length}</strong> ${__("visible reports")}</span>
+                <span class="acc-count-pill"><strong>${selectedCount}</strong> ${__("selected")}</span>
+            </div>
+            <div class="acc-table-wrap">
+                <table class="acc-table acc-report-table">
+                    <thead><tr><th><input type="checkbox" data-select-all-reports aria-label="${__("Select all visible reports")}" /></th><th>${__("Allowed")}</th><th>${__("Report")}</th><th>${__("Ref DocType")}</th><th>${__("Type")}</th><th>${__("Roles")}</th><th>${__("DocType Check")}</th><th>${__("Action")}</th></tr></thead>
+                    <tbody>${groups.map((group) => reportGroupRow(group, selectedRole, searchActive)).join("") || tableEmpty(__("No reports found"), __("Search for a report name or reference DocType."))}</tbody>
+                </table>
+            </div>
+        `);
+    }
+
+    function groupedReportRows(rows) {
+        const groups = new Map();
+        (rows || []).forEach((row) => {
+            const key = row.ref_doctype || row.report_type || __("Other Reports");
+            if (!groups.has(key)) groups.set(key, { key, label: key, rows: [] });
+            groups.get(key).rows.push(row);
+        });
+        return Array.from(groups.values()).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    }
+
+    function reportGroupRow(group, selectedRole, searchActive) {
+        const expanded = Boolean(STATE.reportExpandedGroups[group.key]) || searchActive;
+        const allowedCount = group.rows.filter((row) => (row.roles || []).includes(selectedRole)).length;
+        const selectedCount = group.rows.filter((row) => STATE.selectedReports[row.name]).length;
+        return `
+            <tr class="acc-report-group-row" data-report-group="${escapeHtml(group.key)}">
+                <td><input type="checkbox" data-select-report-group="${escapeHtml(group.key)}" ${selectedCount === group.rows.length ? "checked" : ""} /></td>
+                <td colspan="2"><button class="acc-group-toggle" data-toggle-report-group="${escapeHtml(group.key)}" aria-expanded="${expanded ? "true" : "false"}"><span>${expanded ? "-" : "+"}</span><strong>${escapeHtml(group.label)}</strong></button><small>${allowedCount}/${group.rows.length} ${__("allowed")} · ${selectedCount} ${__("selected")}</small></td>
+                <td colspan="3"><button class="acc-row-action" data-report-group-bulk="grant" data-report-group-name="${escapeHtml(group.key)}">${__("Grant Group")}</button> <button class="acc-row-action danger" data-report-group-bulk="revoke" data-report-group-name="${escapeHtml(group.key)}">${__("Revoke Group")}</button></td>
+                <td>${badge(String(group.rows.length), "gray")}</td>
+                <td><button class="acc-row-action" data-toggle-report-group="${escapeHtml(group.key)}">${expanded ? __("Collapse") : __("Expand")}</button></td>
+            </tr>
+            ${expanded ? group.rows.map((row) => reportAccessRow(row, selectedRole)).join("") : ""}
+        `;
+    }
+
+    function reportAccessRow(row, selectedRole) {
+        const roles = row.roles || [];
+        const isAllowed = roles.includes(selectedRole);
+        const docTypeOk = reportRefDoctypeStatus(row.ref_doctype);
+        return `<tr data-report-row="${escapeHtml(row.name)}">
+            <td><input type="checkbox" data-select-report="${escapeHtml(row.name)}" ${STATE.selectedReports[row.name] ? "checked" : ""} /></td>
+            <td><input type="checkbox" data-toggle-report-role="${escapeHtml(row.name)}" ${isAllowed ? "checked" : ""} ${!selectedRole ? "disabled" : ""} /></td>
+            <td><div class="acc-user-cell"><div><strong>${escapeHtml(row.name)}</strong><small>${row.is_standard ? __("Standard report") : __("Custom report")}</small></div></div></td>
+            <td>${escapeHtml(row.ref_doctype || "-")}</td>
+            <td>${badge(row.report_type || __("Report"), "blue")}</td>
+            <td>${roles.slice(0, 4).map(roleChip).join("") || badge(__("No roles"), "gray")}${roles.length > 4 ? badge(`+${roles.length - 4}`, "gray") : ""}</td>
+            <td>${docTypeOk}</td>
+            <td><button class="acc-row-action" data-edit-report-access="${escapeHtml(row.name)}">${__("Edit Roles")}</button></td>
+        </tr>`;
+    }
+
+    function reportRefDoctypeStatus(refDoctype) {
+        if (!refDoctype) return badge(__("No Ref DocType"), "gray");
+        const rows = (((STATE.data || {}).permission_matrix || {}).rows || []).filter((row) => row.doctype === refDoctype);
+        const hasReadReport = rows.some((row) => Number((row.effective || {}).read || 0) && Number((row.effective || {}).report || 0));
+        if (hasReadReport) return badge(__("Read + Report"), "green");
+        return badge(__("Needs DocPerm"), "amber");
+    }
+
     function bind(page) {
         page.main.find("[data-tab]").on("click", function () { STATE.activeTab = $(this).data("tab"); render(page); });
         page.main.find("[data-refresh]").on("click", () => load(page));
         page.main.find("[data-global-search]").on("keydown", function (event) {
             if (event.key !== "Enter") return;
             STATE.search = String($(this).val() || "").trim();
-            STATE.matrixDraft = {};
+            clearMatrixDraft();
             load(page);
         });
         page.main.find("[data-new-user]").on("click", () => openCreateUserDialog(page));
@@ -424,21 +827,58 @@
         page.main.find("[data-export]").on("click", () => exportActiveTab());
         page.main.find("[data-select-all-users]").on("change", function () { page.main.find("[data-select-user]").prop("checked", $(this).is(":checked")); });
         page.main.find("[data-view-user], [data-user-row]").on("click", async function (event) {
+            event.stopPropagation();
             if ($(event.target).is("input")) return;
             await loadUserDetail($(this).data("view-user") || $(this).data("user-row"), true, page);
         });
-        page.main.find("[data-role-selector]").on("change", function () { STATE.selectedRole = $(this).val(); STATE.matrixDraft = {}; load(page); });
-        page.main.find("[data-menu-role-selector]").on("change", function () { STATE.selectedRole = $(this).val(); load(page); });
+        page.main.find("[data-role-selector]").on("change", function () { STATE.selectedRole = $(this).val(); clearMatrixDraft(); load(page); });
+        page.main.find("[data-menu-role-selector]").on("change", function () { STATE.selectedRole = $(this).val(); clearMatrixDraft(); load(page); });
+        page.main.find("[data-matrix-view]").on("change", function () { STATE.matrixView = $(this).val() || "grouped"; render(page); });
+        page.main.find("[data-doctype-search]").on("input", function () {
+            STATE.matrixSearchInput = String($(this).val() || "");
+            STATE.matrixSearchPending = true;
+            page.main.find("[data-matrix-search-status]").addClass("active").html(`<b></b>${__("Searching")}`);
+            clearTimeout(matrixSearchTimer);
+            matrixSearchTimer = setTimeout(() => {
+                STATE.doctypeSearch = STATE.matrixSearchInput;
+                STATE.matrixSearchPending = false;
+                render(page);
+                focusMatrixSearch(page);
+            }, 320);
+        });
         page.main.find("[data-doctype-search]").on("keydown", function (event) {
-            if (event.key !== "Enter") return;
-            STATE.doctypeSearch = String($(this).val() || "").trim();
-            STATE.matrixDraft = {};
-            load(page);
+            if (event.key !== "Escape") return;
+            STATE.doctypeSearch = "";
+            STATE.matrixSearchInput = "";
+            STATE.matrixSearchPending = false;
+            clearTimeout(matrixSearchTimer);
+            render(page);
+            focusMatrixSearch(page);
+        });
+        page.main.find("[data-clear-doctype-search]").on("click", function () {
+            STATE.doctypeSearch = "";
+            STATE.matrixSearchInput = "";
+            STATE.matrixSearchPending = false;
+            clearTimeout(matrixSearchTimer);
+            render(page);
+            focusMatrixSearch(page);
+        });
+        page.main.find("[data-toggle-matrix-group]").on("click", function () {
+            const groupKey = String($(this).data("toggle-matrix-group") || "");
+            if (!groupKey) return;
+            const scrollState = captureScrollState(page);
+            STATE.matrixExpandedGroups[groupKey] = !STATE.matrixExpandedGroups[groupKey];
+            render(page);
+            restoreScrollState(page, scrollState);
+        });
+        page.main.find("[data-group-permission-field]").each(function () { this.indeterminate = Number($(this).data("mixed") || 0) === 1; });
+        page.main.find("[data-group-permission-field]").on("change", function () {
+            applyGroupPermission(page, String($(this).data("group-key") || ""), String($(this).data("group-permission-field") || ""), $(this).is(":checked"));
         });
         page.main.find("[data-tab-jump]").on("click", function () {
             STATE.activeTab = $(this).data("tab-jump");
             if ($(this).data("role-jump")) STATE.selectedRole = $(this).data("role-jump");
-            STATE.matrixDraft = {};
+            clearMatrixDraft();
             load(page);
         });
         page.main.find("[data-matrix-row] [data-permission-field]").on("change", function () {
@@ -449,7 +889,9 @@
             row.find("[data-permission-field]").each(function () { values[$(this).data("permission-field")] = $(this).is(":checked") ? 1 : 0; });
             values.doctype = row.data("doctype");
             values.permlevel = Number(row.data("permlevel") || 0);
+            values.role = STATE.selectedRole;
             STATE.matrixDraft[rowKey] = values;
+            STATE.matrixDraftRole = STATE.selectedRole;
             row.addClass("draft");
             updateStickySaveBar(page);
             restoreScrollState(page, scrollState);
@@ -457,17 +899,110 @@
         page.main.find("[data-reset-docperm]").on("click", function () { resetDocPerm(page, $(this).data("reset-docperm"), $(this).data("reset-permlevel")); });
         page.main.find("[data-edit-page-access]").on("click", function () { openAccessRolesDialog(page, "Page", $(this).data("edit-page-access")); });
         page.main.find("[data-edit-report-access]").on("click", function () { openAccessRolesDialog(page, "Report", $(this).data("edit-report-access")); });
+        page.main.find("[data-toggle-report-role]").on("change", function () { saveReportRoleToggle(page, $(this).data("toggle-report-role"), $(this).is(":checked")); });
+        page.main.find("[data-toggle-report-group]").on("click", function () {
+            const groupKey = String($(this).data("toggle-report-group") || "");
+            if (!groupKey) return;
+            STATE.reportExpandedGroups[groupKey] = !STATE.reportExpandedGroups[groupKey];
+            render(page);
+        });
+        page.main.find("[data-select-report]").on("change", function () {
+            const reportName = String($(this).data("select-report") || "");
+            if (!reportName) return;
+            if ($(this).is(":checked")) STATE.selectedReports[reportName] = true;
+            else delete STATE.selectedReports[reportName];
+            render(page);
+        });
+        page.main.find("[data-select-all-reports]").on("change", function () {
+            const checked = $(this).is(":checked");
+            ((STATE.data || {}).report_access || []).forEach((row) => {
+                if (checked) STATE.selectedReports[row.name] = true;
+                else delete STATE.selectedReports[row.name];
+            });
+            render(page);
+        });
+        page.main.find("[data-select-report-group]").on("change", function () {
+            const groupKey = String($(this).data("select-report-group") || "");
+            const checked = $(this).is(":checked");
+            reportRowsForGroup(groupKey).forEach((row) => {
+                if (checked) STATE.selectedReports[row.name] = true;
+                else delete STATE.selectedReports[row.name];
+            });
+            render(page);
+        });
+        page.main.find("[data-report-bulk]").on("click", function () {
+            saveReportRoleBulk(page, selectedReportNames(), String($(this).data("report-bulk") || "grant") === "grant");
+        });
+        page.main.find("[data-report-group-bulk]").on("click", function () {
+            const names = reportRowsForGroup(String($(this).data("report-group-name") || "")).map((row) => row.name);
+            saveReportRoleBulk(page, names, String($(this).data("report-group-bulk") || "grant") === "grant");
+        });
+        page.main.find("[data-clear-report-selection]").on("click", function () {
+            STATE.selectedReports = {};
+            render(page);
+        });
+        page.main.find("[data-report-search]").on("input", function () {
+            STATE.reportSearch = String($(this).val() || "");
+            clearTimeout(reportSearchTimer);
+            reportSearchTimer = setTimeout(() => load(page), 320);
+        });
+        page.main.find("[data-report-search]").on("keydown", function (event) {
+            if (event.key !== "Escape") return;
+            STATE.reportSearch = "";
+            clearTimeout(reportSearchTimer);
+            load(page);
+        });
+        page.main.find("[data-clear-report-search]").on("click", function () {
+            STATE.reportSearch = "";
+            clearTimeout(reportSearchTimer);
+            load(page);
+        });
         page.main.find("[data-review-save]").on("click", () => reviewAndSaveMatrix(page));
-        page.main.find("[data-clear-draft]").on("click", () => { STATE.matrixDraft = {}; render(page); });
+        page.main.find("[data-clear-draft]").on("click", () => { clearMatrixDraft(); render(page); });
         page.main.find("[data-save-user]").on("click", () => saveUserDetails(page));
         page.main.find("[data-delete-user]").on("click", () => deleteSelectedUser(page));
         page.main.find("[data-save-user-roles]").on("click", () => reviewAndSaveUserRoles(page));
+        page.main.find("[data-user-company]").on("change", () => refreshCompanyScopedAccessOptions(page));
         page.main.find("[data-save-user-companies]").on("click", () => reviewAndSaveUserCompanies(page));
         page.main.find("[data-make-default-company]").on("click", function () { reviewAndSaveUserCompanies(page, String($(this).data("make-default-company") || "")); });
+        page.main.find("[data-save-user-warehouses]").on("click", () => reviewAndSaveUserWarehouses(page));
         page.main.find("[data-save-user-business-types]").on("click", () => reviewAndSaveUserBusinessTypes(page));
         page.main.find("[data-save-menu-access]").on("click", () => reviewAndSaveMenuAccess(page));
         page.main.find("[data-bulk-roles]").on("click", () => openBulkRoleDialog(page));
         page.main.find("[data-column-note]").on("click", () => openColumnDialog(page));
+    }
+
+    function applyGroupPermission(page, groupKey, field, enabled) {
+        if (!groupKey || !field) return;
+        const scrollState = captureScrollState(page);
+        const rows = filteredMatrixRows(functionalMatrixRows(((STATE.data || {}).permission_matrix || {}).rows || []), STATE.doctypeSearch)
+            .filter((row) => (row.group_key || `module:${row.module || "Unassigned"}`) === groupKey);
+        rows.forEach((row) => {
+            if ((row.disabled_permission_fields || []).includes(field)) return;
+            const rowKey = row.row_key || `${row.doctype}::${row.permlevel || 0}`;
+            const values = { ...rowPermissionValues(row) };
+            values[field] = enabled ? 1 : 0;
+            values.doctype = row.doctype;
+            values.permlevel = Number(row.permlevel || 0);
+            values.role = STATE.selectedRole;
+            STATE.matrixDraft[rowKey] = values;
+        });
+        STATE.matrixDraftRole = STATE.selectedRole;
+        render(page);
+        updateStickySaveBar(page);
+        restoreScrollState(page, scrollState);
+    }
+
+    function focusMatrixSearch(page) {
+        const input = page.main.find("[data-doctype-search]").get(0);
+        if (!input) return;
+        input.focus();
+        const length = input.value.length;
+        try {
+            input.setSelectionRange(length, length);
+        } catch (error) {
+            // Some browsers do not support selection on search inputs.
+        }
     }
 
     async function saveUserDetails(page) {
@@ -534,6 +1069,12 @@
             frappe.msgprint({ title: __("Protected Role"), message: __("System and protected roles cannot be edited here. Create a custom role or use the Role form."), indicator: "orange" });
             return;
         }
+        const assignedCapabilities = new Set((role && role.capabilities) || []);
+        const capabilityOptions = ((STATE.data || {}).role_capabilities || []).map((capability) => ({
+            label: capability.label || capability.value,
+            value: capability.value,
+            checked: assignedCapabilities.has(capability.value),
+        }));
         const dialog = new frappe.ui.Dialog({
             title: role ? __("Edit Custom Role") : __("New Custom Role"),
             fields: [
@@ -541,15 +1082,18 @@
                 { fieldname: "desk_access", label: __("Desk Access"), fieldtype: "Check", default: role ? role.desk_access : 1 },
                 { fieldname: "disabled", label: __("Disabled"), fieldtype: "Check", default: role ? role.disabled : 0 },
                 { fieldname: "two_factor_auth", label: __("Require Two-Factor Auth"), fieldtype: "Check", default: 0 },
+                { fieldname: "capabilities", label: __("Orderlift Capabilities"), fieldtype: "MultiCheck", options: capabilityOptions, columns: 1, description: __("Capabilities are shadow-checked for now; legacy hardcoded role checks remain authoritative until the site flag is enabled.") },
             ],
             primary_action_label: role ? __("Save Role") : __("Create Role"),
             primary_action: async (values) => {
+                const selectedCapabilities = getDialogMultiCheckValues(dialog, "capabilities", values.capabilities);
                 const payload = {
                     current_name: role ? role.name : "",
                     name: values.name,
                     desk_access: values.desk_access ? 1 : 0,
                     disabled: values.disabled ? 1 : 0,
                     two_factor_auth: values.two_factor_auth ? 1 : 0,
+                    capabilities: selectedCapabilities,
                     audit_note: role ? __("Access Command Center role edit") : __("Access Command Center role creation"),
                 };
                 await frappe.call({ method: `${METHOD}.save_role`, args: { payload }, freeze: true });
@@ -599,7 +1143,22 @@
     }
 
     function scopedRoleOptions() {
-        return ((STATE.data || {}).roles || []).map((role) => role.name).filter(Boolean);
+        return availableRoles().map((role) => role.name).filter(Boolean);
+    }
+
+    function availableRoles() {
+        const data = STATE.data || {};
+        return data.all_roles || data.roles || [];
+    }
+
+    function roleCapabilityLabels(values) {
+        const labels = new Map(((STATE.data || {}).role_capabilities || []).map((capability) => [capability.value, capability.label || capability.value]));
+        return (values || []).map((value) => labels.get(value) || value).filter(Boolean);
+    }
+
+    function clearMatrixDraft() {
+        STATE.matrixDraft = {};
+        STATE.matrixDraftRole = "";
     }
 
     function openColumnDialog(page) {
@@ -628,7 +1187,7 @@
         const rows = parenttype === "Page" ? ((STATE.data || {}).page_access || []) : ((STATE.data || {}).report_access || []);
         const row = rows.find((item) => item.name === name);
         const assigned = new Set((row && row.roles) || []);
-        const roles = ((STATE.data || {}).roles || []).map((role) => ({ label: role.name, value: role.name, checked: assigned.has(role.name) }));
+        const roles = availableRoles().map((role) => ({ label: role.name, value: role.name, checked: assigned.has(role.name) }));
         const dialog = new frappe.ui.Dialog({
             title: parenttype === "Page" ? __("Edit Page Access") : __("Edit Report Access"),
             fields: [
@@ -650,6 +1209,61 @@
             },
         });
         dialog.show();
+    }
+
+    async function saveReportRoleToggle(page, reportName, enabled) {
+        const row = ((STATE.data || {}).report_access || []).find((item) => item.name === reportName);
+        if (!row || !STATE.selectedRole) return;
+        const roles = new Set(row.roles || []);
+        if (enabled) roles.add(STATE.selectedRole);
+        else roles.delete(STATE.selectedRole);
+        await frappe.call({
+            method: `${METHOD}.save_report_access`,
+            args: {
+                report_name: reportName,
+                roles: Array.from(roles),
+                audit_note: enabled
+                    ? __(`Access Command Center granted ${STATE.selectedRole} report access`)
+                    : __(`Access Command Center revoked ${STATE.selectedRole} report access`),
+            },
+            freeze: true,
+        });
+        frappe.show_alert({ message: enabled ? __("Report access granted") : __("Report access revoked"), indicator: "green" });
+        await load(page);
+    }
+
+    function selectedReportNames() {
+        const visible = new Set(((STATE.data || {}).report_access || []).map((row) => row.name));
+        return Object.keys(STATE.selectedReports || {}).filter((name) => visible.has(name));
+    }
+
+    function reportRowsForGroup(groupKey) {
+        return ((STATE.data || {}).report_access || []).filter((row) => (row.ref_doctype || row.report_type || __("Other Reports")) === groupKey);
+    }
+
+    async function saveReportRoleBulk(page, reportNames, enabled) {
+        if (!STATE.selectedRole || !reportNames.length) return;
+        const action = enabled ? __("grant") : __("revoke");
+        frappe.confirm(
+            __("{0} {1} report access for role {2}?", [action, reportNames.length, STATE.selectedRole]),
+            async () => {
+                await frappe.call({
+                    method: `${METHOD}.save_report_role_access`,
+                    args: {
+                        report_names: reportNames,
+                        role: STATE.selectedRole,
+                        enabled: enabled ? 1 : 0,
+                        audit_note: enabled
+                            ? __("Access Command Center bulk report grant")
+                            : __("Access Command Center bulk report revoke"),
+                    },
+                    freeze: true,
+                });
+                STATE.selectedReports = {};
+                frappe.show_alert({ message: enabled ? __("Report access granted") : __("Report access revoked"), indicator: "green" });
+                await load(page);
+            }
+        );
     }
 
     function reviewAndSaveUserRoles(page) {
@@ -693,6 +1307,21 @@
         );
     }
 
+    function reviewAndSaveUserWarehouses(page) {
+        const warehouses = page.main.find("[data-user-warehouse]:checked").map(function () { return $(this).data("user-warehouse"); }).get();
+        const message = warehouses.length
+            ? __("Restrict {0} to {1} warehouse(s)? Stock, warehouse, and ledger views will only show those warehouses.", [STATE.selectedUser, warehouses.length])
+            : __("Clear warehouse restrictions for {0}? They will see company-level warehouse stock again.", [STATE.selectedUser]);
+        frappe.confirm(
+            message,
+            async () => {
+                await frappe.call({ method: `${METHOD}.save_user_warehouses`, args: { user_name: STATE.selectedUser, warehouses, audit_note: __("Access Command Center warehouse assignment update") }, freeze: true });
+                frappe.show_alert({ message: __("Warehouse access saved"), indicator: "green" });
+                await load(page);
+            }
+        );
+    }
+
     function reviewAndSaveMenuAccess(page) {
         const role = STATE.selectedRole;
         const menuKeys = page.main.find("[data-menu-key]:checked").map(function () { return $(this).data("menu-key"); }).get();
@@ -709,19 +1338,20 @@
     function reviewAndSaveMatrix(page) {
         const changes = Object.keys(STATE.matrixDraft);
         if (!changes.length) return;
+        if (STATE.matrixDraftRole && STATE.matrixDraftRole !== STATE.selectedRole) {
+            frappe.msgprint({ title: __("Role Changed"), message: __("Discard the current matrix draft and edit the selected role again before saving."), indicator: "orange" });
+            return;
+        }
         frappe.confirm(
             __("Apply {0} permission override(s) for role {1}? A Custom DocPerm record will be saved for each changed DocType.", [changes.length, STATE.selectedRole]),
             async () => {
-                for (const rowKey of changes) {
-                    const draft = STATE.matrixDraft[rowKey];
-                    const doctypeName = draft.doctype || rowKey.split("::")[0];
-                    await frappe.call({
-                        method: `${METHOD}.save_custom_docperm`,
-                        args: { role: STATE.selectedRole, doctype_name: doctypeName, values: draft, audit_note: __("Access Command Center permission matrix update") },
-                        freeze: true,
-                    });
-                }
-                STATE.matrixDraft = {};
+                const payload = changes.map((rowKey) => STATE.matrixDraft[rowKey]).filter(Boolean);
+                await frappe.call({
+                    method: `${METHOD}.save_custom_docperms`,
+                    args: { role: STATE.selectedRole, changes: payload, audit_note: __("Access Command Center permission matrix update") },
+                    freeze: true,
+                });
+                clearMatrixDraft();
                 frappe.show_alert({ message: __("Permission overrides saved"), indicator: "green" });
                 await load(page);
             }
@@ -744,7 +1374,7 @@
         const markup = stickySaveBarMarkup();
         if (markup) page.main.append(markup);
         page.main.find("[data-review-save]").on("click", () => reviewAndSaveMatrix(page));
-        page.main.find("[data-clear-draft]").on("click", () => { STATE.matrixDraft = {}; render(page); });
+        page.main.find("[data-clear-draft]").on("click", () => { clearMatrixDraft(); render(page); });
     }
 
     function captureScrollState(page) {
@@ -807,7 +1437,9 @@
     }
 
     function csvCell(value) {
-        const text = String(value == null ? "" : value).replace(/"/g, '""');
+        const raw = String(value == null ? "" : value);
+        const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+        const text = safe.replace(/"/g, '""');
         return /[",\n]/.test(text) ? `"${text}"` : text;
     }
 
@@ -905,11 +1537,19 @@
             .acc-toggle-line { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--ink-100); border-radius:8px; font-size:13px; color:var(--ink-700); cursor:pointer; margin-bottom:12px; transition:all .2s var(--ease); } .acc-toggle-line input[type='checkbox'] { appearance:none; width:32px; height:18px; background:var(--ink-200); border-radius:999px; position:relative; cursor:pointer; transition:background .2s var(--ease); flex-shrink:0; } .acc-toggle-line input[type='checkbox']::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; background:#fff; border-radius:50%; transition:transform .2s var(--ease); box-shadow:var(--shadow-xs); } .acc-toggle-line input[type='checkbox']:checked { background:var(--success-500); } .acc-toggle-line input[type='checkbox']:checked::after { transform:translateX(14px); }
             .acc-role-toggle-list { display:flex; flex-direction:column; gap:4px; max-height:360px; overflow-y:auto; margin:0 -4px 12px; padding:4px; border:1px solid var(--ink-100); border-radius:10px; background:var(--surface-2); } .acc-role-toggle { display:grid; grid-template-columns:16px 1fr auto; align-items:center; gap:10px; padding:7px 10px; border-radius:7px; background:transparent; cursor:pointer; transition:all .15s var(--ease); font-size:12px; color:var(--ink-700); border:1px solid transparent; } .acc-role-toggle:hover { background:var(--surface); border-color:var(--ink-100); } .acc-role-toggle.selected { background:var(--surface); border-color:var(--primary-100); } .acc-role-toggle.selected span:first-of-type { color:var(--primary-700); font-weight:500; } .acc-role-toggle .acc-badge { font-size:9px; padding:2px 5px; }
             .acc-company-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:center; } .acc-company-row .acc-role-toggle { margin:0; align-items:flex-start; } .acc-company-row.is-default .acc-role-toggle { border-color:var(--success-100); background:var(--success-50); } .acc-company-business-types { grid-column:2 / 4; display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; } .acc-company-business-types span { display:inline-flex; border-radius:999px; background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); padding:2px 6px; font-size:9px; font-weight:800; } .acc-default-company-btn { min-height:31px; border:1px solid var(--ink-200); border-radius:8px; background:var(--surface); color:var(--ink-600); padding:0 9px; font-size:10px; font-weight:700; cursor:pointer; white-space:nowrap; } .acc-default-company-btn:hover { border-color:var(--primary-100); color:var(--primary-700); background:var(--primary-50); } .acc-default-company-btn.active { border-color:var(--success-100); color:var(--success-700); background:var(--success-50); cursor:default; }
-            .acc-card-grid { padding:16px; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; } .acc-role-card { border-radius:14px; padding:14px; background:var(--surface); border:1px solid var(--ink-150); box-shadow:var(--shadow-xs); } .acc-role-card.elevated { border-color:var(--cyan-100); background:var(--cyan-50); } .acc-role-card.critical { border-color:var(--rose-100); background:var(--rose-50); } .acc-card-top { display:flex; justify-content:space-between; gap:10px; align-items:start; } .acc-role-badges { display:flex; flex-wrap:wrap; gap:5px; justify-content:flex-end; } .acc-role-card h3 { margin:12px 0 5px; color:var(--ink-1000); font-size:15px; font-weight:600; } .acc-role-card p,.acc-access-card p { margin:0 0 12px; color:var(--ink-500); font-size:12px; line-height:1.45; } .acc-card-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; } .acc-card-metrics span { border-radius:10px; padding:10px; background:var(--surface-2); color:var(--ink-500); font-size:10px; font-weight:500; text-transform:uppercase; } .acc-card-metrics strong { display:block; color:var(--ink-1000); font-size:18px; } .acc-role-card-actions { display:grid; gap:8px; } .acc-role-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; } .acc-text-link { display:inline-flex; align-items:center; justify-content:center; min-height:34px; border-radius:8px; color:var(--ink-600); background:var(--surface-2); border:1px solid var(--ink-100); font-size:12px; font-weight:500; text-decoration:none; } .acc-text-link:hover { color:var(--ink-900); border-color:var(--ink-200); text-decoration:none; }
+            .acc-card-grid { padding:16px; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; } .acc-role-card { border-radius:14px; padding:14px; background:var(--surface); border:1px solid var(--ink-150); box-shadow:var(--shadow-xs); } .acc-role-card.elevated { border-color:var(--cyan-100); background:var(--cyan-50); } .acc-role-card.critical { border-color:var(--rose-100); background:var(--rose-50); } .acc-card-top { display:flex; justify-content:space-between; gap:10px; align-items:start; } .acc-role-badges { display:flex; flex-wrap:wrap; gap:5px; justify-content:flex-end; } .acc-role-card h3 { margin:12px 0 5px; color:var(--ink-1000); font-size:15px; font-weight:600; } .acc-role-card p,.acc-access-card p { margin:0 0 12px; color:var(--ink-500); font-size:12px; line-height:1.45; } .acc-role-capability-row { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 12px; } .acc-card-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; } .acc-card-metrics span { border-radius:10px; padding:10px; background:var(--surface-2); color:var(--ink-500); font-size:10px; font-weight:500; text-transform:uppercase; } .acc-card-metrics strong { display:block; color:var(--ink-1000); font-size:18px; } .acc-role-card-actions { display:grid; gap:8px; } .acc-role-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; } .acc-text-link { display:inline-flex; align-items:center; justify-content:center; min-height:34px; border-radius:8px; color:var(--ink-600); background:var(--surface-2); border:1px solid var(--ink-100); font-size:12px; font-weight:500; text-decoration:none; } .acc-text-link:hover { color:var(--ink-900); border-color:var(--ink-200); text-decoration:none; }
             .acc-matrix-toolbar label { display:flex; flex-direction:column; gap:5px; color:var(--ink-600); font-size:11px; font-weight:500; } .acc-source-legend { display:inline-flex; gap:6px; align-items:center; color:var(--ink-500); font-size:11px; font-weight:500; } .acc-source-legend b { width:9px; height:9px; border-radius:999px; display:inline-block; } .acc-source-legend .custom { background:var(--accent-600); } .acc-source-legend .standard { background:var(--primary-600); } .acc-source-legend .none { background:var(--ink-400); } .acc-doctype-cell strong,.acc-doctype-cell small { display:block; } .acc-doctype-cell small { color:var(--ink-500); font-size:10px; font-weight:500; margin-top:2px; }
+            .acc-matrix-search-status { display:inline-flex; align-items:center; gap:6px; min-width:86px; min-height:26px; padding:4px 8px; border-radius:999px; color:var(--ink-500); font-size:11px; font-weight:700; } .acc-matrix-search-status:empty { display:none; } .acc-matrix-search-status.active { background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); } .acc-matrix-search-status b { width:12px; height:12px; border-radius:999px; border:2px solid var(--primary-100); border-top-color:var(--primary-600); animation:accSpin .75s linear infinite; } @keyframes accSpin { to { transform:rotate(360deg); } }
+            .acc-matrix-group-row td { background:linear-gradient(180deg,var(--surface),var(--surface-2)); border-top:1px solid var(--ink-150); } .acc-matrix-group-row .sticky-col { box-shadow:1px 0 0 var(--ink-100), inset 3px 0 0 var(--primary-500); } .acc-matrix-group-row small { display:block; margin-top:4px; color:var(--ink-500); font-size:10px; font-weight:600; } .acc-group-toggle { display:inline-flex; align-items:center; gap:9px; color:var(--ink-1000); text-align:left; } .acc-group-toggle span { width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); font-size:14px; font-weight:700; line-height:1; } .acc-group-toggle strong { font-size:13px; font-weight:700; letter-spacing:-.01em; } .acc-matrix-child-row td { background:#fff; } .acc-matrix-child-row .sticky-col { padding-left:30px; } .acc-matrix-child-row .acc-doctype-cell strong::before { content:'>'; color:var(--ink-400); margin-right:8px; font-weight:600; } .acc-group-perm-toggle input:indeterminate + span { background:linear-gradient(90deg,var(--primary-600) 0 50%,var(--ink-200) 50% 100%); } .acc-group-perm-toggle input:indeterminate + span::after { transform:translateX(7px); }
+            .acc-report-group-row td { background:linear-gradient(180deg,var(--surface),var(--surface-2)); border-top:1px solid var(--ink-150); } .acc-report-group-row small { display:block; margin-top:4px; color:var(--ink-500); font-size:10px; font-weight:600; } .acc-report-table tbody .acc-report-group-row:hover { background:var(--surface-2); }
+            .acc-perm-toggle.disabled { opacity:.42; cursor:not-allowed; } .acc-perm-toggle.disabled input,.acc-perm-toggle.disabled span { cursor:not-allowed; }
             .acc-perm-toggle { position:relative; display:inline-flex; width:38px; height:24px; align-items:center; justify-content:center; cursor:pointer; } .acc-perm-toggle input { position:absolute; inset:2px; width:34px; height:20px; margin:0; opacity:0; z-index:1; cursor:pointer; } .acc-perm-toggle span { width:34px; height:20px; border-radius:999px; background:var(--ink-200); position:relative; transition:background .18s var(--ease); } .acc-perm-toggle span::after { content:''; position:absolute; width:16px; height:16px; left:2px; top:2px; border-radius:999px; background:#fff; box-shadow:0 2px 6px rgba(15,23,42,.2); transition:transform .18s var(--ease); } .acc-perm-toggle input:checked + span { background:var(--primary-600); } .acc-perm-toggle input:checked + span::after { transform:translateX(14px); }
             .acc-page-report-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:14px; background:var(--surface-2); } .acc-access-card { padding:14px; box-shadow:none; } .acc-access-card h3 { margin:0 0 4px; color:var(--ink-1000); font-size:14px; font-weight:600; } .acc-access-row { display:flex; justify-content:space-between; gap:10px; align-items:center; border-top:1px solid var(--ink-100); padding:9px 0; } .acc-access-row strong,.acc-access-row small { display:block; } .acc-access-row small { color:var(--ink-500); font-size:10px; }
             .acc-menu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; padding:14px; background:var(--surface-2); } .acc-menu-section-card { min-width:0; } .acc-menu-toggle-list { max-height:420px; } .acc-role-toggle strong,.acc-role-toggle small { display:block; } .acc-role-toggle small { margin-top:2px; color:var(--ink-500); font-size:10px; font-weight:500; line-height:1.25; }
+            .acc-policy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; padding:16px; background:var(--surface-2); } .acc-policy-card { padding:18px; border:1px solid var(--ink-150); border-radius:16px; background:var(--surface); box-shadow:var(--shadow-xs); } .acc-policy-card h3 { margin:0 0 9px; color:var(--ink-1000); font-size:15px; font-weight:650; letter-spacing:-.015em; } .acc-policy-card p { margin:0; color:var(--ink-500); font-size:13px; line-height:1.55; } .acc-policy-wide { grid-column:1 / -1; } .acc-policy-hero-card { background:radial-gradient(circle at 100% 0%,rgba(99,102,241,.14),transparent 44%),linear-gradient(135deg,var(--ink-1000),var(--ink-800)); color:#fff; border-color:rgba(255,255,255,.12); box-shadow:var(--shadow-md); } .acc-policy-hero-card h3 { color:#fff; font-size:20px; } .acc-policy-hero-card p { color:rgba(255,255,255,.76); max-width:780px; } .acc-policy-kicker { display:inline-flex; margin-bottom:10px; padding:4px 9px; border-radius:999px; background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.16); font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+            .acc-policy-steps { display:grid; gap:8px; } .acc-policy-step { display:grid; grid-template-columns:28px minmax(0,1fr); gap:10px; padding:10px; border:1px solid var(--ink-100); border-radius:12px; background:var(--surface-2); } .acc-policy-step > strong { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); font-size:12px; } .acc-policy-step b,.acc-policy-examples b,.acc-policy-cheats b { display:block; margin-bottom:3px; color:var(--ink-900); font-size:12px; font-weight:650; } .acc-policy-step small,.acc-policy-examples small,.acc-policy-cheats small { display:block; color:var(--ink-500); font-size:11px; line-height:1.42; } .acc-policy-step em { display:block; margin-top:6px; color:var(--primary-700); font-size:10.5px; font-style:normal; font-weight:600; }
+            .acc-policy-note { display:flex; gap:9px; align-items:flex-start; margin-top:14px; padding:11px 12px; border-radius:12px; background:var(--primary-50); border:1px solid var(--primary-100); color:var(--primary-700); font-size:12px; line-height:1.45; } .acc-policy-note svg { flex-shrink:0; width:15px; height:15px; margin-top:1px; } .acc-policy-examples { display:grid; gap:8px; } .acc-policy-examples > div { padding:10px 11px; border-left:3px solid var(--primary-500); background:var(--surface-2); border-radius:0 10px 10px 0; }
+            .acc-policy-checklist { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .acc-policy-checklist span { display:flex; gap:8px; align-items:flex-start; padding:10px 11px; border:1px solid var(--ink-100); border-radius:12px; background:var(--surface); color:var(--ink-700); font-size:12px; line-height:1.4; } .acc-policy-checklist svg { flex-shrink:0; width:14px; height:14px; margin-top:1px; color:var(--rose-600); } .acc-policy-cheat-card { background:linear-gradient(180deg,var(--surface),var(--primary-50)); } .acc-policy-cheats { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; } .acc-policy-cheats span { padding:12px; border-radius:12px; background:rgba(255,255,255,.74); border:1px solid var(--primary-100); }
             .acc-empty-inline { padding:16px; background:var(--surface-2); border:1px dashed var(--ink-200); border-radius:10px; text-align:center; font-size:12px; color:var(--ink-500); font-style:italic; }
             .acc-audit-list { display:grid; gap:10px; padding:16px; } .acc-audit-item { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:10px; border-radius:14px; padding:12px; background:var(--surface); border:1px solid var(--ink-150); } .acc-audit-dot { width:10px; height:10px; border-radius:999px; background:var(--primary-600); margin-top:5px; box-shadow:0 0 0 5px rgba(99,102,241,.12); } .acc-audit-item.risk-high .acc-audit-dot { background:var(--rose-600); box-shadow:0 0 0 5px rgba(225,29,72,.12); } .acc-audit-item strong { color:var(--ink-900); } .acc-audit-item p { margin:3px 0; color:var(--ink-500); font-size:12px; } .acc-audit-item small { color:var(--ink-400); font-weight:500; }
             .acc-empty-state { min-height:170px; display:grid; place-items:center; text-align:center; padding:28px; color:var(--ink-500); } .acc-empty-state svg { width:34px; height:34px; color:var(--ink-400); } .acc-empty-state h3 { margin:10px 0 4px; color:var(--ink-900); font-weight:600; } .acc-empty-state p { margin:0; max-width:420px; line-height:1.5; } .acc-error-state { min-height:420px; border-radius:var(--r-2xl); background:var(--surface); border:1px solid var(--ink-150); display:grid; place-items:center; text-align:center; padding:36px; box-shadow:var(--shadow-md); } .acc-error-state h2 { margin:12px 0 6px; color:var(--ink-1000); font-weight:600; } .acc-error-state p { color:var(--ink-500); }
@@ -919,8 +1559,8 @@
             @media (prefers-reduced-motion: reduce) { .acc-root *, .acc-root *::before, .acc-root *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
             @media (max-width:1280px) { .acc-kpis { grid-template-columns:repeat(4,1fr); } .acc-workspace-users { grid-template-columns:minmax(0,1fr) minmax(320px,.38fr); gap:14px; } .acc-user-control-strip { grid-template-columns:1fr; } .acc-role-category-strip { width:100%; } .acc-shell { padding-left:18px; padding-right:18px; } }
             @media (max-width:1080px) { .acc-workspace-users { grid-template-columns:minmax(0,1fr); } .acc-detail-panel { position:static; max-height:none; } }
-            @media (max-width:900px) { .acc-shell { padding:20px 16px 96px; } .acc-hero { grid-template-columns:1fr; padding:22px; } .acc-hero-actions { align-items:stretch; } .acc-global-search { width:100%; } .acc-kpis { grid-template-columns:repeat(2,1fr); } .acc-workspace { grid-template-columns:1fr; } .acc-smart-filter-block,.acc-role-category-strip { align-items:flex-start; flex-direction:column; } .acc-page-report-grid { grid-template-columns:1fr; } }
-            @media (max-width:640px) { .acc-kpis { grid-template-columns:1fr; } .acc-action-row { flex-direction:column; } .acc-save-bar { align-items:stretch; flex-direction:column; } }
+            @media (max-width:900px) { .acc-shell { padding:20px 16px 96px; } .acc-hero { grid-template-columns:1fr; padding:22px; } .acc-hero-actions { align-items:stretch; } .acc-global-search { width:100%; } .acc-kpis { grid-template-columns:repeat(2,1fr); } .acc-workspace { grid-template-columns:1fr; } .acc-smart-filter-block,.acc-role-category-strip { align-items:flex-start; flex-direction:column; } .acc-page-report-grid,.acc-policy-grid,.acc-policy-checklist,.acc-policy-cheats { grid-template-columns:1fr; } }
+            @media (max-width:640px) { .acc-kpis { grid-template-columns:1fr; } .acc-action-row { flex-direction:column; } .acc-save-bar { align-items:stretch; flex-direction:column; } .acc-policy-grid { padding:12px; } }
         `;
         document.head.appendChild(style);
     }

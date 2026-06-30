@@ -35,6 +35,7 @@ def run(
     replace_rules: int = 0,
     include_material_fallbacks: int = 1,
 ) -> dict:
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     dry_run = cint(dry_run)
     if workbook_path:
         return _run_article_workbook_sync(
@@ -116,6 +117,7 @@ def sync_item_customs_materials(
     dry_run: int = 1,
     target_field: str = DEFAULT_ITEM_MATERIAL_FIELD,
 ) -> dict:
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     """Update Item customs material values from an article workbook.
 
     The material workbook has no Item Code, so matching is intentionally conservative:

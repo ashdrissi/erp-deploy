@@ -20,6 +20,12 @@
     "stock_uom",
     "purchase_uom",
     "uom_conversion_factor",
+    "packaging_profile",
+    "packaging_source",
+    "package_count",
+    "length_cm",
+    "width_cm",
+    "height_cm",
     "packaging_overrides_json",
     "total_weight_kg",
     "total_volume_m3",
@@ -132,6 +138,46 @@
       "label": "UOM Conversion Factor",
       "default": "1",
       "description": "Units per purchase UOM (e.g. 100 pcs per Box)",
+      "read_only": 1
+    },
+    {
+      "fieldname": "packaging_profile",
+      "fieldtype": "Data",
+      "label": "Packaging Profile",
+      "read_only": 1
+    },
+    {
+      "fieldname": "packaging_source",
+      "fieldtype": "Data",
+      "label": "Packaging Source",
+      "read_only": 1
+    },
+    {
+      "fieldname": "package_count",
+      "fieldtype": "Float",
+      "label": "Package Count",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "length_cm",
+      "fieldtype": "Float",
+      "label": "Package Length (cm)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "width_cm",
+      "fieldtype": "Float",
+      "label": "Package Width (cm)",
+      "default": "0",
+      "read_only": 1
+    },
+    {
+      "fieldname": "height_cm",
+      "fieldtype": "Float",
+      "label": "Package Height (cm)",
+      "default": "0",
       "read_only": 1
     },
     {

@@ -111,12 +111,14 @@ def apply_discount_and_commission(
     discount_amount = gross_total * (discount_percent / 100.0) if discount_percent else 0.0
     discounted_unit_price = gross_unit_price * (1 - (discount_percent / 100.0)) if discount_percent else gross_unit_price
     discounted_total = gross_total - discount_amount
-    commission_amount = discount_amount * (commission_rate / 100.0) if discount_amount and commission_rate else 0.0
+    unused_discount_percent = max(max_discount_percent - discount_percent, 0.0)
+    commission_amount = gross_total * (unused_discount_percent / 100.0) * (commission_rate / 100.0) if commission_rate else 0.0
 
     return {
         "gross_total": gross_total,
         "max_discount_percent": max_discount_percent,
         "discount_percent": discount_percent,
+        "unused_discount_percent": unused_discount_percent,
         "discount_amount": discount_amount,
         "discounted_unit_price": discounted_unit_price,
         "discounted_total": discounted_total,

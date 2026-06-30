@@ -62,6 +62,9 @@ class AgentPricingRules(Document):
             for row in self.allocated_price_lists or []:
                 if row.get("selling_price_list"):
                     validate_price_list_scope(row.get("selling_price_list"), kind="selling", required=True)
+        for row in self.allocated_benchmark_price_lists or []:
+            if row.get("benchmark_price_list"):
+                validate_price_list_scope(row.get("benchmark_price_list"), kind="benchmark", required=True)
 
 
 def build_dynamic_context(sales_person=None, agent_doc=None):
@@ -103,9 +106,14 @@ def build_static_context(sales_person=None, agent_doc=None):
         [r for r in (agent_doc.get("allocated_price_lists") or []) if r.is_active],
         key=lambda r: r.default_sequence or 10,
     )
+    benchmark_lists = sorted(
+        [r for r in (agent_doc.get("allocated_benchmark_price_lists") or []) if r.is_active],
+        key=lambda r: r.default_sequence or 10,
+    )
     return {
         "pricing_mode": agent_doc.pricing_mode or "",
         "selling_price_lists": [r.selling_price_list for r in lists],
+        "benchmark_price_lists": [r.benchmark_price_list for r in benchmark_lists],
     }
 
 

@@ -8,6 +8,7 @@ class PricingCustomsPolicy(Document):
     def validate(self):
         seen = set()
         active = 0
+        self._validate_delta_tax_template()
 
         for row in self.customs_rules or []:
             row.tariff_number = (getattr(row, "tariff_number", "") or "").strip().upper()
@@ -42,3 +43,24 @@ class PricingCustomsPolicy(Document):
 
         if active == 0:
             frappe.throw(_("At least one active customs rule is required."))
+
+    def _validate_delta_tax_template(self):
+        if not cint(getattr(self, "enable_customs_value_delta_tax", 0)):
+            return
+        template = (getattr(self, "customs_value_delta_tax_template", "") or "").strip()
+        if not template:
+            return
+        values = frappe.db.get_value(
+            "Sales Taxes and Charges Template",
+            template,
+            ["company", "disabled"],
+            as_dict=True,
+        )
+        if not values:
+            frappe.throw(_("Customs Value Delta Tax Template {0} was not found.").format(template))
+        if cint(values.get("disabled") or 0):
+            frappe.throw(_("Customs Value Delta Tax Template {0} is disabled.").format(template))
+        policy_company = (getattr(self, "company", "") or "").strip()
+        template_company = (values.get("company") or "").strip()
+        if policy_company and template_company and policy_company != template_company:
+            frappe.throw(_("Customs Value Delta Tax Template must belong to company {0}.").format(policy_company))

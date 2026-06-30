@@ -1,6 +1,6 @@
 {
   "actions": [],
-  "allow_import": 1,
+  "allow_import": 0,
   "autoname": "field:tier_name",
   "creation": "2026-06-01 00:00:00",
   "doctype": "DocType",
@@ -22,7 +22,8 @@
   "permissions": [
     {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
     {"role": "Pricing Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    {"role": "Sales Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Sales Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Sales User", "read": 1, "report": 1, "print": 1, "email": 1},
     {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1}
   ],
   "sort_field": "sequence",

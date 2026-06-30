@@ -29,6 +29,7 @@ def after_migrate():
 
 @frappe.whitelist()
 def run(cleanup=0, dry_run=0):
+    frappe.only_for("System Manager")
     cleanup = cint(cleanup)
     dry_run = cint(dry_run)
     summary = _summary(cleanup=cleanup, dry_run=dry_run)

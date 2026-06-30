@@ -173,6 +173,7 @@ function renderCashflow(page, rows) {
 }
 
 function formatCurrency(value) {
+    if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(value);
     return frappe.format(value || 0, { fieldtype: "Currency" }, { only_value: true });
 }
 

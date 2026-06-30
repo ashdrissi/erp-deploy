@@ -14,6 +14,7 @@ frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.get_all = lambda *args, **kwargs: []
 frappe_stub.get_meta = lambda *args, **kwargs: None
 frappe_stub.get_doc = lambda *args, **kwargs: None
+frappe_stub.has_permission = lambda doctype, ptype=None, user=None, doc=None, throw=False: True
 frappe_stub.db = types.SimpleNamespace()
 sys.modules["frappe"] = frappe_stub
 

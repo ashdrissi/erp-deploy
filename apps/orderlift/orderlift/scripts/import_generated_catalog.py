@@ -358,6 +358,7 @@ def _ensure_product_bundles(rows: list[dict[str, str]]) -> int:
 
 @frappe.whitelist()
 def run(import_dir: str = str(DEFAULT_IMPORT_DIR)) -> dict[str, int]:
+    frappe.only_for("System Manager")
     base = Path(import_dir)
     required_files = [
         "uoms.csv",

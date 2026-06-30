@@ -7,6 +7,7 @@ from orderlift.orderlift_logistics.services.load_planning import (
     round3,
     recommend_container,
 )
+from orderlift.warehouse_access import user_can_access_warehouse
 
 
 def _set_delivery_note_fields(delivery_note_name, totals, recommendation, status):
@@ -27,6 +28,12 @@ def _set_delivery_note_fields(delivery_note_name, totals, recommendation, status
 
 
 def analyze_delivery_note(doc, method=None):
+    for row in doc.items or []:
+        wh = (row.get("warehouse") or "").strip()
+        if wh and not user_can_access_warehouse(wh):
+            frappe.throw(
+                _("Row {0}: warehouse '{1}' is not accessible.").format(row.idx, wh)
+            )
     totals = compute_delivery_note_totals(doc.name)
     recommendation = recommend_container(totals["total_weight_kg"], totals["total_volume_m3"])
 

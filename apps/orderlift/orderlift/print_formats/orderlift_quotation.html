@@ -3,6 +3,16 @@
 {% set company_logo = frappe.db.get_value('Company', doc.company, 'company_logo') or '/files/logo.png' %}
 {% set items = doc.items %}
 {% set total_items = items | length %}
+{% set ol_price_mode = orderlift_price_display_mode if orderlift_price_display_mode is defined else 'HT' %}
+{% set ol_print_ttc = ol_price_mode in ('TTC', 'PRIX_UNITAIRE') %}
+{% set ol_simple_ttc = ol_price_mode == 'PRIX_UNITAIRE' %}
+{% set ol_ttc = get_quotation_ttc_print_context(doc) %}
+{% set payment_terms = get_print_payment_terms(doc) %}
+{% set trade_terms = get_print_trade_terms(doc) %}
+{% set ol_show_images = orderlift_show_images if orderlift_show_images is defined else 'true' %}
+{% set ol_show_cover = orderlift_show_cover if orderlift_show_cover is defined else 'false' %}
+{% set ol_show_images_bool = ol_show_images == 'true' %}
+{% set ol_show_cover_bool = ol_show_cover == 'true' %}
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -502,7 +512,7 @@ table.ol-items td {
 {# ==================== MACROS ==================== #}
 {% macro render_header() %}
 <div class="ol-logo-container">
-  {%- if company_logo -%}
+    {%- if company_logo and ol_show_images_bool -%}
     <img src="{{ company_logo }}" alt="{{ doc.company }}">
   {%- else -%}
     <div class="ol-logo-text">{{ doc.company }}</div>
@@ -516,22 +526,25 @@ table.ol-items td {
 
 {% macro render_footer() %}
 <div class="ol-footer">
-  <div class="ol-footer-company">ORDER LIFT MOROCCO</div>
-  <div class="ol-footer-address">Adresse : Tanja Balia lots méditerrané 475 rue plage Essalam Nr 15 Tanger, Maroc</div>
-  <div class="ol-footer-meta">RC : 162443 - ICE : 003698266000073 - Email : <a href="mailto:info@orderlift.net">info@orderlift.net</a></div>
+  <div class="ol-footer-company">{{ co.company_name or doc.company }}</div>
+  {%- if co_addr %}<div class="ol-footer-address">{{ _("Adresse") }} : {{ co_addr }}</div>{% endif -%}
+  <div class="ol-footer-meta">
+    {%- if co.tax_id %}{{ _("ICE") }} : {{ co.tax_id }}{% endif -%}
+    {%- if co.email %}{% if co.tax_id %} - {% endif %}{{ _("Email") }} : <a href="mailto:{{ co.email }}">{{ co.email }}</a>{% endif -%}
+  </div>
 </div>
 {% endmacro %}
 
 {% macro render_info_grid() %}
 <div class="ol-title-container">
-  <div class="ol-title-text">{{ _("DEVIS DE VENTE") }}</div>
-  <div class="ol-title-date">{{ _("Date") }}: {{ frappe.format_date(doc.transaction_date) }}</div>
+  <div class="ol-title-text">{{ _("Sales Quotation") }}</div>
+  <div class="ol-title-date">{{ _("Date") }}: {{ frappe.utils.formatdate(doc.transaction_date) }}</div>
 </div>
 
 <table class="ol-info-table">
   <tr>
     <td style="width: 50%; vertical-align: top; padding-right: 15px;">
-      <div class="ol-info-title">{{ _("Destinataire") }}</div>
+      <div class="ol-info-title">{{ _("Recipient") }}</div>
       <div class="ol-info-client-name">{{ doc.customer_name }}</div>
       <div class="ol-info-client-details">
         {%- if doc.address_display -%}
@@ -540,25 +553,31 @@ table.ol-items td {
       </div>
     </td>
     <td style="width: 50%; vertical-align: top; padding-left: 15px;">
-      <div class="ol-info-title">{{ _("Informations") }}</div>
+      <div class="ol-info-title">{{ _("Information") }}</div>
       <table class="ol-meta-table">
         {%- if doc.contact_mobile or doc.contact_phone -%}
         <tr>
-          <td class="ol-meta-label">{{ _("Téléphone") }}</td>
+          <td class="ol-meta-label">{{ _("Phone") }}</td>
           <td>: {{ doc.contact_mobile or doc.contact_phone }}</td>
         </tr>
         {%- endif -%}
         <tr>
           <td class="ol-meta-label">{{ _("Date") }}</td>
-          <td>: {{ frappe.format_date(doc.transaction_date) }}</td>
+          <td>: {{ frappe.utils.formatdate(doc.transaction_date) }}</td>
         </tr>
         <tr>
-          <td class="ol-meta-label">{{ _("N° Devis") }}</td>
+          <td class="ol-meta-label">{{ _("Quotation No.") }}</td>
           <td>: <b>{{ doc.name }}</b></td>
         </tr>
+        {%- if trade_terms -%}
+        <tr>
+          <td class="ol-meta-label">{{ _("Incoterms") }}</td>
+          <td>: {{ trade_terms }}</td>
+        </tr>
+        {%- endif -%}
         {%- if doc.owner -%}
         <tr>
-          <td class="ol-meta-label">{{ _("Commercial") }}</td>
+          <td class="ol-meta-label">{{ _("Sales Representative") }}</td>
           <td>: {{ frappe.db.get_value('User', doc.owner, 'full_name') or doc.owner }}</td>
         </tr>
         {%- endif -%}
@@ -574,19 +593,26 @@ table.ol-items td {
     <tr>
       <th class="tc" style="width: 40px;">No</th>
       <th class="tl" style="width: 100px;">{{ _("Code") }}</th>
+      {%- if ol_show_images_bool %}
       <th class="tc" style="width: 60px;">{{ _("Image") }}</th>
-      <th class="tl">{{ _("Désignation") }}</th>
-      <th class="tr" style="width: 110px;">{{ _("Prix Unit. HT") }}</th>
-      <th class="tc" style="width: 50px;">{{ _("Qté") }}</th>
-      <th class="tr" style="width: 110px;">{{ _("Montant HT") }}</th>
+      {%- endif %}
+      <th class="tl">{{ _("Description") }}</th>
+      <th class="tc" style="width: 35px;">U</th>
+      <th class="tc" style="width: 45px;">{{ _("Qty") }}</th>
+      <th class="tr" style="width: 105px;">{{ _("Prix Unitaire") if ol_simple_ttc else _("Prix Unit. TTC") if ol_print_ttc else _("Prix Unit. HT") }}</th>
+      <th class="tr" style="width: 105px;">{{ _("Total") if ol_simple_ttc else _("Amount Incl. Tax") if ol_print_ttc else _("Amount Excl. Tax") }}</th>
     </tr>
   </thead>
   <tbody>
     {%- for item in items_list %}
     {%- set item_image = frappe.db.get_value('Item', item.item_code, 'image') %}
+    {%- set item_ttc = ol_ttc.rows_by_name.get(item.name) or ol_ttc.rows_by_idx.get((item.idx or loop.index) ~ '') or {} %}
+    {%- set display_unit = item_ttc.get('unit') if ol_print_ttc else item.rate %}
+    {%- set display_total = item_ttc.get('total') if ol_print_ttc else item.amount %}
     <tr>
       <td class="tc">{{ start_idx + loop.index }}</td>
       <td class="ol-item-code">{{ item.item_code }}</td>
+      {%- if ol_show_images_bool %}
       <td class="tc">
         {%- if item_image %}
           <img class="ol-item-img" src="{{ item_image }}" alt="{{ item.item_code }}">
@@ -594,15 +620,17 @@ table.ol-items td {
           <div class="ol-item-img-placeholder">&#128247;</div>
         {%- endif %}
       </td>
+      {%- endif %}
       <td>
         <div class="ol-item-name">{{ item.item_name }}</div>
         {%- if item.description and item.description != item.item_name %}
           <div class="ol-item-desc">{{ item.description }}</div>
         {%- endif %}
       </td>
-      <td class="tr">{{ format_currency_fr(item.rate, doc.currency) }}</td>
+      <td class="tc" style="font-weight: 500;">{{ item.uom or item.stock_uom }}</td>
       <td class="tc" style="font-weight: 600;">{{ item.qty | int if item.qty == (item.qty | int) else item.qty }}</td>
-      <td class="tr" style="font-weight: 700;">{{ format_currency_fr(item.amount, doc.currency) }}</td>
+      <td class="tr">{{ format_currency_fr(display_unit, doc.currency) }}</td>
+      <td class="tr" style="font-weight: 700;">{{ format_currency_fr(display_total, doc.currency) }}</td>
     </tr>
     {%- endfor %}
   </tbody>
@@ -612,8 +640,41 @@ table.ol-items td {
 {% macro render_totals_and_signatures() %}
 <div class="ol-totals-container">
   <table class="ol-totals-table">
+    {%- if ol_simple_ttc %}
+    <tr class="ol-totals-grand-row">
+      <td class="tr"><b>{{ _("Total") }}</b> ({{ doc.currency }}) :</td>
+      <td class="ol-totals-value"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></td>
+    </tr>
+    {%- elif ol_print_ttc %}
+    <tr class="ol-totals-grand-row">
+      <td class="tr"><b>{{ _("TOTAL TTC") }}</b> ({{ doc.currency }}) :</td>
+      <td class="ol-totals-value"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></td>
+    </tr>
+    {%- for tax in doc.taxes %}
     <tr>
-      <td class="tr">{{ _("Sous-total HT") }} :</td>
+      <td class="tr">{{ tax.description }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</td>
+    </tr>
+    {%- endfor %}
+    {%- if not doc.taxes and ol_ttc.total_tax %}
+    <tr>
+      <td class="tr">{{ _("Tax") }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(ol_ttc.total_tax, doc.currency) }}</td>
+    </tr>
+    {%- endif %}
+    {%- if doc.discount_amount %}
+    <tr>
+      <td class="tr">{{ _("Discount") }} :</td>
+      <td class="ol-totals-value">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</td>
+    </tr>
+    {%- endif %}
+    <tr>
+      <td class="tr">{{ _("Total HT") }} :</td>
+      <td class="ol-totals-value">{{ format_currency_fr(ol_ttc.total_ht, doc.currency) }}</td>
+    </tr>
+    {%- else %}
+    <tr>
+      <td class="tr">{{ _("Total HT") }} :</td>
       <td class="ol-totals-value">{{ format_currency_fr(doc.total, doc.currency) }}</td>
     </tr>
     {%- for tax in doc.taxes %}
@@ -624,7 +685,7 @@ table.ol-items td {
     {%- endfor %}
     {%- if doc.discount_amount %}
     <tr>
-      <td class="tr">{{ _("Remise") }} :</td>
+      <td class="tr">{{ _("Discount") }} :</td>
       <td class="ol-totals-value">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</td>
     </tr>
     {%- endif %}
@@ -632,16 +693,19 @@ table.ol-items td {
       <td class="tr"><b>{{ _("TOTAL TTC") }}</b> ({{ doc.currency }}) :</td>
       <td class="ol-totals-value"><b>{{ format_currency_fr(doc.grand_total, doc.currency) }}</b></td>
     </tr>
+    {%- endif %}
   </table>
 </div>
 
+{%- if payment_terms -%}
 <div class="ol-payment-terms">
-  Mode de paiement : 40% à la commande, 50 % à la livraison totale du matériel, 10% Mise en marche
+  {{ _("Payment Terms") }} : {{ payment_terms | join(' / ') }}
 </div>
+{%- endif -%}
 
 {%- if doc.terms -%}
 <div class="ol-terms-container">
-  <div class="ol-terms-title">{{ _("Conditions Générales") }}</div>
+  <div class="ol-terms-title">{{ _("Terms and Conditions") }}</div>
   <div class="ol-terms-text">{{ doc.terms }}</div>
 </div>
 {%- endif -%}
@@ -649,9 +713,11 @@ table.ol-items td {
 <table class="ol-sig-table">
   <tr>
     <td style="width: 48%; vertical-align: top; border-top: 1px solid #d1d5db; padding-top: 10px;">
-      <div class="ol-sig-title">{{ _("Vendeur (Signature et Cachet)") }}</div>
+      <div class="ol-sig-title">{{ _("Seller (Signature and Stamp)") }}</div>
       <div class="ol-sig-placeholder">
-        <img src="/files/gem_signature.png" alt="Signature Vendeur" style="max-height: 80px; object-fit: contain;">
+        {%- if ol_show_images_bool -%}
+        <img src="/files/gem_signature.png" alt="Seller Signature" style="max-height: 80px; object-fit: contain;">
+        {%- endif -%}
       </div>
       <div class="ol-sig-details">
         <b>{{ doc.company }}</b>
@@ -659,10 +725,10 @@ table.ol-items td {
     </td>
     <td style="width: 4%;"></td>
     <td style="width: 48%; vertical-align: top; border-top: 1px solid #d1d5db; padding-top: 10px;">
-      <div class="ol-sig-title">{{ _("Client (Signature et Cachet)") }}</div>
+      <div class="ol-sig-title">{{ _("Customer (Signature and Stamp)") }}</div>
       <div class="ol-sig-placeholder"></div>
       <div class="ol-sig-details" style="font-style: italic; color: #9ca3af;">
-        {{ _("Bon pour accord") }}
+        {{ _("Approved for agreement") }}
       </div>
     </td>
   </tr>
@@ -672,18 +738,19 @@ table.ol-items td {
 {# ==================== PAGES RENDERING ==================== #}
 
 <!-- --- PAGE 1: COVER PAGE --- -->
+{%- if ol_show_cover_bool %}
 <div class="ol-page ol-cover-page">
   <div class="ol-cover-container">
     <div class="ol-cover-header">
       <div class="ol-cover-logo">
-        {%- if company_logo -%}
+        {%- if company_logo and ol_show_images_bool -%}
           <img src="{{ company_logo }}" alt="{{ doc.company }}">
         {%- else -%}
           <span style="font-size: 20px; font-weight: 800; color: #111827;">{{ doc.company }}</span>
         {%- endif -%}
       </div>
       <div style="font-size: 10px; color: #6b7280;">
-        info@orderlift.net
+        {{ co.email or "" }}
       </div>
     </div>
     
@@ -696,24 +763,24 @@ table.ol-items td {
         </td>
         <td style="width: 45%; vertical-align: middle; padding-left: 20px;">
           <div class="ol-cover-details">
-            <div class="ol-cover-brand">ORDER LIFT MOROCCO</div>
-            <div class="ol-cover-subtitle">{{ _("Ascenseurs & Équipements") }}</div>
-            <div class="ol-cover-title">{{ _("PROPOSITION COMMERCIALE") }}</div>
+            <div class="ol-cover-brand">{{ co.company_name or doc.company }}</div>
+            <div class="ol-cover-subtitle">{{ _("Elevators and Equipment") }}</div>
+            <div class="ol-cover-title">{{ _("Commercial Proposal") }}</div>
             <div class="ol-cover-divider"></div>
             
             <div class="ol-cover-meta-item">
-              <div class="ol-cover-meta-label">{{ _("Préparé pour") }}</div>
+              <div class="ol-cover-meta-label">{{ _("Prepared For") }}</div>
               <div class="ol-cover-meta-value">{{ doc.customer_name }}</div>
             </div>
             
             <div class="ol-cover-meta-item">
-              <div class="ol-cover-meta-label">{{ _("N° Document") }}</div>
+              <div class="ol-cover-meta-label">{{ _("Document No.") }}</div>
               <div class="ol-cover-meta-value">{{ doc.name }}</div>
             </div>
             
             <div class="ol-cover-meta-item">
               <div class="ol-cover-meta-label">{{ _("Date") }}</div>
-              <div class="ol-cover-meta-value">{{ frappe.format_date(doc.transaction_date) }}</div>
+              <div class="ol-cover-meta-value">{{ frappe.utils.formatdate(doc.transaction_date) }}</div>
             </div>
           </div>
         </td>
@@ -721,13 +788,14 @@ table.ol-items td {
     </table>
     
     <div class="ol-cover-footer">
-      <div class="ol-cover-partners">ORDERLIFT | GEM | SICOR</div>
+      <div class="ol-cover-partners">{{ co.company_name or doc.company }}</div>
       <div>
-        www.orderlift.net
+        {{ co.website | replace('https://', '') | replace('http://', '') if co.website else "" }}
       </div>
     </div>
   </div>
 </div>
+{%- endif %}
 
 <!-- --- CONTENT PAGES --- -->
 {% set MAX_FIRST_TOTALS = 4 %}

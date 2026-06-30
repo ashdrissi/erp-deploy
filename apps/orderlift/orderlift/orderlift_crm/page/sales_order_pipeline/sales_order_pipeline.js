@@ -2,6 +2,7 @@
     const COLLAPSED_CARD_KEY = "orderlift.sales_order_pipeline.collapsed_cards";
     const STATE = {
         columns: [],
+        quickActions: [],
         kpis: {},
         filters: { companies: [], owners: [], statuses: [], business_types: [], segments: [], delivery_progress: [], billing_progress: [] },
         search: "",
@@ -71,6 +72,7 @@
             });
             const data = res.message || {};
             STATE.columns = data.columns || [];
+            STATE.quickActions = data.quick_actions || [];
             applyDefaultCollapsedColumns();
             STATE.kpis = data.kpis || {};
             STATE.filters = data.filters || { companies: [], owners: [], statuses: [], business_types: [], segments: [], delivery_progress: [], billing_progress: [] };
@@ -79,6 +81,7 @@
         } catch (error) {
             console.error("Sales Order Pipeline failed", error);
             STATE.columns = [];
+            STATE.quickActions = [];
             STATE.kpis = {};
             render(page, true, restore);
         }
@@ -273,7 +276,19 @@
     async function moveSalesOrderCard(page, name, stage, boardScrollLeft) {
         try {
             const res = await updateSalesOrderStage(name, stage);
-            const assignment = (res.message || {}).assignment || {};
+            const payload = res.message || {};
+            if (payload.blocked) {
+                showStageMoveErrorPopup(page, {
+                    record: payload.record || name,
+                    stage: payload.stage || stage,
+                    message: payload.message || __("This sales order cannot move to {0} yet.", [stage]),
+                    missing_checks: payload.missing_checks || [],
+                    documentLabel: payload.documentLabel || __("Sales Order"),
+                    boardScrollLeft,
+                });
+                return;
+            }
+            const assignment = payload.assignment || {};
             frappe.show_alert({
                 message: assignment.label ? __("Sales Order {0} moved to {1} and assigned to {2}", [name, stage, assignment.label]) : __("Sales Order {0} moved to {1}", [name, stage]),
                 indicator: "green",
@@ -448,7 +463,7 @@
     function showStageMoveErrorPopup(page, details) {
         closeStageMoveErrorPopup();
         const message = details.message || __("Required workflow checks are not complete yet.");
-        const missingChecks = parseMissingChecks(message);
+        const missingChecks = details.missing_checks && details.missing_checks.length ? details.missing_checks : parseMissingChecks(message);
         const modal = $(stageMoveErrorMarkup(details, message, missingChecks));
         $(document.body).append(modal);
 
@@ -754,7 +769,7 @@
                             <span class="olp-owner-avatar">${frappe.utils.escape_html(ownerInitials(customer))}</span>
                             <span class="olp-owner-copy"><strong>${frappe.utils.escape_html(customer)}</strong><small>${__("Customer")}</small></span>
                         </div>
-                        <div class="olp-value-block ${amount ? "" : "is-empty"}"><span>${__("Value")}</span><strong>${amount ? `${amount.toLocaleString()} DH` : __("Not set")}</strong></div>
+                        <div class="olp-value-block ${amount ? "" : "is-empty"}"><span>${__("Value")}</span><strong>${amount ? formatCurrency(amount) : __("Not set")}</strong></div>
                     </div>
                 </header>
                 ${isCollapsed ? "" : extraMetricsMarkup(card)}
@@ -766,10 +781,10 @@
 
     function salesOrderActionsMarkup(card) {
         const name = frappe.utils.escape_html(card.name || "");
+        if (!(STATE.quickActions || []).length) return "";
         return `
             <div class="olp-card-actions">
-                <button type="button" data-create-from-sales-order="delivery-note" data-card="${name}">${__("Delivery Note from order")}</button>
-                <button type="button" data-create-from-sales-order="sales-invoice" data-card="${name}">${__("Invoice from order")}</button>
+                ${(STATE.quickActions || []).map((action) => `<button type="button" data-create-from-sales-order="${frappe.utils.escape_html(action.key)}" data-card="${name}">${frappe.utils.escape_html(__(action.label || action.key))}</button>`).join("")}
             </div>
         `;
     }
@@ -822,12 +837,16 @@
                     <div class="olp-mini-facts">
                         <span class="status-${docTone(status)}">${frappe.utils.escape_html(status)}</span>
                         <span>${frappe.utils.escape_html(context.delivered)}</span>
-                        <span>${context.amount ? `${context.amount.toLocaleString()} DH` : frappe.utils.escape_html(context.billed)}</span>
+                        <span>${context.amount ? formatCurrency(context.amount) : frappe.utils.escape_html(context.billed)}</span>
                     </div>
                     <button type="button" class="olp-card-icon-btn" data-toggle-card="${frappe.utils.escape_html(card.name)}" title="${frappe.utils.escape_html(__("Expand card"))}">+</button>
                 </div>
             </div>
         `;
+    }
+
+    function formatCurrency(value) {
+        return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : Number(value || 0).toLocaleString();
     }
 
     function assignmentPill(card) {

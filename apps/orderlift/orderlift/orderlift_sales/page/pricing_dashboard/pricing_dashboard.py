@@ -10,6 +10,7 @@ from frappe import _
 @frappe.whitelist()
 def get_dashboard_data():
     """Aggregate all data needed by the Pricing Dashboard page."""
+    frappe.has_permission("Pricing Sheet", "read", throw=True)
     return {
         "kpis": _get_kpis(),
         "recent_sheets": _get_recent_sheets(),

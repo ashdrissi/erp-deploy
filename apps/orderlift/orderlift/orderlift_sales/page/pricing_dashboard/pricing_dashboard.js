@@ -344,7 +344,7 @@ function renderRecentSheets(page, rows) {
                         </td>
                         <td class="pdb-right pdb-mono">
                             ${r.total_selling != null
-            ? frappe.format(r.total_selling, { fieldtype: "Currency" })
+            ? (window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(r.total_selling) : frappe.format(r.total_selling, { fieldtype: "Currency" }))
             : `<span class="pdb-muted">—</span>`}
                         </td>
                         <td class="pdb-muted pdb-nowrap">

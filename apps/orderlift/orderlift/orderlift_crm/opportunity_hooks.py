@@ -40,6 +40,26 @@ def apply_opportunity_defaults(doc, method=None) -> None:
         doc.custom_tier = _tier_for_opportunity_party(doc)
 
 
+def sync_opportunity_assignment_todo(doc, method=None) -> None:
+    if not doc or not getattr(doc, "name", None):
+        return
+    assigned_user = (doc.get("opportunity_owner") or "").strip()
+    if not assigned_user:
+        return
+
+    from orderlift.orderlift_crm.api import pipeline
+
+    existing = pipeline._find_open_pipeline_todo("Opportunity", doc.name)
+    if existing:
+        return
+    pipeline._assign_pipeline_document(
+        "Opportunity",
+        doc.name,
+        assigned_user,
+        doc.get("sales_stage") or None,
+    )
+
+
 def _tier_for_opportunity_party(doc) -> str:
     party_type = (doc.get("opportunity_from") or "").strip()
     party_name = (doc.get("party_name") or "").strip()
@@ -74,10 +94,16 @@ def _next_opportunity_name(business_type: str) -> str:
     return f"{prefix}{max_suffix + 1:05d}"
 
 
-def unlink_prospect_opportunity_rows(doc, method=None) -> None:
+def cleanup_opportunity_delete_links(doc, method=None) -> None:
+    cleanup_prospect_opportunity_rows(doc)
+    cleanup_partner_campaign_opportunity_links(doc)
     if not is_auto_saved_draft_opportunity(doc):
         return
     cleanup_auto_saved_draft_links(doc)
+
+
+def unlink_prospect_opportunity_rows(doc, method=None) -> None:
+    cleanup_opportunity_delete_links(doc, method=method)
 
 
 def is_auto_saved_draft_opportunity(doc) -> bool:
@@ -93,9 +119,118 @@ def is_auto_saved_draft_opportunity(doc) -> bool:
 
 
 def cleanup_auto_saved_draft_links(doc) -> None:
-    if not frappe.db.exists("DocType", "Prospect Opportunity"):
-        return
-    frappe.db.delete("Prospect Opportunity", {"opportunity": doc.name})
+    cleanup_prospect_opportunity_rows(doc)
     frappe.db.delete("ToDo", {"reference_type": "Opportunity", "reference_name": doc.name})
     frappe.db.delete("File", {"attached_to_doctype": "Opportunity", "attached_to_name": doc.name})
     frappe.db.delete("Comment", {"reference_doctype": "Opportunity", "reference_name": doc.name})
+
+
+def cleanup_prospect_opportunity_rows(doc) -> None:
+    if not doc or not getattr(doc, "name", None):
+        return
+    if not frappe.db.exists("DocType", "Prospect Opportunity"):
+        return
+    frappe.db.delete("Prospect Opportunity", {"opportunity": doc.name})
+
+
+def cleanup_partner_campaign_opportunity_links(doc) -> None:
+    if not doc or not getattr(doc, "name", None):
+        return
+    if not frappe.db.exists("DocType", "Partner Campaign Target"):
+        return
+    if not frappe.db.has_column("Partner Campaign Target", "opportunity"):
+        return
+
+    campaigns = frappe.get_all(
+        "Partner Campaign Target",
+        filters={"opportunity": doc.name},
+        pluck="parent",
+        limit_page_length=0,
+    )
+    frappe.db.sql(
+        """
+        UPDATE `tabPartner Campaign Target`
+        SET opportunity = NULL
+        WHERE opportunity = %s
+        """,
+        (doc.name,),
+    )
+    refresh_partner_campaign_opportunity_counts(campaigns)
+
+
+def cleanup_quotation_delete_links(doc, method=None) -> None:
+    cleanup_partner_campaign_quotation_links(doc)
+
+
+def cleanup_partner_campaign_quotation_links(doc) -> None:
+    if not doc or not getattr(doc, "name", None):
+        return
+    if not frappe.db.exists("DocType", "Partner Campaign Target"):
+        return
+    if not frappe.db.has_column("Partner Campaign Target", "quotation"):
+        return
+
+    campaigns = frappe.get_all(
+        "Partner Campaign Target",
+        filters={"quotation": doc.name},
+        pluck="parent",
+        limit_page_length=0,
+    )
+    frappe.db.sql(
+        """
+        UPDATE `tabPartner Campaign Target`
+        SET quotation = NULL
+        WHERE quotation = %s
+        """,
+        (doc.name,),
+    )
+    refresh_partner_campaign_quotation_rollups(campaigns)
+
+
+def refresh_partner_campaign_opportunity_counts(campaigns) -> None:
+    campaigns = sorted({campaign for campaign in campaigns or [] if campaign})
+    if not campaigns or not frappe.db.exists("DocType", "Partner Campaign"):
+        return
+    if not frappe.db.has_column("Partner Campaign", "opportunity_count"):
+        return
+    for campaign in campaigns:
+        count = frappe.db.count("Partner Campaign Target", {"parent": campaign, "opportunity": ["!=", ""]})
+        frappe.db.set_value("Partner Campaign", campaign, "opportunity_count", count, update_modified=False)
+
+
+def refresh_partner_campaign_quotation_rollups(campaigns) -> None:
+    campaigns = sorted({campaign for campaign in campaigns or [] if campaign})
+    if not campaigns or not frappe.db.exists("DocType", "Partner Campaign"):
+        return
+    has_count = frappe.db.has_column("Partner Campaign", "quotation_count")
+    has_amount = frappe.db.has_column("Partner Campaign", "quotation_amount")
+    if not (has_count or has_amount):
+        return
+
+    for campaign in campaigns:
+        quotation_names = frappe.get_all(
+            "Partner Campaign Target",
+            filters={"parent": campaign, "quotation": ["!=", ""]},
+            pluck="quotation",
+            limit_page_length=0,
+        )
+        values = {}
+        if has_count:
+            values["quotation_count"] = len(set(quotation_names or []))
+        if has_amount:
+            values["quotation_amount"] = _sum_quotation_grand_total(quotation_names)
+        if values:
+            frappe.db.set_value("Partner Campaign", campaign, values, update_modified=False)
+
+
+def _sum_quotation_grand_total(quotation_names) -> float:
+    names = sorted({name for name in quotation_names or [] if name})
+    if not names:
+        return 0.0
+    rows = frappe.get_all(
+        "Quotation",
+        filters={"name": ["in", names], "docstatus": ["<", 2]},
+        fields=["grand_total"],
+        limit_page_length=0,
+    )
+    return sum(float(row.get("grand_total") or 0) for row in rows)

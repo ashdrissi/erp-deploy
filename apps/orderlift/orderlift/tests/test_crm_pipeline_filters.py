@@ -15,9 +15,13 @@ frappe_stub = types.ModuleType("frappe")
 frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.get_all = lambda *args, **kwargs: []
+frappe_stub.get_list = lambda *args, **kwargs: []
 frappe_stub.get_doc = lambda *args, **kwargs: None
+frappe_stub.get_roles = lambda user=None: []
 frappe_stub.throw = lambda message: (_ for _ in ()).throw(Exception(message))
+frappe_stub.ValidationError = Exception
 frappe_stub.get_meta = lambda doctype: types.SimpleNamespace(get_field=lambda fieldname: True)
+frappe_stub.session = types.SimpleNamespace(user="demo@example.com")
 frappe_stub.db = types.SimpleNamespace(sql=lambda *args, **kwargs: [], exists=lambda *args, **kwargs: False, get_value=lambda *args, **kwargs: None)
 sys.modules["frappe"] = frappe_stub
 
@@ -28,20 +32,33 @@ frappe_utils_stub.nowdate = lambda: "2026-04-27"
 sys.modules["frappe.utils"] = frappe_utils_stub
 
 from orderlift.orderlift_crm.api import pipeline
+from orderlift import company_access
 
 
 class TestCrmPipelineFilters(unittest.TestCase):
+    def setUp(self):
+        self.original_pipeline_frappe = pipeline.frappe
+        self.original_company_access_frappe = company_access.frappe
+        pipeline.frappe = frappe_stub
+        company_access.frappe = frappe_stub
+        frappe_stub.session.user = "demo@example.com"
+        frappe_stub.get_roles = lambda user=None: []
+
+    def tearDown(self):
+        pipeline.frappe = self.original_pipeline_frappe
+        company_access.frappe = self.original_company_access_frappe
+
     def test_opportunity_pipeline_filters_by_crm_segment_field(self):
         calls = []
 
-        def get_all(doctype, **kwargs):
+        def get_list(doctype, **kwargs):
             calls.append((doctype, kwargs))
             return []
 
-        original_get_all = pipeline.frappe.get_all
+        original_get_list = pipeline.frappe.get_list
         original_has_field = pipeline._has_field
         try:
-            pipeline.frappe.get_all = get_all
+            pipeline.frappe.get_list = get_list
             pipeline._has_field = lambda doctype, fieldname: True
 
             pipeline._opportunity_cards(
@@ -51,11 +68,116 @@ class TestCrmPipelineFilters(unittest.TestCase):
             )
 
             self.assertEqual(calls[0][0], "Opportunity")
+            self.assertNotIn("opportunity_owner", calls[0][1]["filters"])
             self.assertEqual(calls[0][1]["filters"]["custom_crm_business_type"], "Distribution")
             self.assertEqual(calls[0][1]["filters"]["custom_crm_segment"], "Grossiste")
         finally:
-            pipeline.frappe.get_all = original_get_all
+            pipeline.frappe.get_list = original_get_list
             pipeline._has_field = original_has_field
+
+    def test_opportunity_pipeline_passes_owner_filter_directly(self):
+        calls = []
+
+        def get_list(doctype, **kwargs):
+            calls.append((doctype, kwargs))
+            return []
+
+        original_get_list = pipeline.frappe.get_list
+        try:
+            pipeline.frappe.get_list = get_list
+
+            pipeline._opportunity_cards(owner="sales@example.com", statuses=[])
+
+            self.assertEqual(calls[0][1]["filters"]["opportunity_owner"], "sales@example.com")
+        finally:
+            pipeline.frappe.get_list = original_get_list
+
+    def test_owned_only_user_sees_owned_or_assigned_opportunities(self):
+        original_get_list = pipeline.frappe.get_list
+        original_opportunity_card = pipeline._opportunity_card
+        original_owned_flag = pipeline._owned_pipeline_visibility_enabled
+        try:
+            pipeline.frappe.get_list = lambda doctype, **kwargs: [
+                _Row(name="OPP-OWNED", opportunity_owner="demo@example.com"),
+                _Row(name="OPP-ASSIGNED", opportunity_owner="other@example.com"),
+                _Row(name="OPP-HIDDEN", opportunity_owner="other2@example.com"),
+            ]
+            pipeline._owned_pipeline_visibility_enabled = lambda: True
+
+            def card_for_row(row, statuses):
+                if row.name == "OPP-OWNED":
+                    return {"name": row.name, "owner": "demo@example.com", "assigned_user": ""}
+                if row.name == "OPP-ASSIGNED":
+                    return {"name": row.name, "owner": "other@example.com", "assigned_user": "demo@example.com"}
+                return {"name": row.name, "owner": "other2@example.com", "assigned_user": "other2@example.com"}
+
+            pipeline._opportunity_card = card_for_row
+
+            cards = pipeline._opportunity_cards(statuses=[])
+
+            self.assertEqual([card["name"] for card in cards], ["OPP-OWNED", "OPP-ASSIGNED"])
+        finally:
+            pipeline.frappe.get_list = original_get_list
+            pipeline._opportunity_card = original_opportunity_card
+            pipeline._owned_pipeline_visibility_enabled = original_owned_flag
+
+    def test_owned_only_user_sees_owned_or_assigned_projects(self):
+        original_get_list = pipeline.frappe.get_list
+        original_project_card = pipeline._project_card
+        original_owned_flag = pipeline._owned_pipeline_visibility_enabled
+        try:
+            pipeline.frappe.get_list = lambda doctype, **kwargs: [
+                _Row(name="PROJ-OWNED", project_owner="demo@example.com"),
+                _Row(name="PROJ-ASSIGNED", project_owner="other@example.com"),
+                _Row(name="PROJ-HIDDEN", project_owner="other2@example.com"),
+            ]
+            pipeline._owned_pipeline_visibility_enabled = lambda: True
+
+            def card_for_row(row, statuses):
+                if row.name == "PROJ-OWNED":
+                    return {"name": row.name, "owner": "demo@example.com", "assigned_user": ""}
+                if row.name == "PROJ-ASSIGNED":
+                    return {"name": row.name, "owner": "other@example.com", "assigned_user": "demo@example.com"}
+                return {"name": row.name, "owner": "other2@example.com", "assigned_user": "other2@example.com"}
+
+            pipeline._project_card = card_for_row
+
+            cards = pipeline._project_cards(statuses=[])
+
+            self.assertEqual([card["name"] for card in cards], ["PROJ-OWNED", "PROJ-ASSIGNED"])
+        finally:
+            pipeline.frappe.get_list = original_get_list
+            pipeline._project_card = original_project_card
+            pipeline._owned_pipeline_visibility_enabled = original_owned_flag
+
+    def test_owned_only_user_sees_owned_or_assigned_sales_orders(self):
+        original_get_list = pipeline.frappe.get_list
+        original_sales_order_card = pipeline._sales_order_card
+        original_owned_flag = pipeline._owned_pipeline_visibility_enabled
+        try:
+            pipeline.frappe.get_list = lambda doctype, **kwargs: [
+                _Row(name="SO-OWNED", owner="demo@example.com"),
+                _Row(name="SO-ASSIGNED", owner="other@example.com"),
+                _Row(name="SO-HIDDEN", owner="other2@example.com"),
+            ]
+            pipeline._owned_pipeline_visibility_enabled = lambda: True
+
+            def card_for_row(row, statuses):
+                if row.name == "SO-OWNED":
+                    return {"name": row.name, "owner": "demo@example.com", "assigned_user": ""}
+                if row.name == "SO-ASSIGNED":
+                    return {"name": row.name, "owner": "other@example.com", "assigned_user": "demo@example.com"}
+                return {"name": row.name, "owner": "other2@example.com", "assigned_user": "other2@example.com"}
+
+            pipeline._sales_order_card = card_for_row
+
+            cards = pipeline._sales_order_cards(statuses=[])
+
+            self.assertEqual([card["name"] for card in cards], ["SO-OWNED", "SO-ASSIGNED"])
+        finally:
+            pipeline.frappe.get_list = original_get_list
+            pipeline._sales_order_card = original_sales_order_card
+            pipeline._owned_pipeline_visibility_enabled = original_owned_flag
 
     def test_project_pipeline_derives_crm_segment_from_source_opportunity(self):
         original_has_field = pipeline._has_field
@@ -150,6 +272,37 @@ class TestCrmPipelineFilters(unittest.TestCase):
             self.assertNotIn("prevdoc_doctype", "\n".join(calls))
             self.assertIn("prevdoc_docname", "\n".join(calls))
         finally:
+            pipeline.frappe.db = original_db
+
+    def test_opportunity_related_docs_skips_direct_sales_order_lookup_when_field_missing(self):
+        calls = []
+        original_get_all = pipeline.frappe.get_all
+        original_has_field = pipeline._has_field
+        original_db = pipeline.frappe.db
+        try:
+            def get_all(doctype, **kwargs):
+                calls.append((doctype, kwargs.get("filters") or {}))
+                if doctype == "Quotation":
+                    return []
+                if doctype == "Project":
+                    return []
+                if doctype == "Sales Order":
+                    raise AssertionError("Sales Order direct lookup should be skipped when opportunity field is missing")
+                return []
+
+            pipeline.frappe.get_all = get_all
+            pipeline._has_field = lambda doctype, fieldname: not (doctype == "Sales Order" and fieldname == "opportunity")
+            pipeline.frappe.db = types.SimpleNamespace(
+                has_column=lambda doctype, fieldname: False,
+                sql=lambda *args, **kwargs: [],
+                get_value=lambda *args, **kwargs: None,
+            )
+
+            self.assertEqual(pipeline._opportunity_related_docs("OPP-1"), [])
+            self.assertEqual([doctype for doctype, _ in calls], ["Quotation"])
+        finally:
+            pipeline.frappe.get_all = original_get_all
+            pipeline._has_field = original_has_field
             pipeline.frappe.db = original_db
 
 

@@ -1,6 +1,9 @@
 """
+LEGACY DANGEROUS SCRIPT.
+
 Grant Orderlift Admin full CRUD on all business doctypes.
 Full access to everything except system/build doctypes.
+Do not use for normal access management; use Access Command Center instead.
 """
 import frappe
 
@@ -207,7 +210,8 @@ def _ensure_perm(doctype):
     return True
 
 
-def run():
+def run(confirm_legacy_access_reset: int | str = 0):
+    _require_legacy_confirmation(confirm_legacy_access_reset)
     granted = 0
     skipped = 0
     for dt in FULL_ACCESS_DOCTYPES:
@@ -220,3 +224,12 @@ def run():
     frappe.db.commit()
     frappe.clear_cache()
     print(f"\nDone: {granted} doctypes granted full access, {skipped} skipped")
+
+
+def _require_legacy_confirmation(confirm_legacy_access_reset: int | str = 0) -> None:
+    if str(confirm_legacy_access_reset).strip() == "1":
+        return
+    frappe.throw(
+        "This legacy broad-access script is disabled. Use Access Command Center, "
+        "or rerun with confirm_legacy_access_reset=1 after an explicit recovery decision."
+    )

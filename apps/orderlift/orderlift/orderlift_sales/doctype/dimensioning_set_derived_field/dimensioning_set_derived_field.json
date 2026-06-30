@@ -1,0 +1,78 @@
+{
+  "actions": [],
+  "creation": "2026-06-29 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "sequence",
+    "field_key",
+    "label",
+    "field_type",
+    "formula",
+    "group",
+    "help_text"
+  ],
+  "fields": [
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "default": "10",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "field_key",
+      "fieldtype": "Data",
+      "label": "Code Interne",
+      "reqd": 1,
+      "in_list_view": 1,
+      "description": "Utilise dans les formules de regles et les autres calculs."
+    },
+    {
+      "fieldname": "label",
+      "fieldtype": "Data",
+      "label": "Calcul",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "field_type",
+      "fieldtype": "Select",
+      "label": "Type de Resultat",
+      "options": "Int\nFloat\nData\nSelect\nCheck",
+      "default": "Float",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "formula",
+      "fieldtype": "Small Text",
+      "label": "Formule",
+      "reqd": 1,
+      "description": "Exemple : levels, quantity >= 5, ifelse(persons < 5, \"MAX4\", \"MAX6\")"
+    },
+    {
+      "fieldname": "group",
+      "fieldtype": "Data",
+      "label": "Section"
+    },
+    {
+      "fieldname": "help_text",
+      "fieldtype": "Small Text",
+      "label": "Aide"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-06-29 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Dimensioning Set Derived Field",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

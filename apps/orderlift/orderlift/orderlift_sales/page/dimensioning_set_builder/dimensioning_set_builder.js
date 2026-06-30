@@ -24,6 +24,16 @@ frappe.pages["dimensioning-set-builder"].on_page_show = function (wrapper) {
 
 const ODS_FIELD_TYPES = ["Int", "Float", "Data", "Select", "Check"];
 const ODS_CONDITION_OPERATORS = ["==", "!=", ">", ">=", "<", "<="];
+const ODS_ITEM_FILTER_OPERATORS = ["==", "!=", "contains", ">", ">=", "<", "<="];
+const ODS_ITEM_FILTER_FIELDS = [
+    { value: "item_group", label: "Item Group" },
+    { value: "brand", label: "Brand" },
+    { value: "custom_material", label: "Material" },
+    { value: "custom_length_cm", label: "Length (cm)" },
+    { value: "custom_width_cm", label: "Width (cm)" },
+    { value: "custom_height_cm", label: "Height (cm)" },
+    { value: "item_name", label: "Item Name" },
+];
 const ODS_NAV_ITEMS = [
     { key: "start", label: "Start", step: "01" },
     { key: "questions", label: "Form", step: "02" },
@@ -40,6 +50,8 @@ const ODS_SAMPLE_ITEMS = [
     { item: "IT.69", item_name: "Armoire VVVF", item_group: "ARMOIRE", unit: "SET" },
     { item: "IT.98", item_name: "Demo article needing a price", item_group: "OPTION", unit: "Pc", missing_price: true },
 ];
+const ODS_ITEM_CACHE = Object.fromEntries(ODS_SAMPLE_ITEMS.map((row) => [row.item, row]));
+const ODS_ITEM_LINK_CONTROLS = new Map();
 
 const ODS_INITIAL_SETS = [
     {
@@ -92,9 +104,11 @@ const ODS_STATE = {
     selectedFieldToken: "",
     openQuestionCards: {},
     openRuleGroups: {},
+    openArticleSettings: {},
     testValues: {},
     validation: [],
     lastPreview: null,
+    isSaving: false,
 };
 
 function fieldRow(field_key, label, field_type, default_value, options, is_required, help_text, group) {
@@ -112,7 +126,10 @@ function ruleRow(rule_label, item, display_group, qty_formula, condition_formula
         sequence: 10,
         is_active: true,
         rule_label,
+        item_selection_mode: "fixed",
         item,
+        item_filters: [],
+        item_filters_json: "",
         display_group,
         qty_formula,
         condition_formula,
@@ -137,6 +154,7 @@ function resetDimensioningBuilderState() {
     ODS_STATE.selectedFieldToken = "";
     ODS_STATE.openQuestionCards = {};
     ODS_STATE.openRuleGroups = {};
+    ODS_STATE.openArticleSettings = {};
     ODS_STATE.testValues = buildDefaultValues(getActiveSet());
     ODS_STATE.validation = [];
     ODS_STATE.lastPreview = null;
@@ -199,6 +217,7 @@ function renderDimensioningBuilder(page) {
     `;
     page.main.html(content);
     bindDimensioningBuilderEvents(page);
+    updateDimensioningSaveState(page);
 }
 
 function renderHero(set, preview, validation) {
@@ -269,7 +288,7 @@ function renderStartSection(set, preview, validation) {
                     <div class="ods-next-actions">
                         <button class="btn btn-primary" type="button" data-nav="questions">${__("Design the form")}</button>
                         <button class="btn btn-default" type="button" data-nav="preview">${__("Open test panel")}</button>
-                        <button class="btn btn-default" type="button" data-save-builder>${__("Save Dimensioning Set")}</button>
+                        <button class="btn btn-default" type="button" data-save-builder ${ODS_STATE.isSaving ? "disabled" : ""}>${ODS_STATE.isSaving ? __("Saving...") : __("Save Dimensioning Set")}</button>
                     </div>
                 </div>
                 <div class="ods-simple-summary">
@@ -551,7 +570,7 @@ function renderArticleRuleGroup(group, groupIndex, set) {
 function renderRuleGroupArticlePreview(group, set) {
     if (!group.rules.length) return "";
     const chips = group.rules.slice(0, 4).map(({ rule }) => {
-        const item = rule.item || __("Item");
+        const item = (rule.item_selection_mode || "fixed") === "filtered" ? describeItemFilters(rule) : rule.item || __("Item");
         return `<span>${frappe.utils.escape_html(item)} <strong>x ${frappe.utils.escape_html(describeRuleQuantity(rule, set))}</strong></span>`;
     }).join("");
     const overflow = group.rules.length > 4 ? `<span>${__("+ {0} more", [group.rules.length - 4])}</span>` : "";
@@ -561,6 +580,7 @@ function renderRuleGroupArticlePreview(group, set) {
 function renderArticlePicker(groupIndex) {
     return `
         <div class="ods-article-picker">
+            <button class="btn btn-xs btn-primary" type="button" data-open-item-picker="${groupIndex}">${__("Choose Item from Catalog")}</button>
             <div>
                 ${ODS_SAMPLE_ITEMS.map((item) => `
                     <button class="ods-picker-chip" type="button" data-add-catalog-article="${groupIndex}" data-catalog-item="${frappe.utils.escape_html(item.item)}">
@@ -678,6 +698,8 @@ function extractConditionState(rule) {
 }
 
 function ensureStructuredRule(rule, set) {
+    if (!["fixed", "filtered"].includes(rule.item_selection_mode)) rule.item_selection_mode = "fixed";
+    normalizeRuleItemFilters(rule);
     if (rule.uses_advanced_formula) {
         rule.condition_mode = rule.condition_mode || "always";
         rule.quantity_mode = rule.quantity_mode || "fixed";
@@ -716,11 +738,12 @@ function conditionFields(condition) {
 }
 
 function quantityFields(quantity) {
-    return {
+    const fields = {
         quantity_mode: quantity.mode,
         fixed_qty: quantity.fixed_qty,
         quantity_question_key: quantity.quantity_question_key,
     };
+    return fields;
 }
 
 function describeConditionGroup(group, set) {
@@ -864,21 +887,28 @@ function updateRuleQuantity(ruleIndex, changes) {
 }
 
 function renderArticleRuleRow(rule, index, articleIndex, set) {
-    const itemInfo = ODS_SAMPLE_ITEMS.find((row) => row.item === rule.item) || {};
-    const itemName = itemInfo.item_name || rule.rule_label || __("Choose an item");
+    ensureStructuredRule(rule, set);
+    const itemInfo = getCachedItemInfo(rule.item);
+    const selectionMode = rule.item_selection_mode || "fixed";
+    const settingsOpen = !!ODS_STATE.openArticleSettings[index];
+    const itemName = selectionMode === "filtered" ? describeItemFilters(rule) : itemInfo.item_name || rule.rule_label || __("Choose an item");
     const quantityMode = rule.quantity_mode || "fixed";
     return `
         <article class="ods-article-row ${rule.is_active ? "" : "muted"}" role="listitem">
             <div class="ods-article-row-main">
                 <div class="ods-article-row-title">
                     <span class="ods-article-row-index">${articleIndex + 1}</span>
-                    <label class="ods-compact-field ods-item-code-field">
-                        <span>${__("Item")}</span>
-                        <input data-update-kind="rule" data-update-index="${index}" data-update-field="item" value="${frappe.utils.escape_html(rule.item || "")}" placeholder="IT.0">
+                    <label class="ods-compact-field">
+                        <span>${__("Item Source")}</span>
+                        <select data-rule-item-selection-mode="${index}">
+                            <option value="fixed" ${selectionMode === "fixed" ? "selected" : ""}>${__("Fixed")}</option>
+                            <option value="filtered" ${selectionMode === "filtered" ? "selected" : ""}>${__("Filtered")}</option>
+                        </select>
                     </label>
+                    ${renderRuleItemSelector(rule, index, selectionMode)}
                     <div class="ods-article-name">
                         <strong>${frappe.utils.escape_html(itemName)}</strong>
-                        <small>${frappe.utils.escape_html(rule.display_group || itemInfo.item_group || __("No section"))}</small>
+                        <small>${frappe.utils.escape_html(selectionMode === "filtered" ? __("Resolved when tested/saved") : rule.display_group || itemInfo.item_group || __("No section"))}</small>
                     </div>
                 </div>
             </div>
@@ -888,12 +918,13 @@ function renderArticleRuleRow(rule, index, articleIndex, set) {
                 ${compactCheck("rule", index, "show_in_detail", __("Detail"), rule.show_in_detail)}
             </div>
             <button class="ods-icon-button danger ods-article-remove" type="button" data-remove-rule="${index}" aria-label="${__("Remove article")}">x</button>
-            <details class="ods-article-row-more">
+            <details class="ods-article-row-more" data-article-settings="${index}" ${settingsOpen ? "open" : ""}>
                 <summary>${__("More article settings")}</summary>
                 <div class="ods-form-grid three">
                     ${inlineInput("rule", index, "rule_label", __("Internal label"), rule.rule_label)}
                     ${inlineInput("rule", index, "display_group", __("Quote section"), rule.display_group)}
                     ${inlineInput("rule", index, "sequence", __("Sort order"), rule.sequence || 10, "number")}
+                    ${selectionMode === "filtered" ? renderItemFilterEditor(rule, index, set) : ""}
                     ${rule.uses_advanced_formula ? `
                         <label class="ods-field wide">
                             <span>${__("Condition formula")}</span>
@@ -907,6 +938,115 @@ function renderArticleRuleRow(rule, index, articleIndex, set) {
                 </div>
             </details>
         </article>
+    `;
+}
+
+function renderRuleItemSelector(rule, index, selectionMode) {
+    if (selectionMode === "filtered") {
+        return `
+            <div class="ods-filter-summary">
+                <span>${__("Filters")}</span>
+                <strong>${frappe.utils.escape_html(describeItemFilters(rule))}</strong>
+            </div>
+        `;
+    }
+    return `
+        <label class="ods-compact-field ods-item-code-field">
+            <span>${__("Item")}</span>
+            <div class="ods-item-search-row">
+                <div class="ods-item-link-host" data-rule-item-link="${index}"></div>
+                <button class="btn btn-xs btn-default" type="button" data-rule-item-advanced-search="${index}">${__("Advanced Search")}</button>
+            </div>
+        </label>
+    `;
+}
+
+function renderItemFilterEditor(rule, index, set) {
+    const filters = normalizeRuleItemFilters(rule);
+    const rows = filters.map((filter, filterIndex) => renderItemFilterRow(filter, index, filterIndex, set)).join("");
+    return `
+        <div class="ods-item-filter-editor wide">
+            <div class="ods-filter-editor-head">
+                <div>
+                    <strong>${__("Filtered Item Match")}</strong>
+                    <span>${__("Example: Item Group = Porte, Brand = ATERYA, Taille = 70, Material = INOX.")}</span>
+                </div>
+                <button class="btn btn-xs btn-default" type="button" data-add-item-filter="${index}">${__("Add Filter")}</button>
+            </div>
+            <div class="ods-item-filter-list">${rows || `<div class="ods-empty ods-empty-articles"><strong>${__("No filters")}</strong><p>${__("Add filters that resolve to exactly one Item.")}</p></div>`}</div>
+        </div>
+    `;
+}
+
+function renderItemFilterRow(filter, ruleIndex, filterIndex, set) {
+    const source = filter.source || "item_field";
+    const valueSource = filter.value_source || "manual";
+    return `
+        <div class="ods-item-filter-row">
+            <label class="ods-compact-field">
+                <span>${__("Source")}</span>
+                <select data-rule-filter-source="${ruleIndex}" data-filter-index="${filterIndex}">
+                    <option value="item_field" ${source === "item_field" ? "selected" : ""}>${__("Item Field")}</option>
+                    <option value="specification" ${source === "specification" ? "selected" : ""}>${__("Specification")}</option>
+                </select>
+            </label>
+            ${source === "specification" ? `
+                <label class="ods-compact-field">
+                    <span>${__("Attribute")}</span>
+                    <input data-rule-filter-attribute="${ruleIndex}" data-filter-index="${filterIndex}" value="${frappe.utils.escape_html(filter.attribute || filter.field || "")}" placeholder="Taille">
+                </label>
+            ` : `
+                <label class="ods-compact-field">
+                    <span>${__("Field")}</span>
+                    <select data-rule-filter-field="${ruleIndex}" data-filter-index="${filterIndex}">${renderItemFilterFieldOptions(filter.field)}</select>
+                </label>
+            `}
+            <label class="ods-compact-field">
+                <span>${__("Operator")}</span>
+                <select data-rule-filter-operator="${ruleIndex}" data-filter-index="${filterIndex}">${ODS_ITEM_FILTER_OPERATORS.map((op) => `<option value="${op}" ${op === (filter.operator || "==") ? "selected" : ""}>${frappe.utils.escape_html(op)}</option>`).join("")}</select>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Value From")}</span>
+                <select data-rule-filter-value-source="${ruleIndex}" data-filter-index="${filterIndex}">
+                    <option value="manual" ${valueSource === "manual" ? "selected" : ""}>${__("Typed")}</option>
+                    <option value="question" ${valueSource === "question" ? "selected" : ""}>${__("Answer")}</option>
+                    <option value="formula" ${valueSource === "formula" ? "selected" : ""}>${__("Formula")}</option>
+                </select>
+            </label>
+            ${renderItemFilterValueControl(filter, ruleIndex, filterIndex, set)}
+            <button class="ods-icon-button danger" type="button" data-remove-item-filter="${ruleIndex}" data-filter-index="${filterIndex}" aria-label="${__("Remove filter")}">x</button>
+        </div>
+    `;
+}
+
+function renderItemFilterFieldOptions(selected) {
+    const current = selected || "item_group";
+    return ODS_ITEM_FILTER_FIELDS.map((field) => `<option value="${frappe.utils.escape_html(field.value)}" ${field.value === current ? "selected" : ""}>${frappe.utils.escape_html(__(field.label))}</option>`).join("");
+}
+
+function renderItemFilterValueControl(filter, ruleIndex, filterIndex, set) {
+    const valueSource = filter.value_source || "manual";
+    if (valueSource === "question") {
+        return `
+            <label class="ods-compact-field">
+                <span>${__("Answer")}</span>
+                <select data-rule-filter-question="${ruleIndex}" data-filter-index="${filterIndex}">${renderQuestionOptions(set, filter.question_key || getQuestionKeys(set)[0] || "")}</select>
+            </label>
+        `;
+    }
+    if (valueSource === "formula") {
+        return `
+            <label class="ods-compact-field">
+                <span>${__("Formula")}</span>
+                <input data-rule-filter-formula="${ruleIndex}" data-filter-index="${filterIndex}" value="${frappe.utils.escape_html(filter.formula || "")}" placeholder='upper(door_material)'>
+            </label>
+        `;
+    }
+    return `
+        <label class="ods-compact-field">
+            <span>${__("Value")}</span>
+            <input data-rule-filter-value="${ruleIndex}" data-filter-index="${filterIndex}" value="${frappe.utils.escape_html(filter.value || "")}" placeholder="INOX">
+        </label>
     `;
 }
 
@@ -958,6 +1098,84 @@ function describeRuleQuantity(rule, set) {
         return rule.quantity_question_key || getQuestionKeys(set)[0] || "1";
     }
     return String(rule.fixed_qty || "1");
+}
+
+function defaultItemFilter(set) {
+    return {
+        source: "item_field",
+        field: "item_group",
+        attribute: "",
+        operator: "==",
+        value_source: "manual",
+        value: "",
+        question_key: getQuestionKeys(set)[0] || "",
+        formula: "",
+        enabled: 1,
+    };
+}
+
+function normalizeRuleItemFilters(rule) {
+    if (!Array.isArray(rule.item_filters)) {
+        rule.item_filters = parseRuleItemFilters(rule.item_filters_json);
+    }
+    rule.item_filters = rule.item_filters.map((filter) => ({
+        source: filter.source || "item_field",
+        field: filter.field || "item_group",
+        attribute: filter.attribute || "",
+        operator: ODS_ITEM_FILTER_OPERATORS.includes(filter.operator) ? filter.operator : "==",
+        value_source: ["manual", "question", "formula"].includes(filter.value_source) ? filter.value_source : "manual",
+        value: filter.value ?? "",
+        question_key: filter.question_key || "",
+        formula: filter.formula || "",
+        enabled: filter.enabled ?? 1,
+    }));
+    syncRuleItemFiltersJson(rule);
+    return rule.item_filters;
+}
+
+function parseRuleItemFilters(raw) {
+    try {
+        const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw || [];
+        return Array.isArray(parsed) ? parsed : parsed.filters || [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function syncRuleItemFiltersJson(rule) {
+    rule.item_filters_json = JSON.stringify(rule.item_filters || []);
+}
+
+function updateRuleItemFilter(ruleIndex, filterIndex, changes) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    const filters = normalizeRuleItemFilters(rule);
+    const filter = filters[filterIndex];
+    if (!filter) return;
+    Object.assign(filter, changes);
+    if (filter.source === "item_field") filter.attribute = "";
+    if (filter.source === "specification" && !filter.attribute) filter.attribute = filter.field || "Taille";
+    if (filter.value_source === "question" && !filter.question_key) filter.question_key = getQuestionKeys(set)[0] || "";
+    syncRuleItemFiltersJson(rule);
+}
+
+function keepArticleSettingsOpen(ruleIndex) {
+    ODS_STATE.openArticleSettings[ruleIndex] = true;
+}
+
+function describeItemFilters(rule) {
+    const filters = normalizeRuleItemFilters(rule);
+    if (!filters.length) return __("Filtered item");
+    return filters.slice(0, 3).map((filter) => {
+        const left = filter.source === "specification" ? filter.attribute || filter.field || __("Spec") : itemFilterFieldLabel(filter.field);
+        const right = filter.value_source === "question" ? filter.question_key : filter.value_source === "formula" ? filter.formula : filter.value;
+        return `${left} ${filter.operator || "=="} ${right || "..."}`;
+    }).join(", ") + (filters.length > 3 ? ` +${filters.length - 3}` : "");
+}
+
+function itemFilterFieldLabel(fieldname) {
+    return (ODS_ITEM_FILTER_FIELDS.find((field) => field.value === fieldname) || {}).label || fieldname || __("Item Field");
 }
 
 function renderRuleSentence(rule) {
@@ -1089,6 +1307,7 @@ function renderGeneratedItems(preview) {
 function renderGeneratedRow(row) {
     const warnings = [];
     if (row.missing_item) warnings.push(`<span class="ods-badge danger">${__("Missing item")}</span>`);
+    if (row.filtered_item) warnings.push(`<span class="ods-badge warn">${__("Server match")}</span>`);
     if (row.missing_price) warnings.push(`<span class="ods-badge warn">${__("Missing price")}</span>`);
     if (!row.show_in_detail) warnings.push(`<span class="ods-badge muted">${__("Summary only")}</span>`);
     return `
@@ -1205,6 +1424,7 @@ function inlineCheck(kind, index, field, label, value) {
 
 function bindDimensioningBuilderEvents(page) {
     const root = page.main;
+    mountDimensioningItemLinks(page);
     root.find("[data-nav]").on("click", function () {
         ODS_STATE.activeSection = this.dataset.nav;
         renderDimensioningBuilder(page);
@@ -1217,7 +1437,7 @@ function bindDimensioningBuilderEvents(page) {
         ODS_STATE.validation = [];
         renderDimensioningBuilder(page);
     });
-    root.find("[data-set-field]").on("change input", function () {
+    root.find("[data-set-field]").on("change", function () {
         const set = getActiveSet();
         const field = this.dataset.setField;
         if (field === "is_active") set.is_active = this.value === "Active";
@@ -1229,7 +1449,7 @@ function bindDimensioningBuilderEvents(page) {
         updateConfigValue(this);
         ODS_STATE.lastPreview = null;
     });
-    root.find("[data-test-key]").on("change input", function () {
+    root.find("[data-test-key]").on("change", function () {
         const key = this.dataset.testKey;
         ODS_STATE.testValues[key] = this.type === "checkbox" ? this.checked : this.value;
         ODS_STATE.lastPreview = buildPreview(getActiveSet(), ODS_STATE.testValues);
@@ -1278,6 +1498,12 @@ function bindDimensioningBuilderEvents(page) {
         ODS_STATE.selectedRule = set.item_rules.length - 1;
         renderDimensioningBuilder(page);
     });
+    root.find("[data-open-item-picker]").on("click", function () {
+        openDimensioningItemPicker(page, Number(this.dataset.openItemPicker) || 0);
+    });
+    root.find("[data-rule-item-advanced-search]").on("click", function () {
+        openDimensioningItemAdvancedSearch(Number(this.dataset.ruleItemAdvancedSearch) || 0);
+    });
     root.find("[data-remove-field]").on("click", function (event) {
         event?.preventDefault?.();
         event?.stopPropagation?.();
@@ -1315,6 +1541,9 @@ function bindDimensioningBuilderEvents(page) {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         toggleRuleGroup(page, Number(this.dataset.toggleRuleGroup) || 0);
+    });
+    root.find("[data-article-settings]").on("toggle", function () {
+        ODS_STATE.openArticleSettings[Number(this.dataset.articleSettings) || 0] = this.open;
     });
     root.find("[data-group-condition-mode]").on("change", function () {
         const set = getActiveSet();
@@ -1368,7 +1597,7 @@ function bindDimensioningBuilderEvents(page) {
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
     });
-    root.find("[data-rule-fixed-qty]").on("change input", function () {
+    root.find("[data-rule-fixed-qty]").on("change", function () {
         updateRuleQuantity(Number(this.dataset.ruleFixedQty) || 0, { quantity_mode: "fixed", fixed_qty: this.value });
         ODS_STATE.lastPreview = null;
     });
@@ -1376,6 +1605,95 @@ function bindDimensioningBuilderEvents(page) {
         updateRuleQuantity(Number(this.dataset.ruleQuantityQuestion) || 0, { quantity_mode: "question", quantity_question_key: this.value });
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-item-selection-mode]").on("change", function () {
+        const set = getActiveSet();
+        const ruleIndex = Number(this.dataset.ruleItemSelectionMode) || 0;
+        const rule = set.item_rules[ruleIndex];
+        if (!rule) return;
+        keepArticleSettingsOpen(ruleIndex);
+        rule.item_selection_mode = this.value;
+        if (rule.item_selection_mode === "filtered" && !normalizeRuleItemFilters(rule).length) {
+            rule.item_filters = [defaultItemFilter(set)];
+            syncRuleItemFiltersJson(rule);
+        }
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-add-item-filter]").on("click", function () {
+        const set = getActiveSet();
+        const ruleIndex = Number(this.dataset.addItemFilter) || 0;
+        const rule = set.item_rules[ruleIndex];
+        if (!rule) return;
+        keepArticleSettingsOpen(ruleIndex);
+        normalizeRuleItemFilters(rule).push(defaultItemFilter(set));
+        syncRuleItemFiltersJson(rule);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-remove-item-filter]").on("click", function () {
+        const ruleIndex = Number(this.dataset.removeItemFilter) || 0;
+        const rule = getActiveSet().item_rules[ruleIndex];
+        if (!rule) return;
+        keepArticleSettingsOpen(ruleIndex);
+        normalizeRuleItemFilters(rule).splice(Number(this.dataset.filterIndex) || 0, 1);
+        syncRuleItemFiltersJson(rule);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-source]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterSource) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { source: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-field]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterField) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { field: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-attribute]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterAttribute) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { attribute: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-operator]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterOperator) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { operator: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-value-source]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterValueSource) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { value_source: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-value]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterValue) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { value: this.value });
+        ODS_STATE.lastPreview = null;
+    });
+    root.find("[data-rule-filter-question]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterQuestion) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { question_key: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-filter-formula]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleFilterFormula) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { formula: this.value });
+        ODS_STATE.lastPreview = null;
     });
     root.find("[data-refresh-preview], [data-bottom-validate]").on("click", () => {
         ODS_STATE.activeSection = "preview";
@@ -1394,6 +1712,123 @@ function bindDimensioningBuilderEvents(page) {
         navigator.clipboard?.writeText(payload);
         frappe.show_alert({ message: __("Builder payload copied"), indicator: "green" });
     });
+}
+
+function mountDimensioningItemLinks(page) {
+    ODS_ITEM_LINK_CONTROLS.clear();
+    page.main.find("[data-rule-item-link]").each((_, host) => {
+        const index = Number(host.dataset.ruleItemLink) || 0;
+        const rule = getActiveSet().item_rules[index];
+        if (!rule || !frappe.ui?.form?.make_control) return;
+        host.innerHTML = "";
+        let syncing = true;
+        const control = frappe.ui.form.make_control({
+            parent: host,
+            only_input: true,
+            render_input: true,
+            df: {
+                fieldname: `dimensioning_rule_item_${index}`,
+                fieldtype: "Link",
+                options: "Item",
+                only_select: true,
+                get_query: () => ({
+                    query: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.dimensioning_item_query",
+                }),
+                change: () => {
+                    if (syncing) return;
+                    const item = control.get_value() || "";
+                    if ((rule.item || "") === item) return;
+                    rule.item = item;
+                    ODS_STATE.lastPreview = null;
+                    fetchDimensioningItemInfo(item).then((info) => {
+                        if (!info || rule.item !== item) return;
+                        if (!rule.rule_label || rule.rule_label === __("New article")) rule.rule_label = info.item_name || item;
+                        if (!rule.display_group) rule.display_group = info.item_group || "";
+                        renderDimensioningBuilder(page);
+                    });
+                },
+            },
+        });
+        if (control.df) control.df.only_select = true;
+        control.refresh();
+        ODS_ITEM_LINK_CONTROLS.set(index, control);
+        control.set_value(rule.item || "");
+        setTimeout(() => { syncing = false; }, 0);
+        if (control.$input) control.$input.addClass("ods-item-link-input");
+        bindDimensioningItemLinkDropdown(host);
+        if (rule.item && !ODS_ITEM_CACHE[rule.item]?.__lookup_attempted) {
+            fetchDimensioningItemInfo(rule.item).then((info) => {
+                if (info && rule.item === info.item) renderDimensioningBuilder(page);
+            });
+        }
+    });
+}
+
+function openDimensioningItemAdvancedSearch(index) {
+    const control = ODS_ITEM_LINK_CONTROLS.get(index);
+    if (control?.open_advanced_search) {
+        control.open_advanced_search.call(control);
+    }
+}
+
+function bindDimensioningItemLinkDropdown(host) {
+    const input = host.querySelector("input");
+    if (!input) return;
+    const place = () => requestAnimationFrame(() => positionDimensioningItemLinkDropdown(host));
+    input.addEventListener("focus", place);
+    input.addEventListener("input", place);
+    input.addEventListener("keydown", place);
+    input.addEventListener("awesomplete-open", place);
+    const observer = new MutationObserver(place);
+    observer.observe(host, { attributes: true, attributeFilter: ["hidden", "class"], childList: true, subtree: true });
+}
+
+function positionDimensioningItemLinkDropdown(host) {
+    const input = host.querySelector("input");
+    const list = host.querySelector(".awesomplete > ul[role='listbox']");
+    if (!input || !list || list.hasAttribute("hidden")) return;
+
+    const rect = input.getBoundingClientRect();
+    const bottomBar = document.querySelector(".ods-bottom-bar");
+    const bottomLimit = bottomBar ? Math.min(window.innerHeight, bottomBar.getBoundingClientRect().top) : window.innerHeight;
+    const availableBelow = Math.max(0, bottomLimit - rect.bottom - 8);
+    const availableAbove = Math.max(0, rect.top - 8);
+    const desiredHeight = Math.min(list.scrollHeight || 320, 320);
+    const openAbove = availableBelow < Math.min(desiredHeight, 220) && availableAbove > availableBelow;
+    const availableSpace = openAbove ? availableAbove : availableBelow;
+
+    host.classList.toggle("ods-awesomplete-above", openAbove);
+    list.style.maxHeight = `${Math.max(120, Math.min(availableSpace - 8, 320))}px`;
+}
+
+function openDimensioningItemPicker(page, groupIndex) {
+    const dialog = new frappe.ui.Dialog({
+        title: __("Add Item to Rule"),
+        fields: [
+            {
+                fieldname: "item",
+                fieldtype: "Link",
+                label: __("Item"),
+                options: "Item",
+                reqd: 1,
+                only_select: true,
+                get_query: () => ({ query: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.dimensioning_item_query" }),
+            },
+        ],
+        primary_action_label: __("Add"),
+        primary_action: async (values) => {
+            const item = values.item;
+            const group = getArticleRuleGroups(getActiveSet())[groupIndex];
+            if (!item || !group) return;
+            const info = await fetchDimensioningItemInfo(item);
+            const rule = ruleRow(info?.item_name || item, item, info?.item_group || "", "1", group.condition, true);
+            rule.rule_group = group.key;
+            getActiveSet().item_rules.push(rule);
+            dialog.hide();
+            renderDimensioningBuilder(page);
+        },
+    });
+    dialog.show();
 }
 
 function confirmDeleteActiveDimensioningSet(page) {
@@ -1493,19 +1928,41 @@ async function loadDimensioningSet(page, setName) {
 }
 
 async function saveActiveDimensioningSet(page) {
+    if (ODS_STATE.isSaving) return;
     const set = getActiveSet();
-    const response = await frappe.call({
-        method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.save_dimensioning_builder_payload",
-        args: { payload: JSON.stringify(payloadFromBuilderSet(set)) },
-    });
-    const payload = (response.message || {}).set;
-    if (payload) {
-        ODS_STATE.sets[ODS_STATE.selectedSet] = builderSetFromPayload(payload);
-        ODS_STATE.testValues = buildDefaultValues(getActiveSet());
-        ODS_STATE.lastPreview = null;
+    ODS_STATE.isSaving = true;
+    updateDimensioningSaveState(page);
+    try {
+        const response = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.save_dimensioning_builder_payload",
+            args: { payload: JSON.stringify(payloadFromBuilderSet(set)) },
+        });
+        const payload = (response.message || {}).set;
+        if (payload) {
+            ODS_STATE.sets[ODS_STATE.selectedSet] = builderSetFromPayload(payload);
+            ODS_STATE.testValues = buildDefaultValues(getActiveSet());
+            ODS_STATE.lastPreview = null;
+        }
+        frappe.show_alert({ message: __("Dimensioning Set saved"), indicator: "green" });
         renderDimensioningBuilder(page);
+    } catch (error) {
+        frappe.msgprint({
+            title: __("Save failed"),
+            message: extractDimensioningBuilderError(error) || __("Unable to save this Dimensioning Set."),
+            indicator: "red",
+        });
+    } finally {
+        ODS_STATE.isSaving = false;
+        updateDimensioningSaveState(page);
     }
-    frappe.show_alert({ message: __("Dimensioning Set saved"), indicator: "green" });
+}
+
+function updateDimensioningSaveState(page) {
+    const saving = !!ODS_STATE.isSaving;
+    page.main.find("[data-save-builder]").prop("disabled", saving).text(saving ? __("Saving...") : __("Save Dimensioning Set"));
+    if (page.btn_primary) {
+        page.btn_primary.prop("disabled", saving).toggleClass("disabled", saving).text(saving ? __("Saving...") : __("Save Dimensioning Set"));
+    }
 }
 
 function builderSetFromPayload(payload) {
@@ -1519,7 +1976,7 @@ function builderSetFromPayload(payload) {
             is_required: !!field.is_required,
             options: Array.isArray(field.options) ? field.options.join("\n") : field.options || "",
         })),
-        derived_fields: [],
+        derived_fields: (payload.derived_fields || []).map((field) => ({ ...field })),
         item_rules: [],
     };
     (payload.rule_groups || []).forEach((group) => {
@@ -1542,9 +1999,12 @@ function builderSetFromPayload(payload) {
                 compare_source: group.compare_source || "manual",
                 manual_value: group.manual_value || "",
                 compare_question_key: group.compare_question_key || "",
-                quantity_mode: article.quantity_mode || "fixed",
+                quantity_mode: article.quantity_mode === "question" ? "question" : "fixed",
                 fixed_qty: String(article.fixed_qty || "1"),
                 quantity_question_key: article.quantity_question_key || "",
+                item_selection_mode: article.item_selection_mode || "fixed",
+                item_filters_json: article.item_filters_json || "",
+                item_filters: parseRuleItemFilters(article.item_filters_json),
                 condition_formula: article.condition_formula || "",
                 qty_formula: article.qty_formula || "",
                 uses_advanced_formula: !!((article.condition_formula || "").trim() || (article.qty_formula || "").trim()),
@@ -1568,6 +2028,10 @@ function payloadFromBuilderSet(set) {
             options: splitOptions(field.options),
             is_required: field.is_required ? 1 : 0,
         })),
+        derived_fields: (set.derived_fields || []).map((field, index) => ({
+            ...field,
+            sequence: field.sequence || (index + 1) * 10,
+        })),
         rule_groups: getArticleRuleGroups(set).map((group, groupIndex) => ({
             rule_group: group.key === "__always__" ? `GROUP-${groupIndex + 1}` : group.key,
             sequence: (groupIndex + 1) * 100,
@@ -1582,13 +2046,15 @@ function payloadFromBuilderSet(set) {
                 sequence: rule.sequence || (groupIndex + 1) * 100 + articleIndex + 1,
                 is_active: rule.is_active ? 1 : 0,
                 rule_label: rule.rule_label || rule.item || `Article ${articleIndex + 1}`,
+                item_selection_mode: rule.item_selection_mode || "fixed",
                 item: rule.item || "",
+                item_filters_json: JSON.stringify(normalizeRuleItemFilters(rule)),
                 display_group: rule.display_group || "",
-                quantity_mode: rule.quantity_mode || "fixed",
+                quantity_mode: rule.quantity_mode === "question" ? "question" : "fixed",
                 fixed_qty: rule.fixed_qty || 1,
                 quantity_question_key: rule.quantity_question_key || "",
-                condition_formula: rule.uses_advanced_formula ? rule.condition_formula || "" : "",
-                qty_formula: rule.uses_advanced_formula ? rule.qty_formula || "" : "",
+                condition_formula: rule.uses_advanced_formula ? compileStructuredCondition(rule, set) : "",
+                qty_formula: rule.uses_advanced_formula ? compileQuantityFormula(rule) : "",
                 show_in_detail: rule.show_in_detail ? 1 : 0,
             })),
         })),
@@ -1672,16 +2138,18 @@ function buildPreview(set, rawValues) {
                 skippedCount += 1;
                 continue;
             }
-            const itemInfo = ODS_SAMPLE_ITEMS.find((row) => row.item === rule.item) || {};
+            const isFilteredItem = (rule.item_selection_mode || "fixed") === "filtered";
+            const itemInfo = isFilteredItem ? {} : getCachedItemInfo(rule.item);
             generated.push({
                 rule_label: rule.rule_label,
-                item: rule.item || "",
-                item_name: itemInfo.item_name || "",
+                item: isFilteredItem ? __("Filtered Item") : rule.item || "",
+                item_name: isFilteredItem ? describeItemFilters(rule) : itemInfo.item_name || "",
                 unit: itemInfo.unit || "",
                 qty,
                 display_group: rule.display_group || itemInfo.item_group || "Ungrouped",
                 show_in_detail: !!rule.show_in_detail,
-                missing_item: !itemInfo.item,
+                missing_item: !isFilteredItem && !!rule.item && (!itemInfo.item || itemInfo.missing),
+                filtered_item: isFilteredItem,
                 missing_price: !!itemInfo.missing_price,
             });
             matchedCount += 1;
@@ -1703,14 +2171,19 @@ function validateSet(set, preview) {
         if (field.field_type === "Select" && !splitOptions(field.options).length) issues.push({ level: "warning", title: "Choice question has no choices", message: `${field.label || field.field_key} should define choices.` });
     }
     for (const rule of set.item_rules || []) {
-        if (!rule.item) issues.push({ level: "error", title: "Article rule needs an item", message: `${rule.rule_label || "Rule"} needs an item code.` });
+        if ((rule.item_selection_mode || "fixed") === "filtered") {
+            if (!normalizeRuleItemFilters(rule).length) issues.push({ level: "error", title: "Filtered rule needs filters", message: `${rule.rule_label || "Rule"} needs at least one Item filter.` });
+        } else if (!rule.item) {
+            issues.push({ level: "error", title: "Article rule needs an item", message: `${rule.rule_label || "Rule"} needs an item code.` });
+        }
         if (!rule.qty_formula) issues.push({ level: "error", title: "Article rule needs a quantity", message: `${rule.rule_label || rule.item || "Rule"} needs a quantity value or formula.` });
     }
     for (const error of preview.errors || []) {
         issues.push({ level: "error", title: `Formula needs review: ${error.source}`, message: error.message });
     }
     for (const row of preview.generated || []) {
-        if (row.missing_item) issues.push({ level: "warning", title: "Item not in sample catalog", message: `${row.item || row.rule_label} is not in the sample article catalog.` });
+        if (row.missing_item) issues.push({ level: "warning", title: "Item not found", message: `${row.item || row.rule_label} was not found in the item catalog.` });
+        if (row.filtered_item) issues.push({ level: "warning", title: "Filtered item resolves on server", message: `${row.rule_label || row.item} will resolve against the live Item catalog when generated.` });
         if (row.missing_price) issues.push({ level: "warning", title: "Price warning", message: `${row.item} generated but has a sample missing price warning.` });
     }
     return issues;
@@ -1724,6 +2197,10 @@ function evaluateBuilderFormula(expression, context) {
         ifelse: (condition, yes, no) => (condition ? yes : no),
         contains: (text, needle) => String(text || "").toLowerCase().includes(String(needle || "").toLowerCase()),
         one_of: (value, ...options) => options.includes(value),
+        abs: Math.abs,
+        ceil: Math.ceil,
+        floor: Math.floor,
+        float: (value) => Number.parseFloat(value || 0),
         int: (value) => Math.floor(Number(value) || 0),
         lower: (value) => String(value || "").toLowerCase(),
         upper: (value) => String(value || "").toUpperCase(),
@@ -1742,10 +2219,44 @@ function evaluateBuilderFormula(expression, context) {
 function normalizeBuilderFormula(expression) {
     return String(expression || "")
         .trim()
-        .replace(/\band\b/g, "&&")
-        .replace(/\bor\b/g, "||")
-        .replace(/\bTrue\b/g, "true")
-        .replace(/\bFalse\b/g, "false");
+        .replace(/\band\b/gi, "&&")
+        .replace(/\bor\b/gi, "||")
+        .replace(/\bnot\b/gi, "!")
+        .replace(/\btrue\b/gi, "true")
+        .replace(/\bfalse\b/gi, "false");
+}
+
+function getCachedItemInfo(itemCode) {
+    const item = String(itemCode || "").trim();
+    return item ? (ODS_ITEM_CACHE[item] || {}) : {};
+}
+
+async function fetchDimensioningItemInfo(itemCode) {
+    const item = String(itemCode || "").trim();
+    if (!item) return null;
+    if (ODS_ITEM_CACHE[item]?.__lookup_attempted) return ODS_ITEM_CACHE[item];
+    ODS_ITEM_CACHE[item] = { ...(ODS_ITEM_CACHE[item] || { item }), __lookup_attempted: true };
+    try {
+        const res = await frappe.db.get_value("Item", item, ["item_name", "item_group", "stock_uom", "description"]);
+        const message = res.message || {};
+        if (!Object.keys(message).length) {
+            ODS_ITEM_CACHE[item].missing = true;
+            return ODS_ITEM_CACHE[item];
+        }
+        ODS_ITEM_CACHE[item] = {
+            item,
+            item_name: message.item_name || item,
+            item_group: message.item_group || "",
+            unit: message.stock_uom || "",
+            description: message.description || "",
+            __from_db: true,
+            __lookup_attempted: true,
+        };
+        return ODS_ITEM_CACHE[item];
+    } catch (error) {
+        console.error("Dimensioning item lookup failed", error);
+        return ODS_ITEM_CACHE[item] || null;
+    }
 }
 
 function coerceBuilderValue(fieldType, value) {
@@ -1892,6 +2403,7 @@ function injectDimensioningBuilderStyles() {
         .ods-advanced-inline .ods-field { margin-top: 10px; }
         .ods-article-list { display: grid; gap: 10px; }
         .ods-rule-group-card { background: #fff; border: 1.5px solid #cbd5e1; border-radius: 16px; box-shadow: 0 2px 5px rgba(15,23,42,.08), 0 18px 42px -24px rgba(15,23,42,.35); overflow: hidden; padding: 0; transition: border-color .18s ease, box-shadow .22s cubic-bezier(.16, 1, .3, 1), transform .22s cubic-bezier(.16, 1, .3, 1); }
+        .ods-rule-group-card.is-open { overflow: visible; position: relative; z-index: 120; }
         .ods-rule-group-card:hover { border-color: #67e8f9; box-shadow: 0 8px 18px rgba(15,23,42,.10), 0 24px 52px -24px rgba(15,23,42,.42); transform: translateY(-1px); }
         .ods-rule-group-card.is-collapsed { box-shadow: 0 4px 8px rgba(15,23,42,.04), 0 16px 32px -18px rgba(15,23,42,.14); }
         .ods-rule-group-head { align-items: center; background: linear-gradient(135deg, #fff 0%, #f8fafc 100%); cursor: pointer; display: grid; gap: 8px; grid-template-columns: 34px minmax(0, 1fr) auto auto; list-style: none; padding: 10px 10px 10px 13px; position: relative; }
@@ -1931,15 +2443,31 @@ function injectDimensioningBuilderStyles() {
         .ods-article-row:hover { background: #fbfdff; border-color: #bae6fd; box-shadow: 0 8px 18px -18px rgba(15,23,42,.42); }
         .ods-article-row.muted { opacity: .68; }
         .ods-article-row-main { min-width: 0; }
-        .ods-article-row-title { align-items: end; display: grid; gap: 7px; grid-template-columns: 24px minmax(106px, 128px) minmax(0, 1fr); }
+        .ods-article-row-title { align-items: end; display: grid; gap: 7px; grid-template-columns: 24px minmax(94px, 116px) minmax(132px, 180px) minmax(0, 1fr); }
         .ods-article-row-index { align-items: center; align-self: center; background: #e0f2fe; border-radius: 999px; color: #0369a1; display: inline-flex; font-size: 11px; font-weight: 900; height: 24px; justify-content: center; width: 24px; }
         .ods-article-name { align-self: center; display: grid; gap: 1px; min-width: 0; }
         .ods-article-name strong { color: #0f172a; font-size: 12px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ods-article-name small { color: #94a3b8; font-size: 10px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ods-filter-summary { align-self: end; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; display: grid; gap: 2px; min-height: 36px; min-width: 0; padding: 6px 9px; }
+        .ods-filter-summary span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+        .ods-filter-summary strong { color: #0f172a; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ods-item-filter-editor.wide { grid-column: 1 / -1; }
+        .ods-item-filter-editor { background: #f8fafc; border: 1px solid #e8ebef; border-radius: 14px; display: grid; gap: 8px; padding: 9px; }
+        .ods-filter-editor-head { align-items: center; display: flex; justify-content: space-between; gap: 8px; }
+        .ods-filter-editor-head strong, .ods-filter-editor-head span { display: block; }
+        .ods-filter-editor-head strong { color: #0f172a; font-size: 12px; font-weight: 850; }
+        .ods-filter-editor-head span { color: #64748b; font-size: 11px; margin-top: 2px; }
+        .ods-item-filter-list { display: grid; gap: 6px; }
+        .ods-item-filter-row { align-items: end; background: #fff; border: 1px solid #e8ebef; border-radius: 12px; display: grid; gap: 7px; grid-template-columns: minmax(96px, .8fr) minmax(128px, 1fr) 86px 100px minmax(136px, 1fr) 34px; padding: 7px; }
         .ods-compact-field { display: grid; gap: 3px; min-width: 0; }
         .ods-compact-field span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
         .ods-compact-field input, .ods-compact-field select { background: #f8fafc; border: 1px solid #dbe3ef; border-radius: 9px; color: #0f172a; font-size: 11px; font-weight: 750; height: 31px; outline: none; padding: 0 8px; width: 100%; }
         .ods-compact-field input:focus, .ods-compact-field select:focus { background: #fff; border-color: #00b0c8; box-shadow: 0 0 0 3px rgba(0,176,200,.1); }
+        .ods-item-search-row { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) auto; }
+        .ods-item-search-row .btn { white-space: nowrap; }
+        .ods-item-link-host, .ods-item-link-host .awesomplete { overflow: visible; position: relative; }
+        .ods-item-link-host .awesomplete > ul { bottom: auto !important; max-height: 320px; min-width: 280px; overflow-y: auto; top: calc(100% + 4px) !important; z-index: 10050 !important; }
+        .ods-item-link-host.ods-awesomplete-above .awesomplete > ul { bottom: calc(100% + 4px) !important; top: auto !important; }
         .ods-article-row-qty { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px; display: grid; gap: 6px; grid-template-columns: minmax(88px, .72fr) minmax(90px, 1fr); padding: 7px; }
         .ods-formula-summary { grid-template-columns: 1fr; }
         .ods-formula-summary span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
@@ -2021,8 +2549,70 @@ function injectDimensioningBuilderStyles() {
         .ods-bottom-bar span { color: #64748b; display: block; font-size: 12px; }
         .ods-bottom-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
         .ods-danger-action { border-color: #fecdd3 !important; color: #be123c !important; }
+        .ods-builder-root .btn { min-height: 34px; border-radius: 12px; font-size: 12px; font-weight: 850; box-shadow: none; transition: transform .18s cubic-bezier(.16, 1, .3, 1), border-color .16s ease, background .16s ease, box-shadow .16s ease, color .16s ease; }
+        .ods-builder-root .btn:hover, .ods-builder-root .btn:focus { transform: translateY(-1px); outline: 3px solid rgba(0,176,200,.1); }
+        .ods-builder-root .btn-primary { background: #0f172a; border-color: #0f172a; color: #fff; }
+        .ods-builder-root .btn-primary:hover, .ods-builder-root .btn-primary:focus { background: #00b0c8; border-color: #00b0c8; color: #fff; }
+        .ods-builder-root .btn-default { background: #f8fafc; border-color: #e2e8f0; color: #475569; }
+        .ods-builder-root .btn-default:hover, .ods-builder-root .btn-default:focus { background: #fff; border-color: #a5f3fc; color: #0e7490; }
+        .ods-shell * { box-sizing: border-box; }
+        .ods-hero { display: flex; justify-content: space-between; align-items: flex-start; min-width: 0; }
+        .ods-hero > div:first-child { min-width: 0; max-width: 620px; }
+        .ods-hero h1 { color: #0a0e1a; font-weight: 850; }
+        .ods-hero-stats { width: min(760px, 58vw); min-width: 0; }
+        .ods-metric { border-color: #e8ebef; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+        .ods-metric strong { color: #11151f; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        .ods-nav { background: #fff; box-shadow: none; padding: 10px 24px; overscroll-behavior-x: contain; }
+        .ods-nav::-webkit-scrollbar, .ods-list::-webkit-scrollbar, .ods-group-article-list::-webkit-scrollbar, .ods-generated-list::-webkit-scrollbar { width: 4px; height: 4px; }
+        .ods-nav::-webkit-scrollbar-track, .ods-list::-webkit-scrollbar-track, .ods-group-article-list::-webkit-scrollbar-track, .ods-generated-list::-webkit-scrollbar-track { background: transparent; }
+        .ods-nav::-webkit-scrollbar-thumb, .ods-list::-webkit-scrollbar-thumb, .ods-group-article-list::-webkit-scrollbar-thumb, .ods-generated-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+        .ods-nav-title { color: #94a3b8; }
+        .ods-nav-item { flex: 0 0 150px; min-width: 150px; background: #f8fafc; border-color: #e2e8f0; box-shadow: none; }
+        .ods-nav-item::before { top: 8px; bottom: 8px; }
+        .ods-nav-item:hover, .ods-nav-item:focus { background: #fff; border-color: #a5f3fc; box-shadow: 0 0 0 3px rgba(0,176,200,.08); outline: 0; }
+        .ods-nav-item.active { background: #ecfeff; border-color: #67e8f9; box-shadow: 0 0 0 3px rgba(0,176,200,.12); }
+        .ods-workspace { padding: 18px 24px 26px; }
+        .ods-card, .ods-mini-card, .ods-sales-preview-card, .ods-test-panel { border-color: #e8ebef; border-radius: 18px; box-shadow: 0 4px 8px rgba(15,23,42,.04), 0 16px 32px -18px rgba(15,23,42,.14); }
+        .ods-card { padding: 15px; }
+        .ods-section-head h2 { color: #11151f; font-size: 17px; letter-spacing: -.025em; font-weight: 850; }
+        .ods-section-head p { color: #6b7280; font-size: 12px; font-weight: 600; }
+        .ods-quick-explain { margin: 0 0 14px; border: 1px solid #e8ebef; border-radius: 18px; background: #fff; box-shadow: 0 4px 8px rgba(15,23,42,.04), 0 16px 32px -18px rgba(15,23,42,.14); padding: 13px 15px; }
+        .ods-quick-explain strong { color: #0f172a; font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+        .ods-quick-explain span { color: #64748b; font-weight: 600; }
+        .ods-simple-step, .ods-guidance-grid > div, .ods-sales-question, .ods-test-tile, .ods-derived-grid div, .ods-coverage { border-color: #e8ebef; background: #f7f8fa; box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
+        .ods-simple-step { border-radius: 16px; transition: transform .18s cubic-bezier(.16, 1, .3, 1), border-color .16s ease, background .16s ease; }
+        .ods-simple-step:hover, .ods-simple-step:focus { transform: translateY(-1px); background: #fff; border-color: #a5f3fc; outline: 3px solid rgba(0,176,200,.08); }
+        .ods-row-card, .ods-rule-group-card, .ods-article-row { border-color: #e8ebef; border-radius: 18px; background: #fff; box-shadow: 0 4px 8px rgba(15,23,42,.04), 0 16px 32px -18px rgba(15,23,42,.14); }
+        .ods-row-card::before, .ods-rule-group-head::before { width: 4px; background: #00b0c8; opacity: .72; }
+        .ods-question-card:hover, .ods-rule-group-card:hover, .ods-article-row:hover { border-color: #c7d2fe; box-shadow: 0 4px 8px rgba(15,23,42,.04), 0 18px 40px -18px rgba(15,23,42,.18); transform: translateY(-1px); }
+        .ods-row-top, .ods-rule-group-head { background: linear-gradient(135deg, #fff 0%, #f8fafc 100%); }
+        .ods-row-index, .ods-article-row-index { background: #eef2ff; color: #3730a3; border-radius: 10px; }
+        .ods-article-number { background: #0f172a; border-radius: 12px; }
+        .ods-question-summary-copy strong, .ods-rule-group-head h3, .ods-article-name strong { color: #0a0e1a; }
+        .ods-question-summary-copy small, .ods-rule-group-head p, .ods-article-name small { color: #6b7280; }
+        .ods-rule-toggle-indicator, .ods-badge, .ods-token, .ods-picker-chip, .ods-compact-check, .ods-tag { border-color: #e8ebef; }
+        .ods-badge { background: #f5f6f8; color: #495061; font-size: 9px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+        .ods-badge.ok-soft { background: #ecfdf5; border-color: #d1fae5; color: #047857; }
+        .ods-badge.warn, .ods-badge.preview { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+        .ods-badge.danger { background: #fff1f2; border-color: #ffe4e6; color: #be123c; }
+        .ods-form-grid { gap: 10px; }
+        .ods-field span, .ods-check-field span, .ods-compact-field span, .ods-hierarchy-label { color: #9099a6; font-size: 9px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+        .ods-field input, .ods-field select, .ods-field textarea, .ods-mini-card select, .ods-assistant select, .ods-compact-field input, .ods-compact-field select, .ods-item-link-host input { min-height: 36px; border-color: #e2e8f0; border-radius: 12px; background: #f8fafc; color: #334155; font-size: 12px; font-weight: 650; }
+        .ods-compact-field input, .ods-compact-field select { height: 34px; }
+        .ods-field input:focus, .ods-field select:focus, .ods-field textarea:focus, .ods-compact-field input:focus, .ods-compact-field select:focus, .ods-item-link-host input:focus { background: #fff; border-color: #00b0c8; box-shadow: 0 0 0 4px rgba(0,176,200,.1); }
+        .ods-sales-preview-card { border-width: 1px; background: #fff; }
+        .ods-sales-preview-card::before { content: ""; display: block; height: 4px; margin: -14px -14px 12px; background: linear-gradient(90deg, #00b0c8, #6366f1); border-radius: 18px 18px 0 0; }
+        .ods-sales-question { border-width: 1px; }
+        .ods-hierarchy-block.when, .ods-hierarchy-block.then, .ods-article-row-qty, .ods-article-picker, .ods-condition-summary, .ods-empty { border-color: #e8ebef; background: #f7f8fa; }
+        .ods-condition-summary { background: #ecfeff; border-color: #bae6fd; }
+        .ods-group-articles-head strong, .ods-preview-title strong { color: #11151f; }
+        .ods-picker-chip { border-radius: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+        .ods-picker-chip:hover, .ods-picker-chip:focus { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; outline: 3px solid rgba(99,102,241,.12); }
+        .ods-article-row { grid-template-columns: minmax(420px, 1.25fr) minmax(210px, .8fr) auto 40px; }
+        .ods-generated-row { border-color: #e8ebef; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+        .ods-bottom-bar { border-color: #e8ebef; border-radius: 18px; box-shadow: 0 18px 42px rgba(15,23,42,.12); backdrop-filter: blur(12px); }
         @media (max-width: 1180px) { .ods-nav, .ods-live-panel { position: static; } .ods-nav-title { display: none; } .ods-nav-item { flex: 0 0 150px; white-space: nowrap; } .ods-hero { grid-template-columns: 1fr; } .ods-hero-stats { min-width: 0; } }
-        @media (max-width: 760px) { .ods-hero, .ods-workspace, .ods-nav { padding-left: 14px; padding-right: 14px; } .ods-hero-stats, .ods-start-grid, .ods-question-layout, .ods-rule-condition-card, .ods-quantity-controls, .ods-form-grid.two, .ods-form-grid.three, .ods-guidance-grid, .ods-rule-layout, .ods-test-summary, .ods-preview-layout, .ods-article-row, .ods-article-row-title, .ods-article-row-qty { grid-template-columns: 1fr; } .ods-sales-preview-card { position: static; } .ods-rule-group-head { align-items: start; grid-template-columns: 34px 1fr; } .ods-rule-group-head .ods-article-status, .ods-rule-toggle-indicator { grid-column: 1 / -1; justify-content: flex-start; } .ods-article-head, .ods-article-card .ods-article-head { align-items: start; grid-template-columns: 1fr; } .ods-article-row-flags { display: flex; flex-wrap: wrap; } .ods-article-status, .ods-article-head .ods-icon-button { grid-column: 1 / -1; justify-content: flex-start; margin-left: 0; } .ods-generated-row { grid-template-columns: 1fr; } .ods-bottom-bar { align-items: stretch; flex-direction: column; gap: 10px; margin-left: 14px; margin-right: 14px; max-width: calc(100% - 28px); } .ods-bottom-actions { display: grid; grid-template-columns: 1fr; } }
+        @media (max-width: 760px) { .ods-hero, .ods-workspace, .ods-nav { padding-left: 14px; padding-right: 14px; } .ods-hero-stats, .ods-start-grid, .ods-question-layout, .ods-rule-condition-card, .ods-quantity-controls, .ods-form-grid.two, .ods-form-grid.three, .ods-guidance-grid, .ods-rule-layout, .ods-test-summary, .ods-preview-layout, .ods-article-row, .ods-article-row-title, .ods-article-row-qty, .ods-item-filter-row { grid-template-columns: 1fr; } .ods-sales-preview-card { position: static; } .ods-rule-group-head { align-items: start; grid-template-columns: 34px 1fr; } .ods-rule-group-head .ods-article-status, .ods-rule-toggle-indicator { grid-column: 1 / -1; justify-content: flex-start; } .ods-article-head, .ods-article-card .ods-article-head { align-items: start; grid-template-columns: 1fr; } .ods-article-row-flags { display: flex; flex-wrap: wrap; } .ods-article-status, .ods-article-head .ods-icon-button { grid-column: 1 / -1; justify-content: flex-start; margin-left: 0; } .ods-generated-row { grid-template-columns: 1fr; } .ods-bottom-bar { align-items: stretch; flex-direction: column; gap: 10px; margin-left: 14px; margin-right: 14px; max-width: calc(100% - 28px); } .ods-bottom-actions { display: grid; grid-template-columns: 1fr; } }
     `;
     document.head.appendChild(style);
 }

@@ -176,7 +176,7 @@
                     ${infoRow("Customer",     user.customer_name   || "—")}
                     ${infoRow("CRM Segment",  userCrmLabel(user) || "—")}
                     ${infoRow("Quote Access", policy.quote_request_allowed ? "✓ Enabled" : "Disabled")}
-                    ${infoRow("Currency",     policy.currency      || "MAD")}
+                    ${infoRow("Currency",     policy.currency      || activeCurrency())}
                   </div>
                 </div>
               </div>
@@ -502,7 +502,7 @@
               <div class="olp-pad-sm">
                 <div class="olp-info-block" style="margin-bottom:0;">
                   ${infoRow("Quote Requests", policy.quote_request_allowed ? "✓ Enabled" : "Disabled")}
-                  ${infoRow("Currency",       policy.currency || "MAD")}
+                  ${infoRow("Currency",       policy.currency || activeCurrency())}
                   ${infoRow("Products",       String(metrics.visible_products || 0))}
                   ${infoRow("Requests",       String(metrics.requests_total   || 0))}
                   ${infoRow("Quotations",     String(metrics.quotations_total || 0))}
@@ -1032,7 +1032,7 @@
 
     /* ── Basket helpers ─────────────────────────────────────── */
     function getBasketTotal()    { return state.basket.reduce((acc,r)=>acc+((r.price_rate||0)*(r.qty||0)),0); }
-    function getBasketCurrency() { return (state.basket[0]&&state.basket[0].currency)||(state.bootstrap&&state.bootstrap.policy&&state.bootstrap.policy.currency)||"MAD"; }
+    function getBasketCurrency() { return (state.basket[0]&&state.basket[0].currency)||(state.bootstrap&&state.bootstrap.policy&&state.bootstrap.policy.currency)||activeCurrency(); }
     function loadBasket() { try { return JSON.parse(window.localStorage.getItem("orderlift_b2b_basket")||"[]"); } catch(e){return[];} }
     function saveBasket() { window.localStorage.setItem("orderlift_b2b_basket", JSON.stringify(state.basket)); }
 
@@ -1103,7 +1103,11 @@
         return "orange";
     }
     function formatMoney(value, currency) {
-        return `${currency||"MAD"} ${Number(value||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+        currency = currency || activeCurrency();
+        return `${currency ? `${currency} ` : ""}${Number(value||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    }
+    function activeCurrency() {
+        return window.orderlift?.getActiveCompanyCurrency?.() || window.frappe?.defaults?.get_default?.("currency") || "";
     }
     function fmtDate(str) {
         if (!str) return "";

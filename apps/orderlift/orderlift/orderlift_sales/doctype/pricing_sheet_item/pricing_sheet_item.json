@@ -47,10 +47,15 @@
    "discounted_sell_total",
    "commission_rate",
     "commission_amount",
-    "margin_pct",
-    "total_margin_pct",
-    "margin_basis",
-    "customs_material",
+     "margin_pct",
+     "total_margin_pct",
+     "margin_basis",
+     "target_margin_percent",
+     "builder_margin_percent",
+     "builder_price_overridden",
+     "pricing_builder",
+     "builder_source_buying_price_list",
+     "customs_material",
    "customs_tariff_number",
    "customs_weight_kg",
    "customs_value_per_kg",
@@ -335,6 +340,38 @@
    "read_only": 1
   },
   {
+   "fieldname": "target_margin_percent",
+   "fieldtype": "Percent",
+   "label": "Target Margin %",
+   "read_only": 1
+  },
+  {
+   "fieldname": "builder_margin_percent",
+   "fieldtype": "Percent",
+   "label": "Builder Margin %",
+   "read_only": 1
+  },
+  {
+   "fieldname": "builder_price_overridden",
+   "fieldtype": "Check",
+   "label": "Builder Price Overridden",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pricing_builder",
+   "fieldtype": "Link",
+   "label": "Pricing Builder",
+   "options": "Pricing Builder",
+   "read_only": 1
+  },
+  {
+   "fieldname": "builder_source_buying_price_list",
+   "fieldtype": "Link",
+   "label": "Builder Source Buying Price List",
+   "options": "Price List",
+   "read_only": 1
+  },
+  {
    "fieldname": "customs_material",
    "fieldtype": "Data",
      "label": "Material",
@@ -574,7 +611,7 @@
    "fieldname": "margin_source",
    "fieldtype": "Select",
    "label": "Margin Source",
-   "options": "\nBenchmark & Rule\nPricing Rule\nFallback\nBenchmark\nProfile",
+   "options": "\nBenchmark & Rule\nPricing Rule\nFallback\nBenchmark\nProfile\nBuilder Stamp\nUnstamped Static List",
    "read_only": 1,
    "in_list_view": 1
   },

@@ -15,6 +15,7 @@
         selectedLineKeys: new Set(),
         customerPricingContext: null,
         applyingCustomerPricingContext: false,
+        marginBasis: "Loaded Cost",
     };
 
     const NAV = [
@@ -24,11 +25,13 @@
         { key: "quotation", label: "Quotation", step: "04" },
     ];
 
-    const COLUMN_STORAGE_KEY = "orderlift.pricingSheetBuilder.columns.v2";
-    const DEFAULT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "buy_price", "expense_unit_price", "customs_unit_amount", "projected_unit_price", "projected_total_price", "margin_unit_amount", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "discount_percent", "discounted_sell_total", "actions"];
-    const AGENT_LINE_COLUMNS = ["__select", "item", "qty", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "discount_percent", "discounted_sell_total", "commission_rate", "commission_amount", "actions"];
-    const HIGHLIGHT_COLUMNS = new Set(["projected_unit_price", "projected_total_price", "final_sell_unit_price", "final_sell_total", "discounted_sell_total"]);
+    const COLUMN_STORAGE_KEY_PREFIX = "orderlift.pricingSheetBuilder.columns.v4";
+    const DEFAULT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "buy_price", "expense_unit_price", "customs_unit_amount", "projected_unit_price", "projected_total_price", "margin_unit_amount", "margin_source", "margin_basis", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "actions"];
+    const AGENT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
+    const ADMIN_STATIC_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "builder_margin_percent", "target_margin_percent", "margin_source", "margin_basis", "resolved_margin_rule", "builder_price_overridden", "pricing_builder", "builder_source_buying_price_list", "resolved_benchmark_rule", "actions"];
+    const HIGHLIGHT_COLUMNS = new Set(["projected_unit_price", "projected_total_price", "final_sell_unit_price", "final_sell_total", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc"]);
     const STATIC_MODE_HIDDEN_COLUMNS = new Set(["customs_unit_amount", "margin_unit_amount"]);
+    const SENSITIVE_PRICING_COLUMNS = new Set(["margin_unit_amount", "margin_total_amount", "margin_pct", "margin_basis", "margin_source", "total_margin_unit_amount", "total_margin_total_amount", "total_margin_pct", "resolved_margin_rule", "target_margin_percent", "builder_margin_percent", "buy_price", "source_buying_price_list", "pricing_scenario", "resolved_pricing_scenario", "resolved_scenario_rule", "resolved_benchmark_rule", "scenario_source", "expense_unit_price", "expense_total", "customs_unit_amount", "customs_total_percent", "projected_unit_price", "projected_total_price"]);
     const LINE_COLUMNS = [
         { key: "__select", label: "", mandatory: true },
         { key: "item", label: "Item ref", mandatory: true },
@@ -70,11 +73,19 @@
         { key: "discount_amount", label: "Discount Amount", type: "Currency" },
         { key: "discounted_sell_unit_price", label: "Discounted Sell Unit", type: "Currency" },
         { key: "discounted_sell_total", label: "Total After Discount", type: "Currency" },
+        { key: "custom_applied_taxes", label: "Applied Taxes", type: "Currency" },
+        { key: "custom_pu_ttc", label: "PU TTC", type: "Currency" },
+        { key: "custom_pt_ttc", label: "PT TTC", type: "Currency" },
         { key: "commission_rate", label: "Commission %", type: "Percent" },
         { key: "commission_amount", label: "Commission Amount", type: "Currency" },
         { key: "margin_pct", label: "Margin Pct", type: "Percent" },
         { key: "total_margin_pct", label: "Total Margin Pct", type: "Percent" },
         { key: "margin_basis", label: "Margin Basis" },
+        { key: "target_margin_percent", label: "Target Margin %", type: "Percent" },
+        { key: "builder_margin_percent", label: "Builder Margin %", type: "Percent" },
+        { key: "builder_price_overridden", label: "Builder Price Overridden", type: "Check" },
+        { key: "pricing_builder", label: "Pricing Builder", type: "Link", options: "Pricing Builder" },
+        { key: "builder_source_buying_price_list", label: "Builder Source Buying List", type: "Link", options: "Price List" },
         { key: "customs_material", label: "Material" },
         { key: "customs_tariff_number", label: "Tariff Number" },
         { key: "customs_weight_kg", label: "Customs Weight Kg", type: "Float" },
@@ -117,6 +128,7 @@
 
     STATE.lineColumns = loadLineColumns();
     let dimensioningPreviewTimer = null;
+    let autoPriceTimer = null;
 
     frappe.pages["pricing-sheet-builder"].on_page_load = function (wrapper) {
         const page = frappe.ui.make_app_page({ parent: wrapper, title: __("Pricing Sheet Builder"), single_column: true });
@@ -140,7 +152,10 @@
             is_new: 1,
             sheet_name: "",
             custom_company: "",
+            party_type: "Customer",
+            party_name: "",
             customer: "",
+            opportunity: "",
             sales_person: "",
             crm_business_type: "",
             crm_segment: "",
@@ -148,6 +163,7 @@
             pricing_scenario: "",
             benchmark_policy: "",
             customs_policy: "",
+            taxes_and_charges_template: "",
             selected_price_list: "",
             selected_selling_price_lists: [],
             pricing_mode: "Dynamic",
@@ -165,6 +181,8 @@
             history: [],
             scenario_mappings: [],
             lines: [],
+            source_quotation: "",
+            link_source_quotation: 0,
         };
     }
 
@@ -172,7 +190,7 @@
         page.set_title(__("Pricing Sheet Builder"));
         page.clear_actions_menu();
         page.set_primary_action(__("Save"), () => save(page));
-        page.add_action_item(__("Save and Recalculate"), () => save(page));
+        page.add_action_item(__("Save Now"), () => save(page));
         page.add_action_item(__("Delete Pricing Sheet"), () => confirmDeletePricingSheet(page));
         page.add_action_item(__("Back to Pricing Sheets"), () => frappe.set_route("pricing-sheet-manager"));
         setTimeout(() => {
@@ -189,14 +207,30 @@
         const shouldCreate = Boolean(frappe.route_options?.new_pricing_sheet || params.get("new_pricing_sheet"));
         const routeSheetName = currentRouteSheetName();
         const sheetName = shouldCreate ? "" : (routeSheetName || frappe.route_options?.pricing_sheet || params.get("pricing_sheet") || "");
+        const routeOpportunity = shouldCreate ? (frappe.route_options?.opportunity || params.get("opportunity") || "") : "";
+        const routeAutoSave = shouldCreate && Boolean(frappe.route_options?.auto_save_pricing_sheet || params.get("auto_save_pricing_sheet"));
+        const routePrefill = shouldCreate ? {
+            company: frappe.route_options?.company || params.get("company") || "",
+            party_type: frappe.route_options?.party_type || params.get("party_type") || "",
+            party_name: frappe.route_options?.party_name || params.get("party_name") || "",
+            source_quotation: frappe.route_options?.source_quotation || params.get("source_quotation") || "",
+            link_source_quotation: frappe.route_options?.link_source_quotation || params.get("link_source_quotation") || "",
+        } : {};
         const routeKey = shouldCreate || !sheetName ? "__new__" : sheetName;
         if (frappe.route_options) {
             frappe.route_options.new_pricing_sheet = null;
             frappe.route_options.pricing_sheet = null;
+            frappe.route_options.opportunity = null;
+            frappe.route_options.auto_save_pricing_sheet = null;
+            frappe.route_options.company = null;
+            frappe.route_options.party_type = null;
+            frappe.route_options.party_name = null;
+            frappe.route_options.source_quotation = null;
+            frappe.route_options.link_source_quotation = null;
         }
         if (STATE.loadedRouteKey === routeKey && !STATE.loading) return;
         STATE.loadedRouteKey = routeKey;
-        await load(page, sheetName);
+        await load(page, sheetName, routeOpportunity, routeAutoSave, routePrefill);
     }
 
     function currentRouteSheetName() {
@@ -210,9 +244,10 @@
         frappe.set_route("pricing-sheet-builder", sheetName);
     }
 
-    async function load(page, sheetName) {
+    async function load(page, sheetName, routeOpportunity, routeAutoSave, routePrefill = {}) {
         STATE.loading = true;
         STATE.error = "";
+        let autoSaveAfterLoad = false;
         render(page);
         try {
             const res = await frappe.call({
@@ -221,6 +256,8 @@
             });
             STATE.sheet = { ...blankSheet(), ...((res.message || {}).sheet || {}) };
             STATE.sheet.pricing_mode = resolvePricingMode(STATE.sheet);
+            STATE.marginBasis = (res.message || {}).sheet?.margin_basis || STATE.marginBasis;
+            STATE.lineColumns = loadLineColumns();
             STATE.selectedLineKeys.clear();
             ensureLineClientIds();
             pruneSelectedLineKeys();
@@ -229,8 +266,18 @@
             STATE.dimensioningValues = parseDimensioningValues();
             STATE.dimensioningPreview = [];
             STATE.customerPricingContext = null;
-            if (STATE.sheet.customer) {
-                await applyCustomerPricingContext(page, { silent: true, renderAfter: false });
+            applyRoutePrefill(routePrefill);
+            if (routePrefill.source_quotation) {
+                await applyQuotationContext(page, routePrefill.source_quotation);
+            }
+            normalizePartyFields();
+            if (STATE.sheet.party_name) {
+                await applyPartyPricingContext(page, { silent: true, renderAfter: false });
+            }
+            if (routeOpportunity && !STATE.sheet.opportunity) {
+                STATE.sheet.opportunity = routeOpportunity;
+                await applyOpportunityContext(page);
+                autoSaveAfterLoad = Boolean(routeAutoSave && !STATE.sheet.name);
             }
             if (STATE.sheet.dimensioning_set) {
                 await loadDimensioningConfig(page, false);
@@ -241,6 +288,55 @@
         } finally {
             STATE.loading = false;
             render(page);
+            if (autoSaveAfterLoad) {
+                const saved = await save(page, { silent: true, freeze: false });
+                if (saved) frappe.show_alert({ message: __("Pricing Sheet created from opportunity"), indicator: "green" });
+            } else {
+                scheduleAutoPrice(page);
+            }
+        }
+    }
+
+    function applyRoutePrefill(prefill) {
+        if (!prefill || STATE.sheet.name) return;
+        if (prefill.company) STATE.sheet.custom_company = prefill.company;
+        if (prefill.party_type) STATE.sheet.party_type = prefill.party_type;
+        if (prefill.party_name) STATE.sheet.party_name = prefill.party_name;
+        if (prefill.source_quotation) STATE.sheet.source_quotation = prefill.source_quotation;
+        STATE.sheet.link_source_quotation = prefill.link_source_quotation ? 1 : 0;
+        if (prefill.source_quotation && !STATE.sheet.sheet_name) STATE.sheet.sheet_name = `${__("Pricing Sheet")} - ${prefill.source_quotation}`;
+    }
+
+    async function applyQuotationContext(page, quotation) {
+        if (!quotation || STATE.sheet.name) return;
+        try {
+            const res = await frappe.call({
+                method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.get_quotation_pricing_sheet_source",
+                args: { quotation },
+            });
+            const source = res.message || {};
+            STATE.sheet.source_quotation = source.quotation || quotation;
+            STATE.sheet.custom_company = source.company || STATE.sheet.custom_company;
+            STATE.sheet.party_type = source.party_type || STATE.sheet.party_type || "Customer";
+            STATE.sheet.party_name = source.party_name || STATE.sheet.party_name || "";
+            STATE.sheet.customer = source.customer || (STATE.sheet.party_type === "Customer" ? STATE.sheet.party_name : "");
+            STATE.sheet.opportunity = source.opportunity || STATE.sheet.opportunity || "";
+            STATE.sheet.crm_business_type = source.crm_business_type || STATE.sheet.crm_business_type || "";
+            STATE.sheet.crm_segment = source.crm_segment || STATE.sheet.crm_segment || "";
+            STATE.sheet.geography_territory = source.geography_territory || STATE.sheet.geography_territory || "";
+            STATE.sheet.taxes_and_charges_template = source.taxes_and_charges_template || STATE.sheet.taxes_and_charges_template || "";
+            STATE.sheet.selected_price_list = source.selected_price_list || STATE.sheet.selected_price_list || "";
+            if ((source.selected_selling_price_lists || []).length) {
+                STATE.sheet.selected_selling_price_lists = source.selected_selling_price_lists;
+                STATE.sheet.pricing_mode = "Static";
+            }
+            if ((source.lines || []).length) {
+                STATE.sheet.lines = source.lines.map(normalizeSourceLine);
+                ensureLineClientIds();
+            }
+            if (!STATE.sheet.sheet_name) STATE.sheet.sheet_name = source.title || `${__("Pricing Sheet")} - ${quotation}`;
+        } catch (error) {
+            frappe.msgprint({ title: __("Quotation failed"), message: error.message || __("Unable to load Quotation context."), indicator: "red" });
         }
     }
 
@@ -256,6 +352,7 @@
                     <span class="current">${__("Builder")}</span>
                 </nav>
                 ${hero(sheet)}
+                ${canViewSensitivePricing() ? marginBasisInfo(sheet) : ""}
                 ${STATE.error ? `<div class="psb-error">${escapeHtml(STATE.error)}</div>` : ""}
                 <section class="psb-tabs">${NAV.map(navItem).join("")}</section>
                 <main class="psb-editor">${STATE.loading ? skeleton() : activeSection()}</main>
@@ -267,9 +364,16 @@
     }
 
     function hero(sheet) {
+        const lines = sheet.lines || [];
         const finalTotal = Number(sheet.total_selling || 0);
-        const discountedTotal = (sheet.lines || []).reduce((total, row) => total + Number(row.discounted_sell_total || row.final_sell_total || 0), 0);
-        const commissionTotal = (sheet.lines || []).reduce((total, row) => total + Number(row.commission_amount || 0), 0);
+        const totalBuy = lines.reduce((t, r) => t + Number(r.buy_price || 0) * Number(r.qty || 1), 0);
+        const totalExpenses = lines.reduce((t, r) => t + Number(r.expense_total || 0), 0);
+        const totalCustoms = lines.reduce((t, r) => t + Number(r.customs_applied || 0), 0);
+        const totalCost = totalBuy + totalExpenses + totalCustoms;
+        const discountedTotal = lines.reduce((total, row) => total + Number(row.discounted_sell_total || row.final_sell_total || 0), 0);
+        const totalTax = lines.reduce((total, row) => total + Number(row.custom_applied_taxes || 0), 0);
+        const totalTtc = lines.reduce((total, row) => total + Number(row.custom_pt_ttc || row.discounted_sell_total || row.final_sell_total || 0), 0);
+        const commissionTotal = lines.reduce((total, row) => total + Number(row.commission_amount || 0), 0);
         const marginPct = sheetTotalMarginPct(sheet);
         const warnings = String(sheet.projection_warnings || "").split("\n").filter(Boolean).length;
         return `
@@ -277,16 +381,21 @@
                 <div>
                     <div class="psb-eyebrow">${__("Commercial Builder")}</div>
                     <h1>${escapeHtml(sheet.sheet_name || __("New Pricing Sheet"))}</h1>
-                    <p>${escapeHtml([sheet.custom_company, sheet.customer, sheet.sales_person, sheet.resolved_mode].filter(Boolean).join(" - ") || __("Prepare customer context, add priced items, then generate the quotation."))}</p>
+                    <p>${escapeHtml([sheet.custom_company, partyLabel(sheet), sheet.sales_person, sheet.resolved_mode].filter(Boolean).join(" - ") || __("Prepare party context, add priced items, then generate the quotation."))}</p>
                 </div>
                 <div class="psb-hero-kpis">
-                    ${metric(__("Lines"), (sheet.lines || []).length)}
-                    ${metric(__("Base"), formatCurrency(sheet.total_buy))}
-                    ${metric(__("Additions"), formatCurrency(sheet.total_expenses))}
-                    ${metric(__("Final HT"), formatCurrency(sheet.total_selling), "accent")}
-                    ${metric(__("Margin"), `${marginPct.toFixed(1)}%`)}
-                    ${metric(__("After Discount"), formatCurrency(discountedTotal || finalTotal), "accent")}
+                    ${metric(__("Lines"), lines.length)}
+                    ${canViewSensitivePricing() ? metric(__("Buy Price"), formatCurrency(totalBuy)) : ""}
+                    ${canViewSensitivePricing() ? metric(__("Expenses"), formatCurrency(totalExpenses)) : ""}
+                    ${canViewSensitivePricing() ? metric(__("Customs"), formatCurrency(totalCustoms)) : ""}
+                    ${canViewSensitivePricing() ? metric(__("Cost HT"), formatCurrency(totalCost), "accent") : ""}
+                    ${metric(__("Final Price"), formatCurrency(finalTotal), "accent")}
+                    ${metric(__("Discount"), formatCurrency(finalTotal - discountedTotal))}
+                    ${metric(__("After Discount"), formatCurrency(discountedTotal), "accent")}
+                    ${canViewSensitivePricing() ? marginMetric(STATE.marginBasis, marginPct) : ""}
                     ${metric(__("Commission"), formatCurrency(commissionTotal))}
+                    ${metric(__("Taxes"), formatCurrency(totalTax))}
+                    ${metric(__("TTC"), formatCurrency(totalTtc), "accent")}
                     ${metric(__("Warnings"), warnings)}
                 </div>
             </section>
@@ -294,19 +403,46 @@
     }
 
     function sheetTotalMarginPct(sheet) {
-        const rows = (sheet.lines || []).filter((row) => Number(row.total_margin_pct || row.margin_pct || 0));
-        if (!rows.length) {
-            const finalTotal = Number(sheet.total_selling || 0);
-            return finalTotal ? ((finalTotal - Number(sheet.total_buy || 0)) / finalTotal) * 100 : 0;
+        const totalSell = Number(sheet.total_selling || 0);
+        const totalBuy = (sheet.lines || []).reduce((t, r) => t + Number(r.buy_price || 0) * Number(r.qty || 1), 0);
+        const totalExpenses = (sheet.lines || []).reduce((t, r) => t + Number(r.expense_total || 0), 0);
+        const totalCustoms = (sheet.lines || []).reduce((t, r) => t + Number(r.customs_applied || 0), 0);
+        const totalCost = totalBuy + totalExpenses + totalCustoms;
+        const marginAmount = totalSell - totalCost;
+        const basis = STATE.marginBasis || "Loaded Cost";
+        let denominator;
+        if (basis === "Base Price") denominator = totalBuy;
+        else if (basis === "Sale Price") denominator = totalSell;
+        else denominator = totalCost;
+        return denominator > 0 ? (marginAmount / denominator) * 100 : 0;
+    }
+
+    function partyLabel(sheet) {
+        const partyType = sheet.party_type || (sheet.customer ? "Customer" : "");
+        const partyName = sheet.party_name || sheet.customer || "";
+        return [partyType, partyName].filter(Boolean).join(": ");
+    }
+
+    function marginBasisInfo(sheet) {
+        const lines = sheet.lines || [];
+        const mode = resolvePricingMode(sheet);
+        if (mode === "Static") {
+            const info = new Map();
+            lines.forEach((row) => {
+                const list = row.resolved_selling_price_list || row.source_selling_price_list || "";
+                if (!list) return;
+                const basis = row.margin_basis || "";
+                if (!info.has(list)) info.set(list, { basis, hasStamps: false });
+                if (row.pricing_builder) info.get(list).hasStamps = true;
+            });
+            if (!info.size) return "";
+            return `<section class="psb-card psb-margin-info"><div class="psb-section-head"><h2>${__("Margin Sources")}</h2><p>${__("Selling price lists used and the margin basis applied by each.")}</p></div><div class="psb-margin-source-list">${Array.from(info.entries()).map(([list, detail]) => `<span><strong>${escapeHtml(list)}</strong><small>${detail.hasStamps ? escapeHtml(detail.basis || __("Dynamic")) : __("Unstamped")}</small></span>`).join("")}</div></section>`;
         }
-        const weighted = rows.reduce((acc, row) => {
-            const weight = Math.abs(Number(row.final_sell_total || row.projected_total_price || row.base_amount || row.qty || 1)) || 1;
-            const pct = Number(row.total_margin_pct || row.margin_pct || 0);
-            acc.total += pct * weight;
-            acc.weight += weight;
-            return acc;
-        }, { total: 0, weight: 0 });
-        return weighted.weight ? weighted.total / weighted.weight : 0;
+        // Dynamic mode: show basis from policy
+        const bases = new Set(lines.map((row) => row.margin_basis || "").filter(Boolean));
+        if (!bases.size) return "";
+        const policyBasis = sheet.margin_basis || "";
+        return `<section class="psb-card psb-margin-info"><div class="psb-section-head"><h2>${__("Margin Basis")}</h2><p>${__("Margin calculated using: {0}. Selector above shows the same margin in other bases for comparison.", [escapeHtml(bases.has(policyBasis) ? policyBasis : Array.from(bases).join(", ") || __("policy default"))])}</p></div></section>`;
     }
 
     function navItem(item) {
@@ -328,36 +464,54 @@
         const sheet = STATE.sheet;
         const mode = resolvePricingMode(sheet);
         const canEditPricingSource = Boolean(sheet.user_context?.can_edit_pricing_source ?? true);
+        const canEditPricingMode = Boolean(sheet.user_context?.can_edit_pricing_mode ?? canEditPricingSource);
         const canEditSalesPerson = Boolean(sheet.user_context?.can_edit_sales_person ?? true);
         return `
             <section class="psb-card">
                 <div class="psb-section-head">
-                    <div><h2>${__("Customer and pricing context")}</h2><p>${__("This is the commercial header used by the pricing engine and quotation generation.")}</p></div>
+                    <div><h2>${__("Party and pricing context")}</h2><p>${__("This is the commercial header used by the pricing engine and quotation generation.")}</p></div>
                     <span class="psb-badge">${escapeHtml(sheet.resolved_mode || "Draft")}</span>
                 </div>
                 <div class="psb-form-grid two">
                     ${textField("sheet_name", __("Sheet name"), sheet.sheet_name, true)}
                     ${linkField("custom_company", __("Company"), "Company", sheet.custom_company, false, true)}
-                    ${linkField("customer", __("Customer"), "Customer", sheet.customer, true)}
+                    ${selectField("party_type", __("Party Type"), sheet.party_type || "Customer", ["Customer", "Lead", "Prospect"])}
+                    ${linkField("party_name", __("Party"), sheet.party_type || "Customer", sheet.party_name || sheet.customer, true)}
+                    ${linkField("opportunity", __("Opportunity"), "Opportunity", sheet.opportunity)}
                     ${linkField("sales_person", __("Sales Person"), "Sales Person", sheet.sales_person, false, !canEditSalesPerson)}
                     ${linkField("geography_territory", __("Territory"), "Territory", sheet.geography_territory)}
+                    ${linkField("taxes_and_charges_template", __("Sales Taxes Template"), "Sales Taxes and Charges Template", sheet.taxes_and_charges_template)}
                     ${linkField("crm_business_type", __("Business Type"), "CRM Business Type", sheet.crm_business_type)}
                     ${linkField("crm_segment", __("CRM Segment"), "CRM Segment", sheet.crm_segment)}
                 </div>
                 ${customerPricingContextNotice(sheet)}
             </section>
-            ${canEditPricingSource ? `<section class="psb-card psb-mode-card">
-                <div class="psb-section-head">
-                    <div><h2>${__("Pricing source")}</h2><p>${__("Choose one engine for this sheet. Dynamic uses buying price lists and policy mappings; static uses one published selling price list.")}</p></div>
-                </div>
-                <div class="psb-mode-switch">
-                    ${modeCard("Dynamic", mode, __("Dynamic calculation"), __("Buying price lists + expenses, customs, and margin policies."))}
-                    ${modeCard("Static", mode, __("Static selling price"), __("Published selling price list, with quotation prices taken from Item Price."))}
-                </div>
-                ${mode === "Static" ? staticPriceListPanel(sheet) : policyMappingPanel(sheet)}
-            </section>` : agentPricingNotice(sheet)}
+            ${pricingSourceSection(sheet, mode, canEditPricingSource, canEditPricingMode)}
             ${historySection(sheet)}
         `;
+    }
+
+    function pricingSourceSection(sheet, mode, canEditPricingSource, canEditPricingMode) {
+        if (!canEditPricingSource) return agentPricingNotice(sheet);
+        if (!canEditPricingMode) {
+            return `<section class="psb-card psb-mode-card">
+                <div class="psb-section-head">
+                    <div><h2>${__("Pricing source")}</h2><p>${__("Pricing mode is managed by your assigned agent rule.")}</p></div>
+                    <span class="psb-badge">${escapeHtml(mode)}</span>
+                </div>
+                ${mode === "Static" ? staticPriceListPanel(sheet) : agentPricingNotice(sheet)}
+            </section>`;
+        }
+        return `<section class="psb-card psb-mode-card">
+            <div class="psb-section-head">
+                <div><h2>${__("Pricing source")}</h2><p>${__("Choose one engine for this sheet. Dynamic uses buying price lists and policy mappings; static uses one published selling price list.")}</p></div>
+            </div>
+            <div class="psb-mode-switch">
+                ${modeCard("Dynamic", mode, __("Dynamic calculation"), __("Buying price lists + expenses, customs, and margin policies."))}
+                ${modeCard("Static", mode, __("Static selling price"), __("Published selling price list, with quotation prices taken from Item Price."))}
+            </div>
+            ${mode === "Static" ? staticPriceListPanel(sheet) : policyMappingPanel(sheet)}
+        </section>`;
     }
 
     function agentPricingNotice(sheet) {
@@ -375,7 +529,7 @@
     }
 
     function customerPricingContextNotice(sheet) {
-        if (!sheet.customer) return "";
+        if (!(sheet.party_name || sheet.customer)) return "";
         const context = STATE.customerPricingContext || {};
         const selected = context.selected || {};
         const segments = context.segments || [];
@@ -386,15 +540,15 @@
         if (!segments.length || (!businessType && !crmSegment)) {
             return `
                 <div class="psb-context-note warning">
-                    <strong>${__("Missing CRM context for this customer.")}</strong>
+                    <strong>${__("Missing CRM context for this party.")}</strong>
                     ${tierNotice}
-                    <span>${__("Add Business Type and CRM Segment rows in Customer > CRM Segments. This builder will only allow contexts assigned to the selected customer.")}</span>
+                    <span>${__("Add Business Type and CRM Segment rows on the selected party. This builder will only allow contexts assigned to that party.")}</span>
                 </div>`;
         }
 
         return `
             <div class="psb-context-note">
-                <strong>${__("Loaded customer CRM pricing context")}</strong>
+                <strong>${__("Loaded party CRM pricing context")}</strong>
                 ${tierNotice}
                 <span>${escapeHtml(businessType || __("missing"))} / ${escapeHtml(crmSegment || __("missing"))}${context.has_multiple ? ` - ${__("multiple contexts available")}` : ""}</span>
             </div>`;
@@ -461,7 +615,7 @@
         return `
             <div class="psb-static-panel psb-static-panel-lists">
                 <div class="psb-static-list-head">
-                    <div><strong>${__("Selling Price Lists")}</strong><span>${__("Ordered priority. The first list containing an item wins.")}</span></div>
+                    <div><strong>${__("Selling Price Lists")}</strong><span>${__("Selected lists define item availability. When an item exists in multiple lists, the first active list by sequence wins.")}</span></div>
                     <button type="button" class="psb-btn ghost" data-add-selling-list>${__("Add Selling List")}</button>
                 </div>
                 <div class="psb-selling-list-rows">
@@ -547,10 +701,10 @@
                         <button type="button" class="psb-btn ghost" data-columns>${__("Columns")}</button>
                         <button type="button" class="psb-btn ghost" data-bulk-quantity ${selectedLineCount() ? "" : "disabled"}>${__("Bulk Quantity")}</button>
                         <button type="button" class="psb-btn danger" data-delete-selected-lines ${selectedLineCount() ? "" : "disabled"}>${__("Delete Selected")} ${selectedLineCount() ? `(${selectedLineCount()})` : ""}</button>
+                        <button type="button" class="psb-btn ghost" data-load-opportunity-items>${__("Load Opportunity Items")}</button>
                         <button type="button" class="psb-btn ghost" data-add-multiple>${__("Add Multiple")}</button>
                         <button type="button" class="psb-btn ghost" data-add-line>${__("Add Line")}</button>
                         <button type="button" class="psb-btn ghost" data-add-bundle>${__("Add Bundle")}</button>
-                        <button type="button" class="psb-btn primary" data-save>${__("Save and Price")}</button>
                     </div>
                 </div>
                 <div class="psb-items-body">
@@ -660,7 +814,7 @@
         const lines = STATE.sheet.lines || [];
         const columns = activeLineColumns();
         if (!lines.length) {
-            return `<div class="psb-empty"><h3>${__("No lines yet")}</h3><p>${__("Add a line, import a bundle, or use dimensioning to generate article rows.")}</p><button type="button" class="psb-btn primary" data-add-line>${__("Add First Line")}</button></div>`;
+            return `<div class="psb-empty"><h3>${__("No lines yet")}</h3><p>${__("Add a line, load Opportunity items, import a bundle, or use dimensioning to generate article rows.")}</p><button type="button" class="psb-btn primary" data-add-line>${__("Add First Line")}</button></div>`;
         }
         return `
             <div class="psb-line-table-wrap">
@@ -687,6 +841,7 @@
             if (column.key === "expense_total") return "Modifiers Total";
             if (column.key === "projected_unit_price") return "Static Price U";
             if (column.key === "projected_total_price") return "Static Total";
+            if (column.key === "builder_margin_percent") return "Margin %";
         }
         return column.label;
     }
@@ -719,6 +874,7 @@
         if (key === "discount_percent") return `<td><input type="number" step="any" min="0" max="${escapeHtml(resolveMaxDiscount(row))}" data-line-field="discount_percent" data-line-index="${index}" value="${escapeHtml(row.discount_percent || 0)}"><small class="psb-discount-cap">${__("Max")} ${Number(resolveMaxDiscount(row)).toFixed(1)}%</small></td>`;
         if (key === "projected_unit_price") return money(lineCostUnit(row));
         if (key === "projected_total_price") return money(lineCostTotal(row));
+        if (isStaticPricingMode() && ["builder_margin_percent", "target_margin_percent", "margin_pct"].includes(key) && !row.pricing_builder) return `<td class="psb-number">${__("N/A")}</td>`;
         if (column.type === "Currency") return money(row[key]);
         if (column.type === "Percent") return `<td class="psb-number">${escapeHtml(`${Number(row[key] || 0).toFixed(1)}%`)}</td>`;
         if (column.type === "Float") return `<td class="psb-number">${escapeHtml(frappe.format(row[key] || 0, { fieldtype: "Float" }))}</td>`;
@@ -737,10 +893,9 @@
         return `
             <section class="psb-card psb-breakdown-card">
                 <div class="psb-section-head">
-                    <div><h2>${__("Price breakdown")}</h2><p>${__("Review the per-item pricing build-up, discounts, and commission calculation.")}</p></div>
-                    <button type="button" class="psb-btn primary" data-save>${__("Save and Price")}</button>
+                    <div><h2>${__("Price breakdown")}</h2><p>${__("Review the per-item pricing build-up, discounts, and commission calculation. Commission = unused allowed discount x selling total x commission rate.")}</p></div>
                 </div>
-                ${lines.length ? `<div class="psb-breakdown-list">${lines.map(breakdownCard).join("")}</div>` : `<div class="psb-muted">${__("Add quotation lines and save to calculate the price breakdown.")}</div>`}
+                ${lines.length ? `<div class="psb-breakdown-list">${lines.map(breakdownCard).join("")}</div>` : `<div class="psb-muted">${__("Add quotation lines to see the price breakdown.")}</div>`}
             </section>`;
     }
 
@@ -758,18 +913,23 @@
                     ${breakdownMetric(__("Sell Price U"), formatCurrency(row.final_sell_unit_price), true)}
                     ${breakdownMetric(__("Manual Override"), formatCurrency(row.manual_sell_unit_price))}
                     ${breakdownMetric(__("Total Sell"), formatCurrency(row.final_sell_total), true)}
+                    ${breakdownMetric(__("Allowed Discount"), `${Number(resolveMaxDiscount(row)).toFixed(1)}%`)}
                     ${breakdownMetric(__("Discount"), `${Number(row.discount_percent || 0).toFixed(1)}%`)}
+                    ${breakdownMetric(__("Unused Discount"), `${unusedDiscountPercent(row).toFixed(1)}%`)}
                     ${breakdownMetric(__("After Discount"), formatCurrency(row.discounted_sell_total || row.final_sell_total), true)}
                     ${breakdownMetric(__("Commission"), formatCurrency(row.commission_amount))}
                     ${isRestrictedAgent() ? "" : breakdownMetric(isStaticPricingMode() ? __("Modifiers U") : __("Expenses U"), formatCurrency(isStaticPricingMode() ? staticModifierUnit(row) : row.expense_unit_price))}
                     ${isRestrictedAgent() ? "" : breakdownMetric(isStaticPricingMode() ? __("Static Price U") : __("Total Cost U"), formatCurrency(lineCostUnit(row)), true)}
-                    ${isRestrictedAgent() || isStaticPricingMode() ? "" : breakdownMetric(__("Margin U"), formatCurrency(row.margin_unit_amount))}
-                    ${isRestrictedAgent() || isStaticPricingMode() ? "" : breakdownMetric(__("Margin %"), `${Number(row.margin_pct || 0).toFixed(1)}%`)}
-                    ${isRestrictedAgent() ? "" : breakdownMetric(__("Total Margin U"), formatCurrency(row.total_margin_unit_amount || totalMarginUnit(row)))}
-                    ${isRestrictedAgent() ? "" : breakdownMetric(__("Total Margin %"), `${Number(row.total_margin_pct || row.margin_pct || 0).toFixed(1)}%`)}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin U"), formatCurrency(row.margin_unit_amount))}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin %"), `${Number(row.margin_pct || 0).toFixed(1)}%`)}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin Basis"), escapeHtml(row.margin_basis || "Base Price"))}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || !isStaticPricingMode()) ? "" : breakdownMetric(__("Margin %"), row.pricing_builder ? `${Number(row.builder_margin_percent || 0).toFixed(1)}%` : __("N/A"))}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || !isStaticPricingMode()) ? "" : breakdownMetric(__("Target Margin %"), row.pricing_builder ? `${Number(row.target_margin_percent || 0).toFixed(1)}% ${__("on")} ${escapeHtml(row.margin_basis || "Base Price")}` : __("N/A"))}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Total Margin U"), formatCurrency(row.total_margin_unit_amount || totalMarginUnit(row)))}
+                    ${isRestrictedAgent() || isStaticPricingMode() ? "" : breakdownMetric(__("Total Margin %"), `${Number(row.total_margin_pct || row.margin_pct || 0).toFixed(1)}%`)}
                 </div>
-                ${details.length && !isRestrictedAgent() ? `<div class="psb-breakdown-detail-wrap"><table class="psb-breakdown-detail"><thead><tr><th>${__("Component")}</th><th>${__("Unit")}</th><th>${__("Line")}</th><th>${__("Source")}</th></tr></thead><tbody>${details.map(breakdownDetailRow).join("")}</tbody></table></div>` : ""}
-                ${steps.length && !isRestrictedAgent() ? `<div class="psb-sub-expenses"><strong>${__("Sub Expenses")}</strong><div class="psb-breakdown-steps">${steps.map(breakdownStep).join("")}</div></div>` : ""}
+                ${details.length && canViewSensitivePricing() && !isRestrictedAgent() ? `<div class="psb-breakdown-detail-wrap"><table class="psb-breakdown-detail"><thead><tr><th>${__("Component")}</th><th>${__("Unit")}</th><th>${__("Line")}</th><th>${__("Source")}</th></tr></thead><tbody>${details.map(breakdownDetailRow).join("")}</tbody></table></div>` : ""}
+                ${steps.length && canViewSensitivePricing() && !isRestrictedAgent() ? `<div class="psb-sub-expenses"><strong>${__("Sub Expenses")}</strong><div class="psb-breakdown-steps">${steps.map(breakdownStep).join("")}</div></div>` : ""}
             </article>`;
     }
 
@@ -798,7 +958,7 @@
             rows.push({ label: __("Discount"), unit: -(Number(row.discount_amount || 0) / qty), line: -Number(row.discount_amount || 0), source: `${Number(row.discount_percent || 0).toFixed(1)}%`, tone: "discount" });
         }
         if (Number(row.commission_amount || 0)) {
-            rows.push({ label: __("Commission"), unit: Number(row.commission_amount || 0) / qty, line: Number(row.commission_amount || 0), source: `${Number(row.commission_rate || 0).toFixed(1)}%`, tone: "commission" });
+            rows.push({ label: __("Commission"), unit: Number(row.commission_amount || 0) / qty, line: Number(row.commission_amount || 0), source: `${unusedDiscountPercent(row).toFixed(1)}% x ${Number(row.commission_rate || 0).toFixed(1)}%`, tone: "commission" });
         }
         rows.push({ label: __("Final Sell"), unit: Number(row.final_sell_unit_price || 0), line: Number(row.final_sell_total || 0), source: row.is_manual_override ? __("Manual override") : __("Calculated"), tone: "final" });
         return rows;
@@ -872,6 +1032,8 @@
                     ${quoteMetric(__("Quotation Rows"), preview.detailed_count || 0)}
                     ${quoteMetric(__("Groups"), preview.grouped_count || 0)}
                     ${quoteMetric(__("Final HT"), formatCurrency(STATE.sheet.total_selling))}
+                    ${quoteMetric(__("Applied Taxes"), formatCurrency(preview.total_tax || 0))}
+                    ${quoteMetric(__("Final TTC"), formatCurrency(preview.total_ttc || 0))}
                 </div>
                 ${warnings ? `<div class="psb-warning"><strong>${__("Warnings")}</strong><pre>${escapeHtml(warnings)}</pre></div>` : `<div class="psb-ok">${__("No pricing warnings on the last calculation.")}</div>`}
             </section>
@@ -883,7 +1045,7 @@
             <div class="psb-bottom-bar">
                 <button type="button" class="psb-btn ghost" data-manager>${__("Pricing Sheets")}</button>
                 <button type="button" class="psb-btn ghost" data-add-line>${__("Add Line")}</button>
-                <button type="button" class="psb-btn primary" data-save>${STATE.saving ? __("Saving...") : __("Save and Recalculate")}</button>
+                <button type="button" class="psb-btn primary" data-save>${STATE.saving ? __("Saving...") : __("Save")}</button>
                 <button type="button" class="psb-btn dark" data-generate>${__("Generate Quotation")}</button>
                 ${STATE.sheet.name ? `<button type="button" class="psb-btn danger" data-delete-sheet>${__("Delete PS")}</button>` : ""}
             </div>
@@ -918,7 +1080,9 @@
                 STATE.sheet.selected_selling_price_lists = [];
                 ensurePriceListMappingTable();
             }
+            STATE.lineColumns = loadLineColumns();
             render(page);
+            scheduleAutoPrice(page);
         });
         page.main.find("[data-add-mapping]").on("click", () => {
             STATE.sheet.scenario_mappings = STATE.sheet.scenario_mappings || [];
@@ -939,20 +1103,25 @@
             STATE.sheet.selected_selling_price_lists.splice(Number($(this).attr("data-delete-selling-list")), 1);
             STATE.sheet.selected_price_list = firstActiveSellingPriceList();
             render(page);
+            scheduleAutoPrice(page);
         });
-        page.main.find("[data-selling-list-field]").on("input change", function () {
-            const row = selectedSellingPriceLists(STATE.sheet)[Number($(this).attr("data-selling-index"))];
+        page.main.find("[data-selling-list-field]").on("input change", function (event) {
+            const index = Number($(this).attr("data-selling-index"));
+            const rows = selectedSellingPriceLists(STATE.sheet);
+            const row = rows[index];
             if (!row) return;
             const field = $(this).attr("data-selling-list-field");
             row[field] = $(this).attr("type") === "checkbox" ? (this.checked ? 1 : 0) : Number($(this).val() || 0);
-            STATE.sheet.selected_selling_price_lists = selectedSellingPriceLists(STATE.sheet);
+            STATE.sheet.selected_selling_price_lists = rows;
             STATE.sheet.selected_price_list = firstActiveSellingPriceList();
+            if (event.type === "change") scheduleAutoPrice(page);
         });
-        page.main.find("[data-map-field]").on("input change", function () {
+        page.main.find("[data-map-field]").on("input change", function (event) {
             const mapping = (STATE.sheet.scenario_mappings || [])[Number($(this).attr("data-map-index"))];
             if (!mapping) return;
             const field = $(this).attr("data-map-field");
             mapping[field] = $(this).attr("type") === "checkbox" ? (this.checked ? 1 : 0) : $(this).val();
+            if (event.type === "change") scheduleAutoPrice(page);
         });
         page.main.find("[data-add-line]").on("click", () => {
             STATE.sheet.lines = STATE.sheet.lines || [];
@@ -964,8 +1133,10 @@
             const index = Number($(this).attr("data-delete-line"));
             deleteLinesByIndex([index]);
             render(page);
+            scheduleAutoPrice(page);
         });
         page.main.find("[data-bulk-quantity]").on("click", () => openBulkQuantityDialog(page));
+        page.main.find("[data-load-opportunity-items]").on("click", () => openOpportunityItemsDialog(page));
         page.main.find("[data-add-multiple]").on("click", () => openAddMultipleDialog(page));
         page.main.find("[data-delete-selected-lines]").on("click", () => confirmDeleteSelectedLines(page));
         page.main.find("[data-select-all-lines]").on("change", function () {
@@ -988,8 +1159,19 @@
         page.main.find("[data-sheet-field]").on("input change", function () {
             const field = $(this).attr("data-sheet-field");
             STATE.sheet[field] = $(this).val();
+            if (field === "party_type") {
+                STATE.sheet.party_name = "";
+                STATE.sheet.customer = "";
+                STATE.sheet.opportunity = "";
+                STATE.customerPricingContext = null;
+                render(page);
+            }
+            if (field === "margin_basis") {
+                STATE.marginBasis = $(this).val();
+                render(page);
+            }
         });
-        page.main.find("[data-line-field]").on("input change", function () {
+        page.main.find("[data-line-field]").on("input change", function (event) {
             const field = $(this).attr("data-line-field");
             const index = Number($(this).attr("data-line-index"));
             const line = STATE.sheet.lines[index];
@@ -1016,6 +1198,7 @@
             } else {
                 line[field] = $(this).val();
             }
+            if (event.type === "change") scheduleAutoPrice(page);
         });
         page.main.find("[data-dim-key]").on("input change", function () {
             const key = $(this).attr("data-dim-key");
@@ -1041,17 +1224,27 @@
                 const nextValue = value || "";
                 if ((STATE.sheet[field] || "") === nextValue) return;
                 STATE.sheet[field] = nextValue;
-                if (field === "customer") {
-                    await applyCustomerPricingContext(page, { business_type: "", crm_segment: "" });
+                if (field === "opportunity") {
+                    await applyOpportunityContext(page);
+                    scheduleAutoPrice(page);
+                    return;
+                }
+                if (field === "party_name") {
+                    STATE.sheet.opportunity = "";
+                    STATE.sheet.customer = STATE.sheet.party_type === "Customer" ? nextValue : "";
+                    await applyPartyPricingContext(page, { business_type: "", crm_segment: "" });
+                    scheduleAutoPrice(page);
                     return;
                 }
                 if (field === "crm_business_type") {
                     STATE.sheet.crm_segment = "";
-                    await applyCustomerPricingContext(page, { business_type: nextValue, crm_segment: "", silent: true });
+                    await applyPartyPricingContext(page, { business_type: nextValue, crm_segment: "", silent: true });
+                    scheduleAutoPrice(page);
                     return;
                 }
                 if (field === "crm_segment") {
-                    await applyCustomerPricingContext(page, { business_type: STATE.sheet.crm_business_type, crm_segment: nextValue, silent: true });
+                    await applyPartyPricingContext(page, { business_type: STATE.sheet.crm_business_type, crm_segment: nextValue, silent: true });
+                    scheduleAutoPrice(page);
                     return;
                 }
                 if (field === "dimensioning_set") {
@@ -1059,7 +1252,9 @@
                     STATE.dimensioningPreview = [];
                     STATE.sheet.dimensioning_inputs_json = "";
                     loadDimensioningConfig(page, true);
+                    return;
                 }
+                scheduleAutoPrice(page);
             }, getSheetLinkQuery(field), readOnly);
         });
         page.main.find("[data-line-link]").each((_, host) => {
@@ -1075,17 +1270,22 @@
                 if (field === "item") {
                     updateLineItemName(page, line, nextValue).catch((error) => console.error("Item name lookup failed", error));
                 }
+                scheduleAutoPrice(page);
             }, getLineLinkQuery(field, line));
         });
         page.main.find("[data-selling-list-link]").each((_, host) => {
             const index = Number(host.getAttribute("data-selling-index"));
             const options = host.getAttribute("data-options");
-            const row = selectedSellingPriceLists(STATE.sheet)[index];
+            const rows = selectedSellingPriceLists(STATE.sheet);
+            const row = rows[index];
             if (!row) return;
             mountLink(host, options, row.price_list || "", (value) => {
-                row.price_list = value || "";
-                STATE.sheet.selected_selling_price_lists = selectedSellingPriceLists(STATE.sheet);
+                const nextValue = value || "";
+                if ((row.price_list || "") === nextValue) return;
+                rows[index].price_list = nextValue;
+                STATE.sheet.selected_selling_price_lists = rows;
                 STATE.sheet.selected_price_list = firstActiveSellingPriceList();
+                scheduleAutoPrice(page);
             }, priceListQuery("selling"));
         });
         page.main.find("[data-map-link]").each((_, host) => {
@@ -1098,8 +1298,28 @@
                 const nextValue = value || "";
                 if ((mapping[field] || "") === nextValue) return;
                 mapping[field] = nextValue;
+                scheduleAutoPrice(page);
             }, getMappingLinkQuery(field));
         });
+    }
+
+    function scheduleAutoPrice(page) {
+        clearTimeout(autoPriceTimer);
+        if (!canAutoPrice()) return;
+        autoPriceTimer = setTimeout(() => {
+            autoSaveAndPrice(page).catch((error) => console.error("Pricing Sheet auto pricing failed", error));
+        }, 650);
+    }
+
+    function canAutoPrice() {
+        if (STATE.loading || STATE.saving) return false;
+        if (!STATE.sheet || !(STATE.sheet.party_name || STATE.sheet.customer)) return false;
+        return (STATE.sheet.lines || []).some((line) => String(line.item || "").trim());
+    }
+
+    async function autoSaveAndPrice(page) {
+        if (!canAutoPrice()) return;
+        await save(page, { silent: true, freeze: false });
     }
 
     function mountLink(host, options, value, onChange, getQuery, readOnly = false) {
@@ -1135,21 +1355,30 @@
     }
 
     function getSheetLinkQuery(field) {
-        if (field === "customer") {
+        if (field === "party_name") {
             return () => ({
-                query: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.customer_query",
+                query: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.party_query",
                 filters: {
+                    party_type: STATE.sheet.party_type || "Customer",
                     company: STATE.sheet.custom_company || STATE.sheet?.user_context?.current_company || "",
                     business_type: STATE.sheet.crm_business_type || "",
                     crm_segment: STATE.sheet.crm_segment || "",
                 },
             });
         }
+        if (field === "opportunity") {
+            return () => {
+                const filters = { docstatus: ["<", 2] };
+                const company = STATE.sheet.custom_company || STATE.sheet?.user_context?.current_company || "";
+                if (company) filters.company = company;
+                return { filters };
+            };
+        }
         if (field === "crm_business_type") {
             return () => {
                 const filters = { is_active: 1 };
                 const allowed = customerContextBusinessTypes();
-                if (STATE.sheet.customer) filters.name = ["in", allowed.length ? allowed : ["__none__"]];
+                if (STATE.sheet.party_name || STATE.sheet.customer) filters.name = ["in", allowed.length ? allowed : ["__none__"]];
                 return { filters };
             };
         }
@@ -1157,11 +1386,19 @@
             return () => {
                 const filters = { is_active: 1 };
                 const allowed = customerContextSegments();
-                if (STATE.sheet.customer) {
+                if (STATE.sheet.party_name || STATE.sheet.customer) {
                     filters.name = ["in", allowed.length ? allowed : ["__none__"]];
                 } else if (STATE.sheet.crm_business_type) {
                     filters.business_type = STATE.sheet.crm_business_type;
                 }
+                return { filters };
+            };
+        }
+        if (field === "taxes_and_charges_template") {
+            return () => {
+                const filters = { disabled: 0 };
+                const company = STATE.sheet.custom_company || STATE.sheet?.user_context?.current_company || "";
+                if (company) filters.company = company;
                 return { filters };
             };
         }
@@ -1193,11 +1430,15 @@
 
     function priceListQuery(kind) {
         return () => {
-            const filters = { enabled: 1 };
+            const filters = {};
             if (kind === "buying") filters.buying = 1;
             if (kind === "selling") filters.selling = 1;
             const company = STATE.sheet?.custom_company || STATE.sheet?.user_context?.current_company || "";
             if (company) filters.custom_company = company;
+            if (kind === "selling" && isRestrictedAgent()) {
+                const allowed = (STATE.sheet?.user_context?.selling_price_lists || []).filter(Boolean);
+                filters.name = ["in", allowed.length ? allowed : ["__none__"]];
+            }
             return { filters };
         };
     }
@@ -1220,11 +1461,22 @@
         )];
     }
 
+    function normalizePartyFields() {
+        STATE.sheet.party_type = STATE.sheet.party_type || (STATE.sheet.customer ? "Customer" : "Customer");
+        STATE.sheet.party_name = STATE.sheet.party_name || STATE.sheet.customer || "";
+        STATE.sheet.customer = STATE.sheet.party_type === "Customer" ? STATE.sheet.party_name : "";
+    }
+
     async function applyCustomerPricingContext(page, options = {}) {
+        return applyPartyPricingContext(page, options);
+    }
+
+    async function applyPartyPricingContext(page, options = {}) {
         if (STATE.applyingCustomerPricingContext) return;
         STATE.applyingCustomerPricingContext = true;
         try {
-            if (!STATE.sheet.customer) {
+            normalizePartyFields();
+            if (!STATE.sheet.party_name) {
                 STATE.customerPricingContext = null;
                 STATE.sheet.customer_type = "";
                 STATE.sheet.tier = "";
@@ -1235,9 +1487,10 @@
             }
 
             const response = await frappe.call({
-                method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_customer_pricing_context",
+                method: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.get_party_pricing_context",
                 args: {
-                    customer: STATE.sheet.customer,
+                    party_type: STATE.sheet.party_type || "Customer",
+                    party_name: STATE.sheet.party_name,
                     business_type: options.business_type !== undefined ? options.business_type : STATE.sheet.crm_business_type,
                     crm_segment: options.crm_segment !== undefined ? options.crm_segment : STATE.sheet.crm_segment,
                 },
@@ -1247,12 +1500,13 @@
             STATE.customerPricingContext = context;
             STATE.sheet.customer_type = context.customer_type || "";
             STATE.sheet.tier = context.tier || "";
+            STATE.sheet.customer = STATE.sheet.party_type === "Customer" ? STATE.sheet.party_name : "";
             STATE.sheet.crm_business_type = selected.business_type || "";
             STATE.sheet.crm_segment = selected.crm_segment || "";
 
             if (context.has_multiple && !options.silent) {
                 frappe.show_alert({
-                    message: __("Customer has multiple CRM contexts. Choices are limited to this customer's assigned Business Types and Segments."),
+                    message: __("Party has multiple CRM contexts. Choices are limited to this party's assigned Business Types and Segments."),
                     indicator: "blue",
                 });
             }
@@ -1260,6 +1514,49 @@
         } finally {
             STATE.applyingCustomerPricingContext = false;
         }
+    }
+
+    async function applyOpportunityContext(page) {
+        if (!STATE.sheet.opportunity) {
+            render(page);
+            return;
+        }
+        try {
+            const res = await frappe.call({
+                method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.get_opportunity_pricing_sheet_source",
+                args: { opportunity: STATE.sheet.opportunity },
+                freeze: true,
+            });
+            const source = res.message || {};
+            STATE.sheet.opportunity = source.opportunity || STATE.sheet.opportunity;
+            STATE.sheet.custom_company = source.company || STATE.sheet.custom_company;
+            STATE.sheet.party_type = source.party_type || STATE.sheet.party_type || "Customer";
+            STATE.sheet.party_name = source.party_name || STATE.sheet.party_name || source.customer || "";
+            STATE.sheet.customer = source.customer || STATE.sheet.customer;
+            normalizePartyFields();
+            STATE.sheet.crm_business_type = source.crm_business_type || STATE.sheet.crm_business_type;
+            STATE.sheet.crm_segment = source.crm_segment || STATE.sheet.crm_segment;
+            STATE.sheet.geography_territory = source.geography_territory || STATE.sheet.geography_territory;
+            if ((source.items || []).length) {
+                STATE.sheet.lines = source.items.map(normalizeSourceLine);
+                ensureLineClientIds();
+            }
+            if (!STATE.sheet.sheet_name && source.title) STATE.sheet.sheet_name = source.title;
+            if (STATE.sheet.party_name) await applyPartyPricingContext(page, { silent: true, renderAfter: false });
+            frappe.show_alert({ message: __("Opportunity context loaded. {0} item(s) available.", [(source.items || []).length]), indicator: "blue" });
+        } catch (error) {
+            frappe.msgprint({ title: __("Opportunity failed"), message: error.message || __("Unable to load Opportunity context."), indicator: "red" });
+        }
+        render(page);
+    }
+
+    function normalizeSourceLine(line) {
+        return {
+            ...line,
+            qty: Number(line.qty || 1) || 1,
+            show_in_detail: 1,
+            line_type: line.line_type || "Standard",
+        };
     }
 
     async function updateLineItemName(page, line, itemCode) {
@@ -1275,16 +1572,16 @@
         render(page);
     }
 
-    async function save(page) {
+    async function save(page, options = {}) {
         if (STATE.saving) return;
         STATE.saving = true;
         let ok = false;
-        render(page);
+        if (!options.silent) render(page);
         try {
             const res = await frappe.call({
                 method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.save_pricing_sheet_builder_payload",
                 args: { payload: JSON.stringify(payloadForSave()) },
-                freeze: true,
+                freeze: options.freeze !== false,
             });
             STATE.sheet = { ...blankSheet(), ...((res.message || {}).sheet || {}) };
             STATE.sheet.pricing_mode = resolvePricingMode(STATE.sheet);
@@ -1292,9 +1589,16 @@
             STATE.dimensioningValues = parseDimensioningValues();
             syncRouteAfterSave(STATE.sheet.name || (res.message || {}).name);
             ok = true;
-            frappe.show_alert({ message: __("Pricing Sheet saved"), indicator: "green" });
+            if ((res.message || {}).link_warning) {
+                frappe.show_alert({ message: (res.message || {}).link_warning, indicator: "orange" });
+            }
+            if (!options.silent) frappe.show_alert({ message: __("Pricing Sheet saved"), indicator: "green" });
         } catch (error) {
-            frappe.msgprint({ title: __("Save Failed"), message: error.message || __("Unable to save Pricing Sheet."), indicator: "red" });
+            if (options.silent) {
+                console.warn("Pricing Sheet auto pricing skipped", error);
+            } else {
+                frappe.msgprint({ title: __("Save Failed"), message: error.message || __("Unable to save Pricing Sheet."), indicator: "red" });
+            }
         } finally {
             STATE.saving = false;
             render(page);
@@ -1313,6 +1617,8 @@
         sheet.user_context = undefined;
         sheet.history = undefined;
         sheet.quotation_preview = undefined;
+        sheet.source_quotation = STATE.sheet.source_quotation || "";
+        sheet.link_source_quotation = STATE.sheet.link_source_quotation ? 1 : 0;
         if (mode === "Dynamic") {
             sheet.selected_price_list = "";
             sheet.benchmark_policy = "";
@@ -1374,6 +1680,7 @@
         frappe.confirm(__("Delete {0} selected line(s)?", [count]), () => {
             deleteSelectedLines();
             render(page);
+            scheduleAutoPrice(page);
         });
     }
 
@@ -1477,21 +1784,32 @@
             : columns;
         return modeColumns
             .filter((key) => !isStaticPricingMode() || !STATIC_MODE_HIDDEN_COLUMNS.has(key))
+            .filter((key) => canViewSensitivePricing() || !SENSITIVE_PRICING_COLUMNS.has(key))
             .filter((key, index) => modeColumns.indexOf(key) === index)
             .map((key) => LINE_COLUMNS.find((column) => column.key === key))
             .filter(Boolean);
     }
 
     function defaultLineColumns() {
-        return isRestrictedAgent() ? AGENT_LINE_COLUMNS.slice() : DEFAULT_LINE_COLUMNS.slice();
+        if (isRestrictedAgent()) return AGENT_LINE_COLUMNS.slice();
+        if (isStaticPricingMode()) return ADMIN_STATIC_LINE_COLUMNS.slice();
+        return DEFAULT_LINE_COLUMNS.slice();
     }
 
     function availableLineColumns() {
-        return LINE_COLUMNS.filter((column) => !isRestrictedAgent() || AGENT_LINE_COLUMNS.includes(column.key));
+        return LINE_COLUMNS.filter((column) => {
+            if (isRestrictedAgent() && !AGENT_LINE_COLUMNS.includes(column.key)) return false;
+            if (!canViewSensitivePricing() && SENSITIVE_PRICING_COLUMNS.has(column.key)) return false;
+            return true;
+        });
     }
 
     function isRestrictedAgent() {
         return Boolean(STATE.sheet?.user_context?.is_restricted_agent);
+    }
+
+    function canViewSensitivePricing() {
+        return Boolean(STATE.sheet?.user_context?.can_view_sensitive_pricing);
     }
 
     function isStaticPricingMode() {
@@ -1500,6 +1818,10 @@
 
     function resolveMaxDiscount(row) {
         return Number(row.max_discount_percent_allowed || 0);
+    }
+
+    function unusedDiscountPercent(row) {
+        return Math.max(resolveMaxDiscount(row) - Number(row.discount_percent || 0), 0);
     }
 
     function manualOverrideFloor(row) {
@@ -1642,8 +1964,57 @@
                     });
                     STATE.selectedLineKeys.clear();
                     render(page);
+                    scheduleAutoPrice(page);
                 }
                 dialog.hide();
+            },
+        });
+        dialog.show();
+    }
+
+    function openOpportunityItemsDialog(page) {
+        if (!STATE.sheet.opportunity) {
+            frappe.msgprint({
+                title: __("Choose Opportunity"),
+                message: __("Select an Opportunity in Setup before loading its items."),
+                indicator: "orange",
+            });
+            STATE.active = "setup";
+            render(page);
+            return;
+        }
+        const dialog = new frappe.ui.Dialog({
+            title: __("Load Opportunity Items"),
+            fields: [
+                {
+                    fieldname: "replace_existing",
+                    fieldtype: "Check",
+                    label: __("Replace existing Pricing Sheet lines"),
+                    default: 0,
+                    description: __("Leave unchecked to append Opportunity items to the current lines."),
+                },
+            ],
+            primary_action_label: __("Load Items"),
+            primary_action: async (values) => {
+                if (!(await save(page)) || !STATE.sheet.name) return;
+                const res = await frappe.call({
+                    method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.import_opportunity_items_to_pricing_sheet",
+                    args: {
+                        pricing_sheet: STATE.sheet.name,
+                        opportunity: STATE.sheet.opportunity,
+                        replace_existing: values.replace_existing ? 1 : 0,
+                        pricing_mode: resolvePricingMode(STATE.sheet),
+                    },
+                    freeze: true,
+                });
+                STATE.sheet = { ...blankSheet(), ...((res.message || {}).sheet || {}) };
+                STATE.sheet.pricing_mode = resolvePricingMode(STATE.sheet);
+                ensurePriceListMappingTable();
+                ensureLineClientIds();
+                dialog.hide();
+                STATE.active = "items";
+                render(page);
+                frappe.show_alert({ message: __("Loaded {0} Opportunity item(s)", [(res.message || {}).imported_count || 0]), indicator: "green" });
             },
         });
         dialog.show();
@@ -1673,6 +2044,10 @@
                     options: "Price List",
                     label: __("Price List"),
                     depends_on: "eval:doc.source_type==='Price List'",
+                    get_query: isStaticPricingMode() ? (() => {
+                        const allowed = activeStaticSellingPriceLists();
+                        return allowed.length ? { filters: [["Price List", "name", "in", allowed]] } : {};
+                    }) : undefined,
                 }
             ],
             primary_action_label: __("Get Items"),
@@ -1697,12 +2072,29 @@
                         }
                     });
                 } else {
+                    const staticPriceLists = isStaticPricingMode() ? activeStaticSellingPriceLists() : [];
+                    if (isStaticPricingMode() && !staticPriceLists.length) {
+                        frappe.msgprint({
+                            title: __("Choose Selling Price Lists"),
+                            message: __("Select at least one active Selling Price List in Setup before adding static items."),
+                            indicator: "orange",
+                        });
+                        return;
+                    }
                     const itemSelector = new frappe.ui.form.MultiSelectDialog({
                         doctype: "Item",
                         target: page.main,
                         setters: {
                             item_group: values.item_group || undefined
                         },
+                        get_query: isStaticPricingMode() ? (() => ({
+                            query: "orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet.priced_item_query",
+                            filters: {
+                                price_lists: staticPriceLists,
+                                buying: 0,
+                                item_group: values.item_group || "",
+                            },
+                        })) : undefined,
                         add_filters_group: 1,
                         action(selections) {
                             if (selections && selections.length) {
@@ -1756,6 +2148,7 @@
 
         STATE.active = "items";
         render(page);
+        scheduleAutoPrice(page);
         frappe.show_alert({ message: __("Successfully added {0} items.", [itemCodes.length]), indicator: "green" });
     }
 
@@ -1960,6 +2353,16 @@
         return `<div class="psb-metric ${tone || ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value == null ? "-" : String(value))}</strong></div>`;
     }
 
+    function marginMetric(basis, pct) {
+        const options = ["Base Price", "Loaded Cost", "Sale Price"];
+        return `<div class="psb-metric psb-margin-metric"><span>${escapeHtml(__("Margin"))}</span><strong>
+            <select class="psb-margin-basis-select" data-sheet-field="margin_basis" style="font-size:11px;font-weight:500;border:none;background:transparent;cursor:pointer;color:var(--ink-1000);max-width:110px;">
+                ${options.map((opt) => `<option value="${escapeHtml(opt)}" ${opt === basis ? "selected" : ""}>${escapeHtml(opt)}</option>`).join("")}
+            </select>
+            <span class="psb-margin-value">${escapeHtml(pct.toFixed(1))}%</span>
+        </strong></div>`;
+    }
+
     function quoteMetric(label, value) {
         return `<div class="psb-quote-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value == null ? "-" : String(value))}</strong></div>`;
     }
@@ -1970,7 +2373,7 @@
 
     function loadLineColumns() {
         try {
-            const raw = window.localStorage?.getItem(COLUMN_STORAGE_KEY);
+            const raw = window.localStorage?.getItem(lineColumnStorageKey());
             const parsed = raw ? JSON.parse(raw) : null;
             if (Array.isArray(parsed) && parsed.length) return normalizeLineColumns(parsed);
         } catch (error) {
@@ -1995,14 +2398,19 @@
 
     function saveLineColumns(columns) {
         try {
-            window.localStorage?.setItem(COLUMN_STORAGE_KEY, JSON.stringify(normalizeLineColumns(columns || defaultLineColumns())));
+            window.localStorage?.setItem(lineColumnStorageKey(), JSON.stringify(normalizeLineColumns(columns || defaultLineColumns())));
         } catch (error) {
             // Local preference only; ignore storage failures.
         }
     }
 
+    function lineColumnStorageKey() {
+        if (isRestrictedAgent()) return `${COLUMN_STORAGE_KEY_PREFIX}.agent`;
+        return `${COLUMN_STORAGE_KEY_PREFIX}.admin.${isStaticPricingMode() ? "static" : "dynamic"}`;
+    }
+
     function formatCurrency(value) {
-        return textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" }));
+        return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" }));
     }
 
     function formatDateTime(value) {

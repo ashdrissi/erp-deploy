@@ -7,6 +7,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, cstr, flt, now_datetime, nowdate, getdate, date_diff
 
+from orderlift.warehouse_access import stock_warehouse_condition
+
 from orderlift.sales.utils.customs_policy import compute_customs_amount, resolve_customs_rule
 from orderlift.orderlift_logistics.utils.packaging_resolver import get_packaging_resolution
 from orderlift.sales.utils.dimensioning import coerce_dimensioning_value
@@ -31,22 +33,61 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
 from orderlift.orderlift_sales.doctype.customer_segmentation_engine.customer_segmentation_engine import (
     resolve_global_pricing_modifiers,
 )
-from orderlift.orderlift_sales.utils.price_list_scope import validate_price_list_scope
+from orderlift.orderlift_sales.utils.tax_inclusive import (
+    apply_quotation_sales_tax_template,
+    company_default_sales_taxes_template,
+    sales_tax_template_total_rate,
+    sync_quotation_item_tax_inclusive_fields,
+    sync_pricing_sheet_item_tax_inclusive_fields,
+)
+from orderlift.orderlift_sales.utils.price_list_scope import PRICE_LIST_TYPE_FIELD, can_override_quotation_pricing, get_price_list_type, validate_price_list_scope
+from orderlift.startup_roles import QUOTATION_CAPABLE_COMMERCIAL_ROLES, RESTRICTED_COMMERCIAL_ROLES
 
 
 MISSING_BUY_PRICE_MSG = "No buying price in {price_list}"
-PRIVILEGED_PRICING_ROLES = {"Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
-RESTRICTED_AGENT_ROLES = {"Sales User", "Orderlift Commercial"}
+PRIVILEGED_PRICING_ROLES = {"Administrator", "Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
+RESTRICTED_AGENT_ROLES = RESTRICTED_COMMERCIAL_ROLES
 NO_EXPENSES_SCENARIO = "__NO_EXPENSES_POLICY__"
+SUPPORTED_PRICING_PARTY_TYPES = {"Customer", "Lead", "Prospect"}
 
 
 class PricingSheet(Document):
     def before_validate(self):
+        self._sync_party_fields()
+        self._set_default_taxes_template()
         self._sanitize_line_policy_resolution_fields()
+
+    def _set_default_taxes_template(self):
+        if not self.meta.get_field("taxes_and_charges_template"):
+            return
+        if (getattr(self, "taxes_and_charges_template", "") or "").strip():
+            return
+        company = (getattr(self, "custom_company", "") or "").strip()
+        template = company_default_sales_taxes_template(company) if company else ""
+        if template:
+            self.taxes_and_charges_template = template
+
+    def _sync_party_fields(self):
+        party_type = (getattr(self, "party_type", "") or "").strip()
+        party_name = (getattr(self, "party_name", "") or "").strip()
+        customer = (getattr(self, "customer", "") or "").strip()
+
+        if not party_type:
+            party_type = "Customer"
+        if party_type not in SUPPORTED_PRICING_PARTY_TYPES:
+            frappe.throw(_("Party Type must be Customer, Lead, or Prospect."))
+        if not party_name and customer:
+            party_type = "Customer"
+            party_name = customer
+
+        self.party_type = party_type
+        self.party_name = party_name
+        self.customer = party_name if party_type == "Customer" else ""
 
     def before_save(self):
         self._enforce_agent_pricing_inputs()
         self.recalculate()
+        sync_pricing_sheet_item_tax_inclusive_fields(self)
 
     def _sanitize_line_policy_resolution_fields(self):
         for row in self.lines or []:
@@ -366,11 +407,30 @@ class PricingSheet(Document):
             row.has_scenario_override = 1 if cache_has_override_steps(steps, source="sheet") else 0
             row.has_line_override = 1 if snap.get("has_line_override") or cache_has_override_steps(steps, source="line") else 0
             br = snap.get("benchmark_result") or {}
+            matched_br = br.get("matched_rule") or {}
 
             row.is_manual_override = 1 if flt(row.manual_sell_unit_price) > 0 else 0
             row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
+            if row.is_manual_override:
+                manual_margin = flt(row.final_sell_unit_price) - base_unit - flt(row.expense_unit_price or 0) - flt(row.customs_unit_amount or 0)
+                row.margin_unit_amount = manual_margin
+                row.margin_total_amount = row.margin_unit_amount * qty
+                row.total_margin_unit_amount = flt(row.margin_unit_amount) + flt(row.tier_modifier_amount) + flt(row.zone_modifier_amount)
+                row.total_margin_total_amount = flt(row.margin_total_amount) + flt(row.tier_modifier_total) + flt(row.zone_modifier_total)
+                row.margin_pct = compute_margin_percent_for_basis(
+                    row.margin_unit_amount,
+                    row.margin_basis,
+                    base_unit,
+                    snap.get("landed_cost") or base_unit,
+                )
+                row.total_margin_pct = compute_margin_percent_for_basis(
+                    row.total_margin_unit_amount,
+                    row.margin_basis,
+                    base_unit,
+                    snap.get("landed_cost") or base_unit,
+                )
             row.final_sell_total = flt(row.final_sell_unit_price) * qty
-            row.resolved_margin_rule = ""
+            row.resolved_margin_rule = matched_br.get("label") if matched_br else (snap.get("benchmark_rule_label") or "")
             row.customs_material = customs_calc.get("material") or ""
             row.customs_tariff_number = customs_calc.get("tariff_number") or ""
             row.customs_weight_kg = flt(customs_calc.get("weight_kg") or 0)
@@ -403,7 +463,6 @@ class PricingSheet(Document):
             row.benchmark_source_count = cint(br.get("source_count") or 0)
             row.benchmark_ratio = flt(br.get("ratio") or 0)
             row.benchmark_method = br.get("method") or ""
-            matched_br = br.get("matched_rule") or {}
             row.resolved_benchmark_rule = self._format_benchmark_rule(matched_br) if matched_br else ""
             row.margin_source = snap.get("margin_source") or ""
 
@@ -483,12 +542,13 @@ class PricingSheet(Document):
 
         # Bulk-fetch Item Prices in pricing currency plus builder metadata for discount caps.
         item_codes = list({row.item for row in lines if row.item})
-        item_price_records = get_latest_item_price_records_from_lists(
+        item_price_records, duplicate_warnings = get_latest_item_price_records_from_lists(
             item_codes,
             price_lists,
             buying=False,
             target_currency=get_pricing_currency(),
         )
+        warnings.extend(duplicate_warnings)
 
         total_buy = 0.0
         total_expenses = 0.0
@@ -524,28 +584,63 @@ class PricingSheet(Document):
             row.final_sell_unit_price = flt(row.manual_sell_unit_price) if row.is_manual_override else projected_unit
             row.final_sell_total = row.final_sell_unit_price * qty
 
-            buy = flt(row.buy_price)
-            row.base_amount = buy * qty
-            row.margin_pct = ((row.final_sell_unit_price - buy) / buy * 100) if buy > 0 else 0.0
-            row.expense_total = 0.0
-            row.expense_unit_price = 0.0
+            has_builder_stamp = bool((item_price_record.get("custom_pricing_builder") or "").strip())
+            row.base_amount = 0.0
+            row.target_margin_percent = flt(item_price_record.get("custom_target_margin_percent") or 0) if has_builder_stamp else 0.0
+            row.builder_margin_percent = flt(item_price_record.get("custom_final_margin_percent") or 0) if has_builder_stamp else 0.0
+            row.builder_price_overridden = 1 if has_builder_stamp and cint(item_price_record.get("custom_builder_price_overridden") or 0) else 0
+            row.pricing_builder = (item_price_record.get("custom_pricing_builder") or "") if has_builder_stamp else ""
+            row.builder_source_buying_price_list = (item_price_record.get("custom_source_buying_price_list") or "") if has_builder_stamp else ""
+            row.margin_pct = flt(row.builder_margin_percent)
+            row.buy_price = flt(item_price_record.get("custom_last_builder_buy_rate") or 0) if has_builder_stamp else 0
+            row.expense_total = flt(item_price_record.get("custom_builder_expense_amount") or 0) * qty if has_builder_stamp else 0.0
+            row.expense_unit_price = flt(item_price_record.get("custom_builder_expense_amount") or 0) if has_builder_stamp else 0.0
             row.projected_unit_price = projected_unit
             row.projected_total_price = projected_total
-            row.customs_unit_amount = 0.0
-            row.margin_unit_amount = 0.0
-            row.margin_total_amount = 0.0
+            row.customs_unit_amount = flt(item_price_record.get("custom_builder_customs_amount") or 0) if has_builder_stamp else 0.0
+            row.customs_applied = row.customs_unit_amount * qty if has_builder_stamp else 0.0
+            row.margin_basis = (item_price_record.get("custom_builder_margin_basis") or "").strip() or "Base Price" if has_builder_stamp else (getattr(row, "margin_basis", "") or "Base Price")
+            if has_builder_stamp:
+                pct = flt(row.builder_margin_percent)
+                basis = row.margin_basis
+                if basis == "Sale Price":
+                    row.margin_unit_amount = flt(list_price) * pct / (100.0 - pct) if pct > 0 and pct < 100 else 0.0
+                elif basis == "Loaded Cost":
+                    landed = flt(row.buy_price) + flt(row.expense_unit_price) + flt(row.customs_unit_amount)
+                    row.margin_unit_amount = landed * pct / 100.0 if landed > 0 else 0.0
+                else:
+                    row.margin_unit_amount = flt(list_price) * pct / 100.0
+                row.margin_total_amount = row.margin_unit_amount * qty
+            else:
+                row.margin_unit_amount = 0.0
+                row.margin_total_amount = 0.0
             row.tier_modifier_amount = flt(component_summary.get("tier_unit") or 0)
             row.tier_modifier_total = flt(component_summary.get("tier_total") or 0)
             row.zone_modifier_amount = flt(component_summary.get("zone_unit") or 0)
             row.zone_modifier_total = flt(component_summary.get("zone_total") or 0)
+            total_margin_base_unit = list_price
+            total_margin_landed_cost = list_price
+            if has_builder_stamp and row.is_manual_override:
+                landed_cost = flt(row.buy_price) + flt(row.expense_unit_price) + flt(row.customs_unit_amount)
+                manual_margin = flt(row.final_sell_unit_price) - landed_cost
+                row.margin_unit_amount = manual_margin
+                row.margin_total_amount = row.margin_unit_amount * qty
+                row.margin_pct = compute_margin_percent_for_basis(
+                    row.margin_unit_amount,
+                    row.margin_basis,
+                    row.buy_price,
+                    landed_cost,
+                )
+                row.builder_margin_percent = row.margin_pct
+                total_margin_base_unit = row.buy_price
+                total_margin_landed_cost = landed_cost
             row.total_margin_unit_amount = flt(row.margin_unit_amount) + flt(row.tier_modifier_amount) + flt(row.zone_modifier_amount)
             row.total_margin_total_amount = flt(row.margin_total_amount) + flt(row.tier_modifier_total) + flt(row.zone_modifier_total)
-            row.margin_basis = modifier_basis
             row.total_margin_pct = compute_margin_percent_for_basis(
                 row.total_margin_unit_amount,
-                modifier_basis,
-                list_price,
-                list_price,
+                row.margin_basis,
+                total_margin_base_unit,
+                total_margin_landed_cost,
             )
 
             # Clear dynamic-only fields
@@ -555,7 +650,7 @@ class PricingSheet(Document):
             row.benchmark_ratio = 0
             row.benchmark_status = "No Benchmark"
             has_modifiers = flt(row.tier_modifier_total) or flt(row.zone_modifier_total)
-            row.margin_source = "Profile"
+            row.margin_source = "Builder Stamp" if has_builder_stamp else "Unstamped Static List"
             row.customs_material = ""
             row.customs_tariff_number = ""
             row.customs_weight_kg = 0
@@ -566,7 +661,6 @@ class PricingSheet(Document):
             row.customs_rate_percent = 0
             row.customs_by_kg = 0
             row.customs_by_percent = 0
-            row.customs_applied = 0
             row.customs_basis = ""
             static_benchmark_result, static_fallback_max_discount = build_static_item_price_discount_context(
                 item_price_record,
@@ -585,7 +679,7 @@ class PricingSheet(Document):
             row.price_floor_violation = 0
             row.has_scenario_override = 0
             row.has_line_override = 0
-            row.resolved_benchmark_rule = "Static List Modifiers" if has_modifiers else ""
+            row.resolved_benchmark_rule = (item_price_record.get("custom_benchmark_rule_label") or "") if has_builder_stamp else ("Static List Modifiers" if has_modifiers else "")
 
             total_buy += flt(row.base_amount)
             total_expenses += flt(row.tier_modifier_total) + flt(row.zone_modifier_total)
@@ -613,12 +707,20 @@ class PricingSheet(Document):
         lines = self.lines or []
         detailed_count = len([row for row in lines if cint(row.show_in_detail)])
         grouped_count = len(self._build_grouped_totals())
+        total_tax = sum(flt(getattr(row, "custom_applied_taxes", 0) or 0) for row in lines)
+        total_ttc = sum(
+            flt(getattr(row, "custom_pt_ttc", 0) or 0)
+            or flt(getattr(row, "discounted_sell_total", 0) or getattr(row, "final_sell_total", 0) or 0)
+            for row in lines
+        )
         return {
             "line_count": len(lines),
             "detailed_count": detailed_count,
             "grouped_count": grouped_count,
             "total_buy": flt(self.total_buy),
             "total_final": flt(self.total_selling),
+            "total_tax": flt(total_tax),
+            "total_ttc": flt(total_ttc),
             "customs_total": flt(self.customs_total_applied),
             "warnings": self.projection_warnings or "",
         }
@@ -788,6 +890,10 @@ class PricingSheet(Document):
             input_values_json=input_values_json,
         )
         generated_rows = self._generate_dimensioning_rows(set_doc, values)
+        unresolved_rows = [row for row in generated_rows if not (row.get("item") or "").strip()]
+        if unresolved_rows:
+            messages = [row.get("resolution_warning") or row.get("rule_label") or _("Unresolved item") for row in unresolved_rows]
+            frappe.throw(_("Resolve Dimensioning item filters before adding lines: {0}").format("; ".join(messages)))
         if not generated_rows:
             frappe.throw(_("No items were generated from the current dimensioning values."))
 
@@ -1136,6 +1242,10 @@ class PricingSheet(Document):
         roles = set(frappe.get_roles(user) or [])
         return bool(roles & RESTRICTED_AGENT_ROLES) and not (roles & PRIVILEGED_PRICING_ROLES)
 
+    def _can_create_quotation_as_commercial_user(self):
+        roles = set(frappe.get_roles(frappe.session.user) or [])
+        return bool(roles & QUOTATION_CAPABLE_COMMERCIAL_ROLES)
+
     def _enforce_agent_pricing_inputs(self):
         if not self._is_restricted_agent_user():
             return
@@ -1308,36 +1418,58 @@ class PricingSheet(Document):
         frappe.throw(message_template.format(value, self.sales_person or "-"))
 
     def _sync_customer_context(self):
-        if not self.customer:
+        party_type = self._pricing_party_type()
+        party_name = self._pricing_party_name()
+        if not party_name:
             self.customer_type = ""
             self.tier = ""
             self.crm_business_type = ""
             self.crm_segment = ""
             return
 
-        customer_fields = ["tier"]
-        if frappe.db.has_column("Customer", "enable_dynamic_segmentation"):
-            customer_fields.append("enable_dynamic_segmentation")
-
-        customer_values = frappe.db.get_value(
-            "Customer",
-            self.customer,
-            customer_fields,
-            as_dict=True,
-        ) or {}
-
         self.customer_type = ""
-        self.tier = self._resolve_customer_pricing_tier(customer_values)
-        crm_context = resolve_customer_crm_pricing_context(
-            self.customer,
-            selected_business_type=getattr(self, "crm_business_type", "") or "",
-            selected_segment=getattr(self, "crm_segment", "") or "",
-        )
+        self.tier = self._resolve_party_pricing_tier(party_type, party_name)
+        if party_type == "Customer":
+            crm_context = resolve_customer_crm_pricing_context(
+                party_name,
+                selected_business_type=getattr(self, "crm_business_type", "") or "",
+                selected_segment=getattr(self, "crm_segment", "") or "",
+            )
+        else:
+            crm_context = resolve_party_crm_pricing_context(
+                party_type,
+                party_name,
+                selected_business_type=getattr(self, "crm_business_type", "") or "",
+                selected_segment=getattr(self, "crm_segment", "") or "",
+            )
         selected = crm_context.get("selected") or {}
         self.crm_business_type = selected.get("business_type") or ""
         self.crm_segment = selected.get("crm_segment") or ""
 
-    def _resolve_customer_pricing_tier(self, customer_values):
+    def _pricing_party_type(self):
+        party_type = (getattr(self, "party_type", "") or "").strip()
+        if not party_type and (getattr(self, "customer", "") or "").strip():
+            party_type = "Customer"
+        return party_type or "Customer"
+
+    def _pricing_party_name(self):
+        return (getattr(self, "party_name", "") or getattr(self, "customer", "") or "").strip()
+
+    def _resolve_party_pricing_tier(self, party_type, party_name):
+        if party_type == "Customer":
+            customer_fields = ["tier"]
+            if frappe.db.has_column("Customer", "enable_dynamic_segmentation"):
+                customer_fields.append("enable_dynamic_segmentation")
+            customer_values = frappe.db.get_value("Customer", party_name, customer_fields, as_dict=True) or {}
+            return self._resolve_customer_pricing_tier(customer_values, customer=party_name)
+
+        fields = [field for field in ("manual_tier", "tier") if frappe.db.has_column(party_type, field)]
+        if not fields:
+            return ""
+        values = frappe.db.get_value(party_type, party_name, fields, as_dict=True) or {}
+        return (values.get("manual_tier") or values.get("tier") or "").strip()
+
+    def _resolve_customer_pricing_tier(self, customer_values, customer=None):
         stored_tier = (customer_values.get("tier") or "").strip()
         if cint(customer_values.get("enable_dynamic_segmentation") or 0) != 1:
             return stored_tier
@@ -1346,7 +1478,7 @@ class PricingSheet(Document):
             calculate_customer_dynamic_tier,
         )
 
-        result = calculate_customer_dynamic_tier(customer=self.customer, apply=1) or {}
+        result = calculate_customer_dynamic_tier(customer=customer or self.customer, apply=1) or {}
         return (result.get("tier") or stored_tier).strip()
 
     def _get_dynamic_tier_staleness_warning(self):
@@ -1533,30 +1665,56 @@ class PricingSheet(Document):
                 "component_display": amounts.get("component_display") or "",
             }
         )
+        self._apply_customs_value_delta_tax(out, base_amount, customs_policy)
         if use_buying_amount_fallback:
             out["warning"] = _("item Weight (kg) is missing; customs calculated from buying amount")
         elif resolved_weight_kg <= 0:
             out["warning"] = _("item Weight (kg) is missing; customs set to 0")
         return out
 
+    def _apply_customs_value_delta_tax(self, customs_calc, base_amount, customs_policy):
+        if not customs_policy or not cint(getattr(customs_policy, "enable_customs_value_delta_tax", 0) or 0):
+            return
+        customs_value = flt((customs_calc or {}).get("base_value") or 0)
+        delta = customs_value - flt(base_amount or 0)
+        if delta <= 0:
+            customs_calc["customs_value_delta"] = 0.0
+            customs_calc["customs_value_delta_tax_rate"] = 0.0
+            customs_calc["customs_value_delta_tax_amount"] = 0.0
+            customs_calc["customs_value_delta_tax_template"] = ""
+            return
+
+        template = (getattr(customs_policy, "customs_value_delta_tax_template", "") or "").strip()
+        if not template:
+            template = company_default_sales_taxes_template(self._resolve_modifier_company())
+        rate = sales_tax_template_total_rate(template)
+        amount = delta * rate / 100.0 if rate else 0.0
+        customs_calc["customs_value_delta"] = flt(delta)
+        customs_calc["customs_value_delta_tax_rate"] = flt(rate)
+        customs_calc["customs_value_delta_tax_amount"] = flt(amount)
+        customs_calc["customs_value_delta_tax_template"] = template
+        customs_calc["applied"] = flt(customs_calc.get("applied") or 0) + flt(amount)
+
     def _append_customs_step(self, steps, qty, projected_unit, customs_calc):
         applied = flt((customs_calc or {}).get("applied") or 0)
         if applied <= 0:
             return
 
+        delta_tax = flt((customs_calc or {}).get("customs_value_delta_tax_amount") or 0)
+        base_customs = applied - delta_tax
         label = "Customs (Value/kg x weight x %)"
 
         steps.append(
             {
                 "label": label,
                 "type": "Fixed",
-                "value": applied,
+                "value": base_customs if delta_tax else applied,
                 "applies_to": "Base Price",
                 "scope": "Per Line",
                 "sequence": 9998,
                 "basis": 0,
                 "delta_unit": 0,
-                "delta_line": applied,
+                "delta_line": base_customs if delta_tax else applied,
                 "delta_sheet": 0,
                 "running_total": projected_unit,
                 "customs_tariff_number": customs_calc.get("tariff_number") or "",
@@ -1573,6 +1731,25 @@ class PricingSheet(Document):
                 "packaging_profile_source": customs_calc.get("packaging_source") or "",
             }
         )
+        if delta_tax > 0:
+            steps.append(
+                {
+                    "label": _("Customs Value Delta Tax"),
+                    "type": "Fixed",
+                    "value": delta_tax,
+                    "applies_to": "Base Price",
+                    "scope": "Per Line",
+                    "sequence": 9999,
+                    "basis": flt(customs_calc.get("customs_value_delta") or 0),
+                    "delta_unit": 0,
+                    "delta_line": delta_tax,
+                    "delta_sheet": 0,
+                    "running_total": projected_unit,
+                    "customs_value_delta": flt(customs_calc.get("customs_value_delta") or 0),
+                    "customs_value_delta_tax_rate": flt(customs_calc.get("customs_value_delta_tax_rate") or 0),
+                    "customs_value_delta_tax_template": customs_calc.get("customs_value_delta_tax_template") or "",
+                }
+            )
 
     def _summarize_pricing_components(self, steps, qty, allocated_sheet=0.0):
         summary = {
@@ -1926,6 +2103,8 @@ class PricingSheet(Document):
             agent_max_discount_percent=flt(agent_discount_ctx.get("max_discount_percent") or 0),
             is_fallback=bool((benchmark_result or {}).get("is_fallback")),
         )
+        if can_override_quotation_pricing():
+            max_discount = 100.0
         self._validate_manual_override_discount_floor(row, max_discount)
         requested_discount = flt(row.discount_percent or 0)
         if requested_discount < 0:
@@ -1982,6 +2161,8 @@ class PricingSheet(Document):
             )
 
     def _validate_manual_override_discount_floor(self, row, max_discount):
+        if can_override_quotation_pricing():
+            return
         manual_price = flt(row.manual_sell_unit_price or 0)
         if manual_price <= 0:
             return
@@ -2390,6 +2571,9 @@ class PricingSheet(Document):
         self.customs_total_applied = 0
 
     def _resolve_company_for_quotation(self):
+        company = (getattr(self, "custom_company", "") or "").strip()
+        if company:
+            return company
         company = frappe.defaults.get_user_default("Company")
         if not company:
             company = frappe.db.get_single_value("Global Defaults", "default_company")
@@ -2404,17 +2588,26 @@ class PricingSheet(Document):
     @frappe.whitelist()
     def generate_quotation(self):
         self.check_permission("write")
+        if self._is_restricted_agent_user() and not self._can_create_quotation_as_commercial_user():
+            frappe.throw(_("You need the Quotation Creator role to generate quotations."), frappe.PermissionError)
+
+        # Reprice with the current selected lists before copying snapshot values into Quotation rows.
+        self.recalculate()
 
         lines = self.lines or []
-        if not self.customer:
-            frappe.throw(_("Customer is required."))
+        party_type = self._pricing_party_type()
+        party_name = self._pricing_party_name()
+        if party_type not in SUPPORTED_PRICING_PARTY_TYPES or not party_name:
+            frappe.throw(_("Customer, Lead, or Prospect is required."))
+        if not frappe.db.exists(party_type, party_name):
+            frappe.throw(_("{0} {1} was not found.").format(party_type, party_name))
         if not lines:
             frappe.throw(_("Please add at least one pricing line."))
 
         quotation = frappe.new_doc("Quotation")
         quotation.company = self._resolve_company_for_quotation()
-        quotation.quotation_to = "Customer"
-        quotation.party_name = self.customer
+        quotation.quotation_to = party_type
+        quotation.party_name = party_name
         if quotation.meta.get_field("ignore_pricing_rule"):
             quotation.ignore_pricing_rule = 1
         if quotation.meta.get_field("custom_crm_business_type"):
@@ -2424,6 +2617,13 @@ class PricingSheet(Document):
         self._apply_quotation_price_list(quotation)
         if frappe.db.has_column("Quotation", "source_pricing_sheet"):
             quotation.source_pricing_sheet = self.name
+        if (self.get("taxes_and_charges_template") or "").strip() and quotation.meta.get_field("taxes_and_charges"):
+            quotation.taxes_and_charges = self.get("taxes_and_charges_template")
+        if self.get("opportunity") and quotation.meta.get_field("opportunity"):
+            quotation.opportunity = self.get("opportunity")
+        if (self.get("geography_territory") or "").strip() and quotation.meta.get_field("territory"):
+            quotation.territory = self.get("geography_territory")
+        self._apply_quotation_selected_price_lists(quotation)
 
         output_mode = (self.output_mode or "Avec details").strip().lower()
         if output_mode in ("sans details", "sans détails"):
@@ -2434,13 +2634,39 @@ class PricingSheet(Document):
         if not quotation.items:
             frappe.throw(_("No quotation items were generated from this Pricing Sheet."))
 
+        apply_quotation_sales_tax_template(quotation)
+        sync_quotation_item_tax_inclusive_fields(quotation)
+
         quotation.insert()
         return quotation.name
+
+    def _apply_quotation_selected_price_lists(self, quotation):
+        if not quotation.meta.get_field("selected_selling_price_lists"):
+            return
+        quotation.set("selected_selling_price_lists", [])
+        seen = set()
+        rows = sorted(
+            [row for row in (getattr(self, "selected_selling_price_lists", None) or []) if (getattr(row, "price_list", "") or "").strip()],
+            key=lambda row: (cint(getattr(row, "sequence", 0) or 0) or 999999, cint(getattr(row, "idx", 0) or 0)),
+        )
+        for row in rows:
+            price_list = (getattr(row, "price_list", "") or "").strip()
+            if not price_list or price_list in seen:
+                continue
+            seen.add(price_list)
+            quotation.append(
+                "selected_selling_price_lists",
+                {
+                    "price_list": price_list,
+                    "sequence": cint(getattr(row, "sequence", 0) or 0) or len(seen) * 10,
+                    "is_active": 1 if cint(getattr(row, "is_active", 1)) else 0,
+                },
+            )
 
     def _apply_quotation_price_list(self, quotation):
         price_list = self._resolve_quotation_selling_price_list()
         if not price_list:
-            price_list = self._get_default_quotation_selling_price_list()
+            price_list = self._get_default_quotation_selling_price_list(quotation.company)
         if not frappe.db.exists("Price List", price_list):
             return
 
@@ -2468,10 +2694,14 @@ class PricingSheet(Document):
 
         return ""
 
-    def _get_default_quotation_selling_price_list(self):
+    def _get_default_quotation_selling_price_list(self, company=None):
         filters = {"selling": 1}
         if frappe.db.has_column("Price List", "enabled"):
             filters["enabled"] = 1
+        if company and frappe.db.has_column("Price List", "custom_company"):
+            filters["custom_company"] = company
+        if frappe.db.has_column("Price List", PRICE_LIST_TYPE_FIELD):
+            filters[PRICE_LIST_TYPE_FIELD] = "Selling"
         names = frappe.get_all(
             "Price List",
             filters=filters,
@@ -2505,7 +2735,7 @@ class PricingSheet(Document):
                 )
             if frappe.db.has_column("Quotation Item", "source_pricing_policy"):
                 item_data["source_pricing_policy"] = self.applied_benchmark_policy or self.benchmark_policy or ""
-            if frappe.db.has_column("Quotation Item", "source_margin_percent"):
+            if frappe.db.has_column("Quotation Item", "source_margin_percent") and (self.resolved_mode != "Static" or (getattr(row, "pricing_builder", "") or "").strip()):
                 item_data["source_margin_percent"] = flt(row.margin_pct)
             if frappe.db.has_column("Quotation Item", "source_scenario_rule"):
                 item_data["source_scenario_rule"] = row.resolved_scenario_rule or ""
@@ -2521,8 +2751,12 @@ class PricingSheet(Document):
                 item_data["source_customs_basis"] = row.customs_basis or ""
             if frappe.db.has_column("Quotation Item", "source_gross_sell_rate"):
                 item_data["source_gross_sell_rate"] = flt(row.final_sell_unit_price)
+            if frappe.db.has_column("Quotation Item", "source_selling_price_list"):
+                item_data["source_selling_price_list"] = (getattr(row, "resolved_selling_price_list", "") or "").strip()
             if frappe.db.has_column("Quotation Item", "source_discount_percent"):
                 item_data["source_discount_percent"] = flt(row.discount_percent)
+            if frappe.db.has_column("Quotation Item", "source_max_discount_percent"):
+                item_data["source_max_discount_percent"] = flt(row.max_discount_percent_allowed)
             if frappe.db.has_column("Quotation Item", "source_discount_amount"):
                 item_data["source_discount_amount"] = flt(row.discount_amount)
             if frappe.db.has_column("Quotation Item", "source_discounted_sell_rate"):
@@ -2538,6 +2772,7 @@ class PricingSheet(Document):
         config = self._get_group_line_config()
         group_item_code = config["item_code"]
         grouped = self._build_grouped_totals()
+        grouped_caps = self._build_grouped_max_discount_caps()
 
         for (group_name, scenario_name), group_total in grouped.items():
             item = {
@@ -2548,6 +2783,16 @@ class PricingSheet(Document):
                 ),
             }
             item.update(self._quotation_item_price_values(flt(group_total), 1, quotation))
+            if frappe.db.has_column("Quotation Item", "source_max_discount_percent"):
+                item["source_max_discount_percent"] = flt(grouped_caps.get((group_name, scenario_name)) or 0)
+            if frappe.db.has_column("Quotation Item", "source_gross_sell_rate"):
+                item["source_gross_sell_rate"] = flt(group_total)
+            if frappe.db.has_column("Quotation Item", "source_discount_percent"):
+                item["source_discount_percent"] = 0
+            if frappe.db.has_column("Quotation Item", "source_discount_amount"):
+                item["source_discount_amount"] = 0
+            if frappe.db.has_column("Quotation Item", "source_discounted_sell_rate"):
+                item["source_discounted_sell_rate"] = flt(group_total)
             if frappe.db.has_column("Quotation Item", "source_pricing_scenario"):
                 item["source_pricing_scenario"] = scenario_name
             quotation.append("items", item)
@@ -2595,6 +2840,27 @@ class PricingSheet(Document):
             key = ((fallback_group or "Ungrouped").strip() or "Ungrouped", scenario_name)
             grouped[key] = grouped.get(key, 0.0) + effective_total
 
+        return grouped
+
+    def _build_grouped_max_discount_caps(self):
+        grouped = {}
+        summary_bundle_ids = {
+            row.bundle_group_id
+            for row in (self.lines or [])
+            if (row.line_type or "") == "Bundle Summary" and row.bundle_group_id
+        }
+
+        for row in self.lines or []:
+            effective_total = flt(row.discounted_sell_total or row.final_sell_total)
+            if effective_total == 0:
+                continue
+            if (row.line_type or "") == "Bundle Component" and row.bundle_group_id in summary_bundle_ids:
+                continue
+            fallback_group = row.display_group or "Ungrouped"
+            scenario_name = row.resolved_pricing_scenario or row.pricing_scenario or ""
+            key = ((fallback_group or "Ungrouped").strip() or "Ungrouped", scenario_name)
+            cap = flt(row.max_discount_percent_allowed)
+            grouped[key] = cap if key not in grouped else min(grouped[key], cap)
         return grouped
 
     def _get_group_line_config(self):
@@ -2743,7 +3009,7 @@ def get_latest_item_price(item_code, price_list, buying, target_currency=None):
 
 @lru_cache(maxsize=128)
 def get_pricing_currency():
-    return frappe.defaults.get_global_default("currency") or "MAD"
+    return frappe.defaults.get_global_default("currency")
 
 
 @lru_cache(maxsize=256)
@@ -2821,6 +3087,12 @@ ITEM_PRICE_STATIC_STAMP_FIELDS = [
     "custom_fallback_max_discount_percent",
     "custom_policy_max_discount_percent",
     "custom_target_margin_percent",
+    "custom_final_margin_percent",
+    "custom_builder_price_overridden",
+    "custom_last_builder_buy_rate",
+    "custom_builder_expense_amount",
+    "custom_builder_customs_amount",
+    "custom_builder_margin_basis",
 ]
 
 
@@ -2911,7 +3183,7 @@ def get_latest_item_price_records(item_codes, price_list, buying, target_currenc
     extra_select = "" if not extra_fields else ", " + ", ".join(f"ip.`{fieldname}`" for fieldname in extra_fields)
     rows = frappe.db.sql(
         f"""
-        SELECT ip.name, ip.item_code, ip.price_list_rate{extra_select}
+        SELECT ip.name, ip.item_code, ip.price_list_rate, ip.modified{extra_select}
         FROM `tabItem Price` ip
         WHERE {' AND '.join(conditions)}
         ORDER BY {order_by}
@@ -2936,18 +3208,44 @@ def get_latest_item_price_records(item_codes, price_list, buying, target_currenc
 
 def get_latest_item_price_records_from_lists(item_codes, price_lists, buying, target_currency=None):
     out = {}
+    duplicate_map = {}
     for price_list in price_lists or []:
         price_list = (price_list or "").strip()
         if not price_list:
             continue
         records = get_latest_item_price_records(item_codes, price_list, buying, target_currency=target_currency)
         for item_code, record in records.items():
-            if item_code in out:
-                continue
             copied = dict(record)
             copied["price_list"] = price_list
+            if item_code in out:
+                duplicate_map.setdefault(item_code, []).append(dict(copied))
+                duplicate_map[item_code].append(dict(out[item_code]))
+                continue
             out[item_code] = copied
-    return out
+
+    warnings = []
+    seen = set()
+    for item_code, records in duplicate_map.items():
+        unique_lists = []
+        for record in records:
+            price_list = (record.get("price_list") or "").strip()
+            if price_list and price_list not in unique_lists:
+                unique_lists.append(price_list)
+        if len(unique_lists) < 2:
+            continue
+        key = (item_code, tuple(unique_lists))
+        if key in seen:
+            continue
+        seen.add(key)
+        winning_list = (out.get(item_code) or {}).get("price_list") or ""
+        warnings.append(
+            _("Static duplicate Item Price for {0} found in lists {1}; configured list {2} was used.").format(
+                item_code,
+                ", ".join(unique_lists),
+                winning_list or "-",
+            )
+        )
+    return out, warnings
 
 
 def get_latest_item_prices(item_codes, price_list, buying, target_currency=None):
@@ -3010,21 +3308,6 @@ def get_latest_item_prices(item_codes, price_list, buying, target_currency=None)
     return out
 
 
-def get_price_list_type(price_list_name):
-    if not price_list_name:
-        return "Unknown"
-    values = frappe.db.get_value("Price List", price_list_name, ["buying", "selling"], as_dict=True) or {}
-    is_buying = cint(values.get("buying")) == 1
-    is_selling = cint(values.get("selling")) == 1
-    if is_buying and is_selling:
-        return "Mixed"
-    if is_buying:
-        return "Buying"
-    if is_selling:
-        return "Selling"
-    return "Unknown"
-
-
 def recalculate_pricing_sheet_job(pricing_sheet_name, user=None):
     user_to_set = user or "Administrator"
     previous_user = frappe.session.user
@@ -3046,8 +3329,9 @@ def recalculate_pricing_sheet_job(pricing_sheet_name, user=None):
 @frappe.validate_and_sanitize_search_inputs
 def stock_item_query(doctype, txt, searchfield, start, page_len, filters):
     txt_like = f"%{txt}%"
+    params = {"txt": txt_like, "start": start, "page_len": page_len}
     return frappe.db.sql(
-        """
+        f"""
         SELECT
             i.name,
             i.item_name,
@@ -3058,11 +3342,12 @@ def stock_item_query(doctype, txt, searchfield, start, page_len, filters):
         WHERE i.disabled = 0
           AND i.is_stock_item = 1
           AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+          {stock_warehouse_condition("b.warehouse", params)}
         GROUP BY i.name, i.item_name, i.stock_uom
         ORDER BY stock_qty DESC, i.name
         LIMIT %(start)s, %(page_len)s
         """,
-        {"txt": txt_like, "start": start, "page_len": page_len},
+        params,
     )
 
 
@@ -3072,6 +3357,7 @@ def priced_item_query(doctype, txt, searchfield, start, page_len, filters):
     filters = filters or {}
     price_lists = _clean_filter_list(filters.get("price_lists") if hasattr(filters, "get") else None)
     buying = cint(filters.get("buying") if hasattr(filters, "get") else 0)
+    item_group = (filters.get("item_group") if hasattr(filters, "get") else "") or ""
     price_lists = _scoped_query_price_lists(price_lists, buying=buying)
     if not price_lists:
         return []
@@ -3082,6 +3368,8 @@ def priced_item_query(doctype, txt, searchfield, start, page_len, filters):
         "ip.price_list in %(price_lists)s",
         "(i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)",
     ]
+    if item_group:
+        conditions.append("i.item_group = %(item_group)s")
     if frappe.db.has_column("Item Price", "enabled"):
         conditions.append("ip.enabled = 1")
     if frappe.db.has_column("Item Price", "buying"):
@@ -3106,6 +3394,7 @@ def priced_item_query(doctype, txt, searchfield, start, page_len, filters):
         {
             "price_lists": tuple(price_lists),
             "buying": 1 if buying else 0,
+            "item_group": item_group,
             "txt": txt_like,
             "today": nowdate(),
             "start": start,
@@ -3196,18 +3485,48 @@ def get_item_pricing_defaults(item_code, pricing_scenario=None, source_buying_pr
 
 @frappe.whitelist()
 def get_customer_pricing_context(customer=None, business_type=None, crm_segment=None):
+    return get_party_pricing_context(
+        party_type="Customer",
+        party_name=customer,
+        business_type=business_type,
+        crm_segment=crm_segment,
+    )
+
+
+@frappe.whitelist()
+def get_party_pricing_context(party_type="Customer", party_name=None, business_type=None, crm_segment=None):
+    party_type = (party_type or "Customer").strip()
+    party_name = (party_name or "").strip()
+    if party_type not in SUPPORTED_PRICING_PARTY_TYPES:
+        frappe.throw(_("Party Type must be Customer, Lead, or Prospect."))
+    if party_type == "Customer":
+        return _customer_pricing_context(party_name, business_type=business_type, crm_segment=crm_segment)
+
+    return _lead_or_prospect_pricing_context(
+        party_type,
+        party_name,
+        business_type=business_type,
+        crm_segment=crm_segment,
+    )
+
+
+def _empty_party_pricing_context():
+    return {
+        "customer_type": "",
+        "tier": "",
+        "tier_mode": "",
+        "tier_source": "",
+        "tier_status": "",
+        "tier_message": "",
+        "enable_dynamic_segmentation": 0,
+        "segments": [],
+        "selected": {"business_type": "", "crm_segment": ""},
+    }
+
+
+def _customer_pricing_context(customer=None, business_type=None, crm_segment=None):
     if not customer:
-        return {
-            "customer_type": "",
-            "tier": "",
-            "tier_mode": "",
-            "tier_source": "",
-            "tier_status": "",
-            "tier_message": "",
-            "enable_dynamic_segmentation": 0,
-            "segments": [],
-            "selected": {"business_type": "", "crm_segment": ""},
-        }
+        return _empty_party_pricing_context()
 
     fields = ["tier"]
     for fieldname in ("manual_tier", "enable_dynamic_segmentation", "tier_source", "tier_last_calculated_on"):
@@ -3233,7 +3552,8 @@ def get_customer_pricing_context(customer=None, business_type=None, crm_segment=
     else:
         tier = tier or (values.get("manual_tier") or "").strip()
 
-    crm_context = resolve_customer_crm_pricing_context(
+    crm_context = resolve_party_crm_pricing_context(
+        "Customer",
         customer,
         selected_business_type=business_type,
         selected_segment=crm_segment,
@@ -3251,10 +3571,47 @@ def get_customer_pricing_context(customer=None, business_type=None, crm_segment=
     }
 
 
+def _lead_or_prospect_pricing_context(party_type, party_name=None, business_type=None, crm_segment=None):
+    if not party_name:
+        return _empty_party_pricing_context()
+    if not frappe.db.exists(party_type, party_name):
+        frappe.throw(_("{0} {1} was not found.").format(party_type, party_name))
+
+    fields = [field for field in ("manual_tier", "tier") if frappe.db.has_column(party_type, field)]
+    values = frappe.db.get_value(party_type, party_name, fields, as_dict=True) if fields else {}
+    tier = (values or {}).get("manual_tier") or (values or {}).get("tier") or ""
+    crm_context = resolve_party_crm_pricing_context(
+        party_type,
+        party_name,
+        selected_business_type=business_type,
+        selected_segment=crm_segment,
+    )
+    return {
+        "customer_type": "",
+        "tier": tier,
+        "tier_mode": _("Manual") if tier else "",
+        "tier_source": _("Manual") if tier else "",
+        "tier_status": "manual" if tier else "",
+        "tier_message": _("Manual Pricing Tier selected on the party.") if tier else "",
+        "tier_last_calculated_on": None,
+        "enable_dynamic_segmentation": 0,
+        **crm_context,
+    }
+
+
 def resolve_customer_crm_pricing_context(customer, selected_business_type=None, selected_segment=None):
+    return resolve_party_crm_pricing_context(
+        "Customer",
+        customer,
+        selected_business_type=selected_business_type,
+        selected_segment=selected_segment,
+    )
+
+
+def resolve_party_crm_pricing_context(party_type, party_name, selected_business_type=None, selected_segment=None):
     selected_business_type = (selected_business_type or "").strip()
     selected_segment = (selected_segment or "").strip()
-    segments = _customer_crm_segments(customer)
+    segments = _party_crm_segments(party_type, party_name)
     selected = None
 
     if selected_business_type or selected_segment:
@@ -3279,11 +3636,17 @@ def resolve_customer_crm_pricing_context(customer, selected_business_type=None, 
 
 
 def _customer_crm_segments(customer):
-    if not customer or not frappe.db.exists("DocType", "CRM Segment Assignment"):
+    return _party_crm_segments("Customer", customer)
+
+
+def _party_crm_segments(party_type, party_name):
+    if party_type not in SUPPORTED_PRICING_PARTY_TYPES:
+        return []
+    if not party_name or not frappe.db.exists("DocType", "CRM Segment Assignment"):
         return []
     rows = frappe.get_all(
         "CRM Segment Assignment",
-        filters={"parenttype": "Customer", "parent": customer},
+        filters={"parenttype": party_type, "parent": party_name},
         fields=["business_type", "segment", "is_primary", "idx"],
         order_by="is_primary desc, idx asc",
         limit_page_length=0,

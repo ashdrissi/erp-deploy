@@ -8,9 +8,12 @@
  "field_order": [
   "section_identity",
   "naming_series",
-  "sheet_name",
-  "customer",
-  "sales_person",
+   "sheet_name",
+    "party_type",
+    "party_name",
+    "customer",
+   "opportunity",
+   "sales_person",
   "crm_business_type",
   "crm_segment",
   "column_break_identity",
@@ -21,6 +24,7 @@
    "pricing_scenario",
    "benchmark_policy",
    "customs_policy",
+   "taxes_and_charges_template",
     "selected_price_list",
     "selected_selling_price_lists",
    "section_dimensioning",
@@ -65,11 +69,37 @@
    "in_standard_filter": 1
   },
   {
+   "fieldname": "party_type",
+   "fieldtype": "Select",
+   "label": "Party Type",
+   "options": "Customer\nLead\nProspect",
+   "default": "Customer",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "party_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Party",
+   "options": "party_type",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
    "fieldname": "customer",
    "fieldtype": "Link",
    "label": "Customer",
    "options": "Customer",
-   "reqd": 1,
+   "hidden": 1,
+   "read_only": 1,
+   "in_list_view": 0,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "opportunity",
+   "fieldtype": "Link",
+   "label": "Opportunity",
+   "options": "Opportunity",
    "in_list_view": 1,
    "in_standard_filter": 1
   },
@@ -156,6 +186,13 @@
    "fieldtype": "Link",
    "label": "Customs Policy",
    "options": "Pricing Customs Policy",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "taxes_and_charges_template",
+   "fieldtype": "Link",
+   "label": "Sales Taxes Template",
+   "options": "Sales Taxes and Charges Template",
    "in_standard_filter": 1
   },
   {
@@ -378,18 +415,37 @@
    "share": 1,
    "print": 1,
    "email": 1
-  },
-  {
-   "role": "Orderlift Commercial",
-   "read": 1,
-   "write": 1,
-   "create": 1,
-   "report": 1,
-   "print": 1,
-   "email": 1
-  }
- ],
- "search_fields": "sheet_name,customer,pricing_scenario",
+   },
+   {
+    "role": "Pricing Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "print": 1,
+    "email": 1
+   },
+   {
+    "role": "Orderlift Commercial",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "report": 1,
+    "print": 1,
+    "email": 1
+   },
+   {
+    "role": "Sales User",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "report": 1,
+    "print": 1,
+    "email": 1
+   }
+  ],
+ "search_fields": "sheet_name,party_name,customer,pricing_scenario",
  "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

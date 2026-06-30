@@ -1,6 +1,14 @@
-import frappe
 import json
+import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+from orderlift.role_capabilities import ROLE_CAPABILITY_FIELD, seed_default_role_capabilities
+from orderlift.orderlift_sales.utils.price_list_scope import (
+    BENCHMARK_PRICE_LIST,
+    BUYING_PRICE_LIST,
+    PRICE_LIST_TYPE_FIELD,
+    SELLING_PRICE_LIST,
+)
 
 
 DEFAULT_MANUAL_TIER = "New"
@@ -10,10 +18,36 @@ DEFAULT_PRICING_TIERS = [DEFAULT_MANUAL_TIER, "Eco", "Intermediaire", "Luxe", "G
 def after_migrate():
     _coerce_customer_tier_fields_to_links()
     _coerce_item_material_field_to_link()
-    _coerce_customs_material_field_to_data()
+    _coerce_customs_material_field_to_link()
     ensure_item_material_records()
     create_custom_fields(
         {
+            "Company": [
+                {
+                    "fieldname": "custom_orderlift_tax_settings_section",
+                    "label": "Orderlift Tax Settings",
+                    "fieldtype": "Section Break",
+                    "insert_after": "default_currency",
+                    "collapsible": 1,
+                },
+                {
+                    "fieldname": "custom_default_sales_taxes_template",
+                    "label": "Default Sales Tax Template",
+                    "fieldtype": "Link",
+                    "options": "Sales Taxes and Charges Template",
+                    "insert_after": "custom_orderlift_tax_settings_section",
+                    "description": "Default sales tax template used by Orderlift catalogue TTC and pricing previews.",
+                },
+            ],
+            "Role": [
+                {
+                    "fieldname": ROLE_CAPABILITY_FIELD,
+                    "label": "Orderlift Capabilities",
+                    "fieldtype": "Small Text",
+                    "insert_after": "desk_access",
+                    "description": "Newline-separated Orderlift capability keys. Used in shadow mode until orderlift_use_role_capabilities is enabled.",
+                },
+            ],
             "Customer": [
                 {
                     "fieldname": "enable_dynamic_segmentation",
@@ -67,6 +101,7 @@ def after_migrate():
                 },
             ],
             "Prospect": _prospect_tier_fields(insert_after="customer_group"),
+            "Lead": _prospect_tier_fields(insert_after="custom_crm_segments"),
             "Item": [
                 {
                     "fieldname": "custom_material",
@@ -80,8 +115,9 @@ def after_migrate():
                 {
                     "fieldname": "custom_customs_material",
                     "label": "Douane Material",
-                    "fieldtype": "Data",
-                    "insert_after": "custom_material",
+                    "fieldtype": "Link",
+                    "options": "Douane Material",
+                    "insert_after": "customs_tariff_number",
                     "in_standard_filter": 1,
                     "description": "Customs/Douane material from the article workbook. Used by customs policies, separate from Item Material.",
                 },
@@ -104,10 +140,50 @@ def after_migrate():
             ],
             "Price List": [
                 {
+                    "fieldname": PRICE_LIST_TYPE_FIELD,
+                    "label": "Price List Type",
+                    "fieldtype": "Select",
+                    "options": f"{BUYING_PRICE_LIST}\n{SELLING_PRICE_LIST}\n{BENCHMARK_PRICE_LIST}",
+                    "insert_after": "currency",
+                    "default": SELLING_PRICE_LIST,
+                    "reqd": 1,
+                    "in_list_view": 1,
+                    "in_standard_filter": 1,
+                    "description": "Benchmark is an Orderlift reference type used only in benchmark-aware pricing tools; ERPNext still keeps it natively saveable as a selling list.",
+                },
+                {
+                    "fieldname": "custom_price_list_sharing",
+                    "label": "Price List Sharing",
+                    "fieldtype": "Table",
+                    "options": "Price List Sharing",
+                    "insert_after": PRICE_LIST_TYPE_FIELD,
+                    "description": "Share this selling price list with other companies. Shared lists appear as buying sources in the target company.",
+                },
+                {
+                    "fieldname": "custom_is_shared_from",
+                    "label": "Shared From",
+                    "fieldtype": "Link",
+                    "options": "Price List",
+                    "insert_after": "custom_price_list_sharing",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "in_standard_filter": 1,
+                    "description": "Source selling price list that this list mirrors. Populated automatically for shared lists.",
+                },
+                {
+                    "fieldname": "custom_shared_on",
+                    "label": "Shared On",
+                    "fieldtype": "Datetime",
+                    "insert_after": "custom_is_shared_from",
+                    "read_only": 1,
+                    "hidden": 1,
+                    "description": "Date when this list was shared.",
+                },
+                {
                     "fieldname": "custom_orderlift_builder_section",
                     "label": "Orderlift Builder",
                     "fieldtype": "Section Break",
-                    "insert_after": "currency",
+                    "insert_after": "custom_is_shared_from",
                     "collapsible": 1,
                     "collapsed": 1,
                 },
@@ -246,10 +322,17 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
+                    "fieldname": "custom_final_margin_percent",
+                    "label": "Builder Margin %",
+                    "fieldtype": "Percent",
+                    "insert_after": "custom_target_margin_percent",
+                    "read_only": 1,
+                },
+                {
                     "fieldname": "custom_last_builder_buy_rate",
                     "label": "Last Builder Buy Rate",
                     "fieldtype": "Currency",
-                    "insert_after": "custom_target_margin_percent",
+                    "insert_after": "custom_final_margin_percent",
                     "read_only": 1,
                 },
                 {
@@ -266,6 +349,37 @@ def after_migrate():
                     "insert_after": "custom_builder_price_overridden",
                     "read_only": 1,
                 },
+                {
+                    "fieldname": "custom_builder_expense_amount",
+                    "label": "Builder Expense Amount",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_last_builder_rebuild_on",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_builder_customs_amount",
+                    "label": "Builder Customs Amount",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_builder_expense_amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_builder_margin_basis",
+                    "label": "Builder Margin Basis",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_builder_customs_amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_is_shared_from",
+                    "label": "Shared From",
+                    "fieldtype": "Link",
+                    "options": "Price List",
+                    "insert_after": "custom_last_builder_rebuild_on",
+                    "read_only": 1,
+                    "hidden": 1,
+                    "description": "Source price list that this item price mirrors. Populated automatically for shared item prices.",
+                },
             ],
             "Quotation": [
                 {
@@ -274,8 +388,16 @@ def after_migrate():
                     "fieldtype": "Link",
                     "options": "Pricing Sheet",
                     "insert_after": "order_type",
-                    "read_only": 1,
                     "in_standard_filter": 1,
+                },
+                {
+                    "fieldname": "selected_selling_price_lists",
+                    "label": "Selling Price Lists",
+                    "fieldtype": "Table",
+                    "options": "Pricing Sheet Price List Selection",
+                    # Anchor before the standard selling_price_list so the table
+                    # renders ABOVE the (locked) "Primary Selling Price List".
+                    "insert_after": "column_break2",
                 }
             ],
             "Quotation Item": [
@@ -317,10 +439,17 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
+                    "fieldname": "source_margin_basis",
+                    "label": "Margin Basis",
+                    "fieldtype": "Data",
+                    "insert_after": "source_margin_percent",
+                    "read_only": 1,
+                },
+                {
                     "fieldname": "source_scenario_rule",
                     "label": "Source Scenario Rule",
                     "fieldtype": "Data",
-                    "insert_after": "source_margin_percent",
+                    "insert_after": "source_margin_basis",
                     "read_only": 1,
                 },
                 {
@@ -359,6 +488,15 @@ def after_migrate():
                     "insert_after": "source_customs_applied",
                     "read_only": 1,
                 },
+                {
+                    "fieldname": "source_selling_price_list",
+                    "label": "Selling Price List Used",
+                    "fieldtype": "Link",
+                    "options": "Price List",
+                    "insert_after": "item_code",
+                    "in_list_view": 1,
+                    "description": "Allowed Selling Price List selected for this item row.",
+                },
             ],
             "Selling Settings": [
                 {
@@ -376,9 +514,20 @@ def after_migrate():
                     "default": "Grouped from Pricing Sheet",
                 },
             ],
+            "Print Format": [
+                {
+                    "fieldname": "custom_company",
+                    "label": "Company",
+                    "fieldtype": "Link",
+                    "options": "Company",
+                    "insert_after": "module",
+                    "description": "Restrict this print format to a specific company.",
+                },
+            ],
         },
         update=True,
     )
+    _sync_existing_price_list_types()
     ensure_customer_pricing_tier_field_visibility()
     _upsert_property_setter(
         "Item",
@@ -397,12 +546,57 @@ def after_migrate():
     frappe.clear_cache(doctype="Item Price")
     frappe.clear_cache(doctype="Customer")
     frappe.clear_cache(doctype="Prospect")
+    frappe.clear_cache(doctype="Lead")
     frappe.clear_cache(doctype="Quotation")
     frappe.clear_cache(doctype="Quotation Item")
+    frappe.clear_cache(doctype="Sales Order Item")
+    frappe.clear_cache(doctype="Delivery Note Item")
+    frappe.clear_cache(doctype="Sales Invoice Item")
+    frappe.clear_cache(doctype="Purchase Order Item")
+    frappe.clear_cache(doctype="Purchase Invoice Item")
+    frappe.clear_cache(doctype="Purchase Receipt Item")
+    frappe.clear_cache(doctype="Supplier Quotation Item")
+    frappe.clear_cache(doctype="Print Format")
     frappe.clear_cache(doctype="Selling Settings")
+    frappe.clear_cache(doctype="Role")
     ensure_quotation_discount_snapshot_fields()
+    ensure_quotation_pricing_layout()
+    ensure_all_ttc_item_layouts()
+    ensure_print_format_company_field_visible()
     ensure_default_pricing_tiers()
+    seed_default_role_capabilities()
     ensure_pricing_workspace()
+
+
+def _sync_existing_price_list_types():
+    if not frappe.db.exists("DocType", "Price List") or not frappe.db.has_column("Price List", PRICE_LIST_TYPE_FIELD):
+        return
+
+    rows = frappe.get_all(
+        "Price List",
+        fields=["name", PRICE_LIST_TYPE_FIELD, "buying", "selling"],
+        limit_page_length=0,
+    )
+    for row in rows:
+        explicit = (row.get(PRICE_LIST_TYPE_FIELD) or "").strip()
+        if explicit in {BUYING_PRICE_LIST, SELLING_PRICE_LIST, BENCHMARK_PRICE_LIST}:
+            target = explicit
+        elif row.get("buying"):
+            target = BUYING_PRICE_LIST
+        elif row.get("selling"):
+            target = SELLING_PRICE_LIST
+        else:
+            target = BENCHMARK_PRICE_LIST
+        frappe.db.set_value(
+            "Price List",
+            row.get("name"),
+            {
+                PRICE_LIST_TYPE_FIELD: target,
+                "buying": 1 if target == BUYING_PRICE_LIST else 0,
+                "selling": 1 if target == SELLING_PRICE_LIST else 0,
+            },
+            update_modified=False,
+        )
 
 
 def ensure_customer_pricing_tier_field_visibility():
@@ -462,15 +656,16 @@ def ensure_customer_pricing_tier_field_visibility():
 
 
 def _coerce_customer_tier_fields_to_links():
-    for fieldname in ("tier", "manual_tier"):
-        field = frappe.db.get_value("Custom Field", {"dt": "Customer", "fieldname": fieldname}, "name")
-        if field:
-            frappe.db.set_value(
-                "Custom Field",
-                field,
-                {"fieldtype": "Link", "options": "Pricing Tier"},
-                update_modified=False,
-            )
+    for doctype in ("Customer", "Prospect", "Lead"):
+        for fieldname in ("tier", "manual_tier"):
+            field = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
+            if field:
+                frappe.db.set_value(
+                    "Custom Field",
+                    field,
+                    {"fieldtype": "Link", "options": "Pricing Tier"},
+                    update_modified=False,
+                )
 
 
 def ensure_item_material_records():
@@ -527,13 +722,13 @@ def _coerce_item_material_field_to_link():
         )
 
 
-def _coerce_customs_material_field_to_data():
+def _coerce_customs_material_field_to_link():
     field = frappe.db.get_value("Custom Field", {"dt": "Item", "fieldname": "custom_customs_material"}, "name")
     if field:
         frappe.db.set_value(
             "Custom Field",
             field,
-            {"fieldtype": "Data", "options": "", "label": "Douane Material"},
+            {"fieldtype": "Link", "options": "Douane Material", "label": "Douane Material"},
             update_modified=False,
         )
 
@@ -601,8 +796,8 @@ def _prospect_tier_fields(insert_after: str) -> list[dict]:
         {
             "fieldname": "tier",
             "label": "Tier",
-            "fieldtype": "Select",
-            "options": "\n" + "\n".join(DEFAULT_PRICING_TIERS),
+            "fieldtype": "Link",
+            "options": "Pricing Tier",
             "insert_after": "enable_dynamic_segmentation",
             "in_list_view": 1,
             "in_standard_filter": 1,
@@ -612,8 +807,8 @@ def _prospect_tier_fields(insert_after: str) -> list[dict]:
         {
             "fieldname": "manual_tier",
             "label": "Tier",
-            "fieldtype": "Select",
-            "options": "\n" + "\n".join(DEFAULT_PRICING_TIERS),
+            "fieldtype": "Link",
+            "options": "Pricing Tier",
             "default": DEFAULT_MANUAL_TIER,
             "insert_after": "tier",
             "in_standard_filter": 1,
@@ -641,7 +836,86 @@ def _prospect_tier_fields(insert_after: str) -> list[dict]:
 def ensure_quotation_discount_snapshot_fields():
     create_custom_fields(
         {
+            "Pricing Sheet": [
+                {
+                    "fieldname": "custom_stock_snapshot_section",
+                    "label": "Stock by Warehouse",
+                    "fieldtype": "Section Break",
+                    "insert_after": "lines",
+                    "collapsible": 1,
+                    "collapsed": 1,
+                    "description": "Read-only stock by allowed warehouse for items in this Pricing Sheet company.",
+                },
+                {
+                    "fieldname": "custom_warehouse_stock_snapshot",
+                    "label": "Stock by Warehouse",
+                    "fieldtype": "Table",
+                    "options": "Orderlift Transaction Warehouse Stock",
+                    "insert_after": "custom_stock_snapshot_section",
+                    "read_only": 1,
+                },
+            ],
+            "Pricing Sheet Item": [
+                {
+                    "fieldname": "custom_current_company_stock_qty",
+                    "label": "Stock (Allowed Warehouses)",
+                    "fieldtype": "Float",
+                    "insert_after": "qty",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "description": "Current total stock in allowed warehouses for the document company.",
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "discounted_sell_total",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+            ],
+            "Quotation": [
+                {
+                    "fieldname": "custom_stock_snapshot_section",
+                    "label": "Stock by Warehouse",
+                    "fieldtype": "Section Break",
+                    "insert_after": "items",
+                    "collapsible": 1,
+                    "collapsed": 1,
+                    "description": "Read-only stock by allowed warehouse for items in this Quotation company.",
+                },
+                {
+                    "fieldname": "custom_warehouse_stock_snapshot",
+                    "label": "Stock by Warehouse",
+                    "fieldtype": "Table",
+                    "options": "Orderlift Transaction Warehouse Stock",
+                    "insert_after": "custom_stock_snapshot_section",
+                    "read_only": 1,
+                },
+            ],
             "Quotation Item": [
+                {
+                    "fieldname": "custom_current_company_stock_qty",
+                    "label": "Stock (Allowed Warehouses)",
+                    "fieldtype": "Float",
+                    "insert_after": "qty",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "description": "Current total stock in allowed warehouses for the document company.",
+                },
                 {
                     "fieldname": "source_gross_sell_rate",
                     "label": "Source Gross Sell Rate",
@@ -654,13 +928,19 @@ def ensure_quotation_discount_snapshot_fields():
                     "label": "Source Discount Percent",
                     "fieldtype": "Percent",
                     "insert_after": "source_gross_sell_rate",
+                },
+                {
+                    "fieldname": "source_max_discount_percent",
+                    "label": "Source Max Discount Percent",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_discount_percent",
                     "read_only": 1,
                 },
                 {
                     "fieldname": "source_discount_amount",
                     "label": "Source Discount Amount",
                     "fieldtype": "Currency",
-                    "insert_after": "source_discount_percent",
+                    "insert_after": "source_max_discount_percent",
                     "read_only": 1,
                 },
                 {
@@ -685,14 +965,300 @@ def ensure_quotation_discount_snapshot_fields():
                     "fieldtype": "Currency",
                     "insert_after": "source_commission_rate",
                     "read_only": 1,
-                    "hidden": 1,
-                    "print_hide": 1,
                 },
-            ]
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_commission_amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Sales Order Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Delivery Note Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Sales Invoice Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Purchase Order Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Purchase Invoice Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Purchase Receipt Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
+            "Supplier Quotation Item": [
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_applied_taxes",
+                    "label": "Applied Taxes",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_pu_ttc",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pt_ttc",
+                    "label": "PT TTC",
+                    "fieldtype": "Currency",
+                    "insert_after": "custom_applied_taxes",
+                    "read_only": 1,
+                },
+            ],
         },
         update=True,
         ignore_validate=True,
     )
+
+
+def ensure_quotation_pricing_layout():
+    for fieldname in ("apply_discount_on", "additional_discount_percentage", "discount_amount"):
+        _upsert_property_setter("Quotation", fieldname, "hidden", "1", "Check")
+        _upsert_property_setter("Quotation", fieldname, "in_list_view", "0", "Check")
+    if frappe.get_meta("Quotation").get_field("additional_info_section"):
+        anchor = "source_pricing_sheet" if frappe.get_meta("Quotation").get_field("source_pricing_sheet") else "order_type"
+        _upsert_property_setter("Quotation", "additional_info_section", "insert_after", anchor, "Data")
+    if frappe.get_meta("Quotation").get_field("selling_price_list"):
+        _upsert_property_setter("Quotation", "selling_price_list", "label", "Primary Selling Price List", "Data")
+        # Primary is derived from the "Selling Price Lists" table (lowest active
+        # sequence), so lock the field. The table renders above it (the table's
+        # insert_after = column_break2 places it just before this standard field).
+        _upsert_property_setter("Quotation", "selling_price_list", "read_only", "1", "Check")
+    if frappe.get_meta("Quotation").get_field("source_pricing_sheet"):
+        _upsert_property_setter("Quotation", "source_pricing_sheet", "read_only", "0", "Check")
+
+    quotation_item_hidden_fields = [
+        "price_list_rate",
+        "rate",
+        "discount_percentage",
+        "discount_amount",
+        "rate_with_margin",
+        "margin_type",
+        "margin_rate_or_amount",
+        "source_pricing_sheet_line",
+        "source_pricing_scenario",
+        "source_pricing_override",
+        "source_pricing_policy",
+        "source_scenario_rule",
+        "source_margin_rule",
+        "source_sales_person",
+        "source_geography",
+        "source_customs_applied",
+        "source_customs_basis",
+        "source_gross_sell_rate",
+    ]
+    for fieldname in quotation_item_hidden_fields:
+        if not frappe.get_meta("Quotation Item").get_field(fieldname):
+            continue
+        _upsert_property_setter("Quotation Item", fieldname, "hidden", "1", "Check")
+        _upsert_property_setter("Quotation Item", fieldname, "in_list_view", "0", "Check")
+        if fieldname in {"price_list_rate", "rate"}:
+            _upsert_property_setter("Quotation Item", fieldname, "read_only", "1", "Check")
+
+    quotation_item_visible_fields = [
+        ("source_discount_percent", "Pricing Discount %"),
+        ("source_selling_price_list", "Selling Price List Used"),
+        ("source_margin_basis", "Margin Basis"),
+        ("source_margin_percent", "Margin %"),
+        ("source_max_discount_percent", "Max Discount %"),
+        ("source_discount_amount", "Pricing Discount Amount"),
+        ("source_discounted_sell_rate", "Net Price HT"),
+        ("source_commission_rate", "Commission %"),
+        ("source_commission_amount", "Commission Amount"),
+        ("custom_applied_taxes", "Applied Taxes"),
+        ("custom_pu_ttc", "PU TTC"),
+        ("custom_pt_ttc", "PT TTC"),
+    ]
+    for fieldname, label in quotation_item_visible_fields:
+        if not frappe.get_meta("Quotation Item").get_field(fieldname):
+            continue
+        _upsert_property_setter("Quotation Item", fieldname, "label", label, "Data")
+        _upsert_property_setter("Quotation Item", fieldname, "hidden", "0", "Check")
+        _upsert_property_setter("Quotation Item", fieldname, "in_list_view", "1", "Check")
+    if frappe.get_meta("Quotation Item").get_field("source_discount_percent"):
+        _upsert_property_setter("Quotation Item", "source_discount_percent", "read_only", "0", "Check")
+
+
+_TTC_ITEM_DOCTYPES = [
+    "Sales Order Item",
+    "Delivery Note Item",
+    "Sales Invoice Item",
+    "Purchase Order Item",
+    "Purchase Invoice Item",
+    "Purchase Receipt Item",
+    "Supplier Quotation Item",
+]
+
+
+def ensure_all_ttc_item_layouts():
+    for item_doctype in _TTC_ITEM_DOCTYPES:
+        _ensure_ttc_item_layout(item_doctype)
+        frappe.clear_cache(doctype=item_doctype)
+
+
+def _ensure_ttc_item_layout(item_doctype):
+    ttc_fields = [
+        ("custom_pu_ttc", "PU TTC"),
+        ("custom_applied_taxes", "Applied Taxes"),
+        ("custom_pt_ttc", "PT TTC"),
+    ]
+    for fieldname, label in ttc_fields:
+        if not frappe.get_meta(item_doctype).get_field(fieldname):
+            continue
+        _upsert_property_setter(item_doctype, fieldname, "label", label, "Data")
+        _upsert_property_setter(item_doctype, fieldname, "hidden", "0", "Check")
+        _upsert_property_setter(item_doctype, fieldname, "in_list_view", "1", "Check")
+
+
+def ensure_print_format_company_field_visible():
+    if not frappe.get_meta("Print Format").get_field("custom_company"):
+        return
+    _upsert_property_setter("Print Format", "custom_company", "hidden", "0", "Check")
+    _upsert_property_setter("Print Format", "custom_company", "in_list_view", "1", "Check")
 
 
 def ensure_pricing_workspace():

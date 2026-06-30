@@ -18,6 +18,7 @@ STATIC_MODE = "Pick from Published Selling Price List"
 
 @frappe.whitelist()
 def get_simulation_defaults(sales_person=None, mode="Auto"):
+    frappe.has_permission("Agent Pricing Rules", "read", throw=True)
     mode = (mode or "Auto").strip()
     sales_person = (sales_person or "").strip()
     agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name") if sales_person else None
@@ -64,6 +65,7 @@ def get_simulation_defaults(sales_person=None, mode="Auto"):
 
 @frappe.whitelist()
 def run_pricing_simulation(payload=None):
+    frappe.has_permission("Agent Pricing Rules", "read", throw=True)
     data = json.loads(payload) if isinstance(payload, str) else (payload or {})
     items, item_warnings = _resolve_items_for_simulation(data)
     if not items:

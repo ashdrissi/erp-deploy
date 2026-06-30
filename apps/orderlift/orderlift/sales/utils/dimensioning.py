@@ -17,10 +17,12 @@ SAFE_FUNCTIONS = {
     "float": float,
     "ifelse": lambda condition, yes, no: yes if condition else no,
     "int": math.floor,
+    "lower": lambda text: str(text or "").lower(),
     "max": max,
     "min": min,
     "one_of": lambda value, *options: value in options,
     "round": round,
+    "upper": lambda text: str(text or "").upper(),
 }
 ALLOWED_BIN_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow)
 ALLOWED_UNARY_OPS = (ast.UAdd, ast.USub, ast.Not)

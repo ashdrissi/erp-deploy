@@ -102,6 +102,31 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn("visit_agenda", fields)
         self.assertIn("other_notes", fields)
 
+    def test_campaign_manager_supports_deleted_campaign_restore_flow(self):
+        api = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py").read_text()
+        manager = (
+            APP_ROOT
+            / "orderlift"
+            / "orderlift_crm"
+            / "page"
+            / "campaign_manager"
+            / "campaign_manager.js"
+        ).read_text()
+
+        self.assertIn("def restore_campaign", api)
+        self.assertIn("include_archived", api)
+        self.assertIn("_latest_campaign_name(include_archived=include_archived)", api)
+        self.assertIn("data-show-deleted-campaigns", manager)
+        self.assertIn("data-restore-campaign", manager)
+        self.assertIn('__("Delete")', manager)
+
+    def test_campaign_manager_ignores_selected_campaign_without_doc_permission(self):
+        api = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py").read_text()
+
+        self.assertIn("and _campaign_has_permission(campaign)", api)
+        self.assertIn("def _campaign_has_permission", api)
+        self.assertIn("_campaign_business_type_in_scope(row.name) and _campaign_has_permission(row.name)", api)
+
     def test_crm_classification_inheritance_is_wired_to_transactions(self):
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
         setup = (APP_ROOT / "orderlift" / "orderlift_crm" / "setup.py").read_text()
@@ -268,6 +293,15 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn('"priority": DEFAULT_TODO_PRIORITY', content)
         self.assertNotIn('"priority": "Medium"', content)
 
+    def test_native_todo_assignments_normalize_legacy_priority(self):
+        hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
+        hook_path = APP_ROOT / "orderlift" / "orderlift_crm" / "todo_hooks.py"
+        hook_content = hook_path.read_text()
+
+        self.assertIn('"ToDo": {', hooks)
+        self.assertIn("normalize_todo_priority_on_validate", hooks)
+        self.assertIn("normalize_todo_priority", hook_content)
+
     def test_campaign_email_and_whatsapp_have_preflight_guards(self):
         api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
         content = api_path.read_text()
@@ -279,6 +313,39 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn("EMAIL_RE", content)
         self.assertIn("ALLOWED_TEMPLATE_KEYS", content)
         self.assertIn("_webhook_url_is_allowed", content)
+
+    def test_campaign_api_uses_shared_price_list_scope(self):
+        api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
+        content = api_path.read_text()
+
+        self.assertIn("get_item_price_access", content)
+        self.assertIn("validate_price_list_scope", content)
+        self.assertIn("def _allowed_selling_price_lists", content)
+        self.assertIn("def _validate_campaign_price_list", content)
+        self.assertIn('filters={"enabled": 1, "selling": 1, "name": ["in", allowed]}', content)
+        self.assertIn('filters["price_list"] = price_list if price_list else ["in", allowed_price_lists]', content)
+
+    def test_campaign_api_hides_numeric_stock_without_capability(self):
+        api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
+        content = api_path.read_text()
+
+        self.assertIn("STOCK_QUANTITY_VIEWER_ROLE", content)
+        self.assertIn("def _can_view_stock_qty", content)
+        self.assertIn('data.pop("available_qty_snapshot", None)', content)
+        self.assertIn('"display_available_qty": 1 if display_available_qty else 0', content)
+        self.assertIn("if item.display_available_qty and show_stock_qty", content)
+
+    def test_campaign_api_respects_business_type_and_direct_access_scope(self):
+        api_path = APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py"
+        content = api_path.read_text()
+
+        self.assertIn("get_allowed_business_types", content)
+        self.assertIn("user_can_access_all_business_types", content)
+        self.assertIn("def _get_campaign_doc", content)
+        self.assertIn("def _effective_business_type_filter", content)
+        self.assertIn("def _validate_campaign_target_scope", content)
+        self.assertIn("business_type in %s", content)
+        self.assertIn("_get_campaign_doc(campaign, ptype=\"write\")", content)
 
     def test_campaign_pages_surface_preflight_and_rendered_preview(self):
         editor = (APP_ROOT / "orderlift" / "orderlift_crm" / "page" / "campaign_editor" / "campaign_editor.js").read_text()

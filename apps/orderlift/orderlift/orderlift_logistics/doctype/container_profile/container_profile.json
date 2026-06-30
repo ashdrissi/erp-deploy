@@ -11,6 +11,9 @@
     "container_code",
     "container_type",
     "cost_rank",
+    "length_cm",
+    "width_cm",
+    "height_cm",
     "max_weight_kg",
     "max_volume_m3",
     "is_active",
@@ -61,6 +64,27 @@
       "default": "100",
       "reqd": 1,
       "in_list_view": 1
+    },
+    {
+      "fieldname": "length_cm",
+      "fieldtype": "Float",
+      "label": "Internal Length (cm)",
+      "default": "0",
+      "non_negative": 1
+    },
+    {
+      "fieldname": "width_cm",
+      "fieldtype": "Float",
+      "label": "Internal Width (cm)",
+      "default": "0",
+      "non_negative": 1
+    },
+    {
+      "fieldname": "height_cm",
+      "fieldtype": "Float",
+      "label": "Internal Height (cm)",
+      "default": "0",
+      "non_negative": 1
     },
     {
       "fieldname": "max_weight_kg",

@@ -37,6 +37,7 @@ class _FakeTodoDoc:
 class _FakeFrappe:
     def __init__(self):
         self.todos = []
+        self.shares = []
         self.users = {
             "sales@example.com": {"enabled": 1, "full_name": "Sales User"},
             "old@example.com": {"enabled": 1, "full_name": "Old User"},
@@ -49,6 +50,9 @@ class _FakeFrappe:
             set_value=self.set_value,
             commit=lambda: None,
         )
+        self.session = types.SimpleNamespace(user="manager@example.com")
+        self.ValidationError = Exception
+        self.PermissionError = Exception
 
     def _(self, value, *args, **kwargs):
         return value
@@ -56,8 +60,11 @@ class _FakeFrappe:
     def whitelist(self, *args, **kwargs):
         return lambda fn: fn
 
-    def throw(self, message):
+    def throw(self, message, *args, **kwargs):
         raise Exception(message)
+
+    def has_permission(self, doctype, ptype=None, user=None, doc=None):
+        return True
 
     def get_all(self, doctype, filters=None, fields=None, order_by=None, limit_page_length=None):
         if doctype != "ToDo":
@@ -81,6 +88,9 @@ class _FakeFrappe:
     def get_meta(self, doctype):
         return types.SimpleNamespace(get_field=lambda fieldname: True)
 
+    def get_roles(self, user=None):
+        return ["Opportunity Assigner"]
+
     def exists(self, doctype, name=None):
         if doctype == "User":
             return name in self.users
@@ -95,7 +105,6 @@ class _FakeFrappe:
         for todo in self.todos:
             if doctype == "ToDo" and todo["name"] == name:
                 todo[fieldname] = value
-
 
 frappe_stub = _FakeFrappe()
 sys.modules["frappe"] = frappe_stub
@@ -123,6 +132,7 @@ class TestCrmPipelineAssignment(unittest.TestCase):
         self.assertEqual(len([todo for todo in self.fake.todos if todo["status"] == "Open"]), 1)
         self.assertEqual(self.fake.todos[0]["allocated_to"], "sales@example.com")
         self.assertEqual(self.fake.todos[0]["priority"], "Important Non Urgent")
+        self.assertEqual(self.fake.shares, [])
 
     def test_assignment_uses_status_todo_priority(self):
         pipeline._assign_pipeline_document(

@@ -285,6 +285,7 @@ def _compute_projected_unit(item_code: str, scenario_doc, customs_doc) -> float:
 
 @frappe.whitelist()
 def run() -> dict:
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     customs_name = _upsert_customs_policy()
     converted_buying_list = _ensure_converted_buying_price_list()
     scenario_names = []
@@ -303,6 +304,7 @@ def run() -> dict:
 
 @frappe.whitelist()
 def verify() -> dict:
+    frappe.only_for(["System Manager", "Orderlift Admin"])
     customs_doc = _customs_doc(CUSTOMS_POLICY_NAME)
     sample_items = ["IT.1", "IT.1-11", "IT.33", "IT.47", "IT.64"]
     out = []

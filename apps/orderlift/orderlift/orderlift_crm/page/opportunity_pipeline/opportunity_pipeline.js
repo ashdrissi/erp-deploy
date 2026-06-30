@@ -2,6 +2,7 @@
     const COLLAPSED_CARD_KEY = "orderlift.opportunity_pipeline.collapsed_cards";
     const STATE = {
         columns: [],
+        quickActions: [],
         kpis: {},
         filters: { owners: [], sources: [], companies: [], business_types: [], segments: [] },
         search: "",
@@ -66,6 +67,7 @@
             });
             const data = res.message || {};
             STATE.columns = data.columns || [];
+            STATE.quickActions = data.quick_actions || [];
             applyDefaultCollapsedColumns();
             STATE.kpis = data.kpis || {};
             STATE.filters = data.filters || { owners: [], sources: [], companies: [], business_types: [], segments: [] };
@@ -74,6 +76,7 @@
         } catch (error) {
             console.error("Opportunity Pipeline failed", error);
             STATE.columns = [];
+            STATE.quickActions = [];
             STATE.kpis = {};
             renderPage(page, true, restore);
         }
@@ -267,7 +270,19 @@
     async function moveOpportunityCard(page, name, stage, boardScrollLeft) {
         try {
             const res = await updateOpportunityStage(name, stage);
-            const assignment = (res.message || {}).assignment || {};
+            const payload = res.message || {};
+            if (payload.blocked) {
+                showStageMoveErrorPopup(page, {
+                    opportunity: payload.record || name,
+                    stage: payload.stage || stage,
+                    message: payload.message || __("This opportunity cannot move to {0} yet.", [stage]),
+                    missing_checks: payload.missing_checks || [],
+                    documentLabel: payload.documentLabel || __("Opportunity"),
+                    boardScrollLeft,
+                });
+                return;
+            }
+            const assignment = payload.assignment || {};
             frappe.show_alert({
                 message: assignment.label ? __("Opportunity {0} moved to {1} and assigned to {2}", [name, stage, assignment.label]) : __("Opportunity {0} moved to {1}", [name, stage]),
                 indicator: "green",
@@ -440,7 +455,7 @@
     function showStageMoveErrorPopup(page, details) {
         closeStageMoveErrorPopup();
         const message = details.message || __("Required workflow checks are not complete yet.");
-        const missingChecks = parseMissingChecks(message);
+        const missingChecks = details.missing_checks && details.missing_checks.length ? details.missing_checks : parseMissingChecks(message);
         const modal = $(stageMoveErrorMarkup(details, message, missingChecks));
         $(document.body).append(modal);
 
@@ -748,7 +763,7 @@
                             <span class="olp-owner-avatar">${frappe.utils.escape_html(ownerInitials(owner))}</span>
                             <span class="olp-owner-copy"><strong>${frappe.utils.escape_html(owner)}</strong><small>${__("Account owner")}</small></span>
                         </div>
-                        <div class="olp-value-block ${amount ? "" : "is-empty"}"><span>${__("Value")}</span><strong>${amount ? `${amount.toLocaleString()} DH` : __("Not set")}</strong></div>
+                        <div class="olp-value-block ${amount ? "" : "is-empty"}"><span>${__("Value")}</span><strong>${amount ? formatCurrency(amount) : __("Not set")}</strong></div>
                     </div>
                 </header>
                 ${isCollapsed ? "" : extraMetricsMarkup(card)}
@@ -761,10 +776,10 @@
 
     function opportunityActionsMarkup(card) {
         const name = frappe.utils.escape_html(card.name || "");
+        if (!(STATE.quickActions || []).length) return "";
         return `
             <div class="olp-card-actions">
-                <button type="button" data-create-from-opportunity="quotation" data-card="${name}">${__("Quotation from opportunity")}</button>
-                <button type="button" data-create-from-opportunity="project" data-card="${name}">${__("Project from opportunity")}</button>
+                ${(STATE.quickActions || []).map((action) => `<button type="button" data-create-from-opportunity="${frappe.utils.escape_html(action.key)}" data-card="${name}">${frappe.utils.escape_html(__(action.label || action.key))}</button>`).join("")}
             </div>
         `;
     }
@@ -772,26 +787,80 @@
     async function createFromOpportunity(action, opportunityName) {
         if (!opportunityName) return;
         const card = findCard(opportunityName) || {};
-        if (action === "quotation") {
+        if (action === "pricing-sheet") {
             try {
                 const res = await frappe.call({
-                    method: "orderlift.orderlift_crm.api.pipeline.prepare_quotation_from_opportunity",
+                    method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.create_pricing_sheet_from_opportunity",
                     args: { opportunity: opportunityName },
                     freeze: true,
                 });
-                const data = res.message || {};
-                frappe.route_options = data.route_options || { opportunity: opportunityName, company: card.company || "" };
-                if (data.customer_created && data.customer) {
-                    frappe.show_alert({ message: __("Customer {0} created from opportunity", [data.customer]), indicator: "green" });
+                const sheet = (res.message || {}).pricing_sheet;
+                if (sheet) {
+                    frappe.show_alert({ message: __("Pricing Sheet {0} created", [sheet]), indicator: "green" });
+                    frappe.set_route("pricing-sheet-builder", sheet);
                 }
-                frappe.new_doc("Quotation");
             } catch (error) {
-                frappe.msgprint({
-                    title: __("Unable to create quotation"),
-                    message: extractServerMessage(error) || __("Customer preparation failed for this opportunity."),
-                    indicator: "red",
-                });
+                frappe.msgprint({ title: __("Pricing Sheet failed"), message: error.message || __("Unable to create Pricing Sheet from Opportunity."), indicator: "red" });
             }
+            return;
+        }
+        if (action === "quotation") {
+            // Open an unsaved Quotation with the opportunity's items; the user
+            // picks the price list and saves.
+            frappe.model.open_mapped_doc({
+                method: "orderlift.orderlift_crm.api.pipeline.prepare_quotation_from_opportunity",
+                source_name: opportunityName,
+            });
+            return;
+        }
+        if (action === "sales-order") {
+            let quotations = [];
+            try {
+                const res = await frappe.call({
+                    method: "orderlift.orderlift_crm.api.pipeline.get_opportunity_quotations",
+                    args: { opportunity: opportunityName },
+                    freeze: true,
+                });
+                quotations = res.message || [];
+            } catch (error) {
+                frappe.msgprint({ title: __("Sales Order failed"), message: error.message || __("Unable to load quotations."), indicator: "red" });
+                return;
+            }
+            if (!quotations.length) {
+                frappe.msgprint({
+                    title: __("No quotation found"),
+                    message: __("Create and submit a quotation for this opportunity first, then create the Sales Order from it."),
+                    primary_action: {
+                        label: __("Create Quotation"),
+                        action() {
+                            createFromOpportunity("quotation", opportunityName);
+                        },
+                    },
+                });
+                return;
+            }
+            if (quotations.length === 1) {
+                openSalesOrderFromQuotation(quotations[0].name);
+                return;
+            }
+            const options = quotations.map((q) => {
+                const total = q.grand_total ? `${q.grand_total.toLocaleString()} ${q.currency || ""}`.trim() : "";
+                const label = [q.name, q.status, total, q.transaction_date].filter(Boolean).join(" — ");
+                return { label, value: q.name };
+            });
+            const dialog = new frappe.ui.Dialog({
+                title: __("Select a quotation to pull items from"),
+                fields: [
+                    { fieldtype: "Select", fieldname: "quotation", label: __("Quotation"), reqd: 1, options: options.map((o) => o.label) },
+                ],
+                primary_action_label: __("Create Sales Order"),
+                primary_action(values) {
+                    const chosen = options.find((o) => o.label === values.quotation);
+                    dialog.hide();
+                    if (chosen) openSalesOrderFromQuotation(chosen.value);
+                },
+            });
+            dialog.show();
             return;
         }
         if (action === "project") {
@@ -807,6 +876,15 @@
         }
     }
 
+    function openSalesOrderFromQuotation(quotationName) {
+        // Open an unsaved Sales Order with the quotation's items; the user reviews
+        // and saves.
+        frappe.model.open_mapped_doc({
+            method: "orderlift.orderlift_crm.api.pipeline.prepare_sales_order_from_quotation",
+            source_name: quotationName,
+        });
+    }
+
     function collapsedCardMarkup(card, context) {
         const docsCount = (card.docs || []).length;
         return `
@@ -819,12 +897,16 @@
                     </div>
                     <div class="olp-mini-facts">
                         <span>${frappe.utils.escape_html(context.probability)}</span>
-                        <span>${context.amount ? `${context.amount.toLocaleString()} DH` : `${docsCount} ${__("docs")}`}</span>
+                        <span>${context.amount ? formatCurrency(context.amount) : `${docsCount} ${__("docs")}`}</span>
                     </div>
                     <button type="button" class="olp-card-icon-btn" data-toggle-card="${frappe.utils.escape_html(card.name)}" title="${frappe.utils.escape_html(__("Expand card"))}">+</button>
                 </div>
             </div>
         `;
+    }
+
+    function formatCurrency(value) {
+        return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : Number(value || 0).toLocaleString();
     }
 
     function assignmentPill(card) {

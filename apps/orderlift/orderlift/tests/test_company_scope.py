@@ -83,6 +83,9 @@ class TestCompanyScopeRegistry(unittest.TestCase):
             msg="apply_company_scope must be registered once per scoped doctype",
         )
 
+    def test_managed_docperm_normalizer_is_wired_after_migrate(self):
+        self.assertIn('"orderlift.company_access.normalize_managed_docperms"', HOOKS)
+
 
 if __name__ == "__main__":
     unittest.main()

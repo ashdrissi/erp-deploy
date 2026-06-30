@@ -114,17 +114,28 @@ class TestPricingProjection(unittest.TestCase):
         self.assertAlmostEqual(result["projected_unit"], 112.0, places=4)
         self.assertEqual(result["steps"][0].get("applies_to"), "Loaded Cost")
 
-    def test_discount_and_commission_apply_from_sell_price(self):
+    def test_discount_and_commission_use_unused_allowed_discount(self):
         result = apply_discount_and_commission(
-            gross_unit_price=132,
+            gross_unit_price=1000,
             qty=1,
-            discount_percent=5,
-            max_discount_percent=15,
+            discount_percent=4,
+            max_discount_percent=10,
             commission_rate=20,
         )
-        self.assertAlmostEqual(result["discount_amount"], 6.6, places=4)
-        self.assertAlmostEqual(result["discounted_unit_price"], 125.4, places=4)
-        self.assertAlmostEqual(result["commission_amount"], 1.32, places=4)
+        self.assertAlmostEqual(result["discount_amount"], 40, places=4)
+        self.assertAlmostEqual(result["discounted_unit_price"], 960, places=4)
+        self.assertAlmostEqual(result["unused_discount_percent"], 6, places=4)
+        self.assertAlmostEqual(result["commission_amount"], 12, places=4)
+
+    def test_discount_and_commission_is_zero_when_full_discount_is_used(self):
+        result = apply_discount_and_commission(
+            gross_unit_price=1000,
+            qty=1,
+            discount_percent=10,
+            max_discount_percent=10,
+            commission_rate=20,
+        )
+        self.assertAlmostEqual(result["commission_amount"], 0, places=4)
 
     def test_discount_rejects_values_above_allowed_max(self):
         with self.assertRaisesRegex(ValueError, "cannot exceed 5.0%"):

@@ -120,6 +120,7 @@ def run(
     update_existing: int | str = 0,
     create_missing: int | str = 0,
 ):
+    frappe.only_for("System Manager")
     path = Path(workbook_path or DEFAULT_WORKBOOK)
     if not path.exists():
         frappe.throw(_("Workbook not found: {0}").format(path))
@@ -468,6 +469,7 @@ def _find_existing_item_price(item_code: str, price_list: str, supplier: str | N
 
 @frappe.whitelist()
 def repair_brand_and_sequences(workbook_path: str | None = None, sheet_name: str = DEFAULT_SHEET, dry_run: int | str = 1):
+    frappe.only_for("System Manager")
     path = Path(workbook_path or DEFAULT_WORKBOOK)
     if not path.exists():
         frappe.throw(_("Workbook not found: {0}").format(path))

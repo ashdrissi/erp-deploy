@@ -30,6 +30,7 @@ def run(
     use_temp_phase: int | str = 0,
     rename_retries: int | str = 3,
 ) -> dict:
+    frappe.only_for("System Manager")
     dry_run = article_update._truthy(dry_run)
     throw_on_failure = article_update._truthy(throw_on_failure)
     use_temp_phase = article_update._truthy(use_temp_phase)

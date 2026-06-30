@@ -36,7 +36,7 @@ def get_policy_import_context(policy_doctype: str) -> dict:
         "policy_doctype": policy_doctype,
         "companies": companies,
         "current_company": current_company,
-        "can_import": len(companies) > 1,
+        "can_import": bool(companies),
     }
 
 
@@ -64,8 +64,6 @@ def import_policy_from_existing(
     target_company = _resolve_target_company(target_company)
     source_doc = frappe.get_doc(policy_doctype, source_policy)
     source_company = _get_doc_company(source_doc)
-    if source_company and source_company == target_company:
-        frappe.throw(_("Source policy already belongs to company {0}. Choose a policy from another company.").format(target_company))
     if source_company and not user_can_access_company(source_company):
         frappe.throw(_("You do not have access to source company {0}.").format(source_company))
 

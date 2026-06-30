@@ -9,6 +9,7 @@ from frappe.utils import add_days, get_first_day, nowdate
 
 @frappe.whitelist()
 def get_dashboard_data():
+    frappe.has_permission("Employee", "read", throw=True)
     return {
         "kpis": _get_kpis(),
         "recent_docs": _get_recent_docs(),
