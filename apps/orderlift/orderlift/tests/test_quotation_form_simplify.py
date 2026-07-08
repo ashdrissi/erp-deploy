@@ -61,6 +61,9 @@ class TestQuotationFormSimplify(unittest.TestCase):
             'viewName === "report"',
             'constructor?.name === "ReportView"',
             'typeof listview?.build_row === "function"',
+            "sanitizeQuotationReportFields",
+            'sourceDoctype === "Quotation"',
+            "Removed child-table columns from Quotation Report View",
             "useQuotationIdAsSubject",
             "configuredListColumns",
             "configuredListFields",
@@ -86,6 +89,9 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
         self.assertIn('"Opportunity": "public/js/opportunity_list_20260702b.js"', hooks)
         for token in [
+            "defaultOpportunityToReportView",
+            'frappe.set_route("List", "Opportunity", "Report")',
+            "isReportView",
             "useOpportunityIdAsSubject",
             "patchOpportunityColumnSetup",
             "orderlift-opportunity-list",
@@ -95,6 +101,13 @@ class TestQuotationFormSimplify(unittest.TestCase):
             'subject.df = { fieldname: "name", label: __("ID") }',
         ]:
             self.assertIn(token, script)
+
+    def test_opportunity_site_city_is_not_duplicate_city_standard_filter(self):
+        fixture = (APP_ROOT / "fixtures" / "custom_field_crm_classification.json").read_text()
+
+        self.assertIn('"fieldname": "custom_city"', fixture)
+        self.assertIn('"label": "Site City"', fixture)
+        self.assertIn('"in_standard_filter": 0', fixture)
 
     def test_quotation_party_defaults_are_loaded_from_customer(self):
         script = (APP_ROOT / "public" / "js" / "crm_classification.js").read_text()
@@ -260,6 +273,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("INTERNAL_ITEM_PRICE_FIELDS", script)
         self.assertIn("applyQuotationItemPricingLayout", script)
         self.assertIn('grid.update_docfield_property(fieldname, "hidden", 1)', script)
+        self.assertNotIn('grid.update_docfield_property(fieldname, "hidden", 0)', script)
         self.assertIn("QUOTATION_ITEM_GRID_COLUMNS", script)
         for token in [
             '{ fieldname: "source_price_list_sell_rate", columns: 1, sticky: 0 }',
@@ -292,6 +306,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('grid.update_docfield_property("source_discount_amount", "label", __("Remise HT"))', script)
         self.assertIn('grid.update_docfield_property("source_discount_percent", "label", __("Remise %"))', script)
         self.assertIn('function canViewQuotationMargins()', script)
+
         self.assertIn('applyQuotationMarginVisibility(grid)', script)
         self.assertIn('const visible = canViewQuotationMargins();', script)
         self.assertIn('grid.update_docfield_property(fieldname, "hidden", visible ? 0 : 1)', script)
@@ -319,7 +334,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('setChildValue(row, "source_commission_amount", commissionAmount)', price_queries)
         self.assertIn('function commissionFor(priceListRate, qty, discountPercent, maxDiscountPercent, commissionRate, actualUnitPrice)', price_queries)
         self.assertIn('const upliftCommission = Math.max(actualRate - listRate, 0) * quantity * 0.2;', price_queries)
-        self.assertIn("manualNetRate(row, rate)", price_queries)
+        self.assertNotIn("manualNetRate(row", price_queries)
         self.assertIn("isAdminOverride", price_queries)
         self.assertIn("beginQuotationPriceMutation(frm)", price_queries)
         self.assertIn("endQuotationPriceMutation(frm)", price_queries)
@@ -332,6 +347,13 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('item["source_price_list_sell_rate"] = flt(group_total)', pricing_sheet)
         self.assertIn('item["source_gross_sell_rate"] = flt(group_total)', pricing_sheet)
         self.assertIn('item["source_discounted_sell_rate"] = flt(group_total)', pricing_sheet)
+
+    def test_selected_price_list_replaces_old_manual_price_snapshot(self):
+        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
+
+        self.assertIn("let netRate = 0;", price_queries)
+        self.assertIn("netRate = rate * (1 - discount / 100);", price_queries)
+        self.assertNotIn("manualNetRate(row", price_queries)
 
     def test_direct_quotation_discount_cap_is_enforced_on_server(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
@@ -423,15 +445,13 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "if (netRate + 0.000001 < floor) netRate = floor;",
             "if (!isAdminOverride && discount > maxDiscount) {",
             "netRate = rate * (1 - discount / 100);",
-            "function manualNetRate(row, fallbackRate)",
-            "const visibleNetRate = Number(row.source_discounted_sell_rate || 0);",
-            "const currentRate = Number(row.rate || 0);",
             'frappe.model.set_value(row.doctype, row.name, "rate", netRate)',
             'setChildValue(row, "source_discounted_sell_rate", netRate)',
             'setChildValue(row, "source_selling_price_list", payload.price_list || "")',
             'setChildValue(row, "source_price_list_sell_rate", rate)',
         ]:
             self.assertIn(token, price_queries)
+        self.assertNotIn("manualNetRate(row", price_queries)
 
     def test_printview_pdf_and_full_page_controls_are_hidden(self):
         hooks = (APP_ROOT / "hooks.py").read_text()

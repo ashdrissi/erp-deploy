@@ -244,17 +244,13 @@
         const maxDiscount = Number(payload.max_discount_percent || 0);
         const commissionRate = Number(payload.commission_rate || 0);
         const isAdminOverride = canOverrideQuotationPricing();
-        let netRate = manualNetRate(row, 0);
+        let netRate = 0;
         let discount = Number(row.source_discount_percent || row.discount_percentage || 0);
         if (!Number.isFinite(discount) || discount < 0) discount = 0;
-        if (!netRate) {
-            netRate = rate * (1 - discount / 100);
-        }
+        netRate = rate * (1 - discount / 100);
         if (!isAdminOverride) {
             const floor = rate * (1 - maxDiscount / 100);
             if (netRate + 0.000001 < floor) netRate = floor;
-        } else {
-            netRate = manualNetRate(row, rate);
         }
         discount = rate > 0 ? Math.max((1 - netRate / rate) * 100, 0) : 0;
         if (!isAdminOverride && discount > maxDiscount) {
@@ -294,14 +290,6 @@
         window.setTimeout(function () {
             if (frm) frm.__orderlift_applying_quotation_price = false;
         }, 0);
-    }
-
-    function manualNetRate(row, fallbackRate) {
-        const visibleNetRate = Number(row.source_discounted_sell_rate || 0);
-        if (Number.isFinite(visibleNetRate) && visibleNetRate > 0) return visibleNetRate;
-        const currentRate = Number(row.rate || 0);
-        if (Number.isFinite(currentRate) && currentRate > 0) return currentRate;
-        return Number(fallbackRate || 0);
     }
 
     function setChildValue(row, fieldname, value) {

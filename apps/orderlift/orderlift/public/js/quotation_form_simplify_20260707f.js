@@ -428,18 +428,11 @@
         if (!grid) return;
         enforceQuotationItemGridColumns(frm);
         disableQuotationItemRowForms(frm);
-        const isAdmin = canOverrideQuotationPricing();
         INTERNAL_ITEM_PRICE_FIELDS.forEach((fieldname) => {
             if (!grid.get_field || !grid.get_field(fieldname)) return;
-            if (isAdmin) {
-                grid.update_docfield_property(fieldname, "read_only", 0);
-                grid.update_docfield_property(fieldname, "hidden", 0);
-                grid.update_docfield_property(fieldname, "in_list_view", 1);
-            } else {
-                grid.update_docfield_property(fieldname, "read_only", 1);
-                grid.update_docfield_property(fieldname, "hidden", 1);
-                grid.update_docfield_property(fieldname, "in_list_view", 0);
-            }
+            grid.update_docfield_property(fieldname, "read_only", 1);
+            grid.update_docfield_property(fieldname, "hidden", 1);
+            grid.update_docfield_property(fieldname, "in_list_view", 0);
         });
         if (grid.get_field && grid.get_field("source_price_list_sell_rate")) {
             grid.update_docfield_property("source_price_list_sell_rate", "label", __("PU List HT"));

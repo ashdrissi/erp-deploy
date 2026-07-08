@@ -10,6 +10,7 @@ frappe.pages["dimensioning-set-builder"].on_page_load = function (wrapper) {
     injectDimensioningBuilderStyles();
     resetDimensioningBuilderState();
     renderDimensioningBuilder(page);
+    resetDimensioningBuilderScroll(page);
     applyDimensioningBuilderHeader(page);
     loadInitialDimensioningSet(page);
 };
@@ -148,6 +149,7 @@ function applyDimensioningBuilderHeader(page) {
     page.add_action_item(__("New Blank Set"), () => {
         resetDimensioningBuilderState();
         renderDimensioningBuilder(page);
+        resetDimensioningBuilderScroll(page);
     });
     setTimeout(() => {
         if (!frappe.breadcrumbs) return;
@@ -2583,6 +2585,7 @@ async function loadInitialDimensioningSet(page) {
         ODS_STATE.validation = [];
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
+        resetDimensioningBuilderScroll(page);
         return;
     }
     const setName = frappe.route_options?.dimensioning_set || urlParams.get("dimensioning_set");
@@ -2617,6 +2620,7 @@ async function loadDimensioningSet(page, setName) {
     ODS_STATE.validation = [];
     ODS_STATE.lastPreview = null;
     renderDimensioningBuilder(page);
+    resetDimensioningBuilderScroll(page);
 }
 
 async function runDimensioningBuilderPreview(page) {
@@ -2823,6 +2827,108 @@ function toggleQuestionCard(page, index) {
 function toggleRuleGroup(page, index) {
     ODS_STATE.openRuleGroups[index] = !ODS_STATE.openRuleGroups[index];
     renderDimensioningBuilder(page);
+}
+
+function duplicateActiveDimensioningSet(page) {
+    const source = getActiveSet();
+    if (!source) return;
+    const copy = deepCopyDimensioningBuilderValue(source);
+    copy.docname = "";
+    copy.name = `${copy.name || __("New Dimensioning Set")} (${__("Copy")})`;
+    ODS_STATE.sets.splice(ODS_STATE.selectedSet + 1, 0, copy);
+    ODS_STATE.selectedSet += 1;
+    ODS_STATE.testValues = buildDefaultValues(copy);
+    ODS_STATE.validation = [];
+    ODS_STATE.lastPreview = null;
+    renderDimensioningBuilder(page);
+    resetDimensioningBuilderScroll(page);
+}
+
+function duplicateArticleRule(page, index) {
+    const set = getActiveSet();
+    const source = set.item_rules[index];
+    if (!source) return;
+    const clone = cloneDimensioningRule(source);
+    clone.rule_label = `${clone.rule_label || clone.item || __("Article")} (${__("Copy")})`;
+    clone.sequence = Number(source.sequence || 10) + 1;
+    set.item_rules.splice(index + 1, 0, clone);
+    ODS_STATE.selectedRule = index + 1;
+    ODS_STATE.lastPreview = null;
+    renderDimensioningBuilder(page);
+}
+
+function deleteArticleRule(page, index) {
+    const set = getActiveSet();
+    if (!set.item_rules[index]) return;
+    set.item_rules.splice(index, 1);
+    ODS_STATE.selectedRule = Math.max(0, Math.min(index, set.item_rules.length - 1));
+    ODS_STATE.openArticleSettings = {};
+    ODS_STATE.lastPreview = null;
+    renderDimensioningBuilder(page);
+}
+
+function duplicateRuleGroup(page, groupIndex) {
+    const set = getActiveSet();
+    const groups = getArticleRuleGroups(set);
+    const group = groups[groupIndex];
+    if (!group) return;
+    const newGroup = nextDimensioningRuleGroupKey(set);
+    const clones = group.rules.map(({ rule }, index) => {
+        const clone = cloneDimensioningRule(rule);
+        clone.rule_group = newGroup;
+        clone.rule_label = `${clone.rule_label || clone.item || __("Article")} (${__("Copy")})`;
+        clone.sequence = Number(rule.sequence || 10) + index + 1;
+        return clone;
+    });
+    set.item_rules.push(...clones);
+    ODS_STATE.openRuleGroups = { [groups.length]: true };
+    ODS_STATE.selectedRule = set.item_rules.length - clones.length;
+    ODS_STATE.lastPreview = null;
+    renderDimensioningBuilder(page);
+}
+
+function deleteRuleGroup(page, groupIndex) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group) return;
+    const indexes = new Set(group.rules.map(({ index }) => index));
+    set.item_rules = (set.item_rules || []).filter((_, index) => !indexes.has(index));
+    ODS_STATE.selectedRule = 0;
+    ODS_STATE.openRuleGroups = {};
+    ODS_STATE.openArticleSettings = {};
+    ODS_STATE.lastPreview = null;
+    renderDimensioningBuilder(page);
+}
+
+function cloneDimensioningRule(rule) {
+    const clone = deepCopyDimensioningBuilderValue(rule);
+    normalizeRuleItemFilters(clone);
+    return clone;
+}
+
+function nextDimensioningRuleGroupKey(set) {
+    const used = new Set((set.item_rules || []).map((rule) => (rule.rule_group || "").trim()).filter(Boolean));
+    let index = getArticleRuleGroups(set).length + 1;
+    let key = `GROUP-${index}`;
+    while (used.has(key)) {
+        index += 1;
+        key = `GROUP-${index}`;
+    }
+    return key;
+}
+
+function deepCopyDimensioningBuilderValue(value) {
+    return JSON.parse(JSON.stringify(value || {}));
+}
+
+function resetDimensioningBuilderScroll(page) {
+    setTimeout(() => {
+        window.scrollTo?.(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        const root = page?.main?.closest?.(".layout-main-section-wrapper")[0] || page?.main?.closest?.(".layout-main-section")[0];
+        if (root) root.scrollTop = 0;
+    }, 0);
 }
 
 function updateConfigValue(el) {

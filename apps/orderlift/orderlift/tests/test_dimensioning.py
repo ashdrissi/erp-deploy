@@ -1,5 +1,6 @@
 import json
 import unittest
+from pathlib import Path
 
 from orderlift.sales.utils.dimensioning import (
     coerce_dimensioning_value,
@@ -11,6 +12,9 @@ from orderlift.sales.utils.dimensioning import (
     validate_structured_condition,
     validate_structured_quantity,
 )
+
+
+APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestDimensioning(unittest.TestCase):
@@ -169,6 +173,27 @@ class TestDimensioning(unittest.TestCase):
 
         self.assertTrue(evaluate_structured_condition(rule, {"finish": "INOX BROSSE"}, {"finish": "Data"}))
         self.assertFalse(evaluate_structured_condition(rule, {"finish": "EPOXY"}, {"finish": "Data"}))
+
+    def test_filtered_item_resolution_preserves_repeated_item_fields(self):
+        source = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.py").read_text()
+
+        self.assertIn('item_filters = [["Item", "disabled", "=", 0]]', source)
+        self.assertIn("item_filters.append(_db_filter_condition(filter_row))", source)
+        self.assertNotIn('item_filters[filter_row["field"]] =', source)
+
+    def test_dimensioning_builder_rule_actions_are_implemented(self):
+        script = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_builder" / "dimensioning_set_builder.js").read_text()
+
+        for token in [
+            "function duplicateActiveDimensioningSet",
+            "function duplicateArticleRule",
+            "function deleteArticleRule",
+            "function duplicateRuleGroup",
+            "function deleteRuleGroup",
+            "function resetDimensioningBuilderScroll",
+            "resetDimensioningBuilderScroll(page)",
+        ]:
+            self.assertIn(token, script)
 
     def test_condition_rules_json_parameter_comparison(self):
         rule = {

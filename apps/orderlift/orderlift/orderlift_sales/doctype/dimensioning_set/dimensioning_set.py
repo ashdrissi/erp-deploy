@@ -692,13 +692,13 @@ def _resolve_filtered_item(rule, formula_context):
     if not resolved_filters:
         return "", _("No item filters are configured.")
 
-    item_filters = {"disabled": 0}
+    item_filters = [["Item", "disabled", "=", 0]]
     post_filters = []
     spec_filters = []
     for filter_row in resolved_filters:
         source = filter_row["source"]
         if source == "item_field" and _can_filter_in_db(filter_row):
-            item_filters[filter_row["field"]] = _db_filter_value(filter_row)
+            item_filters.append(_db_filter_condition(filter_row))
         elif source == "item_field":
             post_filters.append(filter_row)
         else:
@@ -806,14 +806,15 @@ def _can_filter_in_db(filter_row):
     return filter_row["operator"] in {"==", "!=", "contains", ">", ">=", "<", "<="}
 
 
-def _db_filter_value(filter_row):
+def _db_filter_condition(filter_row):
     operator = filter_row["operator"]
     value = filter_row["value"]
     if operator == "==":
-        return value
-    if operator == "contains":
-        return ["like", f"%{value}%"]
-    return [operator, value]
+        operator = "="
+    elif operator == "contains":
+        operator = "like"
+        value = f"%{value}%"
+    return ["Item", filter_row["field"], operator, value]
 
 
 def _filter_items_by_specifications(candidates, spec_filters):

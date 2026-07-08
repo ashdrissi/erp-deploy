@@ -62,6 +62,28 @@
         }
     }
 
+    function sanitizeQuotationReportFields(listview) {
+        if (!listview || !isReportView(listview) || listview.__orderlift_report_fields_sanitized) return;
+        const fields = configuredListFields(listview);
+        if (!fields.length) return;
+        const cleaned = fields.filter((field) => {
+            const sourceDoctype = String(field.doctype || field.parent || "Quotation");
+            return !sourceDoctype || sourceDoctype === "Quotation";
+        });
+        if (cleaned.length === fields.length) return;
+
+        listview.__orderlift_report_fields_sanitized = true;
+        listview.list_view_settings.fields = JSON.stringify(cleaned);
+        if (frappe.model?.user_settings?.Quotation?.ReportView) {
+            frappe.model.user_settings.Quotation.ReportView.Quotation = cleaned;
+        }
+        frappe.show_alert({
+            message: __("Removed child-table columns from Quotation Report View to keep one row per quotation."),
+            indicator: "blue",
+        });
+        setTimeout(() => listview.refresh?.(), 0);
+    }
+
     function applyQuotationListStyles(listview) {
         if (listview && listview.page && listview.page.wrapper) {
             $(listview.page.wrapper).addClass("orderlift-quotation-list");
@@ -107,7 +129,10 @@
     frappe.listview_settings["Quotation"] = Object.assign({}, existingSettings, {
         onload(listview) {
             if (typeof existingOnload === "function") existingOnload(listview);
-            if (isReportView(listview)) return;
+            if (isReportView(listview)) {
+                sanitizeQuotationReportFields(listview);
+                return;
+            }
             patchQuotationColumnSetup(listview);
             useQuotationIdAsSubject(listview);
             if (listview && typeof listview.render_header === "function") listview.render_header();
