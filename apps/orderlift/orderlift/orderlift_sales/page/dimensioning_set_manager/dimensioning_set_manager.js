@@ -109,6 +109,9 @@ function bindDimensioningManagerEvents(page) {
     page.main.find("[data-edit-set]").on("click", function () {
         openDimensioningBuilderForSet($(this).data("edit-set"));
     });
+    page.main.find("[data-duplicate-set]").on("click", function () {
+        duplicateDimensioningSet(page, $(this).data("duplicate-set"));
+    });
     page.main.find("[data-delete-set]").on("click", function () {
         confirmDeleteDimensioningSet(page, $(this).data("delete-set"));
     });
@@ -146,6 +149,7 @@ function setCard(row) {
                     <p>${frappe.utils.escape_html(row.description || __("No description yet"))}</p>
                 </div>
                 <div class="odm-set-actions">
+                    <button type="button" class="odm-btn odm-btn-ghost" data-duplicate-set="${frappe.utils.escape_html(row.name)}">${__("Duplicate")}</button>
                     <button type="button" class="odm-btn odm-btn-ghost odm-btn-danger" data-delete-set="${frappe.utils.escape_html(row.name)}">${__("Delete")}</button>
                     <button type="button" class="odm-btn odm-btn-primary" data-edit-set="${frappe.utils.escape_html(row.name)}">${__("Open Builder")}</button>
                 </div>
@@ -168,6 +172,36 @@ function openDimensioningBuilderForCreate() {
 function openDimensioningBuilderForSet(setName) {
     frappe.route_options = { dimensioning_set: setName };
     frappe.set_route("dimensioning-set-builder");
+}
+
+async function duplicateDimensioningSet(page, setName) {
+    if (!setName) return;
+    try {
+        const payloadRes = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.get_dimensioning_builder_payload",
+            args: { set_name: setName },
+            freeze: true,
+        });
+        const payload = (payloadRes.message || {}).set;
+        if (!payload) return;
+        payload.name = "";
+        payload.set_name = __("Copy of {0}", [payload.set_name || setName]);
+        const saveRes = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.save_dimensioning_builder_payload",
+            args: { payload: JSON.stringify(payload) },
+            freeze: true,
+        });
+        const duplicated = (saveRes.message || {}).set || {};
+        frappe.show_alert({ message: __("Dimensioning Set duplicated"), indicator: "green" });
+        await loadDimensioningManagerData(page);
+        if (duplicated.name) openDimensioningBuilderForSet(duplicated.name);
+    } catch (error) {
+        frappe.msgprint({
+            title: __("Duplicate failed"),
+            message: extractDimensioningManagerError(error) || __("Unable to duplicate this Dimensioning Set."),
+            indicator: "red",
+        });
+    }
 }
 
 function confirmDeleteDimensioningSet(page, setName) {

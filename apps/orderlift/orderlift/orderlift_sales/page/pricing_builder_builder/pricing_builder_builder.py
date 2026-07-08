@@ -3,11 +3,11 @@ from frappe import _
 from frappe.model.naming import make_autoname
 from frappe.utils import cint, flt
 
-from orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder import publish_builder_doc
+from orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder import builder_exchange_rate_summary, publish_builder_doc
 from orderlift.orderlift_sales.utils.price_list_scope import current_company, get_price_list_names, validate_price_list_scope
 
 
-PARENT_FIELDS = ["builder_name", "selling_price_list_name", "item_group", "default_qty", "max_items"]
+PARENT_FIELDS = ["builder_name", "selling_price_list_name", "target_currency", "item_group", "default_qty", "max_items"]
 RULE_FIELDS = ["buying_price_list", "pricing_scenario", "customs_policy", "benchmark_policy", "is_active"]
 ITEM_FIELDS = [
     "selected",
@@ -126,8 +126,8 @@ def compare_recalculated_builder_page_doc(name):
 
 
 @frappe.whitelist()
-def publish_builder_page_doc(name, selected_only=1):
-    out = publish_builder_doc(name, selected_only=selected_only)
+def publish_builder_page_doc(name, selected_only=1, selected_rows=None):
+    out = publish_builder_doc(name, selected_only=selected_only, selected_rows=selected_rows)
     doc = frappe.get_doc("Pricing Builder", name)
     _create_history(doc, _("Published"))
     return {"publish": out, "doc": _serialize_doc(doc), "history": _get_history(doc.name)}
@@ -154,6 +154,8 @@ def _new_builder_doc():
     doc.naming_series = "PBU-.#####"
     doc.default_qty = 1
     doc.max_items = 0
+    if _has_meta_field(doc, "target_currency"):
+        doc.target_currency = _company_default_currency()
     return doc
 
 
@@ -163,6 +165,7 @@ def _serialize_doc(doc):
         "is_new": 1 if doc.is_new() else 0,
         "builder_name": doc.get("builder_name") or "",
         "selling_price_list_name": doc.get("selling_price_list_name") or "",
+        "target_currency": doc.get("target_currency") if _has_meta_field(doc, "target_currency") else "",
         "item_group": doc.get("item_group") if _has_meta_field(doc, "item_group") else "",
         "default_qty": flt(doc.get("default_qty") or 1) or 1,
         "max_items": cint(doc.get("max_items") or 0),
@@ -172,6 +175,7 @@ def _serialize_doc(doc):
         "new_items": cint(doc.get("new_items") or 0),
         "missing_items": cint(doc.get("missing_items") or 0),
         "warnings_html": doc.get("warnings_html") or "",
+        "exchange_rate_summary": builder_exchange_rate_summary(doc),
         "modified": doc.get("modified") or "",
         "sourcing_rules": [_serialize_child(row, RULE_FIELDS) for row in doc.get("sourcing_rules") or []],
         "builder_items": [_serialize_builder_item(row) for row in doc.get("builder_items") or []],
@@ -309,10 +313,16 @@ def _builder_item_snapshot_map(rows):
 
 def _references():
     company = current_company()
+    buying_meta = _price_list_meta("buying", company=company)
+    selling_meta = _price_list_meta("selling", company=company)
     return {
         "current_company": company,
-        "buying_price_lists": get_price_list_names("buying", company=company),
-        "selling_price_lists": get_price_list_names("selling", company=company),
+        "company_currency": _company_default_currency(company),
+        "currencies": _currency_names(),
+        "buying_price_lists": list(buying_meta),
+        "selling_price_lists": list(selling_meta),
+        "buying_price_list_meta": buying_meta,
+        "selling_price_list_meta": selling_meta,
         "pricing_scenarios": _names("Pricing Scenario"),
         "customs_policies": _names("Pricing Customs Policy", {"is_active": 1}),
         "benchmark_policies": _names("Pricing Benchmark Policy", {"is_active": 1}),
@@ -328,6 +338,46 @@ def _names(doctype, filters=None):
         if frappe.db.has_column(doctype, key):
             clean_filters[key] = value
     return frappe.get_all(doctype, filters=clean_filters, pluck="name", order_by="name asc", limit_page_length=500)
+
+
+def _price_list_meta(kind, company=None):
+    names = get_price_list_names(kind, company=company)
+    if not names:
+        return {}
+    fields = ["name"]
+    if frappe.db.has_column("Price List", "currency"):
+        fields.append("currency")
+    if frappe.db.has_column("Price List", "custom_company"):
+        fields.append("custom_company")
+    rows = frappe.get_all(
+        "Price List",
+        filters={"name": ["in", names]},
+        fields=fields,
+        order_by="name asc",
+        limit_page_length=0,
+    )
+    default_currency = frappe.defaults.get_global_default("currency") or ""
+    return {
+        row.name: {
+            "name": row.name,
+            "currency": row.get("currency") or default_currency,
+            "company": row.get("custom_company") or company or "",
+        }
+        for row in rows
+    }
+
+
+def _company_default_currency(company=None):
+    company = company or current_company()
+    if company and frappe.db.exists("Company", company):
+        return frappe.db.get_value("Company", company, "default_currency") or frappe.defaults.get_global_default("currency") or ""
+    return frappe.defaults.get_global_default("currency") or ""
+
+
+def _currency_names():
+    if not frappe.db.exists("DocType", "Currency"):
+        return []
+    return frappe.get_all("Currency", pluck="name", order_by="name asc", limit_page_length=0)
 
 
 def _validate_price_list_references(payload):

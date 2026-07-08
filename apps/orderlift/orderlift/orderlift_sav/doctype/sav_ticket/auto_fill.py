@@ -16,14 +16,7 @@ def resolve_from_serial_no(serial_no):
     if not serial_no:
         return {}
 
-    serial = frappe.db.get_value("Serial No", serial_no, [
-        "item_code", "batch_no", "customer", "warranty_expiry_date",
-        "purchase_date", "delivery_document_type", "delivery_document_no",
-        "warehouse", "status", "description"
-    ], as_dict=True)
-
-    if not serial:
-        frappe.throw(_("Serial No {0} not found.").format(serial_no))
+    serial = _get_readable_doc("Serial No", serial_no)
 
     result = {
         "item_concerned": serial.item_code,
@@ -35,14 +28,12 @@ def resolve_from_serial_no(serial_no):
 
     # Delivery Note from serial
     if serial.delivery_document_type == "Delivery Note" and serial.delivery_document_no:
-        result["delivery_note"] = serial.delivery_document_no
-        dn = frappe.db.get_value("Delivery Note", serial.delivery_document_no, [
-            "customer", "posting_date", "project", "company"
-        ], as_dict=True)
+        dn = _get_optional_readable_doc("Delivery Note", serial.delivery_document_no)
         if dn:
-            result["customer"] = dn.customer
-            result["source_delivery_date"] = dn.posting_date
-            result["installation_project"] = dn.project
+            result["delivery_note"] = dn.name
+            result["customer"] = dn.get("customer")
+            result["source_delivery_date"] = dn.get("posting_date")
+            result["installation_project"] = dn.get("project")
 
     # Sales Order from DN items
     if result.get("delivery_note"):
@@ -53,16 +44,15 @@ def resolve_from_serial_no(serial_no):
             WHERE dni.parent = %(dn)s
             LIMIT 1
         """, {"dn": result["delivery_note"]}, as_dict=True)
-        if so:
-            result["sales_order"] = so[0].parent
-            so_doc = frappe.db.get_value("Sales Order", so[0].parent, [
-                "project", "customer"
-            ], as_dict=True)
+        so_name = _first_readable_link("Sales Order", [row.parent for row in so])
+        if so_name:
+            result["sales_order"] = so_name
+            so_doc = _get_optional_readable_doc("Sales Order", so_name)
             if so_doc:
-                if so_doc.project:
-                    result["installation_project"] = so_doc.project
-                if so_doc.customer:
-                    result["customer"] = so_doc.customer
+                if so_doc.get("project"):
+                    result["installation_project"] = so_doc.get("project")
+                if so_doc.get("customer"):
+                    result["customer"] = so_doc.get("customer")
 
     # Sales Invoice from DN items
     if result.get("delivery_note"):
@@ -73,8 +63,9 @@ def resolve_from_serial_no(serial_no):
             WHERE dni.parent = %(dn)s
             LIMIT 1
         """, {"dn": result["delivery_note"]}, as_dict=True)
-        if invoice:
-            result["sales_invoice"] = invoice[0].parent
+        invoice_name = _first_readable_link("Sales Invoice", [row.parent for row in invoice])
+        if invoice_name:
+            result["sales_invoice"] = invoice_name
 
     # Fallback: invoice from SO
     if not result.get("sales_invoice") and result.get("sales_order"):
@@ -85,8 +76,9 @@ def resolve_from_serial_no(serial_no):
             WHERE soi.parent = %(so)s
             LIMIT 1
         """, {"so": result["sales_order"]}, as_dict=True)
-        if invoice:
-            result["sales_invoice"] = invoice[0].parent
+        invoice_name = _first_readable_link("Sales Invoice", [row.parent for row in invoice])
+        if invoice_name:
+            result["sales_invoice"] = invoice_name
 
     # Warranty status
     result["warranty_status"] = _compute_warranty_status(
@@ -118,26 +110,21 @@ def resolve_from_sales_order(sales_order):
     if not sales_order:
         return {}
 
-    so = frappe.db.get_value("Sales Order", sales_order, [
-        "customer", "project", "transaction_date", "delivery_date", "company"
-    ], as_dict=True)
-
-    if not so:
-        frappe.throw(_("Sales Order {0} not found.").format(sales_order))
+    so = _get_readable_doc("Sales Order", sales_order)
 
     result = {
-        "customer": so.customer,
-        "installation_project": so.project,
-        "source_delivery_date": so.delivery_date or so.transaction_date,
+        "customer": so.get("customer"),
+        "installation_project": so.get("project"),
+        "source_delivery_date": so.get("delivery_date") or so.get("transaction_date"),
     }
 
-    result["site_address"] = _resolve_site_address(so.customer, so.project)
-    result["customer_tier"] = _get_customer_tier(so.customer)
+    result["site_address"] = _resolve_site_address(so.get("customer"), so.get("project"))
+    result["customer_tier"] = _get_customer_tier(so.get("customer"))
 
-    if so.project:
-        result["recurrence_count"] = _count_recurrences(project=so.project)
-    elif so.customer:
-        result["recurrence_count"] = _count_recurrences(customer=so.customer)
+    if so.get("project"):
+        result["recurrence_count"] = _count_recurrences(project=so.get("project"))
+    elif so.get("customer"):
+        result["recurrence_count"] = _count_recurrences(customer=so.get("customer"))
 
     # Linked Delivery Note
     dns = frappe.db.sql("""
@@ -147,8 +134,9 @@ def resolve_from_sales_order(sales_order):
         WHERE soi.parent = %(so)s
         LIMIT 1
     """, {"so": sales_order}, as_dict=True)
-    if dns:
-        result["delivery_note"] = dns[0].parent
+    dn_name = _first_readable_link("Delivery Note", [row.parent for row in dns])
+    if dn_name:
+        result["delivery_note"] = dn_name
 
     # Linked Sales Invoice
     invoices = frappe.db.sql("""
@@ -158,8 +146,9 @@ def resolve_from_sales_order(sales_order):
         WHERE soi.parent = %(so)s
         LIMIT 1
     """, {"so": sales_order}, as_dict=True)
-    if invoices:
-        result["sales_invoice"] = invoices[0].parent
+    invoice_name = _first_readable_link("Sales Invoice", [row.parent for row in invoices])
+    if invoice_name:
+        result["sales_invoice"] = invoice_name
 
     if result.get("source_delivery_date"):
         result["days_since_delivery"] = date_diff(today(), result["source_delivery_date"])
@@ -173,21 +162,16 @@ def resolve_from_delivery_note(delivery_note):
     if not delivery_note:
         return {}
 
-    dn = frappe.db.get_value("Delivery Note", delivery_note, [
-        "customer", "posting_date", "project", "company"
-    ], as_dict=True)
-
-    if not dn:
-        frappe.throw(_("Delivery Note {0} not found.").format(delivery_note))
+    dn = _get_readable_doc("Delivery Note", delivery_note)
 
     result = {
-        "customer": dn.customer,
-        "source_delivery_date": dn.posting_date,
-        "installation_project": dn.project,
+        "customer": dn.get("customer"),
+        "source_delivery_date": dn.get("posting_date"),
+        "installation_project": dn.get("project"),
     }
 
-    result["site_address"] = _resolve_site_address(dn.customer, dn.project)
-    result["customer_tier"] = _get_customer_tier(dn.customer)
+    result["site_address"] = _resolve_site_address(dn.get("customer"), dn.get("project"))
+    result["customer_tier"] = _get_customer_tier(dn.get("customer"))
 
     # Linked SO
     so = frappe.db.sql("""
@@ -197,8 +181,9 @@ def resolve_from_delivery_note(delivery_note):
         WHERE dni.parent = %(dn)s
         LIMIT 1
     """, {"dn": delivery_note}, as_dict=True)
-    if so:
-        result["sales_order"] = so[0].parent
+    so_name = _first_readable_link("Sales Order", [row.parent for row in so])
+    if so_name:
+        result["sales_order"] = so_name
 
     # Linked invoice
     invoice = frappe.db.sql("""
@@ -208,17 +193,18 @@ def resolve_from_delivery_note(delivery_note):
         WHERE dni.parent = %(dn)s
         LIMIT 1
     """, {"dn": delivery_note}, as_dict=True)
-    if invoice:
-        result["sales_invoice"] = invoice[0].parent
+    invoice_name = _first_readable_link("Sales Invoice", [row.parent for row in invoice])
+    if invoice_name:
+        result["sales_invoice"] = invoice_name
 
-    if dn.project:
-        result["recurrence_count"] = _count_recurrences(project=dn.project)
-    elif dn.customer:
-        result["recurrence_count"] = _count_recurrences(customer=dn.customer)
+    if dn.get("project"):
+        result["recurrence_count"] = _count_recurrences(project=dn.get("project"))
+    elif dn.get("customer"):
+        result["recurrence_count"] = _count_recurrences(customer=dn.get("customer"))
     else:
         result["recurrence_count"] = 0
 
-    result["days_since_delivery"] = date_diff(today(), dn.posting_date)
+    result["days_since_delivery"] = date_diff(today(), dn.get("posting_date"))
 
     return result
 
@@ -229,9 +215,7 @@ def resolve_from_customer(customer):
     if not customer:
         return {}
 
-    cust = frappe.db.get_value("Customer", customer, [
-        "customer_name", "customer_primary_contact", "primary_address"
-    ], as_dict=True)
+    cust = _get_optional_readable_doc("Customer", customer)
     if not cust:
         return {}
 
@@ -240,11 +224,11 @@ def resolve_from_customer(customer):
         "recurrence_count": _count_recurrences(customer=customer),
     }
 
-    if cust.customer_primary_contact:
-        result["contact"] = cust.customer_primary_contact
+    if cust.get("customer_primary_contact"):
+        result["contact"] = cust.get("customer_primary_contact")
 
-    if cust.primary_address:
-        result["site_address"] = cust.primary_address
+    if cust.get("primary_address"):
+        result["site_address"] = cust.get("primary_address")
 
     return result
 
@@ -282,12 +266,12 @@ def _compute_warranty_status(warranty_expiry_date, delivery_date):
 
 def _resolve_site_address(customer, project):
     """Get site address from project or customer."""
-    if project:
+    if project and _can_read_doc("Project", project):
         addr = frappe.db.get_value("Project", project, "custom_site_address")
         if addr:
             return addr
 
-    if customer:
+    if customer and _can_read_doc("Customer", customer):
         addr = frappe.db.get_value("Customer", customer, "primary_address")
         if addr:
             return addr
@@ -322,3 +306,34 @@ def _count_recurrences(serial_no=None, item=None, project=None, customer=None):
         return 0
 
     return frappe.db.count("SAV Ticket", filters)
+
+
+def _get_readable_doc(doctype, name):
+    name = (name or "").strip()
+    if not name:
+        frappe.throw(_("{0} is required.").format(doctype))
+    if not frappe.db.exists(doctype, name):
+        frappe.throw(_("{0} {1} not found.").format(doctype, name))
+    doc = frappe.get_doc(doctype, name)
+    doc.check_permission("read")
+    return doc
+
+
+def _get_optional_readable_doc(doctype, name):
+    if not (name or "").strip():
+        return None
+    try:
+        return _get_readable_doc(doctype, name)
+    except frappe.PermissionError:
+        return None
+
+
+def _can_read_doc(doctype, name):
+    return _get_optional_readable_doc(doctype, name) is not None
+
+
+def _first_readable_link(doctype, names):
+    for name in names or []:
+        if _can_read_doc(doctype, name):
+            return name
+    return ""

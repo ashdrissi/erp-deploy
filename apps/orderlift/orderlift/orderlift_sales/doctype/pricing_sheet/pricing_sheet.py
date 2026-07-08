@@ -2097,31 +2097,36 @@ class PricingSheet(Document):
 
     def _apply_line_discount_and_commission(self, row, qty, benchmark_result, fallback_max_discount_percent, agent_discount_ctx, steps):
         matched_rule = (benchmark_result or {}).get("matched_rule") or {}
-        max_discount = resolve_max_discount_cap(
+        policy_max_discount = resolve_max_discount_cap(
             rule_max_discount_percent=flt(matched_rule.get("max_discount_percent") or 0),
             fallback_max_discount_percent=fallback_max_discount_percent,
             agent_max_discount_percent=flt(agent_discount_ctx.get("max_discount_percent") or 0),
             is_fallback=bool((benchmark_result or {}).get("is_fallback")),
         )
-        if can_override_quotation_pricing():
-            max_discount = 100.0
-        self._validate_manual_override_discount_floor(row, max_discount)
+        can_override_pricing = can_override_quotation_pricing()
+        validation_max_discount = 100.0 if can_override_pricing else policy_max_discount
+        self._validate_manual_override_discount_floor(row, validation_max_discount)
         requested_discount = flt(row.discount_percent or 0)
         if requested_discount < 0:
             frappe.throw(_("Row {0}: Discount % cannot be negative.").format(row.idx))
         commission_rate = flt(agent_discount_ctx.get("commission_rate") or 0)
+        reference_unit_price = flt(row.projected_unit_price or row.static_list_price or row.final_sell_unit_price)
+        actual_unit_price = flt(row.final_sell_unit_price) * (1 - (requested_discount / 100.0))
         try:
             discount_result = apply_discount_and_commission(
-                gross_unit_price=flt(row.final_sell_unit_price),
+                gross_unit_price=reference_unit_price,
                 qty=qty,
                 discount_percent=requested_discount,
-                max_discount_percent=max_discount,
+                max_discount_percent=policy_max_discount,
                 commission_rate=commission_rate,
+                actual_unit_price=actual_unit_price,
+                enforce_discount_cap=not can_override_pricing,
+                discount_base_unit_price=flt(row.final_sell_unit_price),
             )
         except ValueError as exc:
             frappe.throw(_("Row {0}: {1}").format(row.idx, cstr(exc)))
 
-        row.max_discount_percent_allowed = max_discount
+        row.max_discount_percent_allowed = policy_max_discount
         row.discount_percent = flt(discount_result.get("discount_percent") or 0)
         row.discount_amount = flt(discount_result.get("discount_amount") or 0)
         row.discounted_sell_unit_price = flt(discount_result.get("discounted_unit_price") or 0)
@@ -2323,7 +2328,8 @@ class PricingSheet(Document):
             "Base Price",
         )
 
-    def _build_scenario_caches(self, scenario_docs, item_codes, benchmark_policy_doc=None):
+    def _build_scenario_caches(self, scenario_docs, item_codes, benchmark_policy_doc=None, target_currency=None):
+        pricing_currency = (target_currency or "").strip() or get_pricing_currency()
         # Pre-fetch benchmark prices from all sources in the benchmark policy
         benchmark_price_map = {}
         benchmark_source_types = {}
@@ -2336,7 +2342,7 @@ class PricingSheet(Document):
                     benchmark_source_types[pl] = get_price_list_type(pl)
                 if pl and pl not in benchmark_price_map:
                     benchmark_price_map[pl] = get_latest_item_prices(
-                        item_codes, pl, buying=None, target_currency=get_pricing_currency()
+                        item_codes, pl, buying=None, target_currency=pricing_currency
                     )
 
         caches = {}
@@ -2355,7 +2361,7 @@ class PricingSheet(Document):
 
             caches[name] = {
                 "buying_price_list": default_buying_price_list,
-                "buy_prices": get_latest_item_prices(item_codes, default_buying_price_list, buying=True, target_currency=get_pricing_currency())
+                "buy_prices": get_latest_item_prices(item_codes, default_buying_price_list, buying=True, target_currency=pricing_currency)
                 if default_buying_price_list
                 else {},
                 "benchmark_price_map": benchmark_price_map,
@@ -2369,7 +2375,7 @@ class PricingSheet(Document):
         if getattr(self, "allow_empty_expenses_policy", 0) and NO_EXPENSES_SCENARIO not in caches:
             caches[NO_EXPENSES_SCENARIO] = {
                 "buying_price_list": default_buying_price_list,
-                "buy_prices": get_latest_item_prices(item_codes, default_buying_price_list, buying=True, target_currency=get_pricing_currency())
+                "buy_prices": get_latest_item_prices(item_codes, default_buying_price_list, buying=True, target_currency=pricing_currency)
                 if default_buying_price_list
                 else {},
                 "benchmark_price_map": benchmark_price_map,
@@ -2498,7 +2504,9 @@ class PricingSheet(Document):
         fallback_buy_prices,
         buy_price_cache_by_list,
         force_refresh=False,
+        target_currency=None,
     ):
+        pricing_currency = (target_currency or "").strip() or get_pricing_currency()
         buying_price_list = (getattr(row, "source_buying_price_list", "") or "").strip() or fallback_buying_price_list
         row.source_buying_price_list = buying_price_list or ""
         buy_prices = fallback_buy_prices or {}
@@ -2506,10 +2514,10 @@ class PricingSheet(Document):
         if buying_price_list and buying_price_list != fallback_buying_price_list:
             cached_prices = buy_price_cache_by_list.get(buying_price_list)
             if cached_prices is None:
-                cached_prices = get_latest_item_prices([row.item], buying_price_list, buying=True, target_currency=get_pricing_currency()) if row.item else {}
+                cached_prices = get_latest_item_prices([row.item], buying_price_list, buying=True, target_currency=pricing_currency) if row.item else {}
                 buy_price_cache_by_list[buying_price_list] = cached_prices
             elif row.item and row.item not in cached_prices:
-                cached_prices.update(get_latest_item_prices([row.item], buying_price_list, buying=True, target_currency=get_pricing_currency()))
+                cached_prices.update(get_latest_item_prices([row.item], buying_price_list, buying=True, target_currency=pricing_currency))
             buy_prices = cached_prices
 
         self._set_buy_price_from_map(row, buying_price_list, buy_prices, force_refresh=force_refresh)
@@ -2586,7 +2594,20 @@ class PricingSheet(Document):
         return company
 
     @frappe.whitelist()
-    def generate_quotation(self):
+    def get_linked_quotations(self):
+        if not self.name or not frappe.db.has_column("Quotation", "source_pricing_sheet"):
+            return []
+        fields = ["name", "docstatus", "status", "transaction_date", "grand_total", "modified"]
+        return frappe.get_all(
+            "Quotation",
+            filters={"source_pricing_sheet": self.name},
+            fields=fields,
+            order_by="modified desc",
+            limit_page_length=0,
+        )
+
+    @frappe.whitelist()
+    def generate_quotation(self, target_quotation=None):
         self.check_permission("write")
         if self._is_restricted_agent_user() and not self._can_create_quotation_as_commercial_user():
             frappe.throw(_("You need the Quotation Creator role to generate quotations."), frappe.PermissionError)
@@ -2604,7 +2625,9 @@ class PricingSheet(Document):
         if not lines:
             frappe.throw(_("Please add at least one pricing line."))
 
-        quotation = frappe.new_doc("Quotation")
+        target_quotation = (target_quotation or "").strip()
+        quotation = self._get_target_quotation_for_update(target_quotation) if target_quotation else frappe.new_doc("Quotation")
+        quotation.set("items", [])
         quotation.company = self._resolve_company_for_quotation()
         quotation.quotation_to = party_type
         quotation.party_name = party_name
@@ -2637,8 +2660,25 @@ class PricingSheet(Document):
         apply_quotation_sales_tax_template(quotation)
         sync_quotation_item_tax_inclusive_fields(quotation)
 
-        quotation.insert()
+        if target_quotation:
+            quotation.flags.allow_source_pricing_sheet_update = True
+            quotation.save()
+        else:
+            quotation.insert()
         return quotation.name
+
+    def _get_target_quotation_for_update(self, target_quotation):
+        if not frappe.db.exists("Quotation", target_quotation):
+            frappe.throw(_("Quotation {0} was not found.").format(target_quotation))
+        quotation = frappe.get_doc("Quotation", target_quotation)
+        quotation.check_permission("write")
+        if cint(quotation.docstatus) != 0:
+            frappe.throw(_("Only draft Quotations can be updated from a Pricing Sheet."))
+        if not frappe.db.has_column("Quotation", "source_pricing_sheet"):
+            frappe.throw(_("Quotation source Pricing Sheet field is not configured."))
+        if (quotation.get("source_pricing_sheet") or "").strip() != self.name:
+            frappe.throw(_("Quotation {0} is not linked to Pricing Sheet {1}.").format(target_quotation, self.name))
+        return quotation
 
     def _apply_quotation_selected_price_lists(self, quotation):
         if not quotation.meta.get_field("selected_selling_price_lists"):
@@ -2753,6 +2793,10 @@ class PricingSheet(Document):
                 item_data["source_gross_sell_rate"] = flt(row.final_sell_unit_price)
             if frappe.db.has_column("Quotation Item", "source_selling_price_list"):
                 item_data["source_selling_price_list"] = (getattr(row, "resolved_selling_price_list", "") or "").strip()
+            if frappe.db.has_column("Quotation Item", "source_price_list_sell_rate"):
+                item_data["source_price_list_sell_rate"] = flt(
+                    row.static_list_price or row.projected_unit_price or row.final_sell_unit_price
+                )
             if frappe.db.has_column("Quotation Item", "source_discount_percent"):
                 item_data["source_discount_percent"] = flt(row.discount_percent)
             if frappe.db.has_column("Quotation Item", "source_max_discount_percent"):
@@ -2787,6 +2831,8 @@ class PricingSheet(Document):
                 item["source_max_discount_percent"] = flt(grouped_caps.get((group_name, scenario_name)) or 0)
             if frappe.db.has_column("Quotation Item", "source_gross_sell_rate"):
                 item["source_gross_sell_rate"] = flt(group_total)
+            if frappe.db.has_column("Quotation Item", "source_price_list_sell_rate"):
+                item["source_price_list_sell_rate"] = flt(group_total)
             if frappe.db.has_column("Quotation Item", "source_discount_percent"):
                 item["source_discount_percent"] = 0
             if frappe.db.has_column("Quotation Item", "source_discount_amount"):
@@ -3021,12 +3067,23 @@ def get_price_list_currency(price_list):
 
 @lru_cache(maxsize=256)
 def get_exchange_rate_for_pair(from_currency, to_currency, rate_date=None):
+    return flt(get_exchange_rate_info_for_pair(from_currency, to_currency, rate_date).get("exchange_rate") or 0)
+
+
+@lru_cache(maxsize=256)
+def get_exchange_rate_info_for_pair(from_currency, to_currency, rate_date=None):
     from_currency = (from_currency or "").strip().upper()
     to_currency = (to_currency or "").strip().upper()
     rate_date = rate_date or nowdate()
 
     if not from_currency or not to_currency or from_currency == to_currency:
-        return 1.0
+        return {
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+            "exchange_rate": 1.0,
+            "rate_date": rate_date,
+            "source": "Same Currency",
+        }
 
     if frappe.db.exists("DocType", "Currency Exchange"):
         row = frappe.get_all(
@@ -3036,12 +3093,19 @@ def get_exchange_rate_for_pair(from_currency, to_currency, rate_date=None):
                 "to_currency": to_currency,
                 "date": ["<=", rate_date],
             },
-            fields=["exchange_rate"],
+            fields=["name", "date", "exchange_rate"],
             order_by="date desc, modified desc",
             limit_page_length=1,
         )
         if row and flt(row[0].exchange_rate) > 0:
-            return flt(row[0].exchange_rate)
+            return {
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "exchange_rate": flt(row[0].exchange_rate),
+                "rate_date": getattr(row[0], "date", rate_date) or rate_date,
+                "source": "Currency Exchange",
+                "source_name": getattr(row[0], "name", "") or "",
+            }
 
         inverse = frappe.get_all(
             "Currency Exchange",
@@ -3050,19 +3114,32 @@ def get_exchange_rate_for_pair(from_currency, to_currency, rate_date=None):
                 "to_currency": from_currency,
                 "date": ["<=", rate_date],
             },
-            fields=["exchange_rate"],
+            fields=["name", "date", "exchange_rate"],
             order_by="date desc, modified desc",
             limit_page_length=1,
         )
         if inverse and flt(inverse[0].exchange_rate) > 0:
-            return 1.0 / flt(inverse[0].exchange_rate)
+            return {
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "exchange_rate": 1.0 / flt(inverse[0].exchange_rate),
+                "rate_date": getattr(inverse[0], "date", rate_date) or rate_date,
+                "source": "Currency Exchange (inverse)",
+                "source_name": getattr(inverse[0], "name", "") or "",
+            }
 
     try:
         from erpnext.setup.utils import get_exchange_rate  # type: ignore
 
         rate = flt(get_exchange_rate(from_currency, to_currency, rate_date) or 0)
         if rate > 0:
-            return rate
+            return {
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "exchange_rate": rate,
+                "rate_date": rate_date,
+                "source": "ERPNext Exchange Rate",
+            }
     except Exception:
         pass
 
@@ -3341,7 +3418,7 @@ def stock_item_query(doctype, txt, searchfield, start, page_len, filters):
         LEFT JOIN `tabBin` b ON b.item_code = i.name
         WHERE i.disabled = 0
           AND i.is_stock_item = 1
-          AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+          AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s OR i.description LIKE %(txt)s)
           {stock_warehouse_condition("b.warehouse", params)}
         GROUP BY i.name, i.item_name, i.stock_uom
         ORDER BY stock_qty DESC, i.name

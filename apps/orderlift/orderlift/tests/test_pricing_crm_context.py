@@ -177,7 +177,7 @@ class TestPricingCrmContextSchema(unittest.TestCase):
         ).read_text()
 
         self.assertIn('key === "buy_price" ? "static_list_price" : key', builder_js)
-        self.assertIn('label: __("Static List Price")', builder_js)
+        self.assertIn('label: __("PU List HT")', builder_js)
         self.assertIn('return projected || Number(row.final_sell_unit_price || 0) || staticBaseUnit(row);', builder_js)
 
     def test_pricing_sheet_builder_separates_admin_static_columns(self):

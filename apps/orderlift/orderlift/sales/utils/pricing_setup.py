@@ -400,6 +400,27 @@ def after_migrate():
                     "insert_after": "column_break2",
                 }
             ],
+            "Sales Order": [
+                {
+                    "fieldname": "source_pricing_sheet",
+                    "label": "Source Pricing Sheet",
+                    "fieldtype": "Link",
+                    "options": "Pricing Sheet",
+                    "insert_after": "order_type",
+                    "read_only": 1,
+                    "in_standard_filter": 1,
+                    "description": "Pricing source inherited from the submitted Quotation.",
+                },
+                {
+                    "fieldname": "selected_selling_price_lists",
+                    "label": "Selling Price Lists",
+                    "fieldtype": "Table",
+                    "options": "Pricing Sheet Price List Selection",
+                    "insert_after": "source_pricing_sheet",
+                    "read_only": 1,
+                    "description": "Selling price lists inherited from the submitted Quotation.",
+                },
+            ],
             "Quotation Item": [
                 {
                     "fieldname": "source_pricing_sheet_line",
@@ -498,6 +519,105 @@ def after_migrate():
                     "description": "Allowed Selling Price List selected for this item row.",
                 },
             ],
+            "Sales Order Item": [
+                {
+                    "fieldname": "source_pricing_sheet_line",
+                    "label": "Source Pricing Sheet Line",
+                    "fieldtype": "Data",
+                    "insert_after": "description",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_pricing_scenario",
+                    "label": "Source Pricing Scenario",
+                    "fieldtype": "Link",
+                    "options": "Pricing Scenario",
+                    "insert_after": "source_pricing_sheet_line",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_pricing_override",
+                    "label": "Source Pricing Override",
+                    "fieldtype": "Check",
+                    "insert_after": "source_pricing_scenario",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_pricing_policy",
+                    "label": "Source Pricing Policy",
+                    "fieldtype": "Link",
+                    "options": "Pricing Benchmark Policy",
+                    "insert_after": "source_pricing_override",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_margin_percent",
+                    "label": "Source Margin Percent",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_pricing_policy",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_margin_basis",
+                    "label": "Margin Basis",
+                    "fieldtype": "Data",
+                    "insert_after": "source_margin_percent",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_scenario_rule",
+                    "label": "Source Scenario Rule",
+                    "fieldtype": "Data",
+                    "insert_after": "source_margin_basis",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_margin_rule",
+                    "label": "Source Margin Rule",
+                    "fieldtype": "Data",
+                    "insert_after": "source_scenario_rule",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_sales_person",
+                    "label": "Source Sales Person",
+                    "fieldtype": "Link",
+                    "options": "Sales Person",
+                    "insert_after": "source_margin_rule",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_geography",
+                    "label": "Source Geography",
+                    "fieldtype": "Data",
+                    "insert_after": "source_sales_person",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_customs_applied",
+                    "label": "Source Customs Applied",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_geography",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_customs_basis",
+                    "label": "Source Customs Basis",
+                    "fieldtype": "Data",
+                    "insert_after": "source_customs_applied",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_selling_price_list",
+                    "label": "Selling Price List Used",
+                    "fieldtype": "Link",
+                    "options": "Price List",
+                    "insert_after": "item_code",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "description": "Selling Price List inherited from the source Quotation item.",
+                },
+            ],
             "Selling Settings": [
                 {
                     "fieldname": "custom_pricing_group_line_item",
@@ -549,6 +669,7 @@ def after_migrate():
     frappe.clear_cache(doctype="Lead")
     frappe.clear_cache(doctype="Quotation")
     frappe.clear_cache(doctype="Quotation Item")
+    frappe.clear_cache(doctype="Sales Order")
     frappe.clear_cache(doctype="Sales Order Item")
     frappe.clear_cache(doctype="Delivery Note Item")
     frappe.clear_cache(doctype="Sales Invoice Item")
@@ -561,6 +682,7 @@ def after_migrate():
     frappe.clear_cache(doctype="Role")
     ensure_quotation_discount_snapshot_fields()
     ensure_quotation_pricing_layout()
+    ensure_sales_order_pricing_layout()
     ensure_all_ttc_item_layouts()
     ensure_print_format_company_field_visible()
     ensure_default_pricing_tiers()
@@ -917,15 +1039,23 @@ def ensure_quotation_discount_snapshot_fields():
                     "description": "Current total stock in allowed warehouses for the document company.",
                 },
                 {
-                    "fieldname": "source_gross_sell_rate",
-                    "label": "Source Gross Sell Rate",
+                    "fieldname": "source_price_list_sell_rate",
+                    "label": "PU List HT",
                     "fieldtype": "Currency",
-                    "insert_after": "source_customs_basis",
+                    "insert_after": "source_selling_price_list",
+                    "read_only": 1,
+                    "description": "Original unit price from the resolved selling price list.",
+                },
+                {
+                    "fieldname": "source_gross_sell_rate",
+                    "label": "PU HT",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_price_list_sell_rate",
                     "read_only": 1,
                 },
                 {
                     "fieldname": "source_discount_percent",
-                    "label": "Source Discount Percent",
+                    "label": "Remise %",
                     "fieldtype": "Percent",
                     "insert_after": "source_gross_sell_rate",
                 },
@@ -938,14 +1068,14 @@ def ensure_quotation_discount_snapshot_fields():
                 },
                 {
                     "fieldname": "source_discount_amount",
-                    "label": "Source Discount Amount",
+                    "label": "Remise HT",
                     "fieldtype": "Currency",
                     "insert_after": "source_max_discount_percent",
                     "read_only": 1,
                 },
                 {
                     "fieldname": "source_discounted_sell_rate",
-                    "label": "Source Discounted Sell Rate",
+                    "label": "PU HT net",
                     "fieldtype": "Currency",
                     "insert_after": "source_discount_amount",
                     "read_only": 1,
@@ -968,7 +1098,7 @@ def ensure_quotation_discount_snapshot_fields():
                 },
                 {
                     "fieldname": "custom_pu_ttc",
-                    "label": "PU TTC",
+                    "label": "PU TTC net",
                     "fieldtype": "Currency",
                     "insert_after": "source_commission_amount",
                     "read_only": 1,
@@ -982,7 +1112,7 @@ def ensure_quotation_discount_snapshot_fields():
                 },
                 {
                     "fieldname": "custom_pt_ttc",
-                    "label": "PT TTC",
+                    "label": "PT TTC net",
                     "fieldtype": "Currency",
                     "insert_after": "custom_applied_taxes",
                     "read_only": 1,
@@ -990,10 +1120,69 @@ def ensure_quotation_discount_snapshot_fields():
             ],
             "Sales Order Item": [
                 {
-                    "fieldname": "custom_pu_ttc",
-                    "label": "PU TTC",
+                    "fieldname": "source_price_list_sell_rate",
+                    "label": "PU List HT",
                     "fieldtype": "Currency",
-                    "insert_after": "amount",
+                    "insert_after": "source_selling_price_list",
+                    "read_only": 1,
+                    "description": "Original unit price inherited from the source Quotation item.",
+                },
+                {
+                    "fieldname": "source_gross_sell_rate",
+                    "label": "PU HT",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_price_list_sell_rate",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_discount_percent",
+                    "label": "Remise %",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_gross_sell_rate",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_max_discount_percent",
+                    "label": "Source Max Discount Percent",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_discount_percent",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_discount_amount",
+                    "label": "Remise HT",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_max_discount_percent",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_discounted_sell_rate",
+                    "label": "PU HT net",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_discount_amount",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "source_commission_rate",
+                    "label": "Source Commission Rate",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_discounted_sell_rate",
+                    "read_only": 1,
+                    "hidden": 1,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_commission_amount",
+                    "label": "Source Commission Amount",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_commission_rate",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_pu_ttc",
+                    "label": "PU TTC net",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_commission_amount",
                     "read_only": 1,
                 },
                 {
@@ -1005,7 +1194,7 @@ def ensure_quotation_discount_snapshot_fields():
                 },
                 {
                     "fieldname": "custom_pt_ttc",
-                    "label": "PT TTC",
+                    "label": "PT TTC net",
                     "fieldtype": "Currency",
                     "insert_after": "custom_applied_taxes",
                     "read_only": 1,
@@ -1189,7 +1378,8 @@ def ensure_quotation_pricing_layout():
         "source_geography",
         "source_customs_applied",
         "source_customs_basis",
-        "source_gross_sell_rate",
+        "source_margin_basis",
+        "source_margin_percent",
     ]
     for fieldname in quotation_item_hidden_fields:
         if not frappe.get_meta("Quotation Item").get_field(fieldname):
@@ -1200,18 +1390,18 @@ def ensure_quotation_pricing_layout():
             _upsert_property_setter("Quotation Item", fieldname, "read_only", "1", "Check")
 
     quotation_item_visible_fields = [
-        ("source_discount_percent", "Pricing Discount %"),
+        ("source_discount_percent", "Remise %"),
         ("source_selling_price_list", "Selling Price List Used"),
-        ("source_margin_basis", "Margin Basis"),
-        ("source_margin_percent", "Margin %"),
+        ("source_price_list_sell_rate", "PU List HT"),
+        ("source_gross_sell_rate", "PU HT"),
         ("source_max_discount_percent", "Max Discount %"),
-        ("source_discount_amount", "Pricing Discount Amount"),
-        ("source_discounted_sell_rate", "Net Price HT"),
+        ("source_discount_amount", "Remise HT"),
+        ("source_discounted_sell_rate", "PU HT net"),
         ("source_commission_rate", "Commission %"),
         ("source_commission_amount", "Commission Amount"),
         ("custom_applied_taxes", "Applied Taxes"),
-        ("custom_pu_ttc", "PU TTC"),
-        ("custom_pt_ttc", "PT TTC"),
+        ("custom_pu_ttc", "PU TTC net"),
+        ("custom_pt_ttc", "PT TTC net"),
     ]
     for fieldname, label in quotation_item_visible_fields:
         if not frappe.get_meta("Quotation Item").get_field(fieldname):
@@ -1221,6 +1411,92 @@ def ensure_quotation_pricing_layout():
         _upsert_property_setter("Quotation Item", fieldname, "in_list_view", "1", "Check")
     if frappe.get_meta("Quotation Item").get_field("source_discount_percent"):
         _upsert_property_setter("Quotation Item", "source_discount_percent", "read_only", "0", "Check")
+    if frappe.get_meta("Quotation Item").get_field("source_gross_sell_rate"):
+        _upsert_property_setter("Quotation Item", "source_gross_sell_rate", "read_only", "0", "Check")
+    for fieldname in ("source_discount_amount", "custom_pu_ttc"):
+        if frappe.get_meta("Quotation Item").get_field(fieldname):
+            _upsert_property_setter("Quotation Item", fieldname, "read_only", "0", "Check")
+    if frappe.get_meta("Quotation Item").get_field("source_discounted_sell_rate"):
+        _upsert_property_setter("Quotation Item", "source_discounted_sell_rate", "read_only", "1", "Check")
+    quotation_item_currency_precision_fields = (
+        "source_price_list_sell_rate",
+        "source_gross_sell_rate",
+        "source_discount_amount",
+        "source_discounted_sell_rate",
+        "custom_applied_taxes",
+        "custom_pu_ttc",
+        "custom_pt_ttc",
+    )
+    for fieldname in quotation_item_currency_precision_fields:
+        if frappe.get_meta("Quotation Item").get_field(fieldname):
+            _upsert_property_setter("Quotation Item", fieldname, "precision", "2", "Data")
+    if frappe.get_meta("Quotation Item").get_field("amount"):
+        _upsert_property_setter("Quotation Item", "amount", "label", "PT HT net", "Data")
+
+
+def ensure_sales_order_pricing_layout():
+    if frappe.get_meta("Sales Order").get_field("source_pricing_sheet"):
+        _upsert_property_setter("Sales Order", "source_pricing_sheet", "read_only", "1", "Check")
+    if frappe.get_meta("Sales Order").get_field("selected_selling_price_lists"):
+        _upsert_property_setter("Sales Order", "selected_selling_price_lists", "read_only", "1", "Check")
+
+    sales_order_item_hidden_fields = [
+        "source_pricing_sheet_line",
+        "source_pricing_scenario",
+        "source_pricing_override",
+        "source_pricing_policy",
+        "source_scenario_rule",
+        "source_margin_rule",
+        "source_sales_person",
+        "source_geography",
+        "source_customs_applied",
+        "source_customs_basis",
+    ]
+    for fieldname in sales_order_item_hidden_fields:
+        if not frappe.get_meta("Sales Order Item").get_field(fieldname):
+            continue
+        _upsert_property_setter("Sales Order Item", fieldname, "hidden", "1", "Check")
+        _upsert_property_setter("Sales Order Item", fieldname, "in_list_view", "0", "Check")
+
+    sales_order_item_visible_fields = [
+        ("source_selling_price_list", "Selling Price List Used"),
+        ("source_price_list_sell_rate", "PU List HT"),
+        ("source_gross_sell_rate", "PU HT"),
+        ("source_discount_percent", "Remise %"),
+        ("source_margin_basis", "Margin Basis"),
+        ("source_margin_percent", "Margin %"),
+        ("source_max_discount_percent", "Max Discount %"),
+        ("source_discount_amount", "Remise HT"),
+        ("source_discounted_sell_rate", "PU HT net"),
+        ("source_commission_rate", "Commission %"),
+        ("source_commission_amount", "Commission Amount"),
+        ("custom_applied_taxes", "Applied Taxes"),
+        ("custom_pu_ttc", "PU TTC net"),
+        ("custom_pt_ttc", "PT TTC net"),
+    ]
+    for fieldname, label in sales_order_item_visible_fields:
+        if not frappe.get_meta("Sales Order Item").get_field(fieldname):
+            continue
+        _upsert_property_setter("Sales Order Item", fieldname, "label", label, "Data")
+        _upsert_property_setter("Sales Order Item", fieldname, "hidden", "0", "Check")
+        _upsert_property_setter("Sales Order Item", fieldname, "in_list_view", "1", "Check")
+        if fieldname not in {"custom_pu_ttc"}:
+            _upsert_property_setter("Sales Order Item", fieldname, "read_only", "1", "Check")
+
+    sales_order_item_currency_precision_fields = (
+        "source_price_list_sell_rate",
+        "source_gross_sell_rate",
+        "source_discount_amount",
+        "source_discounted_sell_rate",
+        "custom_applied_taxes",
+        "custom_pu_ttc",
+        "custom_pt_ttc",
+    )
+    for fieldname in sales_order_item_currency_precision_fields:
+        if frappe.get_meta("Sales Order Item").get_field(fieldname):
+            _upsert_property_setter("Sales Order Item", fieldname, "precision", "2", "Data")
+    if frappe.get_meta("Sales Order Item").get_field("amount"):
+        _upsert_property_setter("Sales Order Item", "amount", "label", "PT HT net", "Data")
 
 
 _TTC_ITEM_DOCTYPES = [

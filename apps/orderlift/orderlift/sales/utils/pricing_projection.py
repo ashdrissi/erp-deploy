@@ -14,7 +14,7 @@ class ExpenseStep:
     sequence: int
 
 
-def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> dict:
+def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict], include_sheet_fixed: bool = False) -> dict:
     running_total = float(base_unit)
     line_fixed_total = 0.0
     sheet_fixed_total = 0.0
@@ -77,8 +77,10 @@ def apply_expenses(base_unit: float, qty: float, expenses: Iterable[dict]) -> di
             }
         )
 
-    projected_unit = running_total
-    projected_line = projected_unit * qty
+    projected_line = running_total * qty
+    if include_sheet_fixed:
+        projected_line += sheet_fixed_total
+    projected_unit = projected_line / qty if qty else running_total
     return {
         "projected_unit": projected_unit,
         "projected_line": projected_line,
@@ -95,35 +97,96 @@ def apply_discount_and_commission(
     discount_percent: float,
     max_discount_percent: float,
     commission_rate: float,
+    actual_unit_price: float | None = None,
+    uplift_commission_rate: float = 20.0,
+    enforce_discount_cap: bool = True,
+    discount_base_unit_price: float | None = None,
 ) -> dict:
     gross_unit_price = float(gross_unit_price or 0)
     qty = float(qty or 0)
     discount_percent = float(discount_percent or 0)
     max_discount_percent = float(max_discount_percent or 0)
     commission_rate = float(commission_rate or 0)
+    uplift_commission_rate = float(uplift_commission_rate or 0)
+    discount_base_unit_price = float(discount_base_unit_price if discount_base_unit_price is not None else gross_unit_price)
 
     if discount_percent < 0:
         raise ValueError("Discount % cannot be negative")
-    if discount_percent > max_discount_percent + 1e-9:
+    if enforce_discount_cap and discount_percent > max_discount_percent + 1e-9:
         raise ValueError(f"Discount % cannot exceed {max_discount_percent:.1f}%")
 
     gross_total = gross_unit_price * qty
-    discount_amount = gross_total * (discount_percent / 100.0) if discount_percent else 0.0
-    discounted_unit_price = gross_unit_price * (1 - (discount_percent / 100.0)) if discount_percent else gross_unit_price
-    discounted_total = gross_total - discount_amount
-    unused_discount_percent = max(max_discount_percent - discount_percent, 0.0)
-    commission_amount = gross_total * (unused_discount_percent / 100.0) * (commission_rate / 100.0) if commission_rate else 0.0
+    discounted_unit_price = (
+        float(actual_unit_price or 0)
+        if actual_unit_price is not None
+        else discount_base_unit_price * (1 - (discount_percent / 100.0))
+    )
+    discounted_total = discounted_unit_price * qty
+    discount_amount = max(discount_base_unit_price * qty * (discount_percent / 100.0), 0.0)
+    commission = calculate_agent_commission(
+        price_list_unit_price=gross_unit_price,
+        actual_unit_price=discounted_unit_price,
+        qty=qty,
+        max_discount_percent=max_discount_percent,
+        commission_rate=commission_rate,
+        discount_percent=discount_percent,
+        uplift_commission_rate=uplift_commission_rate,
+        enforce_discount_cap=enforce_discount_cap,
+    )
 
     return {
         "gross_total": gross_total,
         "max_discount_percent": max_discount_percent,
         "discount_percent": discount_percent,
-        "unused_discount_percent": unused_discount_percent,
+        "unused_discount_percent": commission["unused_discount_percent"],
         "discount_amount": discount_amount,
         "discounted_unit_price": discounted_unit_price,
         "discounted_total": discounted_total,
         "commission_rate": commission_rate,
-        "commission_amount": commission_amount,
+        "commission_amount": commission["commission_amount"],
+        "base_commission_amount": commission["base_commission_amount"],
+        "uplift_commission_amount": commission["uplift_commission_amount"],
+    }
+
+
+def calculate_agent_commission(
+    *,
+    price_list_unit_price: float,
+    actual_unit_price: float,
+    qty: float,
+    max_discount_percent: float,
+    commission_rate: float,
+    discount_percent: float | None = None,
+    uplift_commission_rate: float = 20.0,
+    enforce_discount_cap: bool = True,
+) -> dict:
+    price_list_unit_price = float(price_list_unit_price or 0)
+    actual_unit_price = float(actual_unit_price or 0)
+    qty = float(qty or 0)
+    max_discount_percent = float(max_discount_percent or 0)
+    commission_rate = float(commission_rate or 0)
+    uplift_commission_rate = float(uplift_commission_rate or 0)
+
+    if discount_percent is None:
+        discount_percent = 0.0
+        if price_list_unit_price > 0 and actual_unit_price < price_list_unit_price:
+            discount_percent = ((price_list_unit_price - actual_unit_price) / price_list_unit_price) * 100.0
+    else:
+        discount_percent = float(discount_percent or 0)
+    if enforce_discount_cap and discount_percent > max_discount_percent + 1e-9:
+        raise ValueError(f"Discount % cannot exceed {max_discount_percent:.1f}%")
+
+    price_list_total = price_list_unit_price * qty
+    unused_discount_percent = max(max_discount_percent - discount_percent, 0.0)
+    base_commission = price_list_total * (unused_discount_percent / 100.0) * (commission_rate / 100.0)
+    uplift_commission = max(actual_unit_price - price_list_unit_price, 0.0) * qty * (uplift_commission_rate / 100.0)
+
+    return {
+        "discount_percent": discount_percent,
+        "unused_discount_percent": unused_discount_percent,
+        "base_commission_amount": base_commission,
+        "uplift_commission_amount": uplift_commission,
+        "commission_amount": base_commission + uplift_commission,
     }
 
 

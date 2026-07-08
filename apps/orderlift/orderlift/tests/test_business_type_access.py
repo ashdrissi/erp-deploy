@@ -400,6 +400,9 @@ class TestOwnedOnlyOperationalChains(unittest.TestCase):
             "db": company_access.frappe.db,
             "get_meta": getattr(company_access.frappe, "get_meta", None),
             "sales_person": company_access._sales_person_for_user,
+            "allowed_companies": company_access.get_allowed_companies,
+            "active_company": company_access._active_company_for_query,
+            "has_field": company_access._has_company_field,
         }
         company_access._user_owned_documents_only = lambda user=None: True
         company_access._sales_person_for_user = lambda user=None: "Sales Person A"
@@ -412,6 +415,9 @@ class TestOwnedOnlyOperationalChains(unittest.TestCase):
     def tearDown(self):
         company_access._user_owned_documents_only = self._orig["owned_flag"]
         company_access._sales_person_for_user = self._orig["sales_person"]
+        company_access.get_allowed_companies = self._orig["allowed_companies"]
+        company_access._active_company_for_query = self._orig["active_company"]
+        company_access._has_company_field = self._orig["has_field"]
         company_access.frappe.db = self._orig["db"]
         if self._orig["get_meta"] is None:
             delattr(company_access.frappe, "get_meta")
@@ -516,6 +522,30 @@ class TestOwnedOnlyOperationalChains(unittest.TestCase):
         self.assertIn("`tabSales Invoice` _sav_sales_invoice", clause)
         self.assertIn("`tabPurchase Receipt` _sav_purchase_receipt", clause)
         self.assertIn("`tabProject` _sav_installation_project", clause)
+
+    def test_sav_technician_query_is_limited_to_assigned_or_todo_tickets(self):
+        ROLES["demo@example.com"] = ["SAV Technician"]
+        company_access.get_allowed_companies = lambda user=None: ["Orderlift"]
+        company_access._active_company_for_query = lambda user=None, allowed_companies=None: "Orderlift"
+        company_access._has_company_field = lambda doctype, fieldname: True
+        company_access._user_owned_documents_only = lambda user=None: False
+
+        clause = company_access._sav_ticket_query("demo@example.com")
+
+        self.assertIn("`tabSAV Ticket`.assigned_technician = 'demo@example.com'", clause)
+        self.assertIn("_todo_assignment.reference_type = 'SAV Ticket'", clause)
+        self.assertIn("_todo_assignment.allocated_to = 'demo@example.com'", clause)
+
+    def test_service_user_sav_query_is_not_limited_to_assigned_tickets(self):
+        ROLES["demo@example.com"] = ["Service User", "SAV Technician"]
+        company_access.get_allowed_companies = lambda user=None: ["Orderlift"]
+        company_access._active_company_for_query = lambda user=None, allowed_companies=None: "Orderlift"
+        company_access._has_company_field = lambda doctype, fieldname: True
+        company_access._user_owned_documents_only = lambda user=None: False
+
+        clause = company_access._sav_ticket_query("demo@example.com")
+
+        self.assertNotIn("`tabSAV Ticket`.assigned_technician = 'demo@example.com'", clause)
 
 
 class TestSpecialScopeQueries(unittest.TestCase):

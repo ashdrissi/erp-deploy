@@ -16,6 +16,7 @@
     "compare_source",
     "manual_value",
     "compare_question_key",
+    "condition_rules_json",
     "article_section",
     "rule_label",
     "item_selection_mode",
@@ -28,7 +29,9 @@
     "show_in_detail",
     "legacy_section",
     "condition_formula",
-    "qty_formula"
+    "condition_formula_builder_json",
+    "qty_formula",
+    "qty_formula_builder_json"
   ],
   "fields": [
     {
@@ -60,7 +63,7 @@
       "fieldname": "condition_mode",
       "fieldtype": "Select",
       "label": "Condition Mode",
-      "options": "always\nbased",
+      "options": "always\nbased\nformula",
       "default": "always"
     },
     {
@@ -93,6 +96,14 @@
       "label": "Compare Question Key"
     },
     {
+      "fieldname": "condition_rules_json",
+      "fieldtype": "Code",
+      "label": "Condition Rules JSON",
+      "options": "JSON",
+      "hidden": 1,
+      "depends_on": "eval:doc.condition_mode=='based'"
+    },
+    {
       "fieldname": "article_section",
       "fieldtype": "Section Break",
       "label": "Article"
@@ -110,6 +121,14 @@
       "label": "Condition Avancee",
       "hidden": 1,
       "description": "Optionnel. Laisser vide pour toujours ajouter l'article quand la formule de quantite donne une valeur > 0."
+    },
+    {
+      "fieldname": "condition_formula_builder_json",
+      "fieldtype": "Code",
+      "label": "Condition Formula Builder JSON",
+      "options": "JSON",
+      "hidden": 1,
+      "depends_on": "eval:doc.condition_mode=='formula'"
     },
     {
       "fieldname": "item",
@@ -142,10 +161,18 @@
       "description": "Exemple : 3 * niveaux + 1"
     },
     {
+      "fieldname": "qty_formula_builder_json",
+      "fieldtype": "Code",
+      "label": "Quantity Formula Builder JSON",
+      "options": "JSON",
+      "hidden": 1,
+      "depends_on": "eval:doc.quantity_mode=='formula'"
+    },
+    {
       "fieldname": "quantity_mode",
       "fieldtype": "Select",
       "label": "Quantity Mode",
-      "options": "fixed\nquestion",
+      "options": "fixed\nquestion\nformula",
       "default": "fixed",
       "in_list_view": 1
     },

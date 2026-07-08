@@ -24,6 +24,7 @@
         stalePromptKey: "",
     };
     let autosaveTimer = null;
+    let savePromise = null;
     let autoRecalculateTimer = null;
     const SOURCING_RULE_FIELDS = ["buying_price_list", "pricing_scenario", "customs_policy", "benchmark_policy"];
     const NUMERIC_FIELDS = new Set([
@@ -179,7 +180,8 @@
     }
 
     async function save(page, options) {
-        if (!STATE.doc || STATE.saving) return null;
+        if (!STATE.doc) return null;
+        if (STATE.saving) return savePromise;
         options = options || {};
         syncVisibleInputs(page);
         if (options.autosave) {
@@ -193,7 +195,7 @@
         STATE.saving = true;
         STATE.autosaveStatus = options.autosave ? __("Autosaving...") : __("Saving...");
         if (options.render !== false) render(page);
-        try {
+        savePromise = (async () => {
             const res = await frappe.call({
                 method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.save_builder_page_doc",
                 args: { payload: STATE.doc, create_history: 1, history_label: options.historyLabel || (options.autosave ? __("Autosaved") : __("Saved")) },
@@ -212,10 +214,21 @@
             STATE.autosaveStatus = options.autosave ? __("Autosaved") : __("Saved");
             if (!options.autosave && options.showCustomsAlert !== false) showCustomsIssueAlert(customsIssueRows(customsReviewRows()), __("Customs Review"));
             return STATE.doc;
+        })();
+        try {
+            return await savePromise;
         } finally {
             STATE.saving = false;
+            savePromise = null;
             if (options.render !== false) render(page);
         }
+    }
+
+    async function saveLatest(page, options) {
+        clearTimeout(autosaveTimer);
+        if (savePromise) await savePromise;
+        syncVisibleInputs(page);
+        return save(page, options || {});
     }
 
     async function calculate(page, options) {
@@ -308,15 +321,16 @@
         autoRecalculateTimer = null;
     }
 
-    async function publish(page, selectedOnly) {
+    async function publish(page, selectedOnly, selectedRows) {
         if (!STATE.doc || !STATE.doc.selling_price_list_name) {
             frappe.throw(__("Enter the Selling Price List Name before publishing."));
         }
-        const doc = await save(page, { freeze: true, showCustomsAlert: false });
+        const doc = await saveLatest(page, { freeze: true, showCustomsAlert: false });
         if (!doc || !doc.name || doc.name === "new") return;
+        const rowsToPublish = selectedRows || selectedPublishRows(doc);
         const response = await frappe.call({
             method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.publish_builder_page_doc",
-            args: { name: doc.name, selected_only: selectedOnly ? 1 : 0 },
+            args: { name: doc.name, selected_only: selectedOnly ? 1 : 0, selected_rows: selectedOnly ? rowsToPublish : null },
             freeze: true,
             freeze_message: __("Publishing prices..."),
         });
@@ -336,22 +350,25 @@
         render(page);
     }
 
-    function previewPublish(page) {
+    async function previewPublish(page) {
         if (!STATE.doc || !STATE.doc.selling_price_list_name) {
             frappe.throw(__("Select or enter the target Selling Price List before publishing."));
         }
-        const selectedRows = (STATE.doc.builder_items || []).filter((row) => toNumber(row.selected));
+        const doc = await saveLatest(page, { freeze: true, showCustomsAlert: false, render: false, historyLabel: __("Saved before publish") });
+        if (!doc || !doc.name || doc.name === "new") return;
+        const selectedRows = (doc.builder_items || []).filter((row) => toNumber(row.selected));
         if (!selectedRows.length) {
             frappe.msgprint({ title: __("No Items Selected"), message: __("Select at least one Builder Item before publishing."), indicator: "orange" });
             return;
         }
-        const isUpdate = (STATE.refs.selling_price_lists || []).includes(STATE.doc.selling_price_list_name);
+        const selectedRowsPayload = selectedRows.map(selectedPublishRow);
+        const isUpdate = (STATE.refs.selling_price_lists || []).includes(doc.selling_price_list_name);
         const customsIssues = customsIssueRows(selectedRows);
         const customsAlert = customsIssues.length ? customsIssueHtml(customsIssues) : "";
         const rowsHtml = selectedRows.slice(0, 120).map((row) => {
             const nextPrice = finalSellUnit(row);
             const delta = nextPrice - toNumber(row.published_price);
-            return `<tr><td><strong>${escapeHtml(row.item)}</strong><small>${escapeHtml(row.item_name || "")}</small></td><td>${money(row.published_price)}</td><td>${money(nextPrice)}</td><td class="${delta < 0 ? "pbb-negative" : "pbb-positive"}">${money(delta)}</td><td>${escapeHtml(row.status || "")}</td></tr>`;
+            return `<tr><td><strong>${escapeHtml(row.item)}</strong><small>${escapeHtml(row.item_name || "")}</small></td><td>${money(row.published_price)}</td><td>${previewNewPriceCell(row, nextPrice)}</td><td class="${delta < 0 ? "pbb-negative" : "pbb-positive"}">${money(delta)}</td><td>${escapeHtml(row.status || "")}</td></tr>`;
         }).join("");
         const overflowNote = selectedRows.length > 120 ? `<p class="pbb-preview-note">${__("Showing first 120 of {0} selected items.", [selectedRows.length])}</p>` : "";
         const dialog = new frappe.ui.Dialog({
@@ -362,14 +379,14 @@
             primary_action: () => {
                 frappe.confirm(
                     isUpdate
-                        ? __("This will update {0} selected item prices in existing list {1}. Continue?", [selectedRows.length, STATE.doc.selling_price_list_name])
-                        : __("This will publish {0} selected item prices to new list {1}. Continue?", [selectedRows.length, STATE.doc.selling_price_list_name]),
+                        ? __("This will update {0} selected item prices in existing list {1}. Continue?", [selectedRows.length, doc.selling_price_list_name])
+                        : __("This will publish {0} selected item prices to new list {1}. Continue?", [selectedRows.length, doc.selling_price_list_name]),
                     async () => {
                         dialog.hide();
                         if (isUpdate) {
-                            frappe.show_alert({ message: __("Updating existing selling list {0}.", [STATE.doc.selling_price_list_name]), indicator: "orange" }, 6);
+                            frappe.show_alert({ message: __("Updating existing selling list {0}.", [doc.selling_price_list_name]), indicator: "orange" }, 6);
                         }
-                        await publish(page, true);
+                        await publish(page, true, selectedRowsPayload);
                     }
                 );
             },
@@ -378,7 +395,7 @@
             <div class="pbb-preview-dialog">
                 <div class="pbb-preview-target ${isUpdate ? "update" : "new"}">
                     <span>${isUpdate ? __("Update Existing List") : __("Create New List")}</span>
-                    <strong>${escapeHtml(STATE.doc.selling_price_list_name)}</strong>
+                    <strong>${escapeHtml(doc.selling_price_list_name)}</strong>
                     <em>${__("Selected items: {0}", [selectedRows.length])}</em>
                 </div>
                 ${isUpdate ? `<div class="pbb-update-alert">${__("Existing Item Prices in this list may be changed. Review the current and new prices before confirming.")}</div>` : ""}
@@ -387,6 +404,20 @@
                 ${customsAlert}
             </div>`);
         dialog.show();
+    }
+
+    function previewNewPriceCell(row, nextPrice) {
+        const override = toNumber(row.override_selling_price);
+        const label = override > 0 ? `<small class="pbb-preview-override">${escapeHtml(__("Manual override"))}</small>` : "";
+        return `<strong>${money(nextPrice)}</strong>${label}`;
+    }
+
+    function selectedPublishRows(doc) {
+        return ((doc || {}).builder_items || []).filter((row) => toNumber(row.selected)).map(selectedPublishRow);
+    }
+
+    function selectedPublishRow(row) {
+        return { item: row.item || "", buying_list: row.buying_list || "" };
     }
 
     function customsReviewRows() {
@@ -471,15 +502,33 @@
             <div class="pbb-fields">
                 ${field("builder_name", __("Builder Name"), doc.builder_name, "text")}
                 ${sellingPriceListField(doc)}
-            </div>`;
+            </div>
+            ${exchangeRatePanel(doc)}`;
     }
 
     function sellingPriceListField(doc) {
         if (STATE.priceListMode === "new") {
-            return `<label class="pbb-price-list-field"><span>${__("Selling Price List")}</span><div class="pbb-price-list-mode"><select data-price-list-mode><option value="existing">${__("Update Existing List")}</option><option value="new" selected>${__("Create New List")}</option></select><input data-parent-field="selling_price_list_name" type="text" value="${escapeHtml(doc.selling_price_list_name || "")}" placeholder="${escapeHtml(__("New list name"))}"></div></label>`;
+            return `<label class="pbb-price-list-field"><span>${__("Selling Price List")}</span><div class="pbb-price-list-mode new"><select data-price-list-mode><option value="existing">${__("Update Existing List")}</option><option value="new" selected>${__("Create New List")}</option></select><input data-parent-field="selling_price_list_name" type="text" value="${escapeHtml(doc.selling_price_list_name || "")}" placeholder="${escapeHtml(__("New list name"))}"><select data-parent-field="target_currency">${currencyOptions(doc.target_currency || defaultTargetCurrency())}</select></div><small>${escapeHtml(__("New list will be created in {0} for {1}.", [targetCurrency(doc), STATE.refs.current_company || __("current company")]))}</small></label>`;
         }
-        const options = (STATE.refs.selling_price_lists || []).map((value) => `<option value="${escapeHtml(value)}" ${value === doc.selling_price_list_name ? "selected" : ""}>${escapeHtml(value)}</option>`).join("");
-        return `<label class="pbb-price-list-field"><span>${__("Selling Price List")}</span><div class="pbb-price-list-mode"><select data-price-list-mode><option value="existing" selected>${__("Update Existing List")}</option><option value="new">${__("Create New List")}</option></select><select data-parent-field="selling_price_list_name"><option value="">${__("Select existing list")}</option>${options}</select></div></label>`;
+        const options = (STATE.refs.selling_price_lists || []).map((value) => `<option value="${escapeHtml(value)}" ${value === doc.selling_price_list_name ? "selected" : ""}>${escapeHtml(priceListLabel(value, "selling"))}</option>`).join("");
+        return `<label class="pbb-price-list-field"><span>${__("Selling Price List")}</span><div class="pbb-price-list-mode existing"><select data-price-list-mode><option value="existing" selected>${__("Update Existing List")}</option><option value="new">${__("Create New List")}</option></select><select data-parent-field="selling_price_list_name"><option value="">${__("Select existing list")}</option>${options}</select></div><small>${escapeHtml(doc.selling_price_list_name ? __("Target Currency: {0}", [targetCurrency(doc)]) : __("Choose an existing list to use its configured currency."))}</small></label>`;
+    }
+
+    function exchangeRatePanel(doc) {
+        const summary = doc.exchange_rate_summary || {};
+        const rates = summary.rates || [];
+        const target = summary.target_currency || targetCurrency(doc);
+        if (!rates.length) {
+            return `<details class="pbb-rate-details"><summary><span>${escapeHtml(__("Exchange rates"))}</span><small>${escapeHtml(__("Target Currency: {0} | no conversion needed", [target || "-"]))}</small></summary><p>${escapeHtml(__("No currency conversion is needed for the current active sourcing rules."))}</p></details>`;
+        }
+        return `<details class="pbb-rate-details"><summary><span>${escapeHtml(__("Exchange Rates Used"))}</span><small>${escapeHtml(__("Target Currency: {0} | synced from system Currency Exchange records", [target || "-"]))}</small></summary><div class="pbb-rate-list">${rates.map(exchangeRateRow).join("")}</div></details>`;
+    }
+
+    function exchangeRateRow(row) {
+        const missing = toNumber(row.missing);
+        const rate = missing ? __("Missing") : toNumber(row.exchange_rate).toFixed(6);
+        const detail = missing ? (row.message || __("Add a Currency Exchange record before calculating/publishing.")) : [row.source || __("Currency Exchange"), row.rate_date || ""].filter(Boolean).join(" | ");
+        return `<div class="pbb-rate-row ${missing ? "missing" : ""}"><span><em>${escapeHtml(row.usage || __("Source"))}</em><strong>${escapeHtml(row.price_list || "-")}</strong></span><span><em>${escapeHtml(__("Pair"))}</em><strong>${escapeHtml((row.from_currency || "-") + " -> " + (row.to_currency || "-"))}</strong></span><span><em>${escapeHtml(__("Rate"))}</em><strong>${escapeHtml(rate)}</strong></span><small>${escapeHtml(detail)}</small></div>`;
     }
 
     function rulesPanel(doc) {
@@ -1173,11 +1222,17 @@
                 STATE.doc.selling_price_list_name = "";
                 scheduleAutosave(page);
             }
+            if (STATE.priceListMode === "new" && !STATE.doc.target_currency) {
+                STATE.doc.target_currency = defaultTargetCurrency();
+            }
             render(page);
         });
         page.main.find("[data-parent-field]").on("input change", function () {
             const fieldname = $(this).attr("data-parent-field");
             STATE.doc[fieldname] = numericParentField(fieldname) ? toNumber($(this).val()) : String($(this).val() || "").trim();
+            if (fieldname === "selling_price_list_name" && STATE.priceListMode === "existing") {
+                STATE.doc.target_currency = listCurrency(STATE.doc.selling_price_list_name, "selling") || STATE.doc.target_currency || defaultTargetCurrency();
+            }
             scheduleAutosave(page);
         });
         page.main.find("[data-add-rule]").on("click", () => {
@@ -1338,7 +1393,8 @@
     }
 
     function normalizeDoc(doc) {
-        const out = Object.assign({ name: "new", builder_name: "", selling_price_list_name: "", item_group: "", default_qty: 1, max_items: 0, sourcing_rules: [], builder_items: [] }, doc || {});
+        const out = Object.assign({ name: "new", builder_name: "", selling_price_list_name: "", target_currency: defaultTargetCurrency(), item_group: "", default_qty: 1, max_items: 0, exchange_rate_summary: {}, sourcing_rules: [], builder_items: [] }, doc || {});
+        if (!out.target_currency) out.target_currency = defaultTargetCurrency();
         out.sourcing_rules = (out.sourcing_rules || []).map(cloneSourcingRule);
         out.builder_items = (out.builder_items || []).map((row) => {
             const clean = Object.assign({ selected: 0 }, row || {});
@@ -1597,7 +1653,7 @@
     function referenceLists() {
         const lists = [
             ["pbb-buying-lists", STATE.refs.buying_price_lists],
-            ["pbb-selling-lists", STATE.refs.selling_price_lists],
+            ["pbb-selling-lists", (STATE.refs.selling_price_lists || []).map((value) => priceListLabel(value, "selling"))],
             ["pbb-scenarios", STATE.refs.pricing_scenarios],
             ["pbb-customs", STATE.refs.customs_policies],
             ["pbb-benchmarks", STATE.refs.benchmark_policies],
@@ -1610,6 +1666,28 @@
         const target = (doc.selling_price_list_name || "").trim();
         if (!target) return "existing";
         return (refs.selling_price_lists || []).includes(target) ? "existing" : "new";
+    }
+    function targetCurrency(doc) {
+        if (STATE.priceListMode === "existing" && doc && doc.selling_price_list_name) {
+            return listCurrency(doc.selling_price_list_name, "selling") || doc.target_currency || defaultTargetCurrency();
+        }
+        return (doc && doc.target_currency) || defaultTargetCurrency();
+    }
+    function defaultTargetCurrency() {
+        return STATE.refs.company_currency || (frappe.defaults && frappe.defaults.get_default && frappe.defaults.get_default("currency")) || "";
+    }
+    function priceListLabel(value, kind) {
+        const currency = listCurrency(value, kind);
+        return currency ? `${value} (${currency})` : value;
+    }
+    function listCurrency(value, kind) {
+        const meta = kind === "buying" ? STATE.refs.buying_price_list_meta : STATE.refs.selling_price_list_meta;
+        return ((meta || {})[value] || {}).currency || "";
+    }
+    function currencyOptions(selected) {
+        const current = selected || defaultTargetCurrency();
+        const currencies = Array.from(new Set([current].concat(STATE.refs.currencies || []).filter(Boolean)));
+        return currencies.map((currency) => `<option value="${escapeHtml(currency)}" ${currency === current ? "selected" : ""}>${escapeHtml(currency)}</option>`).join("");
     }
     function numericParentField(fieldname) { return ["default_qty", "max_items"].includes(fieldname); }
     function toNumber(value) { const num = Number(value || 0); return Number.isFinite(num) ? num : 0; }
@@ -1695,6 +1773,15 @@
         `;
         style.textContent += `
             .pbb-auto-recalc{display:inline-flex;align-items:center;gap:7px;min-height:30px;margin:0;border:1px solid #bfdbfe;border-radius:999px;background:#eff6ff;color:#1e40af;padding:0 10px;font-size:12px;font-weight:900}.pbb-auto-recalc-status{display:inline-flex;align-items:center;min-height:30px;border:1px solid #e0e7ff;border-radius:999px;background:#eef2ff;color:#3730a3;padding:0 11px;font-size:12px;font-weight:800}
+        `;
+        style.textContent += `
+            .pbb-fields{grid-template-columns:minmax(180px,.25fr) minmax(0,.75fr)!important}.pbb-price-list-mode.existing{grid-template-columns:minmax(150px,.28fr) minmax(360px,.72fr)!important}.pbb-price-list-mode.new{grid-template-columns:minmax(150px,.28fr) minmax(280px,.52fr) minmax(120px,.2fr)!important}.pbb-price-list-field small{white-space:normal;color:#64748b;font-size:12px;font-weight:800}
+        `;
+        style.textContent += `
+            .pbb-rate-details{margin-top:4px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:0}.pbb-rate-details>summary{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 10px;cursor:pointer;list-style:none}.pbb-rate-details>summary::-webkit-details-marker{display:none}.pbb-rate-details>summary span{font-size:11px;font-weight:900;color:#334155;text-transform:uppercase}.pbb-rate-details>summary small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b;font-size:11px;font-weight:800}.pbb-rate-details p{margin:0;padding:0 10px 9px;color:#64748b;font-size:12px;font-weight:800}.pbb-rate-list{display:grid;gap:5px;padding:0 8px 8px}.pbb-rate-row{display:grid;grid-template-columns:minmax(130px,.35fr) minmax(110px,.25fr) minmax(90px,.18fr) minmax(150px,.22fr);gap:7px;align-items:center;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:6px 8px;font-size:12px}.pbb-rate-row.missing{border-color:#fed7aa;background:#fff7ed}.pbb-rate-row span{display:grid;gap:1px;min-width:0}.pbb-rate-row em{font-size:9px;color:#64748b;font-style:normal;text-transform:uppercase;font-weight:900}.pbb-rate-row strong,.pbb-rate-row small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pbb-rate-row small{color:#475569;font-weight:800}
+        `;
+        style.textContent += `
+            .pbb-preview-override{display:block;margin-top:2px;color:#7c3aed;font-size:11px;font-weight:900}
         `;
         document.head.appendChild(style);
     }

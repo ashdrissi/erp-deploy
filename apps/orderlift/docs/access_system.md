@@ -256,10 +256,12 @@ Sales Manager, Purchase Manager, System Manager
 
 ### Capability: `quotation_override`
 
-**Label:** Quotation Override
+**Label:** Pricing Override
 
 **Effect:** Bypasses all pricing floors, discount caps, and auto-repricing on
-quotations and pricing sheets. Effectively unrestricted pricing.
+quotations and pricing sheets. Also allows direct/manual Sales Order pricing;
+users without this capability must create Sales Orders from submitted Quotations
+and cannot change inherited pricing. Effectively unrestricted pricing.
 
 **Enforced at:**
 | File | Line | Bypassed gate |
@@ -267,6 +269,7 @@ quotations and pricing sheets. Effectively unrestricted pricing.
 | `quotation_hooks.py` | 42 | Discount cap validation on quotation |
 | `price_list_usage_guard.py` | 26 | Transaction item price validation |
 | `price_list_usage_guard.py` | 35 | Auto-repricing from selected price lists |
+| `sales_order_pricing_hooks.py` | n/a | Sales Order source lock and inherited price lock |
 | `pricing_sheet.py` | 2112 | Manual price floor validation on pricing sheet |
 | `pricing_sheet.py` | 2056 | Max discount cap on pricing sheet |
 
@@ -311,6 +314,21 @@ The **Roles** tab shows capability badges on each role card. Click **Edit** on a
 custom role to open a dialog with a "Capabilities" multi-check field. Capabilities
 are shadow-checked for now — setting them does not change live behavior until the
 site flag is enabled.
+
+### Sales Order Pricing Governance
+
+Sales Order document permissions and pricing authority are separate. A role can
+have Sales Order create/write permissions but still be quotation-only for pricing.
+
+| User capability | Sales Order creation | Pricing edits |
+|-----------------|----------------------|---------------|
+| No Pricing Override | Submitted Quotation only | Locked to inherited Quotation pricing |
+| Pricing Override | Direct or from Quotation | Manual changes allowed |
+| Administrator / Orderlift Admin / System Manager | Direct or from Quotation | Manual changes allowed |
+
+When troubleshooting Sales Order save errors, check both the Permissions Matrix
+for Sales Order document access and the role capability badges for Pricing
+Override.
 
 ---
 

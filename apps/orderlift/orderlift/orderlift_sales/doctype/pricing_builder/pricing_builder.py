@@ -5,10 +5,12 @@ from frappe.utils import cint, flt, now_datetime, nowdate
 
 from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import (
     compute_margin_percent_for_basis,
+    get_exchange_rate_info_for_pair,
     get_item_details_map,
     get_latest_item_prices,
+    get_price_list_currency,
 )
-from orderlift.orderlift_sales.utils.price_list_scope import apply_price_list_company, validate_price_list_scope
+from orderlift.orderlift_sales.utils.price_list_scope import apply_price_list_company, current_company, validate_price_list_scope
 from orderlift.sales.utils.pricing_projection import apply_expenses
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 
@@ -23,6 +25,8 @@ class PricingBuilder(Document):
     def validate(self):
         self.default_qty = flt(self.default_qty or 1) or 1
         self.max_items = cint(self.max_items or 0)
+        if _doc_has_field(self, "target_currency"):
+            self.target_currency = _resolve_builder_target_currency(self.selling_price_list_name, self.target_currency)
 
     def calculate_items(self):
         rules = _normalize_rules(self.sourcing_rules or [])
@@ -30,12 +34,16 @@ class PricingBuilder(Document):
         if not active_buying_lists:
             frappe.throw(_("Add at least one active sourcing rule with a Buying Price List."))
         existing_overrides = _existing_override_map(self.builder_items or [])
+        existing_selected = _existing_selected_map(self.builder_items or [])
         selling_price_list_name = (self.selling_price_list_name or "").strip()
         existing_overrides = _merge_override_maps(
             _published_item_price_override_map(selling_price_list_name, self.name),
             existing_overrides,
         )
         manual_items = []
+        target_currency = _resolve_builder_target_currency(selling_price_list_name, getattr(self, "target_currency", ""))
+        if _doc_has_field(self, "target_currency"):
+            self.target_currency = target_currency
 
         qty = flt(self.default_qty or 1)
         if qty <= 0:
@@ -59,7 +67,7 @@ class PricingBuilder(Document):
         item_meta = _get_builder_item_meta(item_codes)
         published_map = {}
         if selling_price_list_name and frappe.db.exists("Price List", selling_price_list_name):
-            published_map = get_latest_item_prices(item_codes, selling_price_list_name, buying=False)
+            published_map = get_latest_item_prices(item_codes, selling_price_list_name, buying=False, target_currency=target_currency)
 
         sheet = frappe.new_doc("Pricing Sheet")
         sheet.customer = ""
@@ -69,7 +77,7 @@ class PricingBuilder(Document):
         sheet.sales_person = ""
 
         scenario_docs = _get_scenario_docs(rules)
-        scenario_caches = sheet._build_scenario_caches(scenario_docs, item_codes)
+        scenario_caches = sheet._build_scenario_caches(scenario_docs, item_codes, target_currency=target_currency)
         customs_cache = {}
         benchmark_cache = {}
         benchmark_runtime_cache = {}
@@ -87,21 +95,28 @@ class PricingBuilder(Document):
             status_note = ""
 
             if not matched_rule:
-                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("No sourcing rule matched buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list)))
+                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("No sourcing rule matched buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list), selected=_existing_selected(existing_selected, item_code, buying_list)))
                 continue
 
             scenario_name = (matched_rule.get("pricing_scenario") or "").strip()
             if not scenario_name or scenario_name not in scenario_caches:
-                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("Select a valid Expenses Policy for buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list)))
+                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("Select a valid Expenses Policy for buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list), selected=_existing_selected(existing_selected, item_code, buying_list)))
                 continue
 
             row = frappe._dict(item=item_code, qty=qty, source_buying_price_list=buying_list, source_bundle="")
             cache = scenario_caches.get(scenario_name) or {}
-            sheet._set_buy_price_for_row(row, cache.get("buying_price_list"), cache.get("buy_prices") or {}, {cache.get("buying_price_list"): cache.get("buy_prices") or {}}, force_refresh=True)
+            sheet._set_buy_price_for_row(
+                row,
+                cache.get("buying_price_list"),
+                cache.get("buy_prices") or {},
+                {cache.get("buying_price_list"): cache.get("buy_prices") or {}},
+                force_refresh=True,
+                target_currency=target_currency,
+            )
 
             base_buy = flt(row.buy_price or 0)
             if base_buy <= 0:
-                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Buy Price", row.buy_price_message or _("No buying price found for {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, pricing_scenario=scenario_name, customs_policy=matched_rule.get("customs_policy") or "", benchmark_policy=matched_rule.get("benchmark_policy") or "", override_selling_price=_existing_override(existing_overrides, item_code, buying_list)))
+                result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Buy Price", row.buy_price_message or _("No buying price found for {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, pricing_scenario=scenario_name, customs_policy=matched_rule.get("customs_policy") or "", benchmark_policy=matched_rule.get("benchmark_policy") or "", override_selling_price=_existing_override(existing_overrides, item_code, buying_list), selected=_existing_selected(existing_selected, item_code, buying_list)))
                 continue
             base_amount = base_buy * qty
             line_context = {
@@ -131,7 +146,12 @@ class PricingBuilder(Document):
             margin_basis = "Base Price"
             if benchmark_policy_doc:
                 margin_basis = (getattr(benchmark_policy_doc, "margin_application_basis", "") or "Base Price").strip() or "Base Price"
-                runtime = _get_benchmark_runtime_cache(benchmark_policy_doc, item_codes, benchmark_runtime_cache)
+                runtime = _get_benchmark_runtime_cache(
+                    benchmark_policy_doc,
+                    item_codes,
+                    benchmark_runtime_cache,
+                    target_currency=target_currency,
+                )
                 landed_cost = sheet._compute_landed_cost(base_buy, qty, effective_expenses, customs_calc, transport_calc)
                 benchmark_result = sheet._resolve_benchmark_for_row(row, landed_cost, benchmark_policy_doc, item_details, runtime.get("price_map") or {}, runtime.get("source_types") or {}, line_context)
                 effective_expenses = sheet._inject_benchmark_margin_expense(
@@ -142,7 +162,7 @@ class PricingBuilder(Document):
                     landed_cost,
                 )
 
-            pricing = apply_expenses(base_unit=base_buy, qty=qty, expenses=effective_expenses)
+            pricing = apply_expenses(base_unit=base_buy, qty=qty, expenses=effective_expenses, include_sheet_fixed=True)
             component_summary = sheet._summarize_pricing_components(pricing.get("steps") or [], qty)
             projected_total = flt(pricing.get("projected_line") or 0) + flt(customs_calc.get("applied") or 0)
             projected_unit = projected_total / qty if qty else 0
@@ -168,6 +188,7 @@ class PricingBuilder(Document):
                 + (flt(customs_calc.get("applied") or 0) / qty if qty else 0)
             )
             override_selling_price = _existing_override(existing_overrides, item_code, buying_list)
+            selected = _existing_selected(existing_selected, item_code, buying_list)
             if flt(override_selling_price) > 0:
                 final_margin_pct = _override_margin_percent(
                     override_selling_price,
@@ -249,7 +270,7 @@ class PricingBuilder(Document):
                 "customs_policy": matched_rule.get("customs_policy") or "",
                 "benchmark_policy": matched_rule.get("benchmark_policy") or "",
                 "calculation_breakdown_json": frappe.as_json(calculation_breakdown),
-                "selected": 0,
+                "selected": selected,
             })
 
             if customs_calc.get("warning"):
@@ -268,8 +289,8 @@ class PricingBuilder(Document):
         self._apply_summary(summary)
         self.warnings_html = _warnings_html(_dedupe_warnings(warnings))
 
-    def publish_prices(self, selected_only=False):
-        price_list_name = _ensure_selling_price_list((self.selling_price_list_name or "").strip())
+    def publish_prices(self, selected_only=False, selected_rows=None):
+        price_list_name = _ensure_selling_price_list((self.selling_price_list_name or "").strip(), target_currency=getattr(self, "target_currency", ""))
         stamp_price_list_from_builder(price_list_name, self)
         currency = frappe.db.get_value("Price List", price_list_name, "currency") or frappe.defaults.get_global_default("currency")
         created = 0
@@ -277,9 +298,13 @@ class PricingBuilder(Document):
         skipped = 0
         errors = []
         brand_map = _builder_source_brand_map(self.builder_items or [])
+        selected_keys = _selected_publish_keys(selected_rows)
 
         for row in self.builder_items or []:
-            if selected_only and not cint(row.selected):
+            if selected_keys is not None:
+                if _builder_row_tuple(row) not in selected_keys:
+                    continue
+            elif selected_only and not cint(row.selected):
                 continue
             item_code = (row.item or "").strip()
             if not item_code:
@@ -414,10 +439,10 @@ def calculate_builder_doc(name):
 
 
 @frappe.whitelist()
-def publish_builder_doc(name, selected_only=0):
+def publish_builder_doc(name, selected_only=0, selected_rows=None):
     doc = frappe.get_doc("Pricing Builder", name)
     doc.check_permission("write")
-    out = doc.publish_prices(selected_only=cint(selected_only) == 1)
+    out = doc.publish_prices(selected_only=cint(selected_only) == 1, selected_rows=selected_rows)
     doc.save(ignore_permissions=True)
     return out
 
@@ -621,8 +646,8 @@ def _get_benchmark_policy_doc(name, cache):
     return cache.get(name)
 
 
-def _get_benchmark_runtime_cache(benchmark_policy_doc, item_codes, cache):
-    key = benchmark_policy_doc.name
+def _get_benchmark_runtime_cache(benchmark_policy_doc, item_codes, cache, target_currency=None):
+    key = (benchmark_policy_doc.name, (target_currency or "").strip())
     if key in cache:
         return cache[key]
     price_map = {}
@@ -636,7 +661,12 @@ def _get_benchmark_runtime_cache(benchmark_policy_doc, item_codes, cache):
         if price_list not in source_types:
             source_types[price_list] = _price_list_type(price_list)
         if price_list not in price_map:
-            price_map[price_list] = get_latest_item_prices(item_codes, price_list, buying=None)
+            price_map[price_list] = get_latest_item_prices(
+                item_codes,
+                price_list,
+                buying=None,
+                target_currency=target_currency,
+            )
     cache[key] = {"price_map": price_map, "source_types": source_types}
     return cache[key]
 
@@ -789,6 +819,50 @@ def _existing_override(overrides, item_code, buying_list):
     return flt(((overrides or {}).get("by_item") or {}).get(item_code) or 0)
 
 
+def _existing_selected_map(rows):
+    exact = set()
+    by_item = set()
+    for row in rows or []:
+        if not cint(_row_value(row, "selected") or 0):
+            continue
+        item_code = (_row_value(row, "item") or "").strip()
+        buying_list = (_row_value(row, "buying_list") or "").strip()
+        if not item_code:
+            continue
+        if buying_list:
+            exact.add((item_code, buying_list))
+        else:
+            by_item.add(item_code)
+    return {"exact": exact, "by_item": by_item}
+
+
+def _existing_selected(selected_map, item_code, buying_list):
+    item_code = (item_code or "").strip()
+    buying_list = (buying_list or "").strip()
+    if not item_code:
+        return 0
+    if buying_list and (item_code, buying_list) in ((selected_map or {}).get("exact") or set()):
+        return 1
+    return 1 if item_code in ((selected_map or {}).get("by_item") or set()) else 0
+
+
+def _selected_publish_keys(selected_rows):
+    if selected_rows in (None, ""):
+        return None
+    rows = frappe.parse_json(selected_rows) if isinstance(selected_rows, str) else selected_rows
+    keys = set()
+    for row in rows or []:
+        item_code = (_row_value(row, "item") or "").strip()
+        buying_list = (_row_value(row, "buying_list") or "").strip()
+        if item_code:
+            keys.add((item_code, buying_list))
+    return keys
+
+
+def _builder_row_tuple(row):
+    return ((_row_value(row, "item") or "").strip(), (_row_value(row, "buying_list") or "").strip())
+
+
 def _warnings_html(messages):
     items = [_truncate_warning_line(item) for item in _aggregate_warnings(messages)]
     if not items:
@@ -852,7 +926,7 @@ def _truncate_warning_line(message):
     return text[: MAX_WARNING_LINE_LENGTH - 3].rstrip() + "..."
 
 
-def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_price, status, status_note, item_group="", item_category="", item_name="", pricing_scenario="", customs_policy="", benchmark_policy="", override_selling_price=0):
+def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_price, status, status_note, item_group="", item_category="", item_name="", pricing_scenario="", customs_policy="", benchmark_policy="", override_selling_price=0, selected=0):
     return {
         "item": item_code,
         "item_name": item_name or item_code,
@@ -896,7 +970,7 @@ def _build_result_row(item_code, buying_list, origin, qty, base_buy, published_p
         "customs_policy": customs_policy,
         "benchmark_policy": benchmark_policy,
         "calculation_breakdown_json": "",
-        "selected": 0,
+        "selected": 1 if cint(selected) else 0,
     }
 
 
@@ -1310,11 +1384,11 @@ def _doc_has_field(doc, fieldname):
     return hasattr(doc, fieldname)
 
 
-def _ensure_selling_price_list(price_list_name):
+def _ensure_selling_price_list(price_list_name, target_currency=None):
     if frappe.db.exists("Price List", price_list_name):
         validate_price_list_scope(price_list_name, kind="selling", required=True)
         return price_list_name
-    currency = frappe.defaults.get_global_default("currency")
+    currency = _resolve_new_price_list_currency(target_currency)
     doc = frappe.new_doc("Price List")
     if hasattr(doc, "price_list_name"):
         doc.price_list_name = price_list_name
@@ -1331,3 +1405,89 @@ def _ensure_selling_price_list(price_list_name):
     apply_price_list_company(doc)
     doc.insert(ignore_permissions=True)
     return doc.name
+
+
+def _resolve_builder_target_currency(price_list_name, target_currency=None):
+    price_list_name = (price_list_name or "").strip()
+    if price_list_name and frappe.db.exists("Price List", price_list_name):
+        return frappe.db.get_value("Price List", price_list_name, "currency") or _company_default_currency()
+    return _resolve_new_price_list_currency(target_currency)
+
+
+def builder_exchange_rate_summary(doc):
+    selling_price_list = (getattr(doc, "selling_price_list_name", "") or "").strip()
+    target_currency = _resolve_builder_target_currency(selling_price_list, getattr(doc, "target_currency", ""))
+    rows = []
+    for price_list, usage in _builder_exchange_source_lists(doc).items():
+        source_currency = get_price_list_currency(price_list)
+        if not source_currency or not target_currency:
+            rows.append({
+                "price_list": price_list,
+                "usage": usage,
+                "from_currency": source_currency,
+                "to_currency": target_currency,
+                "exchange_rate": 0,
+                "missing": 1,
+                "message": _("Missing source or target currency."),
+            })
+            continue
+        try:
+            info = get_exchange_rate_info_for_pair(source_currency, target_currency, nowdate())
+            rows.append({
+                "price_list": price_list,
+                "usage": usage,
+                "from_currency": info.get("from_currency") or source_currency,
+                "to_currency": info.get("to_currency") or target_currency,
+                "exchange_rate": flt(info.get("exchange_rate") or 0),
+                "rate_date": info.get("rate_date") or nowdate(),
+                "source": info.get("source") or "Currency Exchange",
+                "source_name": info.get("source_name") or "",
+                "missing": 0,
+            })
+        except Exception as exc:
+            rows.append({
+                "price_list": price_list,
+                "usage": usage,
+                "from_currency": source_currency,
+                "to_currency": target_currency,
+                "exchange_rate": 0,
+                "missing": 1,
+                "message": str(exc),
+            })
+    return {"target_currency": target_currency, "rates": rows}
+
+
+def _builder_exchange_source_lists(doc):
+    sources = {}
+    for rule in getattr(doc, "sourcing_rules", None) or []:
+        if not cint(getattr(rule, "is_active", 1)):
+            continue
+        buying_list = (getattr(rule, "buying_price_list", "") or "").strip()
+        if buying_list:
+            sources.setdefault(buying_list, set()).add("Buying")
+        policy_name = (getattr(rule, "benchmark_policy", "") or "").strip()
+        if policy_name and frappe.db.exists("Pricing Benchmark Policy", policy_name):
+            policy = frappe.get_doc("Pricing Benchmark Policy", policy_name)
+            for source in getattr(policy, "benchmark_sources", None) or []:
+                if not cint(getattr(source, "is_active", 1)):
+                    continue
+                price_list = (getattr(source, "price_list", "") or "").strip()
+                if price_list:
+                    sources.setdefault(price_list, set()).add("Benchmark")
+    return {price_list: ", ".join(sorted(usage)) for price_list, usage in sorted(sources.items())}
+
+
+def _resolve_new_price_list_currency(target_currency=None):
+    currency = (target_currency or "").strip() or _company_default_currency()
+    if not currency:
+        currency = frappe.defaults.get_global_default("currency")
+    if currency and frappe.db.exists("Currency", currency):
+        return currency
+    return frappe.defaults.get_global_default("currency")
+
+
+def _company_default_currency():
+    company = current_company()
+    if company and frappe.db.exists("Company", company):
+        return frappe.db.get_value("Company", company, "default_currency") or ""
+    return ""

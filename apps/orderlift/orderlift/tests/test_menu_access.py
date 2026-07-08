@@ -2,6 +2,7 @@ import json
 import sys
 import types
 import unittest
+from pathlib import Path
 
 
 frappe_stub = types.ModuleType("frappe")
@@ -18,6 +19,9 @@ sys.modules["frappe.utils"] = utils_stub
 from orderlift import company_access, menu_access, menu_registry
 from orderlift.scripts import setup_startup_roles
 from orderlift.startup_roles import OPPORTUNITY_ASSIGNER_ROLE, OPPORTUNITY_ALL_ACCESS_ROLE, STARTUP_ROLES
+
+
+APP_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestMenuAccessHelpers(unittest.TestCase):
@@ -45,6 +49,45 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertNotIn("items.pricing_builder", keys)
         self.assertNotIn("my_work.notifications", keys)
 
+    def test_my_work_todo_uses_filtered_page(self):
+        todo = menu_registry.menu_item_by_key("my_work.todo")
+
+        self.assertEqual(todo["label"], "My ToDos")
+        self.assertEqual(todo["link_type"], "Page")
+        self.assertEqual(todo["link_to"], "my-todos")
+
+    def test_company_filter_normalization_replaces_stale_report_filter(self):
+        filters = [["Quotation", "company", "=", "Orderlift"]]
+
+        normalized = company_access._normalized_company_filters(
+            filters,
+            "Quotation",
+            "company",
+            "Orderlift Maroc Distribution",
+        )
+
+        self.assertEqual(normalized, [["Quotation", "company", "=", "Orderlift Maroc Distribution"]])
+
+    def test_company_filter_normalization_handles_dict_filter(self):
+        filters = {"company": "Orderlift"}
+
+        normalized = company_access._normalized_company_filters(
+            filters,
+            "Quotation",
+            "company",
+            "Orderlift Maroc Distribution",
+        )
+
+        self.assertEqual(normalized["company"], "Orderlift Maroc Distribution")
+
+    def test_company_filter_normalization_is_registered_before_request(self):
+        from orderlift import hooks
+
+        self.assertIn(
+            "orderlift.company_access.normalize_company_filters_for_request",
+            hooks.before_request,
+        )
+
     def test_menu_registry_includes_default_and_startup_business_roles(self):
         for role in [
             "Orderlift Admin",
@@ -54,8 +97,10 @@ class TestMenuAccessHelpers(unittest.TestCase):
             "Finance User",
             "Installation User",
             "Service User",
+            "SAV Technician",
             "Commercial Agent",
             "Commercial Agent - Partner",
+            "Marketing User",
             "Quotation Creator",
             "Opportunity All Access",
             "Stock Quantity Viewer",
@@ -76,7 +121,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
 
         self.assertEqual(manager.get("required_doctypes"), ["Partner Campaign"])
         self.assertEqual(builder.get("required_doctypes"), ["Partner Campaign"])
-        self.assertIn("Campaign Manager", manager.get("roles"))
+        self.assertIn("Marketing User", manager.get("roles"))
         self.assertNotIn("Sales User", manager.get("roles"))
 
     def test_page_link_target_requires_backing_doctype_permission(self):
@@ -90,7 +135,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
         try:
             self.assertFalse(menu_access._link_target_allowed(row, user="sales@example.com", roles={"Sales User"}))
             menu_access.frappe.has_permission = lambda doctype, ptype=None, user=None: doctype == "Partner Campaign"
-            self.assertTrue(menu_access._link_target_allowed(row, user="campaign@example.com", roles={"Campaign Manager"}))
+            self.assertTrue(menu_access._link_target_allowed(row, user="campaign@example.com", roles={"Marketing User"}))
         finally:
             menu_access.user_can_access_page = originals["user_can_access_page"]
             if originals["has_permission"] is None:
@@ -185,6 +230,73 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(permissions["Price List"]["read"], 1)
         self.assertEqual(permissions["Price List"]["select"], 1)
 
+    def test_stock_manager_has_explicit_stock_docperms(self):
+        permissions = setup_startup_roles.DOCTYPE_PERMISSIONS["Stock Manager"]
+
+        self.assertEqual(permissions["Stock Settings"]["read"], 1)
+        self.assertEqual(permissions["Stock Settings"]["write"], 1)
+        self.assertEqual(permissions["Bin"]["read"], 1)
+        self.assertEqual(permissions["Bin"]["select"], 1)
+        self.assertEqual(permissions["Stock Ledger Entry"]["report"], 1)
+        self.assertEqual(permissions["Stock Entry"]["create"], 1)
+        self.assertEqual(permissions["Stock Entry"]["submit"], 1)
+        self.assertEqual(permissions["Pick List"]["create"], 1)
+        self.assertEqual(permissions["Delivery Note"]["submit"], 1)
+        self.assertEqual(permissions["Purchase Receipt"]["submit"], 1)
+        self.assertEqual(permissions["Stock Entry Type"]["read"], 1)
+
+    def test_logistics_user_has_full_operational_stock_permissions(self):
+        permissions = setup_startup_roles.DOCTYPE_PERMISSIONS["Logistics User"]
+
+        for doctype in ["Stock Entry", "Delivery Note", "Purchase Receipt", "Pick List", "Material Request", "Purchase Order"]:
+            self.assertEqual(permissions[doctype]["read"], 1)
+            self.assertEqual(permissions[doctype]["create"], 1)
+            self.assertEqual(permissions[doctype]["submit"], 1)
+            self.assertEqual(permissions[doctype]["cancel"], 1)
+        self.assertEqual(permissions["Stock Settings"]["write"], 1)
+        self.assertEqual(permissions["Bin"]["read"], 1)
+        self.assertEqual(permissions["Stock Ledger Entry"]["report"], 1)
+        self.assertEqual(permissions["Product Bundle"]["read"], 1)
+        self.assertEqual(permissions["Item Price"]["read"], 1)
+        self.assertEqual(permissions["Stock Entry Type"]["read"], 1)
+
+    def test_base_business_roles_have_menu_backing_permissions(self):
+        role_permissions = setup_startup_roles.DOCTYPE_PERMISSIONS
+
+        self.assertEqual(role_permissions["Pricing Manager"]["Quotation"]["read"], 1)
+        self.assertEqual(role_permissions["Pricing Manager"]["Agent Pricing Rules"]["create"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Payment Entry"]["create"], 1)
+        self.assertEqual(role_permissions["Installation User"]["Project"]["create"], 1)
+        self.assertEqual(role_permissions["Installation User"]["QC Checklist Template"]["create"], 1)
+        self.assertEqual(role_permissions["Service User"]["SAV Ticket"]["create"], 1)
+        self.assertEqual(role_permissions["SAV Technician"]["SAV Ticket"]["create"], 1)
+        self.assertEqual(role_permissions["Sales User"]["Portal Quote Request"]["read"], 1)
+        self.assertEqual(role_permissions["Sales User"]["Item Price"]["read"], 1)
+
+    def test_stock_settings_link_fields_ignore_user_permissions(self):
+        self.assertIn("default_warehouse", setup_startup_roles.STOCK_SETTINGS_USER_PERMISSION_EXEMPT_FIELDS)
+        source = (APP_ROOT / "orderlift" / "scripts" / "setup_startup_roles.py").read_text()
+
+        self.assertIn("_ensure_stock_settings_user_permission_exempt_fields(results)", source)
+        self.assertIn('"ignore_user_permissions"', source)
+
+    def test_warehouse_stock_menu_includes_core_stock_documents(self):
+        warehouse = next(section for section in menu_registry.get_menu_sections() if section["key"] == "warehouse_stock")
+        keys = {link["key"] for link in warehouse["links"]}
+
+        self.assertIn("stock.delivery_note", keys)
+        self.assertIn("stock.purchase_receipt", keys)
+        self.assertIn("stock.pick_list", keys)
+        self.assertIn("stock.bins", keys)
+        self.assertIn("stock.stock_settings", keys)
+
+    def test_startup_role_seed_does_not_overwrite_existing_docperms_by_default(self):
+        source = (APP_ROOT / "orderlift" / "scripts" / "setup_startup_roles.py").read_text()
+
+        self.assertIn("overwrite_existing_docperms: int = 0", source)
+        self.assertIn("remove_stale_docperms: int = 0", source)
+        self.assertIn('action = "exists"', source)
+
     def test_opportunity_all_access_is_manageable_capability_role(self):
         self.assertIn(OPPORTUNITY_ALL_ACCESS_ROLE, STARTUP_ROLES)
         self.assertEqual(
@@ -192,10 +304,10 @@ class TestMenuAccessHelpers(unittest.TestCase):
             1,
         )
 
-    def test_campaign_permissions_are_campaign_manager_only(self):
+    def test_campaign_permissions_are_marketing_user_only(self):
         self.assertNotIn("Partner Campaign", setup_startup_roles.SALES_MANAGER_PERMISSIONS)
         self.assertNotIn("Partner Campaign Target", setup_startup_roles.SALES_MANAGER_PERMISSIONS)
-        self.assertIn("Partner Campaign", setup_startup_roles.DOCTYPE_PERMISSIONS["Campaign Manager"])
+        self.assertIn("Partner Campaign", setup_startup_roles.DOCTYPE_PERMISSIONS["Marketing User"])
         self.assertNotIn("Partner Campaign", setup_startup_roles.DOCTYPE_PERMISSIONS["Sales Distribution Manager"])
         self.assertNotIn("Partner Campaign", setup_startup_roles.DOCTYPE_PERMISSIONS["Sales Installation Manager"])
         self.assertEqual(
@@ -828,6 +940,24 @@ class TestMenuAccessHelpers(unittest.TestCase):
         finally:
             company_access.user_can_access_all_companies = original_all_companies
             company_access.get_allowed_companies = original_allowed
+
+    def test_stock_entry_rate_guard_is_registered(self):
+        from orderlift import hooks
+
+        self.assertIn("Stock Entry", hooks.doctype_js)
+        self.assertEqual(hooks.doctype_js["Stock Entry"], "public/js/stock_entry_rate_guard_20260706a.js")
+
+    def test_stock_entry_rate_guard_hides_rate_fields(self):
+        script = (APP_ROOT / "orderlift" / "public" / "js" / "stock_entry_rate_guard_20260706a.js").read_text()
+
+        self.assertIn('"basic_rate"', script)
+        self.assertIn('"basic_amount"', script)
+        self.assertIn('"valuation_rate"', script)
+        self.assertIn('"set_basic_rate_manually"', script)
+        self.assertIn('"allow_zero_valuation_rate"', script)
+        self.assertIn('"rates_section"', script)
+        self.assertIn("userHasPrivilegedRole", script)
+        self.assertIn("Orderlift Admin", script)
 
 
 if __name__ == "__main__":

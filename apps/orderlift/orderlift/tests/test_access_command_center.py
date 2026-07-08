@@ -41,11 +41,14 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
     def setUp(self):
         self._session_user = frappe_stub.session.user
         self._get_roles = frappe_stub.get_roles
+        self._role_capabilities_frappe = role_capabilities.frappe
+        role_capabilities.frappe = frappe_stub
 
     def tearDown(self):
         frappe_stub.session.user = self._session_user
         frappe_stub.get_roles = self._get_roles
         frappe_stub.conf.orderlift_use_role_capabilities = 0
+        role_capabilities.frappe = self._role_capabilities_frappe
 
     def test_coerce_permission_flags_normalizes_supported_flags(self):
         flags = access_command_center._coerce_permission_flags(
@@ -123,6 +126,12 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
             ]),
         )
 
+    def test_role_capabilities_include_todo_all_access(self):
+        options = {option["value"]: option["label"] for option in role_capabilities.capability_options()}
+
+        self.assertEqual(options[role_capabilities.CAPABILITY_TODO_ALL_ACCESS], "All ToDos Access")
+        self.assertIn(role_capabilities.CAPABILITY_TODO_ALL_ACCESS, role_capabilities.DEFAULT_ROLE_CAPABILITIES["Orderlift Admin"])
+
     def test_role_capability_decision_defaults_to_legacy_result(self):
         original_user_has_capability = role_capabilities.user_has_capability
         role_capabilities.user_has_capability = lambda *args, **kwargs: True
@@ -177,6 +186,78 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
 
         self.assertEqual(levels, [0, 1, 2])
 
+    def test_permission_levels_include_base_permission_levels(self):
+        levels = access_command_center._permission_levels_for_matrix(
+            {1: {"read": 1}},
+            {},
+            {3: {"write": 1}},
+            {2: {"create": 1}},
+        )
+
+        self.assertEqual(levels, [0, 1, 2, 3])
+
+    def test_role_permission_inherits_base_permissions(self):
+        row = access_command_center._resolve_permission_matrix_row(
+            "ToDo",
+            "Sales User",
+            standard={},
+            custom={},
+            base_standard={},
+            base_custom={"read": 1, "write": 1, "create": 1},
+        )
+
+        self.assertEqual(row["source"], "base")
+        self.assertEqual(row["source_role"], access_command_center.BASE_PERMISSION_ROLE)
+        self.assertEqual(row["effective"]["read"], 1)
+        self.assertEqual(row["effective"]["write"], 1)
+        self.assertEqual(row["effective"]["create"], 1)
+        self.assertFalse(row["can_reset"])
+
+    def test_neutralized_base_permission_does_not_show_as_inherited_access(self):
+        row = access_command_center._resolve_permission_matrix_row(
+            "ToDo",
+            "Sales User",
+            standard={},
+            custom={},
+            base_standard={},
+            base_custom={field: 0 for field in access_command_center.PERMISSION_FIELDS},
+        )
+
+        self.assertEqual(row["source"], "none")
+        self.assertFalse(row["has_base_permission"])
+        self.assertFalse(any(row["effective"].values()))
+
+    def test_role_permission_merges_base_and_direct_permissions(self):
+        row = access_command_center._resolve_permission_matrix_row(
+            "ToDo",
+            "Sales User",
+            standard={"export": 1},
+            custom={},
+            base_standard={},
+            base_custom={"read": 1, "write": 1},
+        )
+
+        self.assertEqual(row["source"], "mixed")
+        self.assertEqual(row["direct"]["export"], 1)
+        self.assertEqual(row["base"]["read"], 1)
+        self.assertEqual(row["effective"]["read"], 1)
+        self.assertEqual(row["effective"]["write"], 1)
+        self.assertEqual(row["effective"]["export"], 1)
+
+    def test_custom_direct_permission_is_resettable(self):
+        row = access_command_center._resolve_permission_matrix_row(
+            "Opportunity",
+            "Sales User",
+            standard={"read": 1},
+            custom={"read": 1, "write": 1},
+            base_standard={},
+            base_custom={},
+        )
+
+        self.assertEqual(row["source"], "direct")
+        self.assertTrue(row["has_custom_override"])
+        self.assertTrue(row["can_reset"])
+
     def test_permission_matrix_sort_key_prioritizes_active_permissions(self):
         inactive = {
             "doctype": "Inactive Doc",
@@ -226,7 +307,7 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
         self.assertNotIn("System Manager", roles)
         self.assertNotIn("Developer", roles)
 
-    def test_business_admin_visible_roles_include_custom_business_roles(self):
+    def test_business_admin_visible_roles_exclude_custom_business_roles(self):
         frappe_stub.session.user = "orderlift.admin@example.com"
         frappe_stub.get_roles = lambda user=None: ["Orderlift Admin"]
         original_custom_roles = access_command_center._custom_business_role_names
@@ -237,7 +318,7 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
             access_command_center._custom_business_role_names = original_custom_roles
 
         self.assertIn("Sales User", roles)
-        self.assertIn("testt", roles)
+        self.assertNotIn("testt", roles)
         self.assertNotIn("System Manager", roles)
 
     def test_superadmin_visible_roles_include_superadmin_roles(self):
@@ -256,13 +337,14 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
         with self.assertRaises(ValueError):
             access_command_center._assert_role_scope(["Sales User", "System Manager"])
 
-    def test_business_admin_role_scope_accepts_custom_business_roles(self):
+    def test_business_admin_role_scope_rejects_custom_business_roles(self):
         frappe_stub.session.user = "orderlift.admin@example.com"
         frappe_stub.get_roles = lambda user=None: ["Orderlift Admin"]
         original_custom_roles = access_command_center._custom_business_role_names
         access_command_center._custom_business_role_names = lambda: ["testt"]
         try:
-            access_command_center._assert_role_scope(["Sales User", "testt"])
+            with self.assertRaises(ValueError):
+                access_command_center._assert_role_scope(["Sales User", "testt"])
         finally:
             access_command_center._custom_business_role_names = original_custom_roles
 
@@ -273,6 +355,13 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
         self.assertFalse(access_command_center._permission_doctype_visible("Account", "Orderlift Admin"))
         self.assertFalse(access_command_center._permission_doctype_visible("Cost Center", "Finance User"))
         self.assertTrue(access_command_center._permission_doctype_visible("Sales Invoice", "Finance User"))
+
+    def test_stock_settings_is_visible_single_doctype_in_permission_matrix(self):
+        self.assertIn("Stock Settings", access_command_center.MATRIX_SINGLE_DOCTYPES)
+        group = access_command_center._permission_matrix_group("Stock Settings", "Stock", 0, {})
+
+        self.assertEqual(group["group_key"], "stock_warehouse")
+        self.assertTrue(access_command_center._permission_doctype_visible("Stock Settings", "Stock Manager"))
 
     def test_access_command_center_ui_exposes_role_capabilities(self):
         source = (APP_ROOT / "orderlift" / "orderlift" / "page" / "access_command_center" / "access_command_center.js").read_text()
@@ -295,6 +384,8 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
 
         self.assertFalse(access_command_center._permission_doctype_visible("User", "Orderlift Admin"))
         self.assertFalse(access_command_center._permission_doctype_visible("Custom DocPerm", "Sales User"))
+        self.assertFalse(access_command_center._permission_doctype_visible("Custom Field", "Orderlift Admin"))
+        self.assertFalse(access_command_center._permission_doctype_visible("Workflow", "Orderlift Admin"))
 
     def test_superadmin_sees_protected_permissions_only_for_superadmin_roles(self):
         frappe_stub.session.user = "manager@example.com"
@@ -309,6 +400,22 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             access_command_center._validate_permission_edit("Finance User", "Cost Center", {"read": 1})
+
+    def test_business_admin_page_access_target_is_menu_allowlisted(self):
+        frappe_stub.session.user = "orderlift.admin@example.com"
+        frappe_stub.get_roles = lambda user=None: ["Orderlift Admin"]
+
+        self.assertTrue(access_command_center._page_access_target_visible("pricing-dashboard"))
+        self.assertFalse(access_command_center._page_access_target_visible("access-command-center"))
+        self.assertFalse(access_command_center._page_access_target_visible("role-permission-manager"))
+
+    def test_business_admin_report_access_target_is_menu_allowlisted(self):
+        frappe_stub.session.user = "orderlift.admin@example.com"
+        frappe_stub.get_roles = lambda user=None: ["Orderlift Admin"]
+
+        self.assertTrue(access_command_center._report_access_target_visible("Stock Balance", "Bin"))
+        self.assertFalse(access_command_center._report_access_target_visible("General Ledger", "GL Entry"))
+        self.assertFalse(access_command_center._report_access_target_visible("User Activity", "User"))
 
     def test_role_profile_scope_rejects_protected_roles_for_business_admin(self):
         frappe_stub.session.user = "orderlift.admin@example.com"

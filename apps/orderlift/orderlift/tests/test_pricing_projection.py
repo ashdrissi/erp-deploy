@@ -3,6 +3,7 @@ import unittest
 from orderlift.sales.utils.pricing_projection import (
     apply_discount_and_commission,
     apply_expenses,
+    calculate_agent_commission,
     resolve_max_discount_cap,
 )
 
@@ -32,6 +33,21 @@ class TestPricingProjection(unittest.TestCase):
         )
         self.assertAlmostEqual(result["projected_unit"], 55.0, places=4)
         self.assertAlmostEqual(result["projected_line"], 220.0, places=4)
+        self.assertAlmostEqual(result["sheet_fixed_total"], 100.0, places=4)
+
+    def test_fixed_per_sheet_can_be_included_in_projected_totals(self):
+        result = apply_expenses(
+            base_unit=50,
+            qty=4,
+            expenses=[
+                {"label": "Line fee", "type": "Fixed", "value": 20, "scope": "Per Line", "sequence": 10},
+                {"label": "Sheet fee", "type": "Fixed", "value": 100, "scope": "Per Sheet", "sequence": 20},
+            ],
+            include_sheet_fixed=True,
+        )
+
+        self.assertAlmostEqual(result["projected_unit"], 80.0, places=4)
+        self.assertAlmostEqual(result["projected_line"], 320.0, places=4)
         self.assertAlmostEqual(result["sheet_fixed_total"], 100.0, places=4)
 
     def test_per_line_fixed_not_double_counted_for_single_qty(self):
@@ -135,6 +151,90 @@ class TestPricingProjection(unittest.TestCase):
             max_discount_percent=10,
             commission_rate=20,
         )
+        self.assertAlmostEqual(result["commission_amount"], 0, places=4)
+
+    def test_agent_commission_has_no_uplift_when_manual_price_is_below_list(self):
+        result = calculate_agent_commission(
+            price_list_unit_price=100,
+            actual_unit_price=95,
+            qty=10,
+            max_discount_percent=10,
+            commission_rate=5,
+        )
+
+        self.assertAlmostEqual(result["discount_percent"], 5, places=4)
+        self.assertAlmostEqual(result["base_commission_amount"], 2.5, places=4)
+        self.assertAlmostEqual(result["uplift_commission_amount"], 0, places=4)
+        self.assertAlmostEqual(result["commission_amount"], 2.5, places=4)
+
+    def test_agent_commission_adds_twenty_percent_uplift_above_list(self):
+        result = calculate_agent_commission(
+            price_list_unit_price=100,
+            actual_unit_price=110,
+            qty=10,
+            max_discount_percent=10,
+            commission_rate=5,
+        )
+
+        self.assertAlmostEqual(result["discount_percent"], 0, places=4)
+        self.assertAlmostEqual(result["base_commission_amount"], 5, places=4)
+        self.assertAlmostEqual(result["uplift_commission_amount"], 20, places=4)
+        self.assertAlmostEqual(result["commission_amount"], 25, places=4)
+
+    def test_manual_above_list_without_discount_keeps_total_and_commission_uplift(self):
+        result = apply_discount_and_commission(
+            gross_unit_price=15034.98,
+            discount_base_unit_price=20000,
+            actual_unit_price=20000,
+            qty=2,
+            discount_percent=0,
+            max_discount_percent=10,
+            commission_rate=20,
+        )
+
+        self.assertAlmostEqual(result["discount_percent"], 0, places=4)
+        self.assertAlmostEqual(result["discount_amount"], 0, places=4)
+        self.assertAlmostEqual(result["discounted_total"], 40000, places=4)
+        self.assertAlmostEqual(result["commission_amount"], 2587.4072, places=4)
+
+    def test_manual_above_list_with_discount_uses_discounted_manual_price_for_uplift(self):
+        result = apply_discount_and_commission(
+            gross_unit_price=15034.98,
+            discount_base_unit_price=20000,
+            actual_unit_price=19000,
+            qty=2,
+            discount_percent=5,
+            max_discount_percent=10,
+            commission_rate=20,
+        )
+
+        self.assertAlmostEqual(result["discount_percent"], 5, places=4)
+        self.assertAlmostEqual(result["discount_amount"], 2000, places=4)
+        self.assertAlmostEqual(result["discounted_total"], 38000, places=4)
+        self.assertAlmostEqual(result["commission_amount"], 1886.71, places=2)
+
+    def test_agent_commission_rejects_actual_price_below_discount_floor(self):
+        with self.assertRaisesRegex(ValueError, "cannot exceed 10.0%"):
+            calculate_agent_commission(
+                price_list_unit_price=100,
+                actual_unit_price=89,
+                qty=1,
+                max_discount_percent=10,
+                commission_rate=5,
+            )
+
+    def test_agent_commission_override_below_floor_has_no_commission(self):
+        result = calculate_agent_commission(
+            price_list_unit_price=100,
+            actual_unit_price=89,
+            qty=1,
+            max_discount_percent=10,
+            commission_rate=5,
+            enforce_discount_cap=False,
+        )
+
+        self.assertAlmostEqual(result["base_commission_amount"], 0, places=4)
+        self.assertAlmostEqual(result["uplift_commission_amount"], 0, places=4)
         self.assertAlmostEqual(result["commission_amount"], 0, places=4)
 
     def test_discount_rejects_values_above_allowed_max(self):

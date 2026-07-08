@@ -26,8 +26,8 @@
     ];
 
     const COLUMN_STORAGE_KEY_PREFIX = "orderlift.pricingSheetBuilder.columns.v4";
-    const DEFAULT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "buy_price", "expense_unit_price", "customs_unit_amount", "projected_unit_price", "projected_total_price", "margin_unit_amount", "margin_source", "margin_basis", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "actions"];
-    const AGENT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
+    const DEFAULT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "buy_price", "expense_unit_price", "customs_unit_amount", "projected_unit_price", "projected_total_price", "margin_unit_amount", "margin_source", "margin_basis", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "actions"];
+    const AGENT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
     const ADMIN_STATIC_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "builder_margin_percent", "target_margin_percent", "margin_source", "margin_basis", "resolved_margin_rule", "builder_price_overridden", "pricing_builder", "builder_source_buying_price_list", "resolved_benchmark_rule", "actions"];
     const HIGHLIGHT_COLUMNS = new Set(["projected_unit_price", "projected_total_price", "final_sell_unit_price", "final_sell_total", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc"]);
     const STATIC_MODE_HIDDEN_COLUMNS = new Set(["customs_unit_amount", "margin_unit_amount"]);
@@ -66,16 +66,16 @@
         { key: "projected_total_price", label: "Total Cost", type: "Currency", sensitive: true },
         { key: "manual_sell_unit_price", label: "Manual Unit Override", type: "Currency", editable: true },
         { key: "is_manual_override", label: "Is Manual Override", type: "Check" },
-        { key: "final_sell_unit_price", label: "Sell Price U", type: "Currency" },
-        { key: "final_sell_total", label: "Total Sell Price", type: "Currency" },
+        { key: "final_sell_unit_price", label: "PU HT", type: "Currency" },
+        { key: "final_sell_total", label: "PT HT", type: "Currency" },
         { key: "max_discount_percent_allowed", label: "Max Discount %", type: "Percent" },
-        { key: "discount_percent", label: "Discount %", type: "Percent", editable: true },
-        { key: "discount_amount", label: "Discount Amount", type: "Currency" },
-        { key: "discounted_sell_unit_price", label: "Discounted Sell Unit", type: "Currency" },
-        { key: "discounted_sell_total", label: "Total After Discount", type: "Currency" },
+        { key: "discount_percent", label: "Remise %", type: "Percent", editable: true },
+        { key: "discount_amount", label: "Remise HT", type: "Currency" },
+        { key: "discounted_sell_unit_price", label: "PU HT net", type: "Currency" },
+        { key: "discounted_sell_total", label: "PT HT net", type: "Currency" },
         { key: "custom_applied_taxes", label: "Applied Taxes", type: "Currency" },
-        { key: "custom_pu_ttc", label: "PU TTC", type: "Currency" },
-        { key: "custom_pt_ttc", label: "PT TTC", type: "Currency" },
+        { key: "custom_pu_ttc", label: "PU TTC net", type: "Currency" },
+        { key: "custom_pt_ttc", label: "PT TTC net", type: "Currency" },
         { key: "commission_rate", label: "Commission %", type: "Percent" },
         { key: "commission_amount", label: "Commission Amount", type: "Currency" },
         { key: "margin_pct", label: "Margin Pct", type: "Percent" },
@@ -121,7 +121,7 @@
         { key: "zone_modifier_amount", label: "Territory Modifier Unit", type: "Currency" },
         { key: "zone_modifier_total", label: "Territory Modifier Total", type: "Currency" },
         { key: "breakdown_preview", label: "Breakdown Preview" },
-        { key: "static_list_price", label: "List Price", type: "Currency" },
+        { key: "static_list_price", label: "PU List HT", type: "Currency" },
         { key: "resolved_selling_price_list", label: "Resolved Selling List" },
         { key: "actions", label: "", mandatory: true },
     ];
@@ -389,13 +389,13 @@
                     ${canViewSensitivePricing() ? metric(__("Expenses"), formatCurrency(totalExpenses)) : ""}
                     ${canViewSensitivePricing() ? metric(__("Customs"), formatCurrency(totalCustoms)) : ""}
                     ${canViewSensitivePricing() ? metric(__("Cost HT"), formatCurrency(totalCost), "accent") : ""}
-                    ${metric(__("Final Price"), formatCurrency(finalTotal), "accent")}
-                    ${metric(__("Discount"), formatCurrency(finalTotal - discountedTotal))}
-                    ${metric(__("After Discount"), formatCurrency(discountedTotal), "accent")}
+                    ${metric(__("PT HT"), formatCurrency(finalTotal), "accent")}
+                    ${metric(__("Remise HT"), formatCurrency(finalTotal - discountedTotal))}
+                    ${metric(__("PT HT net"), formatCurrency(discountedTotal), "accent")}
                     ${canViewSensitivePricing() ? marginMetric(STATE.marginBasis, marginPct) : ""}
                     ${metric(__("Commission"), formatCurrency(commissionTotal))}
                     ${metric(__("Taxes"), formatCurrency(totalTax))}
-                    ${metric(__("TTC"), formatCurrency(totalTtc), "accent")}
+                    ${metric(__("PT TTC net"), formatCurrency(totalTtc), "accent")}
                     ${metric(__("Warnings"), warnings)}
                 </div>
             </section>
@@ -836,7 +836,7 @@
 
     function lineColumnLabel(column) {
         if (isStaticPricingMode()) {
-            if (column.key === "static_list_price") return "List Price U";
+            if (column.key === "static_list_price") return "PU List HT";
             if (column.key === "expense_unit_price") return "Modifiers U";
             if (column.key === "expense_total") return "Modifiers Total";
             if (column.key === "projected_unit_price") return "Static Price U";
@@ -893,7 +893,7 @@
         return `
             <section class="psb-card psb-breakdown-card">
                 <div class="psb-section-head">
-                    <div><h2>${__("Price breakdown")}</h2><p>${__("Review the per-item pricing build-up, discounts, and commission calculation. Commission = unused allowed discount x selling total x commission rate.")}</p></div>
+                    <div><h2>${__("Price breakdown")}</h2><p>${__("Review the per-item pricing build-up, discounts, and commission calculation. Commission = unused discount commission + 20% uplift above price list.")}</p></div>
                 </div>
                 ${lines.length ? `<div class="psb-breakdown-list">${lines.map(breakdownCard).join("")}</div>` : `<div class="psb-muted">${__("Add quotation lines to see the price breakdown.")}</div>`}
             </section>`;
@@ -910,13 +910,13 @@
                     <em>${escapeHtml(frappe.format(row.qty || 0, { fieldtype: "Float" }))}</em>
                 </div>
                 <div class="psb-breakdown-metrics">
-                    ${breakdownMetric(__("Sell Price U"), formatCurrency(row.final_sell_unit_price), true)}
+                    ${breakdownMetric(__("PU HT"), formatCurrency(row.final_sell_unit_price), true)}
                     ${breakdownMetric(__("Manual Override"), formatCurrency(row.manual_sell_unit_price))}
-                    ${breakdownMetric(__("Total Sell"), formatCurrency(row.final_sell_total), true)}
+                    ${breakdownMetric(__("PT HT"), formatCurrency(row.final_sell_total), true)}
                     ${breakdownMetric(__("Allowed Discount"), `${Number(resolveMaxDiscount(row)).toFixed(1)}%`)}
-                    ${breakdownMetric(__("Discount"), `${Number(row.discount_percent || 0).toFixed(1)}%`)}
+                    ${breakdownMetric(__("Remise"), `${Number(row.discount_percent || 0).toFixed(1)}%`)}
                     ${breakdownMetric(__("Unused Discount"), `${unusedDiscountPercent(row).toFixed(1)}%`)}
-                    ${breakdownMetric(__("After Discount"), formatCurrency(row.discounted_sell_total || row.final_sell_total), true)}
+                    ${breakdownMetric(__("PT HT net"), formatCurrency(row.discounted_sell_total || row.final_sell_total), true)}
                     ${breakdownMetric(__("Commission"), formatCurrency(row.commission_amount))}
                     ${isRestrictedAgent() ? "" : breakdownMetric(isStaticPricingMode() ? __("Modifiers U") : __("Expenses U"), formatCurrency(isStaticPricingMode() ? staticModifierUnit(row) : row.expense_unit_price))}
                     ${isRestrictedAgent() ? "" : breakdownMetric(isStaticPricingMode() ? __("Static Price U") : __("Total Cost U"), formatCurrency(lineCostUnit(row)), true)}
@@ -968,7 +968,7 @@
         if (isStaticPricingMode()) {
             const unit = staticBaseUnit(row);
             return {
-                label: __("Static List Price"),
+                label: __("PU List HT"),
                 unit,
                 line: unit * qty,
                 source: row.resolved_selling_price_list || firstActiveSellingPriceList() || "-",
@@ -1025,7 +1025,10 @@
             <section class="psb-card">
                 <div class="psb-section-head">
                     <div><h2>${__("Quotation preview")}</h2><p>${__("Review totals and line visibility before generating the ERPNext Quotation document.")}</p></div>
-                    <button type="button" class="psb-btn primary" data-generate>${__("Generate Quotation")}</button>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                        ${STATE.sheet.name ? `<button type="button" class="psb-btn ghost" data-open-linked-quotations>${__("Open Quotations")}</button>` : ""}
+                        <button type="button" class="psb-btn primary" data-generate>${__("Generate Quotation")}</button>
+                    </div>
                 </div>
                 <div class="psb-quote-grid">
                     ${quoteMetric(__("Lines"), preview.line_count || (STATE.sheet.lines || []).length)}
@@ -1046,6 +1049,7 @@
                 <button type="button" class="psb-btn ghost" data-manager>${__("Pricing Sheets")}</button>
                 <button type="button" class="psb-btn ghost" data-add-line>${__("Add Line")}</button>
                 <button type="button" class="psb-btn primary" data-save>${STATE.saving ? __("Saving...") : __("Save")}</button>
+                ${STATE.sheet.name ? `<button type="button" class="psb-btn ghost" data-open-linked-quotations>${__("Quotations")}</button>` : ""}
                 <button type="button" class="psb-btn dark" data-generate>${__("Generate Quotation")}</button>
                 ${STATE.sheet.name ? `<button type="button" class="psb-btn danger" data-delete-sheet>${__("Delete PS")}</button>` : ""}
             </div>
@@ -1060,6 +1064,7 @@
         page.main.find("[data-manager]").on("click", () => frappe.set_route("pricing-sheet-manager"));
         page.main.find("[data-save]").on("click", () => save(page));
         page.main.find("[data-generate]").on("click", () => generateQuotation(page));
+        page.main.find("[data-open-linked-quotations]").on("click", () => openLinkedQuotations(STATE.sheet.name));
         page.main.find("[data-delete-sheet]").on("click", () => confirmDeletePricingSheet(page));
         page.main.find("[data-columns]").on("click", () => openColumnDialog(page));
         page.main.find("[data-toggle-history]").on("click", () => {
@@ -1191,6 +1196,7 @@
                 const floor = manualOverrideFloor(line);
                 const nextValue = requested > 0 && floor > 0 && requested < floor ? floor : requested;
                 line[field] = nextValue;
+                if (nextValue > manualOverrideReference(line)) line.discount_percent = 0;
                 if (nextValue !== requested) {
                     $(this).val(nextValue);
                     frappe.show_alert({ message: __("Manual unit override raised to minimum {0}", [formatCurrency(floor)]), indicator: "orange" });
@@ -1825,9 +1831,13 @@
     }
 
     function manualOverrideFloor(row) {
-        const reference = Number(row.projected_unit_price || row.static_list_price || 0);
+        const reference = manualOverrideReference(row);
         if (!reference) return 0;
         return reference * (1 - (resolveMaxDiscount(row) / 100));
+    }
+
+    function manualOverrideReference(row) {
+        return Number(row.projected_unit_price || row.static_list_price || 0);
     }
 
     function lineCostUnit(row) {
@@ -2258,18 +2268,108 @@
 
     async function generateQuotation(page) {
         if (!(await save(page)) || !STATE.sheet.name) return;
-        frappe.confirm(__("Generate the Quotation now?"), async () => {
+        const targetQuotation = await chooseQuotationTarget(STATE.sheet.name);
+        if (targetQuotation === null) return;
+        frappe.confirm(targetQuotation ? __("Update draft Quotation {0} from this Pricing Sheet?", [targetQuotation]) : __("Generate a new Quotation now?"), async () => {
             const res = await frappe.call({
                 method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.generate_builder_quotation",
-                args: { pricing_sheet: STATE.sheet.name, pricing_mode: resolvePricingMode(STATE.sheet) },
+                args: { pricing_sheet: STATE.sheet.name, pricing_mode: resolvePricingMode(STATE.sheet), target_quotation: targetQuotation || "" },
                 freeze: true,
             });
             const quotation = (res.message || {}).quotation;
             if (quotation) {
-                frappe.show_alert({ message: __("Quotation {0} created", [quotation]), indicator: "green" });
+                frappe.show_alert({ message: targetQuotation ? __("Quotation {0} updated", [quotation]) : __("Quotation {0} created", [quotation]), indicator: "green" });
                 frappe.set_route("Form", "Quotation", quotation);
             }
         });
+    }
+
+    async function chooseQuotationTarget(pricingSheet) {
+        const res = await frappe.call({
+            method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.get_pricing_sheet_quotation_options",
+            args: { pricing_sheet: pricingSheet },
+        });
+        const quotations = (res.message || {}).quotations || [];
+        const draftQuotations = quotations.filter((row) => Number(row.docstatus || 0) === 0);
+        if (!draftQuotations.length) {
+            if (quotations.length) {
+                frappe.show_alert({ message: __("Submitted Quotations cannot be updated. A new Quotation will be created."), indicator: "orange" });
+            }
+            return "";
+        }
+        return new Promise((resolve) => {
+            const createValue = __("Create New Quotation");
+            let resolved = false;
+            const finish = (value) => {
+                if (resolved) return;
+                resolved = true;
+                resolve(value);
+            };
+            const options = [createValue]
+                .concat(draftQuotations.map((row) => row.name))
+                .join("\n");
+            const dialog = new frappe.ui.Dialog({
+                title: draftQuotations.length === 1 ? __("Update Existing Quotation?") : __("Choose Draft Quotation to Update"),
+                fields: [
+                    {
+                        fieldname: "target_quotation",
+                        fieldtype: "Select",
+                        label: __("Quotation Action"),
+                        options,
+                        default: draftQuotations.length === 1 ? draftQuotations[0].name : createValue,
+                        description: __("Only draft Quotations can be updated. Submitted Quotations are never changed."),
+                    },
+                ],
+                primary_action_label: __("Continue"),
+                primary_action(values) {
+                    finish(values.target_quotation === createValue ? "" : values.target_quotation);
+                    dialog.hide();
+                },
+            });
+            dialog.onhide = () => finish(null);
+            dialog.show();
+        });
+    }
+
+    async function openLinkedQuotations(pricingSheet) {
+        if (!pricingSheet) return;
+        const res = await frappe.call({
+            method: "orderlift.orderlift_sales.page.pricing_sheet_builder.pricing_sheet_builder.get_pricing_sheet_quotation_options",
+            args: { pricing_sheet: pricingSheet },
+        });
+        const quotations = (res.message || {}).quotations || [];
+        if (!quotations.length) {
+            frappe.msgprint({
+                title: __("No Linked Quotations"),
+                message: __("No Quotations are linked to this Pricing Sheet yet."),
+                indicator: "orange",
+            });
+            return;
+        }
+        if (quotations.length === 1) {
+            frappe.set_route("Form", "Quotation", quotations[0].name);
+            return;
+        }
+        const options = quotations.map((row) => row.name).join("\n");
+        const dialog = new frappe.ui.Dialog({
+            title: __("Open Linked Quotation"),
+            fields: [
+                {
+                    fieldname: "quotation",
+                    fieldtype: "Select",
+                    label: __("Quotation"),
+                    options,
+                    default: quotations[0].name,
+                    description: __("Shows only Quotations linked to this Pricing Sheet."),
+                },
+            ],
+            primary_action_label: __("Open"),
+            primary_action(values) {
+                dialog.hide();
+                if (values.quotation) frappe.set_route("Form", "Quotation", values.quotation);
+            },
+        });
+        dialog.show();
     }
 
     function confirmDeletePricingSheet(page) {

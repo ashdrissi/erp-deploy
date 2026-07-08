@@ -368,6 +368,284 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         self.assertIn("Select or enter Selling Price List to enable autosave", page_js)
         self.assertIn("Add a Sourcing Rule to enable autosave", page_js)
 
+    def test_pricing_builder_target_currency_field_exists(self):
+        app_root = Path(__file__).resolve().parents[2]
+        builder_json = json.loads((
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "doctype"
+            / "pricing_builder"
+            / "pricing_builder.json"
+        ).read_text())
+        fields = {field["fieldname"]: field for field in builder_json["fields"]}
+
+        self.assertIn("target_currency", builder_json["field_order"])
+        self.assertEqual(fields["target_currency"]["fieldtype"], "Link")
+        self.assertEqual(fields["target_currency"]["options"], "Currency")
+
+    def test_new_selling_price_list_uses_selected_target_currency(self):
+        created = []
+        original_exists = frappe_stub.db.exists
+        original_new_doc = getattr(frappe_stub, "new_doc", None)
+        original_apply_company = pricing_builder.apply_price_list_company
+
+        def fake_exists(doctype, name=None, *args, **kwargs):
+            if doctype == "Price List":
+                return False
+            if doctype == "Currency":
+                return name in {"TRY", "USD"}
+            return False
+
+        frappe_stub.db.exists = fake_exists
+        frappe_stub.new_doc = lambda doctype: _FakePriceListDoc()
+        pricing_builder.apply_price_list_company = lambda doc: None
+        _FakePriceListDoc.inserted = []
+        try:
+            price_list_name = pricing_builder._ensure_selling_price_list("Retail TRY", target_currency="TRY")
+        finally:
+            frappe_stub.db.exists = original_exists
+            pricing_builder.apply_price_list_company = original_apply_company
+            if original_new_doc is None:
+                delattr(frappe_stub, "new_doc")
+            else:
+                frappe_stub.new_doc = original_new_doc
+
+        self.assertEqual(price_list_name, "Retail TRY")
+        self.assertEqual(len(_FakePriceListDoc.inserted), 1)
+        created.extend(_FakePriceListDoc.inserted)
+        _FakePriceListDoc.inserted = []
+        self.assertEqual(created[0].currency, "TRY")
+        self.assertEqual(created[0].selling, 1)
+        self.assertEqual(created[0].buying, 0)
+
+    def test_existing_selling_price_list_keeps_configured_currency(self):
+        original_exists = frappe_stub.db.exists
+        original_get_value = frappe_stub.db.get_value
+        original_validate = pricing_builder.validate_price_list_scope
+        original_new_doc = getattr(frappe_stub, "new_doc", None)
+
+        frappe_stub.db.exists = lambda doctype, name=None, *args, **kwargs: doctype == "Price List" and name == "Retail EUR"
+        frappe_stub.db.get_value = lambda doctype, name, fieldname=None, **kwargs: "EUR" if doctype == "Price List" and fieldname == "currency" else None
+        pricing_builder.validate_price_list_scope = lambda *args, **kwargs: True
+        frappe_stub.new_doc = lambda doctype: (_ for _ in ()).throw(AssertionError("existing list must not be recreated"))
+        try:
+            self.assertEqual(pricing_builder._resolve_builder_target_currency("Retail EUR", "TRY"), "EUR")
+            self.assertEqual(pricing_builder._ensure_selling_price_list("Retail EUR", target_currency="TRY"), "Retail EUR")
+        finally:
+            frappe_stub.db.exists = original_exists
+            frappe_stub.db.get_value = original_get_value
+            pricing_builder.validate_price_list_scope = original_validate
+            if original_new_doc is None:
+                delattr(frappe_stub, "new_doc")
+            else:
+                frappe_stub.new_doc = original_new_doc
+
+    def test_builder_references_include_currency_metadata(self):
+        original_current_company = pricing_builder_builder.current_company
+        original_get_price_list_names = pricing_builder_builder.get_price_list_names
+        original_exists = frappe_stub.db.exists
+        original_has_column = frappe_stub.db.has_column
+        original_get_value = frappe_stub.db.get_value
+        original_get_all = getattr(frappe_stub, "get_all", None)
+
+        pricing_builder_builder.current_company = lambda: "Orderlift Turkey"
+        pricing_builder_builder.get_price_list_names = lambda kind=None, company=None: ["Buy USD"] if kind == "buying" else ["Retail TRY"]
+        frappe_stub.db.exists = lambda doctype, name=None, *args, **kwargs: (
+            (doctype == "Company" and name == "Orderlift Turkey") or (doctype == "DocType" and name == "Currency")
+        )
+        frappe_stub.db.has_column = lambda doctype, fieldname: doctype == "Price List" and fieldname in {"currency", "custom_company"}
+        frappe_stub.db.get_value = lambda doctype, name, fieldname=None, **kwargs: "TRY" if doctype == "Company" and fieldname == "default_currency" else None
+
+        def fake_get_all(doctype, **kwargs):
+            if doctype == "Currency":
+                return ["TRY", "USD"]
+            if doctype == "Price List":
+                names = set((kwargs.get("filters") or {}).get("name", [None, []])[1])
+                if "Buy USD" in names:
+                    return [AttrDict(name="Buy USD", currency="USD", custom_company="Orderlift Turkey")]
+                return [AttrDict(name="Retail TRY", currency="TRY", custom_company="Orderlift Turkey")]
+            return []
+
+        frappe_stub.get_all = fake_get_all
+        try:
+            refs = pricing_builder_builder._references()
+        finally:
+            pricing_builder_builder.current_company = original_current_company
+            pricing_builder_builder.get_price_list_names = original_get_price_list_names
+            frappe_stub.db.exists = original_exists
+            frappe_stub.db.has_column = original_has_column
+            frappe_stub.db.get_value = original_get_value
+            if original_get_all is None:
+                delattr(frappe_stub, "get_all")
+            else:
+                frappe_stub.get_all = original_get_all
+
+        self.assertEqual(refs["current_company"], "Orderlift Turkey")
+        self.assertEqual(refs["company_currency"], "TRY")
+        self.assertEqual(refs["currencies"], ["TRY", "USD"])
+        self.assertEqual(refs["selling_price_list_meta"]["Retail TRY"]["currency"], "TRY")
+        self.assertEqual(refs["buying_price_list_meta"]["Buy USD"]["currency"], "USD")
+
+    def test_builder_page_shows_target_currency_controls(self):
+        app_root = Path(__file__).resolve().parents[2]
+        page_js = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "page"
+            / "pricing_builder_builder"
+            / "pricing_builder_builder.js"
+        ).read_text()
+
+        self.assertIn('data-parent-field="target_currency"', page_js)
+        self.assertIn("function targetCurrency", page_js)
+        self.assertIn("function defaultTargetCurrency", page_js)
+        self.assertIn("function priceListLabel", page_js)
+        self.assertIn("STATE.refs.company_currency", page_js)
+        self.assertIn("Target Currency: {0}", page_js)
+        self.assertIn("New list will be created in {0} for {1}.", page_js)
+        self.assertIn('pbb-price-list-mode existing', page_js)
+        self.assertIn('pbb-price-list-mode new', page_js)
+        self.assertIn("function exchangeRatePanel", page_js)
+        self.assertIn('<details class="pbb-rate-details">', page_js)
+        self.assertIn("Exchange Rates Used", page_js)
+        self.assertIn("synced from system Currency Exchange records", page_js)
+        self.assertIn("pbb-price-list-mode.existing", page_js)
+        self.assertIn("minmax(360px,.72fr)", page_js)
+
+    def test_builder_page_flushes_save_and_publishes_exact_selected_rows(self):
+        app_root = Path(__file__).resolve().parents[2]
+        page_js = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "page"
+            / "pricing_builder_builder"
+            / "pricing_builder_builder.js"
+        ).read_text()
+        page_py = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "page"
+            / "pricing_builder_builder"
+            / "pricing_builder_builder.py"
+        ).read_text()
+        builder_py = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "doctype"
+            / "pricing_builder"
+            / "pricing_builder.py"
+        ).read_text()
+
+        self.assertIn("let savePromise = null", page_js)
+        self.assertIn("async function saveLatest", page_js)
+        self.assertIn("clearTimeout(autosaveTimer)", page_js)
+        self.assertIn("selected_rows: selectedOnly ? rowsToPublish : null", page_js)
+        self.assertIn("function selectedPublishRows", page_js)
+        self.assertIn("function selectedPublishRow", page_js)
+        self.assertIn("function previewNewPriceCell", page_js)
+        self.assertIn("Manual override", page_js)
+        self.assertIn("def publish_builder_page_doc(name, selected_only=1, selected_rows=None)", page_py)
+        self.assertIn("selected_rows=selected_rows", page_py)
+        self.assertIn("def _selected_publish_keys", builder_py)
+        self.assertIn("selected_keys = _selected_publish_keys(selected_rows)", builder_py)
+        self.assertIn("def _existing_selected_map", builder_py)
+
+    def test_builder_exchange_rate_summary_reads_system_rates(self):
+        original_exists = frappe_stub.db.exists
+        original_get_value = frappe_stub.db.get_value
+        original_get_doc = getattr(frappe_stub, "get_doc", None)
+        original_get_all = getattr(frappe_stub, "get_all", None)
+
+        doc = AttrDict(
+            selling_price_list_name="",
+            target_currency="MAD",
+            sourcing_rules=[AttrDict(is_active=1, buying_price_list="Buy USD", benchmark_policy="Bench A")],
+        )
+        policy = AttrDict(benchmark_sources=[AttrDict(is_active=1, price_list="Benchmark EUR")])
+
+        def fake_exists(doctype, name=None, *args, **kwargs):
+            if doctype == "Currency":
+                return name == "MAD"
+            if doctype == "Pricing Benchmark Policy":
+                return name == "Bench A"
+            if doctype == "DocType":
+                return name == "Currency Exchange"
+            return False
+
+        def fake_get_value(doctype, name, fieldname=None, **kwargs):
+            if doctype == "Price List" and fieldname == "currency":
+                return {"Buy USD": "USD", "Benchmark EUR": "EUR"}.get(name)
+            return None
+
+        def fake_get_all(doctype, **kwargs):
+            if doctype != "Currency Exchange":
+                return []
+            filters = kwargs.get("filters") or {}
+            pair = (filters.get("from_currency"), filters.get("to_currency"))
+            if pair == ("USD", "MAD"):
+                return [AttrDict(name="USD-MAD-1", date="2026-07-01", exchange_rate=10.0)]
+            if pair == ("EUR", "MAD"):
+                return [AttrDict(name="EUR-MAD-1", date="2026-07-02", exchange_rate=11.0)]
+            return []
+
+        frappe_stub.db.exists = fake_exists
+        frappe_stub.db.get_value = fake_get_value
+        frappe_stub.get_doc = lambda doctype, name: policy
+        frappe_stub.get_all = fake_get_all
+        pricing_builder.get_price_list_currency.cache_clear()
+        pricing_builder.get_exchange_rate_info_for_pair.cache_clear()
+        try:
+            summary = pricing_builder.builder_exchange_rate_summary(doc)
+        finally:
+            pricing_builder.get_price_list_currency.cache_clear()
+            pricing_builder.get_exchange_rate_info_for_pair.cache_clear()
+            frappe_stub.db.exists = original_exists
+            frappe_stub.db.get_value = original_get_value
+            if original_get_doc is None:
+                delattr(frappe_stub, "get_doc")
+            else:
+                frappe_stub.get_doc = original_get_doc
+            if original_get_all is None:
+                delattr(frappe_stub, "get_all")
+            else:
+                frappe_stub.get_all = original_get_all
+
+        by_list = {row["price_list"]: row for row in summary["rates"]}
+        self.assertEqual(summary["target_currency"], "MAD")
+        self.assertEqual(by_list["Buy USD"]["exchange_rate"], 10.0)
+        self.assertEqual(by_list["Buy USD"]["source_name"], "USD-MAD-1")
+        self.assertEqual(by_list["Benchmark EUR"]["exchange_rate"], 11.0)
+        self.assertEqual(by_list["Benchmark EUR"]["usage"], "Benchmark")
+
+    def test_builder_calculation_threads_target_currency_to_price_lookups(self):
+        app_root = Path(__file__).resolve().parents[2]
+        builder_py = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "doctype"
+            / "pricing_builder"
+            / "pricing_builder.py"
+        ).read_text()
+        page_py = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "page"
+            / "pricing_builder_builder"
+            / "pricing_builder_builder.py"
+        ).read_text()
+
+        self.assertIn("target_currency = _resolve_builder_target_currency", builder_py)
+        self.assertIn("target_currency=target_currency", builder_py)
+        self.assertIn("def builder_exchange_rate_summary", builder_py)
+        self.assertIn('"exchange_rate_summary": builder_exchange_rate_summary(doc)', page_py)
+
     def test_zero_base_buy_price_is_not_ready(self):
         row = AttrDict(
             status="Ready",
@@ -861,6 +1139,29 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         self.assertEqual(pricing_builder._existing_override(overrides, "ITEM-001", "Other"), 123)
         self.assertEqual(pricing_builder._existing_override(overrides, "ITEM-002", "Other"), 0)
         self.assertEqual(pricing_builder._existing_override(overrides, "ITEM-002", "Buy A"), 10)
+
+    def test_builder_selected_map_preserves_exact_selection(self):
+        selected = pricing_builder._existing_selected_map(
+            [
+                AttrDict(item="ITEM-001", buying_list="Buy USD", selected=1),
+                AttrDict(item="ITEM-001", buying_list="Buy EUR", selected=0),
+                AttrDict(item="ITEM-002", buying_list="", selected=1),
+            ]
+        )
+
+        self.assertEqual(pricing_builder._existing_selected(selected, "ITEM-001", "Buy USD"), 1)
+        self.assertEqual(pricing_builder._existing_selected(selected, "ITEM-001", "Buy EUR"), 0)
+        self.assertEqual(pricing_builder._existing_selected(selected, "ITEM-002", "Any"), 1)
+
+    def test_builder_selected_publish_keys_parse_exact_rows(self):
+        keys = pricing_builder._selected_publish_keys(
+            json.dumps([
+                {"item": "ITEM-001", "buying_list": "Buy USD"},
+                {"item": "ITEM-002", "buying_list": ""},
+            ])
+        )
+
+        self.assertEqual(keys, {("ITEM-001", "Buy USD"), ("ITEM-002", "")})
 
     def test_builder_imports_overridden_item_prices_into_override_map(self):
         frappe_stub.get_all = lambda doctype, **kwargs: [
@@ -1554,7 +1855,7 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         self.assertIn('"before_insert": [', hook_text)
         self.assertIn('"before_validate": [', hook_text)
         self.assertIn('orderlift.orderlift_sales.utils.price_list_scope.validate_price_list_unique_name_context', hook_text)
-        self.assertIn('price_list_type_queries_20260617b.js', hook_text)
+        self.assertIn('price_list_type_queries_20260703c.js', hook_text)
 
     def test_pricing_sheet_builder_static_agents_can_choose_allocated_lists(self):
         app_root = Path(__file__).resolve().parents[2]
@@ -1637,6 +1938,24 @@ class _FakeItemPriceDoc:
 
     def save(self, ignore_permissions=False):
         self.save_count += 1
+
+
+class _FakePriceListDoc:
+    inserted = []
+
+    def __init__(self):
+        self.name = "Retail TRY"
+        self.price_list_name = ""
+        self.title = ""
+        self.enabled = 0
+        self.selling = 0
+        self.buying = 1
+        self.currency = ""
+        self.custom_company = ""
+
+    def insert(self, ignore_permissions=False):
+        self.name = self.price_list_name or self.name
+        self.__class__.inserted.append(self)
 
 
 class _FakeBuilder:

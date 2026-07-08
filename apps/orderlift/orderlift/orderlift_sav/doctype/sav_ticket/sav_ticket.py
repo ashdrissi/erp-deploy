@@ -11,11 +11,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now, today, cint, date_diff, getdate
+
 from orderlift.orderlift_sav.doctype.sav_ticket.auto_fill import (
     _compute_warranty_status,
     _count_recurrences,
     _resolve_site_address,
 )
+from orderlift.startup_roles import SAV_TECHNICIAN_ROLE
 from orderlift.warehouse_access import get_allowed_warehouses, user_can_access_warehouse
 
 
@@ -183,17 +185,22 @@ class SAVTicket(Document):
         if not self.item_concerned:
             frappe.throw(_("An item is required to create a stock movement."))
 
+        source_warehouse = self._get_default_source_warehouse()
+        target_warehouse = target_warehouse or self._get_default_target_warehouse(action_type)
+        self._validate_stock_warehouse_access(source_warehouse, _("source"))
+        self._validate_stock_warehouse_access(target_warehouse, _("target"))
+
         stock_entry = frappe.new_doc("Stock Entry")
         stock_entry.stock_entry_type = "Material Transfer"
         stock_entry.purpose = "Material Transfer"
         stock_entry.append("items", {
             "item_code": self.item_concerned,
             "qty": 1,
-            "s_warehouse": self._get_default_source_warehouse(),
-            "t_warehouse": target_warehouse or self._get_default_target_warehouse(action_type),
+            "s_warehouse": source_warehouse,
+            "t_warehouse": target_warehouse,
         })
 
-        stock_entry.insert(ignore_permissions=True)
+        stock_entry.insert(ignore_permissions=False)
 
         # Add to stock actions child table
         self.append("stock_actions", {
@@ -203,7 +210,7 @@ class SAVTicket(Document):
             "status": "Pending",
             "notes": _("Created from SAV ticket {0}").format(self.name),
         })
-        self.save(ignore_permissions=True)
+        self.save(ignore_permissions=False)
 
         frappe.msgprint(
             _("Stock entry {0} created.").format(stock_entry.name),
@@ -216,7 +223,7 @@ class SAVTicket(Document):
         if user_can_access_warehouse(default_warehouse):
             return default_warehouse
         allowed = get_allowed_warehouses()
-        return allowed[0] if allowed else default_warehouse
+        return allowed[0] if allowed else None
 
     def _get_default_target_warehouse(self, action_type):
         warehouse_map = {
@@ -234,6 +241,14 @@ class SAVTicket(Document):
         allowed = set(get_allowed_warehouses())
         accessible = [wh for wh in all_matching if wh in allowed]
         return accessible[0] if accessible else None
+
+    def _validate_stock_warehouse_access(self, warehouse, label):
+        if not warehouse:
+            frappe.throw(_("No accessible {0} warehouse was found for this stock movement.").format(label))
+        if not frappe.db.exists("Warehouse", warehouse):
+            frappe.throw(_("Warehouse {0} does not exist.").format(warehouse))
+        if not user_can_access_warehouse(warehouse):
+            frappe.throw(_("You do not have access to {0} warehouse {1}.").format(label, warehouse), frappe.PermissionError)
 
     def _get_company(self):
         if self.installation_project:
@@ -317,25 +332,25 @@ def _compute_severity(priority, warranty_status, recurrence_count, defect_type):
 def get_technicians(doctype, txt, searchfield, start, page_len, filters):
     """Search query for the assigned_technician link field."""
     txt = f"%{txt or ''}%"
-    technicians = frappe.db.sql(
-        """
-        SELECT DISTINCT u.name, u.full_name
-        FROM `tabUser` u
-        INNER JOIN `tabHas Role` r ON r.parent = u.name
-        WHERE r.role = 'Orderlift Technician'
-          AND u.enabled = 1
-          AND u.user_type = 'System User'
-          AND (u.name LIKE %(txt)s OR u.full_name LIKE %(txt)s)
-        ORDER BY u.full_name
-        LIMIT %(start)s, %(page_len)s
-        """,
-        {"txt": txt, "start": cint(start), "page_len": cint(page_len)},
-    )
+    for role in (SAV_TECHNICIAN_ROLE, "Service User"):
+        technicians = frappe.db.sql(
+            """
+            SELECT DISTINCT u.name, u.full_name
+            FROM `tabUser` u
+            INNER JOIN `tabHas Role` r ON r.parent = u.name
+            WHERE r.role = %(role)s
+              AND u.enabled = 1
+              AND u.user_type = 'System User'
+              AND (u.name LIKE %(txt)s OR u.full_name LIKE %(txt)s)
+            ORDER BY u.full_name
+            LIMIT %(start)s, %(page_len)s
+            """,
+            {"role": role, "txt": txt, "start": cint(start), "page_len": cint(page_len)},
+        )
+        if technicians:
+            return technicians
 
-    if technicians:
-        return technicians
-
-    # Fallback keeps assignment usable until technician roles are mapped.
+    # Fallback keeps assignment usable until technician users are mapped.
     return frappe.db.sql(
         """
         SELECT u.name, u.full_name

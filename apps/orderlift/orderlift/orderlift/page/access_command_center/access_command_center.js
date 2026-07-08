@@ -1,5 +1,6 @@
 (function () {
     const METHOD = "orderlift.orderlift.page.access_command_center.access_command_center";
+    const BASE_PERMISSION_ROLE = "All";
     const PERMISSION_FIELDS = ["select", "read", "write", "create", "delete", "submit", "cancel", "amend", "report", "import", "export", "print", "email", "share"];
     const TABS = [
         ["users", "Users"],
@@ -377,7 +378,8 @@
 
     function matrixMarkup(data) {
         const matrix = data.permission_matrix || { rows: [] };
-        const roles = availableRoles();
+        const roles = permissionMatrixRoles();
+        const selectedRoleLabel = selectedPermissionRoleLabel();
         const dirtyCount = Object.keys(STATE.matrixDraft).length;
         const allRows = functionalMatrixRows(matrix.rows || []);
         const displayRows = filteredMatrixRows(allRows, STATE.doctypeSearch);
@@ -389,13 +391,15 @@
             ? displayRows.map((row) => matrixRow(row)).join("")
             : groups.map((group) => matrixGroup(group, autoExpandGroups)).join("");
         return panelShell(__("Permissions Matrix"), __("Control read, edit, create, remove, approval, import, export, and sharing access through safe Custom DocPerm overrides."), `
+            ${generalPermissionSummary(allRows)}
             <div class="acc-matrix-toolbar">
-                <label><span>${__("Role")}</span><select data-role-selector>${roles.map((role) => `<option value="${escapeHtml(role.name)}" ${role.name === STATE.selectedRole ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select></label>
+                <label><span>${__("Permission Scope")}</span><select data-role-selector>${roles.map((role) => `<option value="${escapeHtml(role.name)}" ${role.name === STATE.selectedRole ? "selected" : ""}>${escapeHtml(role.label || role.name)}</option>`).join("")}</select></label>
                 <label><span>${__("Search groups, modules, doctypes")}</span><input data-doctype-search type="search" value="${escapeHtml(searchValue)}" placeholder="${__("Item, Catalog, Child Table, high...")}" /></label>
                 ${searchActive ? `<button class="acc-row-action" data-clear-doctype-search>${__("Clear Search")}</button>` : ""}
                 <label><span>${__("View")}</span><select data-matrix-view><option value="grouped" ${STATE.matrixView !== "technical" ? "selected" : ""}>${__("Business Groups")}</option><option value="technical" ${STATE.matrixView === "technical" ? "selected" : ""}>${__("Technical DocTypes")}</option></select></label>
                 <span class="acc-matrix-search-status ${STATE.matrixSearchPending ? "active" : ""}" data-matrix-search-status>${STATE.matrixSearchPending ? `<b></b>${__("Searching")}` : ""}</span>
-                <span class="acc-source-legend"><b class="custom"></b>${__("Custom override")} <b class="standard"></b>${__("System permission")} <b class="none"></b>${__("No access")}</span>
+                <span class="acc-source-legend"><b class="custom"></b>${__("Role")} <b class="standard"></b>${__("Base")} <b class="none"></b>${__("No access")}</span>
+                <span class="acc-count-pill">${__("Editing")} <strong>${escapeHtml(selectedRoleLabel)}</strong></span>
                 <span class="acc-count-pill"><strong>${displayRows.length}</strong>${searchActive ? `/${allRows.length}` : ""} ${__("doctypes")} · <strong>${groups.length}</strong> ${__("groups")}</span>
             </div>
             <div class="acc-matrix-wrap">
@@ -410,6 +414,18 @@
             </div>
             ${dirtyCount ? `<div class="acc-inline-warning">${ICONS.warning}<span>${__("You have unsaved matrix changes. Use Review Changes before saving.")}</span></div>` : ""}
         `);
+    }
+
+    function generalPermissionSummary(rows) {
+        const generalRows = (rows || []).filter((row) => row.group_key === "general_permissions");
+        const activeGeneral = generalRows.filter((row) => rowHasPermission(row)).length;
+        return `
+            <div class="acc-inline-warning">
+                ${ICONS.shield}
+                <span><strong>${__("General Permissions")}</strong> ${__("are common permissions shown inside the selected role. Checking boxes here saves access for the selected role only.")}</span>
+                <span class="acc-count-pill"><strong>${activeGeneral}</strong>/<strong>${generalRows.length}</strong> ${__("active in selected role")}</span>
+            </div>
+        `;
     }
 
     function filteredMatrixRows(rows, search) {
@@ -441,6 +457,9 @@
             row.group_relation,
             row.group_parent_doctype,
             row.source,
+            row.source_label,
+            row.source_role,
+            row.group_key === "general_permissions" ? "general permissions common role" : "",
             row.risk,
             Number(row.is_child_table || 0) ? "child table child" : "primary parent",
             Number(row.is_custom_doctype || 0) ? "custom doctype" : "standard doctype",
@@ -476,7 +495,7 @@
         const expanded = Boolean(STATE.matrixExpandedGroups[group.key]) || Boolean(autoExpand);
         const activeCount = group.rows.filter(rowHasPermission).length;
         const childCount = group.rows.filter((row) => Number(row.is_child_table || 0)).length;
-        const customCount = group.rows.filter((row) => row.source === "custom" || STATE.matrixDraft[row.row_key || `${row.doctype}::${row.permlevel || 0}`]).length;
+        const customCount = group.rows.filter((row) => row.can_reset || STATE.matrixDraft[row.row_key || `${row.doctype}::${row.permlevel || 0}`]).length;
         const risk = groupRisk(group.rows);
         return `
             <tr class="acc-matrix-group-row risk-${risk}" data-matrix-group="${escapeHtml(group.key)}">
@@ -501,7 +520,7 @@
     }
 
     function groupPermissionState(rows, field) {
-        const editable = (rows || []).filter((row) => !(row.disabled_permission_fields || []).includes(field));
+        const editable = (rows || []).filter((row) => !(row.disabled_permission_fields || []).includes(field) && !isInheritedBaseField(row, field));
         if (!editable.length) return { checked: false, mixed: false, disabled: true };
         const checkedCount = editable.filter((row) => Number(rowPermissionValues(row)[field] || 0)).length;
         return { checked: checkedCount === editable.length, mixed: checkedCount > 0 && checkedCount < editable.length, disabled: false };
@@ -518,8 +537,9 @@
     }
 
     function groupSourceBadge(rows) {
-        if ((rows || []).some((row) => row.source === "custom")) return sourceBadge("custom");
-        if ((rows || []).some((row) => row.source === "standard")) return sourceBadge("standard");
+        if ((rows || []).some((row) => row.source === "mixed")) return sourceBadge("mixed");
+        if ((rows || []).some((row) => row.source === "direct")) return sourceBadge("direct");
+        if ((rows || []).some((row) => row.source === "base")) return sourceBadge("base");
         return sourceBadge("none");
     }
 
@@ -534,7 +554,7 @@
     }
 
     function matrixRowRank(row) {
-        const sourceRank = { custom: 0, standard: 1, none: 2 }[row.source] ?? 3;
+        const sourceRank = { mixed: 0, direct: 1, base: 2, none: 3 }[row.source] ?? 4;
         const activeRank = hasEffectivePermission(row) ? 0 : 1;
         return sourceRank * 100 + activeRank * 10 + Number(row.permlevel || 0);
     }
@@ -710,11 +730,27 @@
         const rowKey = row.row_key || `${row.doctype}::${row.permlevel || 0}`;
         const draft = rowPermissionValues(row);
         const disabledFields = new Set(row.disabled_permission_fields || []);
-        return `<tr class="risk-${row.risk} ${STATE.matrixDraft[rowKey] ? "draft" : ""} ${isGroupedChild ? "acc-matrix-child-row" : ""}" data-matrix-row="${escapeHtml(rowKey)}" data-doctype="${escapeHtml(row.doctype)}" data-permlevel="${row.permlevel || 0}"><td class="sticky-col"><div class="acc-doctype-cell"><strong>${escapeHtml(row.doctype)}</strong><small>${escapeHtml(row.module || "")} ${row.group_relation ? " · " + escapeHtml(row.group_relation) : ""}${row.is_custom_doctype ? " · " + __("Custom DocType") : ""}${row.is_child_table ? " · " + __("Child Table") : ""}</small></div></td><td>${badge(String(row.permlevel || 0), "gray")}</td><td>${sourceBadge(row.source)}</td><td>${badge(row.risk || "low", row.risk === "critical" ? "red" : row.risk === "high" ? "amber" : row.risk === "medium" ? "blue" : "gray")}</td>${PERMISSION_FIELDS.map((field) => {
-            const disabled = disabledFields.has(field);
-            const title = disabled ? __("Disabled for Orderlift-managed business documents") : labelPermission(field);
-            return `<td><label class="acc-perm-toggle ${disabled ? "disabled" : ""}" title="${escapeHtml(title)}"><input type="checkbox" data-permission-field="${field}" ${draft[field] && !disabled ? "checked" : ""} ${disabled ? "disabled" : ""} /><span></span></label></td>`;
-        }).join("")}<td><button class="acc-row-action" data-reset-docperm="${escapeHtml(row.doctype)}" data-reset-permlevel="${row.permlevel || 0}" ${row.source !== "custom" ? "disabled" : ""}>${__("Reset")}</button></td></tr>`;
+        return `<tr class="risk-${row.risk} ${STATE.matrixDraft[rowKey] ? "draft" : ""} ${isGroupedChild ? "acc-matrix-child-row" : ""}" data-matrix-row="${escapeHtml(rowKey)}" data-doctype="${escapeHtml(row.doctype)}" data-permlevel="${row.permlevel || 0}"><td class="sticky-col"><div class="acc-doctype-cell"><strong>${escapeHtml(row.doctype)}</strong><small>${escapeHtml(row.module || "")} ${row.group_relation ? " · " + escapeHtml(row.group_relation) : ""}${row.is_custom_doctype ? " · " + __("Custom DocType") : ""}${row.is_child_table ? " · " + __("Child Table") : ""} · ${escapeHtml(matrixSourceLabel(row))}</small></div></td><td>${badge(String(row.permlevel || 0), "gray")}</td><td>${sourceBadge(row.source)}</td><td>${badge(row.risk || "low", row.risk === "critical" ? "red" : row.risk === "high" ? "amber" : row.risk === "medium" ? "blue" : "gray")}</td>${PERMISSION_FIELDS.map((field) => {
+            const inherited = isInheritedBaseField(row, field);
+            const disabled = disabledFields.has(field) || inherited;
+            const title = disabledFields.has(field) ? __("Disabled for Orderlift-managed business documents") : inherited ? __("Already active from inherited base access. Role-specific changes cannot remove inherited access.") : labelPermission(field);
+            return `<td><label class="acc-perm-toggle ${disabled ? "disabled" : ""}" title="${escapeHtml(title)}"><input type="checkbox" data-permission-field="${field}" ${draft[field] && !disabledFields.has(field) ? "checked" : ""} ${disabled ? "disabled" : ""} /><span></span></label></td>`;
+        }).join("")}<td>${matrixRowAction(row)}</td></tr>`;
+    }
+
+    function matrixSourceLabel(row) {
+        if (row.source === "mixed") return __("Inherited + Role");
+        if (row.source === "base") return __("Inherited");
+        if (row.source === "direct") return __("Role-specific");
+        return __("No access");
+    }
+
+    function matrixRowAction(row) {
+        if (row.can_reset) return `<button class="acc-row-action" data-reset-docperm="${escapeHtml(row.doctype)}" data-reset-permlevel="${row.permlevel || 0}">${__("Reset")}</button>`;
+        if (row.source === "base" || row.source === "mixed") {
+            return `<button class="acc-row-action" disabled>${__("Inherited")}</button>`;
+        }
+        return `<button class="acc-row-action" disabled>${__("Reset")}</button>`;
     }
 
     function pageAccessMarkup(rows) {
@@ -885,11 +921,7 @@
             const scrollState = captureScrollState(page);
             const row = $(this).closest("[data-matrix-row]");
             const rowKey = row.data("matrix-row");
-            const values = {};
-            row.find("[data-permission-field]").each(function () { values[$(this).data("permission-field")] = $(this).is(":checked") ? 1 : 0; });
-            values.doctype = row.data("doctype");
-            values.permlevel = Number(row.data("permlevel") || 0);
-            values.role = STATE.selectedRole;
+            const values = matrixDraftValues(row);
             STATE.matrixDraft[rowKey] = values;
             STATE.matrixDraftRole = STATE.selectedRole;
             row.addClass("draft");
@@ -979,8 +1011,9 @@
             .filter((row) => (row.group_key || `module:${row.module || "Unassigned"}`) === groupKey);
         rows.forEach((row) => {
             if ((row.disabled_permission_fields || []).includes(field)) return;
+            if (isInheritedBaseField(row, field)) return;
             const rowKey = row.row_key || `${row.doctype}::${row.permlevel || 0}`;
-            const values = { ...rowPermissionValues(row) };
+            const values = { ...(row.direct || {}) };
             values[field] = enabled ? 1 : 0;
             values.doctype = row.doctype;
             values.permlevel = Number(row.permlevel || 0);
@@ -991,6 +1024,31 @@
         render(page);
         updateStickySaveBar(page);
         restoreScrollState(page, scrollState);
+    }
+
+    function matrixDraftValues(rowElement) {
+        const rowKey = rowElement.data("matrix-row");
+        const rowData = matrixRowByKey(rowKey) || {};
+        const values = { ...(rowData.direct || {}) };
+        rowElement.find("[data-permission-field]").each(function () {
+            const field = String($(this).data("permission-field") || "");
+            if (!field) return;
+            if ((rowData.disabled_permission_fields || []).includes(field)) {
+                values[field] = 0;
+            } else if (isInheritedBaseField(rowData, field)) {
+                values[field] = Number((rowData.direct || {})[field] || 0);
+            } else {
+                values[field] = $(this).is(":checked") ? 1 : 0;
+            }
+        });
+        values.doctype = rowElement.data("doctype");
+        values.permlevel = Number(rowElement.data("permlevel") || 0);
+        values.role = STATE.selectedRole;
+        return values;
+    }
+
+    function matrixRowByKey(rowKey) {
+        return (((STATE.data || {}).permission_matrix || {}).rows || []).find((row) => (row.row_key || `${row.doctype}::${row.permlevel || 0}`) === rowKey);
     }
 
     function focusMatrixSearch(page) {
@@ -1149,6 +1207,20 @@
     function availableRoles() {
         const data = STATE.data || {};
         return data.all_roles || data.roles || [];
+    }
+
+    function permissionMatrixRoles() {
+        return availableRoles().filter((role) => role.name !== BASE_PERMISSION_ROLE);
+    }
+
+    function selectedPermissionRoleLabel() {
+        const role = permissionMatrixRoles().find((item) => item.name === STATE.selectedRole);
+        return (role && (role.label || role.name)) || STATE.selectedRole;
+    }
+
+    function isInheritedBaseField(row, field) {
+        if (!row || row.is_base_role || STATE.selectedRole === BASE_PERMISSION_ROLE) return false;
+        return Number(((row.base || {})[field]) || 0) === 1;
     }
 
     function roleCapabilityLabels(values) {
@@ -1343,7 +1415,7 @@
             return;
         }
         frappe.confirm(
-            __("Apply {0} permission override(s) for role {1}? A Custom DocPerm record will be saved for each changed DocType.", [changes.length, STATE.selectedRole]),
+            __("Apply {0} permission override(s) for {1}? A Custom DocPerm record will be saved for each changed DocType.", [changes.length, selectedPermissionRoleLabel()]),
             async () => {
                 const payload = changes.map((rowKey) => STATE.matrixDraft[rowKey]).filter(Boolean);
                 await frappe.call({
@@ -1453,7 +1525,11 @@
     function groupBySection(items) { return items.reduce((acc, item) => { const section = item.section || __("Other"); (acc[section] = acc[section] || []).push(item); return acc; }, {}); }
     function userColumnHidden(key) { return STATE.hiddenUserColumns.includes(key) ? "acc-hidden-col" : ""; }
     function roleChip(role) { return `<span class="acc-role-chip">${escapeHtml(role || __("No Role"))}</span>`; }
-    function sourceBadge(source) { return badge(source === "custom" ? __("Custom") : source === "standard" ? __("System") : __("None"), source === "custom" ? "violet" : source === "standard" ? "blue" : "gray"); }
+    function sourceBadge(source, label) {
+        const text = label || (source === "mixed" ? __("Base + Role") : source === "direct" ? __("Role") : source === "base" ? __("Base") : __("None"));
+        const color = source === "mixed" ? "violet" : source === "direct" ? "blue" : source === "base" ? "green" : "gray";
+        return badge(text, color);
+    }
     function accessBadgeColor(level) { return level === "Admin Level" ? "red" : level === "High Access" ? "amber" : level === "No Access" ? "gray" : "blue"; }
     function labelPermission(field) { return escapeHtml(__(field.replace("_", " ").replace(/^./, (letter) => letter.toUpperCase()))); }
     function tableEmpty(title, subtitle) { return `<tr><td colspan="24">${emptyState(title, subtitle, ICONS.search)}</td></tr>`; }

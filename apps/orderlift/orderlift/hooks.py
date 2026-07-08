@@ -34,7 +34,7 @@ app_include_js = [
     "/assets/orderlift/js/orderlift_main_dashboard_section_state_20260423g.js",
     "/assets/orderlift/js/crm_classification_20260628b.js",
     "/assets/orderlift/js/company_scope_form_20260607a.js?v=20260607a",
-    "/assets/orderlift/js/company_scope_list_focus_20260601a.js?v=20260628a",
+    "/assets/orderlift/js/company_scope_list_focus_20260601a.js?v=20260706a",
     "/assets/orderlift/js/sidebar_logo_fix_20260415b.js",
     "/assets/orderlift/js/refresh_stability_fix_20260415.js",
     "/assets/orderlift/js/desk_entry_redirect_20260427b.js",
@@ -42,12 +42,12 @@ app_include_js = [
     "/assets/orderlift/js/finance_account_guard_20260501a.js?v=20260501b",
     "/assets/orderlift/js/item_price_uom_default_20260506a.js?v=20260507a",
     "/assets/orderlift/js/item_form_prices_20260608a.js?v=20260618a",
-    "/assets/orderlift/js/price_list_type_queries_20260617b.js?v=20260629a",
+    "/assets/orderlift/js/price_list_type_queries_20260703c.js?v=20260707d",
+    "/assets/orderlift/js/orderlift_print_controls_20260703a.js?v=20260707a",
     "/assets/orderlift/js/document_annex_dialog_20260519a.js?v=20260612a",
     "/assets/orderlift/js/connection_dashboard_links_20260616j.js?v=20260616j",
     "/assets/orderlift/js/orderlift_home_page_scroll_fix_20260520b.js?v=20260520b",
     "/assets/orderlift/js/pricing_policy_import_20260602a.js?v=20260602a",
-    "/assets/orderlift/js/quotation_bulk_quantity_20260602a.js?v=20260602a",
 ]
 
 # ---------------------------------------------------------
@@ -150,6 +150,10 @@ doc_events = {
             "orderlift.orderlift_finance.account_governance.validate_finance_document",
             "orderlift.orderlift_crm.status_workflow.ensure_primary_status",
             "orderlift.company_scope.apply_company_scope",
+            "orderlift.orderlift_sales.sales_order_pricing_hooks.copy_quotation_pricing_snapshot",
+            "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_source_lock",
+            "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_pricing_locked_to_quotation",
+            "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_item_discount_caps",
             "orderlift.orderlift_sales.utils.price_list_usage_guard.validate_sales_order_price_list",
             "orderlift.orderlift_crm.project_linkage.link_sales_order_to_project",
             "orderlift.orderlift_sales.utils.tax_inclusive.sync_sales_order_tax_inclusive_fields",
@@ -378,11 +382,12 @@ doctype_js = {
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Item Price": "public/js/item_price_uom_default_20260506a.js",
     "Price List": "public/js/price_list_import_20260602c.js",
-     "Quotation": "public/js/quotation_form_simplify_20260628e.js",
+     "Quotation": "public/js/quotation_form_simplify_20260707f.js",
     "Sales Order": [
         "public/js/sales_order_logistics_20260425d.js",
         "public/js/generic_ttc_field_sync_20260629a.js",
     ],
+    "Stock Entry": "public/js/stock_entry_rate_guard_20260706a.js",
     # Loaded via doctype_js so setup/refresh fire before the form opens.
     "Pricing Sheet": "public/js/pricing_sheet_form_20260501_110.js",
     "Pricing Benchmark Policy": "public/js/pricing_benchmark_policy_form.js",
@@ -409,6 +414,8 @@ doctype_list_js = {
     "Item": "public/js/item_list_price_helper_20260608g.js",
     "Price List": "public/js/price_list_import_list_20260602a.js",
     "Portal Quote Request": "public/js/portal_quote_request_list.js",
+    "Quotation": "public/js/quotation_list_20260706a.js",
+    "Opportunity": "public/js/opportunity_list_20260702b.js",
 }
 
 extend_doctype_class = {
@@ -466,6 +473,7 @@ on_login = [
 ]
 
 before_request = [
+    "orderlift.company_access.normalize_company_filters_for_request",
     "orderlift.dashboard_permissions.install_runtime_patches",
     "orderlift.restricted_user_guard.redirect_legacy_crm_page_routes",
     "orderlift.restricted_user_guard.redirect_bare_desk_route",
@@ -512,6 +520,7 @@ has_permission = {
     "Portal Customer Group Policy": "orderlift.company_access.has_company_permission",
     "Portal Quote Request": "orderlift.company_access.has_company_permission",
     "Project Workflow Case": "orderlift.company_access.has_company_permission",
+    "ToDo": "orderlift.todo_access.has_todo_permission",
     "Orderlift Annex Document": "orderlift.orderlift_guards.has_annex_document_permission",
     "Shipment Analysis": "orderlift.orderlift_guards.has_shipment_analysis_permission",
     "Pricing Builder History": "orderlift.orderlift_guards.has_builder_history_permission",
@@ -593,6 +602,7 @@ permission_query_conditions = {
     "Portal Customer Group Policy": "orderlift.company_access.portal_customer_group_policy_query",
     "Portal Quote Request": "orderlift.company_access.portal_quote_request_query",
     "Project Workflow Case": "orderlift.company_access.project_workflow_case_query",
+    "ToDo": "orderlift.todo_access.todo_query",
     "Print Format": "orderlift.company_access.print_format_query",
     "Orderlift Annex Document": "orderlift.orderlift_guards.annex_document_query",
     "Shipment Analysis": "orderlift.orderlift_guards.shipment_analysis_query",

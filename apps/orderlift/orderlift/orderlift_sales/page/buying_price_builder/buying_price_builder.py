@@ -11,8 +11,9 @@ from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import get_la
 from orderlift.orderlift_sales.utils.price_list_scope import (
     apply_price_list_company,
     current_company,
+    get_item_price_access,
     get_price_lists,
-    validate_price_list_scope,
+    validate_visible_price_list,
 )
 from orderlift.orderlift_sales.utils.buying_price_builder import calculate_preview_rows, normalize_formula_rules
 
@@ -22,6 +23,7 @@ PRICING_WRITE_ROLES = {"Orderlift Admin", "Orderlift Business Admin", "Pricing M
 
 @frappe.whitelist()
 def get_builder_payload():
+    _require_buying_price_access("read")
     return {
         "current_company": current_company(),
         "price_lists": get_buying_price_lists(),
@@ -31,14 +33,19 @@ def get_builder_payload():
 
 @frappe.whitelist()
 def get_buying_price_lists():
+    access = _require_buying_price_access("read")
+    allowed = set(access.get("price_lists") or [])
     rows = get_price_lists("buying", fields=["name", "currency"])
-    return [{"name": row.name, "currency": row.currency or ""} for row in rows]
+    return [{"name": row.name, "currency": row.currency or ""} for row in rows if row.name in allowed]
 
 
 @frappe.whitelist()
 def search_items(query="", source_price_list="", limit=500):
+    _require_buying_price_access("read")
     query = (query or "").strip()
     source_price_list = (source_price_list or "").strip()
+    if source_price_list:
+        source_price_list = _validate_buying_price_list(source_price_list, required=True)
     limit = max(1, min(cint(limit or 500), 500))
     item_rows = _search_item_rows(query, limit)
     return _enrich_item_rows(item_rows, source_price_list)
@@ -46,6 +53,7 @@ def search_items(query="", source_price_list="", limit=500):
 
 @frappe.whitelist()
 def get_items_from_price_lists(price_lists, limit=2000):
+    _require_buying_price_access("read")
     price_lists = _clean_list(_parse_payload(price_lists) if isinstance(price_lists, str) else price_lists)
     if not price_lists:
         return []
@@ -74,6 +82,7 @@ def get_items_from_price_lists(price_lists, limit=2000):
 
 @frappe.whitelist()
 def get_formula_rules(enabled_only=1):
+    _require_buying_price_access("read")
     filters = {"is_active": 1} if cint(enabled_only) else {}
     names = frappe.get_all(
         "Buying Price Formula Rule",
@@ -88,6 +97,7 @@ def get_formula_rules(enabled_only=1):
 @frappe.whitelist()
 def save_formula_rule(payload):
     _require_pricing_write()
+    _require_buying_price_access("write")
     payload = _parse_payload(payload)
     name = (payload.get("docname") or payload.get("doctype_name") or payload.get("name") or "").strip()
     doc = frappe.get_doc("Buying Price Formula Rule", name) if name and frappe.db.exists("Buying Price Formula Rule", name) else frappe.new_doc("Buying Price Formula Rule")
@@ -117,6 +127,7 @@ def save_formula_rule(payload):
 @frappe.whitelist()
 def delete_formula_rule(name):
     _require_pricing_write()
+    _require_buying_price_access("write")
     name = (name or "").strip()
     if not name or not frappe.db.exists("Buying Price Formula Rule", name):
         frappe.throw(_("Formula rule does not exist."))
@@ -128,6 +139,7 @@ def delete_formula_rule(name):
 
 @frappe.whitelist()
 def calculate_preview(payload):
+    _require_buying_price_access("read")
     payload = _parse_payload(payload)
     source_price_list = (payload.get("source_price_list") or payload.get("sourcePriceList") or "").strip()
     _validate_buying_price_list(source_price_list, required=True)
@@ -149,6 +161,7 @@ def calculate_preview(payload):
 @frappe.whitelist()
 def save_result(payload):
     _require_pricing_write()
+    _require_buying_price_access("write")
     payload = _parse_payload(payload)
     save_mode = (payload.get("save_mode") or payload.get("saveMode") or "new").strip().lower()
     target_price_list = (payload.get("target_price_list") or payload.get("target") or "").strip()
@@ -310,8 +323,7 @@ def _get_item_price_brand_map(item_codes, price_list):
 
 def _ensure_target_buying_price_list(price_list_name, create=False):
     if frappe.db.exists("Price List", price_list_name):
-        _validate_buying_price_list(price_list_name, required=True)
-        return price_list_name
+        return _validate_buying_price_list(price_list_name, required=True)
     if not create:
         frappe.throw(_("Buying Price List {0} does not exist.").format(price_list_name))
     doc = frappe.new_doc("Price List")
@@ -336,7 +348,7 @@ def _validate_buying_price_list(price_list_name, required=False):
         if required:
             frappe.throw(_("Buying Price List is required."))
         return
-    validate_price_list_scope(price_list_name, kind="buying", required=required)
+    return validate_visible_price_list(price_list_name, kind="buying", required=required)
 
 
 def _get_latest_item_price_name(item_code, price_list):
@@ -386,3 +398,11 @@ def _require_pricing_write():
     if PRICING_WRITE_ROLES.intersection(set(frappe.get_roles())):
         return
     frappe.throw(_("You do not have permission to manage buying price builder records."), frappe.PermissionError)
+
+
+def _require_buying_price_access(permission_type="read"):
+    access = get_item_price_access("buying")
+    if not access.get("permitted"):
+        frappe.throw(_("You do not have permission to access buying prices."), frappe.PermissionError)
+    frappe.has_permission("Item Price", permission_type, throw=True)
+    return access

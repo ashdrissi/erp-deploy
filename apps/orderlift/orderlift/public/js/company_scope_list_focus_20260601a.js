@@ -57,31 +57,42 @@
     function enforceFocus(listview, field) {
         const company = activeCompany();
         if (!company || !listview) return;
+        if (listview.__orderlift_company_focus_enforcing) return;
+        listview.__orderlift_company_focus_enforcing = true;
 
-        // 1) Correct the seed array applied on first render. onload runs before
-        //    filter_area is populated from listview.filters (base_list.js), so
-        //    rewriting the seed here makes the active company win over any saved
-        //    (possibly stale) company filter.
-        if (Array.isArray(listview.filters)) {
-            listview.filters = listview.filters.filter((row) => !(Array.isArray(row) && row[1] === field));
-            listview.filters.push([listview.doctype, field, "=", company]);
-        }
-
-        // 2) If filter_area is already populated (re-entry / soft route), override
-        //    a stale value: add() alone won't replace an existing one (exists()),
-        //    so remove then add.
-        if (!listview.filter_area) return;
         try {
+            // 1) Correct the seed array applied on first render. onload runs before
+            //    filter_area is populated from listview.filters (base_list.js), so
+            //    rewriting the seed here makes the active company win over any saved
+            //    (possibly stale) company filter.
+            if (Array.isArray(listview.filters)) {
+                listview.filters = listview.filters.filter((row) => !(Array.isArray(row) && row[1] === field));
+                listview.filters.push([listview.doctype, field, "=", company]);
+            }
+
+            // 2) If filter_area is already populated (re-entry / soft route/report
+            //    view restore), override a stale value: add() alone won't replace an
+            //    existing one (exists()), so remove then add.
+            if (!listview.filter_area) {
+                listview.__orderlift_company_focus_enforcing = false;
+                return;
+            }
             const live = (listview.filter_area.get() || []).find((row) => row[1] === field);
             if (live && !isCorrect(live, field, company)) {
                 Promise.resolve(listview.filter_area.remove(field)).then(() => {
                     listview.filter_area.add([[listview.doctype, field, "=", company]]);
+                }).finally(() => {
+                    listview.__orderlift_company_focus_enforcing = false;
                 });
             } else if (!live) {
                 listview.filter_area.add([[listview.doctype, field, "=", company]]);
+                listview.__orderlift_company_focus_enforcing = false;
+            } else {
+                listview.__orderlift_company_focus_enforcing = false;
             }
         } catch (error) {
             console.error("company_scope: unable to enforce list focus", error);
+            listview.__orderlift_company_focus_enforcing = false;
         }
     }
 
@@ -91,8 +102,13 @@
         const field = FIELD[doctype];
         const existing = frappe.listview_settings[doctype] || {};
         const previousOnload = existing.onload;
+        const previousRefresh = existing.refresh;
         existing.onload = function (listview) {
             if (typeof previousOnload === "function") previousOnload(listview);
+            enforceFocus(listview, field);
+        };
+        existing.refresh = function (listview) {
+            if (typeof previousRefresh === "function") previousRefresh(listview);
             enforceFocus(listview, field);
         };
         frappe.listview_settings[doctype] = existing;

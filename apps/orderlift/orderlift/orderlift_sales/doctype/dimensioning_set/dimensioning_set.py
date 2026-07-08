@@ -18,11 +18,17 @@ from orderlift.sales.utils.dimensioning import (
 ITEM_FILTER_FIELDS = {
     "item": "name",
     "item_code": "name",
+    "name": "name",
     "item_name": "item_name",
+    "description": "description",
+    "item_description": "description",
     "item_group": "item_group",
     "brand": "brand",
+    "stock_uom": "stock_uom",
     "material": "custom_material",
     "custom_material": "custom_material",
+    "customs_material": "custom_customs_material",
+    "custom_customs_material": "custom_customs_material",
     "length_cm": "custom_length_cm",
     "custom_length_cm": "custom_length_cm",
     "width_cm": "custom_width_cm",
@@ -31,6 +37,8 @@ ITEM_FILTER_FIELDS = {
     "custom_height_cm": "custom_height_cm",
     "item_category": "custom_item_category",
     "custom_item_category": "custom_item_category",
+    "weight_per_unit": "weight_per_unit",
+    "variant_of": "variant_of",
 }
 ITEM_FILTER_OPERATORS = {"==", "!=", "contains", ">", ">=", "<", "<="}
 
@@ -89,8 +97,8 @@ class DimensioningSet(Document):
                     if not (row.qty_formula or "").strip():
                         validate_structured_quantity(row, field_types)
                 else:
-                    validate_structured_condition(row, field_types)
-                    validate_structured_quantity(row, field_types)
+                    _validate_rule_condition(row, field_types, allowed_formula_names)
+                    _validate_rule_quantity(row, field_types, allowed_formula_names)
             except ValueError as exc:
                 frappe.throw(_("Row {0}: {1}").format(row.idx, str(exc)))
 
@@ -155,6 +163,7 @@ class DimensioningSet(Document):
                     "compare_source": row.compare_source or "manual",
                     "manual_value": row.manual_value or "",
                     "compare_question_key": row.compare_question_key or "",
+                    "condition_rules_json": row.condition_rules_json or "",
                     "articles": [],
                 }
                 by_group[group_key] = group
@@ -169,7 +178,9 @@ class DimensioningSet(Document):
                     "item_filters_json": _item_filters_json(row),
                     "display_group": row.display_group or "",
                     "condition_formula": row.condition_formula or "",
+                    "condition_formula_builder_json": row.condition_formula_builder_json or "",
                     "qty_formula": row.qty_formula or "",
+                    "qty_formula_builder_json": row.qty_formula_builder_json or "",
                     "quantity_mode": row.quantity_mode or "fixed",
                     "fixed_qty": flt(row.fixed_qty or 0),
                     "quantity_question_key": row.quantity_question_key or "",
@@ -221,10 +232,10 @@ class DimensioningSet(Document):
                     else:
                         qty = flt(evaluate_structured_quantity(rule, formula_context) or 0)
                 else:
-                    if not evaluate_structured_condition(rule, formula_context, field_types):
+                    if not _evaluate_rule_condition(rule, formula_context, field_types):
                         qty = 0
                     else:
-                        qty = flt(evaluate_structured_quantity(rule, formula_context) or 0)
+                        qty = flt(_evaluate_rule_quantity(rule, formula_context) or 0)
                 if row_key:
                     formula_context[row_key] = qty
                 if qty <= 0:
@@ -272,7 +283,9 @@ class DimensioningSet(Document):
         for row in preview:
             details = item_details.get(row.get("item"))
             if not details:
-                row.update({"item_name": "", "item_group": "", "stock_uom": "", "description": ""})
+                row.update({"item_name": "", "item_group": "", "stock_uom": "", "description": "", "missing_item": 1})
+                if row.get("item") and not row.get("resolution_warning"):
+                    row["resolution_warning"] = _("Item {0} was not found in the Items list.").format(row.get("item"))
                 continue
             row.update(
                 {
@@ -490,6 +503,7 @@ def _article_rule_row(group, article, group_key, group_idx, article_idx):
         "compare_source": group.get("compare_source") or "manual",
         "manual_value": group.get("manual_value") or "",
         "compare_question_key": group.get("compare_question_key") or "",
+        "condition_rules_json": article.get("condition_rules_json") or group.get("condition_rules_json") or "",
         "rule_label": article.get("rule_label") or article.get("item") or f"Article {article_idx}",
         "item_selection_mode": article.get("item_selection_mode") or "fixed",
         "item": article.get("item") or "",
@@ -500,12 +514,57 @@ def _article_rule_row(group, article, group_key, group_idx, article_idx):
         "display_group": article.get("display_group") or "",
         "show_in_detail": 1 if cint(article.get("show_in_detail", 1)) else 0,
         "condition_formula": article.get("condition_formula") or group.get("condition_formula") or "",
+        "condition_formula_builder_json": article.get("condition_formula_builder_json") or group.get("condition_formula_builder_json") or "",
         "qty_formula": article.get("qty_formula") or "",
+        "qty_formula_builder_json": article.get("qty_formula_builder_json") or "",
     }
 
 
 def _uses_advanced_formula(row):
-    return bool((getattr(row, "condition_formula", None) or "").strip() or (getattr(row, "qty_formula", None) or "").strip())
+    return bool(
+        ((getattr(row, "condition_formula", None) or "").strip() and _condition_mode(row) != "formula")
+        or ((getattr(row, "qty_formula", None) or "").strip() and _quantity_mode(row) != "formula")
+    )
+
+
+def _condition_mode(row):
+    mode = (getattr(row, "condition_mode", None) or "always").strip()
+    return mode if mode in {"always", "based", "formula"} else "based"
+
+
+def _quantity_mode(row):
+    mode = (getattr(row, "quantity_mode", None) or "fixed").strip()
+    return mode if mode in {"fixed", "question", "formula"} else "fixed"
+
+
+def _validate_rule_condition(row, field_types, allowed_formula_names):
+    if _condition_mode(row) == "formula":
+        if not (getattr(row, "condition_formula", None) or "").strip():
+            raise ValueError("Condition formula is required.")
+        validate_formula(row.condition_formula or "", allowed_formula_names)
+        return
+    validate_structured_condition(row, field_types)
+
+
+def _validate_rule_quantity(row, field_types, allowed_formula_names):
+    if _quantity_mode(row) == "formula":
+        if not (getattr(row, "qty_formula", None) or "").strip():
+            raise ValueError("Quantity formula is required.")
+        validate_formula(row.qty_formula or "", allowed_formula_names)
+        return
+    validate_structured_quantity(row, field_types)
+
+
+def _evaluate_rule_condition(row, formula_context, field_types):
+    if _condition_mode(row) == "formula":
+        return bool(evaluate_formula(row.condition_formula or "0", formula_context))
+    return evaluate_structured_condition(row, formula_context, field_types)
+
+
+def _evaluate_rule_quantity(row, formula_context):
+    if _quantity_mode(row) == "formula":
+        return flt(evaluate_formula(row.qty_formula or "0", formula_context) or 0)
+    return evaluate_structured_quantity(row, formula_context)
 
 
 def _payload_rule_groups(payload):
@@ -528,6 +587,7 @@ def _payload_rule_groups(payload):
                 "compare_source": rule.get("compare_source") or "manual",
                 "manual_value": rule.get("manual_value") or "",
                 "compare_question_key": rule.get("compare_question_key") or "",
+                "condition_rules_json": rule.get("condition_rules_json") or "",
                 "articles": [],
             }
             by_group[group_key] = group
@@ -647,7 +707,7 @@ def _resolve_filtered_item(rule, formula_context):
     candidates = frappe.get_all(
         "Item",
         filters=item_filters,
-        fields=["name", "item_name", "item_group", "brand", "custom_material", "custom_item_category"],
+            fields=_item_candidate_fields(),
         order_by="name asc",
         limit_page_length=200,
     )
@@ -711,7 +771,35 @@ def _resolve_item_filter_value(filter_row, formula_context, idx):
 
 
 def _normalize_item_filter_field(field):
-    return ITEM_FILTER_FIELDS.get((field or "").strip())
+    normalized = ITEM_FILTER_FIELDS.get((field or "").strip())
+    if not normalized:
+        return ""
+    if normalized == "name":
+        return normalized
+    try:
+        return normalized if frappe.get_meta("Item").has_field(normalized) else ""
+    except Exception:
+        return ""
+
+
+def _item_candidate_fields():
+    fields = ["name", "item_name", "description", "item_group", "brand", "stock_uom"]
+    optional_fields = [
+        "custom_material",
+        "custom_customs_material",
+        "custom_item_category",
+        "custom_length_cm",
+        "custom_width_cm",
+        "custom_height_cm",
+        "weight_per_unit",
+        "variant_of",
+    ]
+    try:
+        meta = frappe.get_meta("Item")
+        fields.extend(field for field in optional_fields if meta.has_field(field))
+    except Exception:
+        pass
+    return fields
 
 
 def _can_filter_in_db(filter_row):
@@ -811,7 +899,7 @@ def dimensioning_item_query(doctype, txt, searchfield, start, page_len, filters)
         FROM `tabItem` i
         WHERE ifnull(i.disabled, 0) = 0
           AND ifnull(i.is_stock_item, 0) = 1
-          AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+          AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s OR i.description LIKE %(txt)s)
         ORDER BY
             CASE WHEN i.name LIKE %(starts_with)s THEN 0 ELSE 1 END,
             i.name ASC

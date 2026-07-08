@@ -17,7 +17,9 @@ def apply_qc_template(project_name: str, template_name: str) -> dict:
     Returns a dict with the updated QC status.
     """
     project = frappe.get_doc("Project", project_name)
+    _check_doc_permission(project, "write")
     template = frappe.get_doc("QC Checklist Template", template_name)
+    _check_doc_permission(template, "read")
 
     # Replace existing checklist rows
     project.set("custom_qc_checklist", [])
@@ -54,6 +56,7 @@ def sync_qc_item_verification(
     Returns updated QC status and progress counts.
     """
     project = frappe.get_doc("Project", project_name)
+    _check_doc_permission(project, "write")
 
     row = next((r for r in project.custom_qc_checklist if r.name == row_name), None)
     if not row:
@@ -90,6 +93,7 @@ def save_qc_checklist(project_name: str, rows: list[dict] | str) -> dict:
         frappe.throw(_("QC checklist payload must be a list of rows."))
 
     project = frappe.get_doc("Project", project_name)
+    _check_doc_permission(project, "write")
     project_rows = {row.name: row for row in (project.custom_qc_checklist or [])}
     timestamp = frappe.utils.now_datetime()
     user = frappe.session.user
@@ -130,6 +134,7 @@ def calculate_qc_status(project_name: str) -> str:
     Returns the new status string.
     """
     project = frappe.get_doc("Project", project_name)
+    _check_doc_permission(project, "write")
     _set_qc_status(project)
     project.save(ignore_permissions=False)
     return project.custom_qc_status
@@ -142,6 +147,7 @@ def duplicate_qc_template(source_name: str, new_name: str) -> str:
     Returns the new template name.
     """
     source = frappe.get_doc("QC Checklist Template", source_name)
+    _check_doc_permission(source, "read")
     new_doc = frappe.copy_doc(source)
     new_doc.template_name = new_name
     new_doc.insert(ignore_permissions=False)
@@ -203,3 +209,13 @@ def _apply_qc_row_state(row, is_verified: bool, remarks: str | None, user: str, 
     else:
         row.verified_by = None
         row.verified_on = None
+
+
+def _check_doc_permission(doc, permission_type: str) -> None:
+    checker = getattr(doc, "check_permission", None)
+    if callable(checker):
+        checker(permission_type)
+        return
+    checker = getattr(frappe, "has_permission", None)
+    if callable(checker):
+        checker(getattr(doc, "doctype", "Project"), permission_type, throw=True)

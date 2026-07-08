@@ -8,9 +8,9 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 class TestQuotationFormSimplify(unittest.TestCase):
     def test_quotation_form_simplifier_is_wired_and_hides_only_discount_fields(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260628e.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
 
-        self.assertIn('"Quotation": "public/js/quotation_form_simplify_20260628e.js', hooks)
+        self.assertIn('"Quotation": "public/js/quotation_form_simplify_20260707f.js', hooks)
         for fieldname in [
             "additional_discount_section",
             "apply_discount_on",
@@ -35,7 +35,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertIn(token, script)
 
     def test_quotation_form_has_bulk_quantity_action_for_selected_items(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260628e.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
 
         for token in [
             "Bulk Quantity",
@@ -48,6 +48,51 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "Apply Quantity to Selected Items",
             'frappe.model.set_value(row.doctype, row.name, "qty", qty)',
             'frm.refresh_field("items")',
+        ]:
+            self.assertIn(token, script)
+
+    def test_quotation_list_uses_id_first_columns(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_list_20260706a.js").read_text()
+
+        self.assertIn('"Quotation": "public/js/quotation_list_20260706a.js"', hooks)
+        for token in [
+            "isReportView",
+            'viewName === "report"',
+            'constructor?.name === "ReportView"',
+            'typeof listview?.build_row === "function"',
+            "useQuotationIdAsSubject",
+            "configuredListColumns",
+            "configuredListFields",
+            "JSON.parse(listview.list_view_settings.fields)",
+            'type: "Subject"',
+            'fieldname: "name"',
+            "fieldColumn(fieldname, field.label)",
+            "orderlift-quotation-list",
+            "orderlift-quotation-list-style",
+            "existingOnload(listview)",
+            "patchQuotationColumnSetup",
+            "flex: 0 0 250px !important",
+            "max-width: 250px !important",
+            "min-width: 250px",
+        ]:
+            self.assertIn(token, script)
+        self.assertNotIn("QUOTATION_LIST_FIELDS", script)
+        self.assertNotIn("max-width: 220px", script)
+
+    def test_opportunity_list_uses_id_first_with_min_width(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        script = (APP_ROOT / "public" / "js" / "opportunity_list_20260702b.js").read_text()
+
+        self.assertIn('"Opportunity": "public/js/opportunity_list_20260702b.js"', hooks)
+        for token in [
+            "useOpportunityIdAsSubject",
+            "patchOpportunityColumnSetup",
+            "orderlift-opportunity-list",
+            "orderlift-opportunity-list-style",
+            "existingOnload(listview)",
+            "min-width: 250px",
+            'subject.df = { fieldname: "name", label: __("ID") }',
         ]:
             self.assertIn(token, script)
 
@@ -80,7 +125,8 @@ class TestQuotationFormSimplify(unittest.TestCase):
             '"fieldname": "custom_pu_ttc"',
             '"fieldname": "custom_pt_ttc"',
             '"fieldname": "custom_applied_taxes"',
-            '"source_discount_percent", "Pricing Discount %"',
+            '"fieldname": "source_price_list_sell_rate"',
+            '"source_discount_percent", "Remise %"',
             '"source_max_discount_percent", "Max Discount %"',
             '"source_commission_amount", "Commission Amount"',
             '"discount_percentage"',
@@ -120,7 +166,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
     def test_quotation_and_pricing_sheet_stock_snapshot_wiring(self):
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
-        quotation_js = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260628e.js").read_text()
+        quotation_js = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
         pricing_sheet_js = (APP_ROOT / "public" / "js" / "pricing_sheet_form_20260501_110.js").read_text()
         item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
         stock_table = (APP_ROOT / "orderlift_sales" / "doctype" / "orderlift_transaction_warehouse_stock" / "orderlift_transaction_warehouse_stock.json").read_text()
@@ -162,10 +208,10 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertNotIn("frm.doc.custom_warehouse_stock_snapshot = (rows || []).map(", pricing_sheet_js)
 
     def test_direct_quotation_discount_editing_is_wired(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260628e.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
         item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
-        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260617b.js").read_text()
+        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
 
         self.assertIn('source_discount_percent(frm, cdt, cdn)', script)
         self.assertIn("await frm.save()", script)
@@ -174,13 +220,39 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("canOverrideQuotationPricing", script)
         self.assertIn("applyNetPriceFromOverride", script)
         self.assertIn("source_discounted_sell_rate(frm, cdt, cdn)", script)
+        self.assertIn("source_discount_amount(frm, cdt, cdn)", script)
+        self.assertIn("custom_pu_ttc(frm, cdt, cdn)", script)
+        self.assertIn("applyDiscountAmount", script)
+        self.assertIn("applyTTCPriceFromOverride", script)
+        self.assertIn("applyResolvedNetRate", script)
+        self.assertIn("netRateFromTTC", script)
+        self.assertIn("MANUAL_PU_TTC_BY_ROW", script)
+        self.assertIn("rememberManualPuTtc", script)
+        self.assertIn("manualPuTtc", script)
+        self.assertIn('var amount = roundCurrency(rate * qty)', script)
+        self.assertIn('var ptTtc = roundCurrency(puTtc * qty)', script)
+        self.assertIn('var taxAmount = roundCurrency(ptTtc - amount)', script)
+        self.assertIn('beginQuotationPriceMutation(frm)', script)
+        self.assertIn('endQuotationPriceMutation(frm)', script)
+        self.assertIn('Quantity only changes totals', script)
+        self.assertNotIn('qty(frm, cdt, cdn) {\n            applyPricingDiscount', script)
+        self.assertIn('changed = setItemFieldIfChanged(row, "amount", amount) || changed', script)
         self.assertIn('"Discount capped at {0}% for {1}."', script)
+        self.assertIn('"Discount amount capped at {0} for {1}."', script)
+        self.assertIn('"Net price raised to minimum {0} for {1}."', script)
         self.assertIn("PRICE_OVERRIDE_ROLES", script)
         self.assertIn('if (!isAdmin && discount > maxDiscount)', script)
-        self.assertIn('frappe.model.set_value(row.doctype, row.name, "discount_percentage", discount)', script)
+        self.assertIn('if ("discount_percentage" in row) row.discount_percentage = discount', script)
+        self.assertNotIn('frappe.model.set_value(row.doctype, row.name, "discount_percentage", discount)', script)
         self.assertIn('frappe.model.set_value(row.doctype, row.name, "rate", netRate)', script)
         self.assertIn('"fieldname": "source_max_discount_percent"', pricing_setup)
         self.assertIn('_upsert_property_setter("Quotation Item", "source_discount_percent", "read_only", "0", "Check")', pricing_setup)
+        self.assertIn('for fieldname in ("source_discount_amount", "custom_pu_ttc")', pricing_setup)
+        self.assertIn('_upsert_property_setter("Quotation Item", "source_gross_sell_rate", "read_only", "0", "Check")', pricing_setup)
+        self.assertIn('_upsert_property_setter("Quotation Item", "source_discounted_sell_rate", "read_only", "1", "Check")', pricing_setup)
+        self.assertIn("quotation_item_currency_precision_fields", pricing_setup)
+        self.assertIn('_upsert_property_setter("Quotation Item", fieldname, "precision", "2", "Data")', pricing_setup)
+        self.assertIn('_upsert_property_setter("Quotation Item", "amount", "label", "PT HT net", "Data")', pricing_setup)
         self.assertIn('"source_pricing_sheet", "read_only", "0", "Check"', pricing_setup)
         self.assertIn('"price_list_rate"', pricing_setup)
         self.assertIn('"rate"', pricing_setup)
@@ -188,7 +260,56 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("INTERNAL_ITEM_PRICE_FIELDS", script)
         self.assertIn("applyQuotationItemPricingLayout", script)
         self.assertIn('grid.update_docfield_property(fieldname, "hidden", 1)', script)
-        self.assertIn('grid.update_docfield_property("source_discounted_sell_rate", "label", __("Net Price HT"))', script)
+        self.assertIn("QUOTATION_ITEM_GRID_COLUMNS", script)
+        for token in [
+            '{ fieldname: "source_price_list_sell_rate", columns: 1, sticky: 0 }',
+            '{ fieldname: "source_gross_sell_rate", columns: 1, sticky: 0 }',
+            '{ fieldname: "source_discount_percent", columns: 1, sticky: 0 }',
+            '{ fieldname: "source_discount_amount", columns: 1, sticky: 0 }',
+            '{ fieldname: "source_discounted_sell_rate", columns: 1, sticky: 0 }',
+            '{ fieldname: "amount", columns: 1, sticky: 0 }',
+            '{ fieldname: "custom_pu_ttc", columns: 1, sticky: 0 }',
+            '{ fieldname: "custom_pt_ttc", columns: 1, sticky: 0 }',
+            "enforceQuotationItemGridColumns",
+            "gridViewSettings.GridView[grid.doctype]",
+            "grid.visible_columns = []",
+            "df.in_list_view = 0",
+            "df.columns = 0",
+            "ensureQuotationItemsGridStyles",
+            "scheduleItemTTCFieldsSync",
+            "price_list_rate(frm)",
+            "source_gross_sell_rate(frm)",
+            "[100, 500, 1200].forEach",
+            'if (changed) frm.refresh_field("items")',
+        ]:
+            self.assertIn(token, script)
+        self.assertIn('grid.update_docfield_property("source_price_list_sell_rate", "label", __("PU List HT"))', script)
+        self.assertIn('grid.update_docfield_property("source_gross_sell_rate", "label", __("PU HT"))', script)
+        self.assertIn('grid.update_docfield_property("source_gross_sell_rate", "read_only", 0)', script)
+        self.assertIn('grid.update_docfield_property("source_discounted_sell_rate", "label", __("PU HT net"))', script)
+        self.assertIn('grid.update_docfield_property("source_discounted_sell_rate", "read_only", 1)', script)
+        self.assertIn('grid.update_docfield_property("amount", "label", __("PT HT net"))', script)
+        self.assertIn('grid.update_docfield_property("source_discount_amount", "label", __("Remise HT"))', script)
+        self.assertIn('grid.update_docfield_property("source_discount_percent", "label", __("Remise %"))', script)
+        self.assertIn('function canViewQuotationMargins()', script)
+        self.assertIn('applyQuotationMarginVisibility(grid)', script)
+        self.assertIn('const visible = canViewQuotationMargins();', script)
+        self.assertIn('grid.update_docfield_property(fieldname, "hidden", visible ? 0 : 1)', script)
+        self.assertIn('function applyGrossPriceOverride(frm, row)', script)
+        self.assertIn('grid.update_docfield_property("custom_pu_ttc", "read_only", 0)', script)
+        self.assertIn('grid.update_docfield_property("amount", "read_only", 1)', script)
+        self.assertIn('grid.update_docfield_property("custom_pt_ttc", "read_only", 1)', script)
+        self.assertIn('["source_discounted_sell_rate", "amount", "custom_pt_ttc"].includes(df.fieldname)', script)
+        self.assertIn('grid.update_docfield_property("custom_pt_ttc", "precision", "2")', script)
+        self.assertIn("netRate = roundCurrency(netRate)", script)
+        self.assertIn("disableQuotationItemRowForms", script)
+        self.assertIn("patchQuotationItemsGridRefresh", script)
+        self.assertIn("applyInlineOnlyQuotationItemsGrid", script)
+        self.assertIn("patchQuotationItemGridRow", script)
+        self.assertIn("grid.df.in_place_edit = 1", script)
+        self.assertIn('wrapper.find(".btn-open-row").closest(".col").hide()', script)
+        self.assertIn('gridRow.doc.doctype === "Quotation Item" && show !== false', script)
+        self.assertIn("gridRow.toggle_editable_row(true)", script)
         self.assertIn('"max_discount_percent": _item_price_max_discount_percent(row)', item_tools)
         self.assertIn('row["commission_rate"] = commission_rate', item_tools)
         self.assertIn('def _current_agent_commission_rate', item_tools)
@@ -196,11 +317,19 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('setChildValue(row, "source_max_discount_percent", maxDiscount)', price_queries)
         self.assertIn('setChildValue(row, "source_commission_rate", commissionRate)', price_queries)
         self.assertIn('setChildValue(row, "source_commission_amount", commissionAmount)', price_queries)
-        self.assertIn('function commissionFor(rate, qty, discountPercent, maxDiscountPercent, commissionRate)', price_queries)
-        self.assertIn('"source_commission_amount", commissionFor(gross, qty, discount, maxDiscount, row.source_commission_rate)', script)
+        self.assertIn('function commissionFor(priceListRate, qty, discountPercent, maxDiscountPercent, commissionRate, actualUnitPrice)', price_queries)
+        self.assertIn('const upliftCommission = Math.max(actualRate - listRate, 0) * quantity * 0.2;', price_queries)
+        self.assertIn("manualNetRate(row, rate)", price_queries)
+        self.assertIn("isAdminOverride", price_queries)
+        self.assertIn("beginQuotationPriceMutation(frm)", price_queries)
+        self.assertIn("endQuotationPriceMutation(frm)", price_queries)
+        self.assertIn('"source_commission_amount", commissionFor(gross, qty, discount, configuredMaxDiscount, row.source_commission_rate, netRate)', script)
+        self.assertIn('const upliftCommission = Math.max(actualRate - listRate, 0) * quantity * 0.2;', script)
         pricing_sheet = (APP_ROOT / "orderlift_sales" / "doctype" / "pricing_sheet" / "pricing_sheet.py").read_text()
         self.assertIn('item_data["source_max_discount_percent"] = flt(row.max_discount_percent_allowed)', pricing_sheet)
+        self.assertIn('item_data["source_price_list_sell_rate"] = flt(', pricing_sheet)
         self.assertIn("def _build_grouped_max_discount_caps", pricing_sheet)
+        self.assertIn('item["source_price_list_sell_rate"] = flt(group_total)', pricing_sheet)
         self.assertIn('item["source_gross_sell_rate"] = flt(group_total)', pricing_sheet)
         self.assertIn('item["source_discounted_sell_rate"] = flt(group_total)', pricing_sheet)
 
@@ -211,6 +340,12 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
         self.assertIn('"orderlift.orderlift_sales.quotation_hooks.validate_quotation_item_discount_caps"', hooks)
         self.assertIn("def validate_quotation_item_discount_caps", quotation_hooks)
+        self.assertIn("def sync_quotation_item_price_input_fields", quotation_hooks)
+        self.assertLess(
+            quotation_hooks.index("sync_quotation_item_price_input_fields(doc)"),
+            quotation_hooks.index("reprice_quotation_items_from_selected_price_lists(doc)"),
+        )
+        self.assertIn('row.source_discounted_sell_rate = flt(current_rate, row.precision("source_discounted_sell_rate"))', quotation_hooks)
         self.assertIn("can_override_quotation_pricing", quotation_hooks)
         self.assertIn('frappe.db.has_column("Quotation Item", "source_discount_percent")', quotation_hooks)
         self.assertIn('frappe.db.has_column("Quotation Item", "source_max_discount_percent")', quotation_hooks)
@@ -221,9 +356,10 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("below the pricing policy net rate", quotation_hooks)
         self.assertIn("QUOTATION_PRICE_OVERRIDE_ROLES", price_scope)
         self.assertIn("def can_override_quotation_pricing", price_scope)
+        self.assertIn("if legacy_allowed:", price_scope)
 
     def test_quotation_new_pricing_sheet_opens_builder(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260628e.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
 
         self.assertIn("addPricingSheetActionButtons", script)
         self.assertIn("openPricingSheetBuilderFromQuotation", script)
@@ -244,7 +380,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         quotation_hooks = (APP_ROOT / "orderlift_sales" / "quotation_hooks.py").read_text()
         price_guard = (APP_ROOT / "orderlift_sales" / "utils" / "price_list_usage_guard.py").read_text()
         item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
-        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260617b.js").read_text()
+        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
 
         self.assertIn('"fieldname": "selected_selling_price_lists"', pricing_setup)
         self.assertIn('"options": "Pricing Sheet Price List Selection"', pricing_setup)
@@ -281,16 +417,46 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('if (Number(frm.doc.docstatus || 0) !== 0) return;', price_queries)
 
     def test_quotation_price_list_refresh_reprices_net_rate(self):
-        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260617b.js").read_text()
+        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
 
         for token in [
-            "if (!canOverrideQuotationPricing() && discount > maxDiscount) discount = maxDiscount;",
-            "const netRate = rate * (1 - discount / 100);",
+            "if (netRate + 0.000001 < floor) netRate = floor;",
+            "if (!isAdminOverride && discount > maxDiscount) {",
+            "netRate = rate * (1 - discount / 100);",
+            "function manualNetRate(row, fallbackRate)",
+            "const visibleNetRate = Number(row.source_discounted_sell_rate || 0);",
+            "const currentRate = Number(row.rate || 0);",
             'frappe.model.set_value(row.doctype, row.name, "rate", netRate)',
             'setChildValue(row, "source_discounted_sell_rate", netRate)',
             'setChildValue(row, "source_selling_price_list", payload.price_list || "")',
+            'setChildValue(row, "source_price_list_sell_rate", rate)',
         ]:
             self.assertIn(token, price_queries)
+
+    def test_printview_pdf_and_full_page_controls_are_hidden(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        script = (APP_ROOT / "public" / "js" / "orderlift_print_controls_20260703a.js").read_text()
+
+        self.assertIn("orderlift_print_controls_20260703a.js", hooks)
+        self.assertNotIn("PDF", script)
+        for token in [
+            "Full Page",
+            "/printview",
+            'route[0] === "print"',
+            "hashchange",
+            "MutationObserver",
+            "orderlift-print-control-hidden",
+            "display: none !important",
+            'document.querySelectorAll("button, a, .btn")',
+        ]:
+            self.assertIn(token, script)
+
+    def test_quotation_form_has_no_custom_print_or_pdf_shortcut_buttons(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        self.assertNotIn("download_pdf", script)
+        self.assertNotIn("trigger_print", script)
+        self.assertNotIn("ol-print-shortcut", script)
 
     def test_pricing_sheet_generation_reprices_and_stamps_source_list(self):
         pricing_sheet = (APP_ROOT / "orderlift_sales" / "doctype" / "pricing_sheet" / "pricing_sheet.py").read_text()
@@ -371,20 +537,21 @@ class TestQuotationFormSimplify(unittest.TestCase):
         ]:
             self.assertIn(token, tax_inclusive)
 
-    def test_global_bulk_quantity_watcher_is_wired_for_current_desk_shell(self):
+    def test_bulk_quantity_is_doctype_scoped_without_global_interval(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        script = (APP_ROOT / "public" / "js" / "quotation_bulk_quantity_20260602a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
 
-        self.assertIn("quotation_bulk_quantity_20260602a.js?v=20260602a", hooks)
+        self.assertNotIn("quotation_bulk_quantity_20260602a.js", hooks)
         for token in [
-            "data-orderlift-quotation-bulk-quantity",
+            "data-orderlift-bulk-quantity",
             ".grid-add-multiple-rows",
-            "window.cur_frm",
-            "frm.doctype !== \"Quotation\"",
-            "setInterval(attachBulkQuantityButton, 1000)",
+            "__orderlift_bulk_quantity_button_added",
+            "__orderlift_bulk_quantity_buttons_added",
             "frappe.model.set_value(row.doctype, row.name, \"qty\", qty)",
         ]:
             self.assertIn(token, script)
+        self.assertNotIn("setInterval(attachBulkQuantityButton", script)
+
     def test_ttc_inclusive_hooks_are_wired_for_all_doctypes(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
 

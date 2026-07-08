@@ -11,6 +11,7 @@
     "naming_series",
     "builder_name",
     "selling_price_list_name",
+    "target_currency",
     "column_break_identity",
     "default_qty",
     "max_items",
@@ -63,6 +64,13 @@
       "label": "Selling Price List Name",
       "reqd": 1,
       "description": "A new selling price list will be created automatically if it does not already exist."
+    },
+    {
+      "fieldname": "target_currency",
+      "fieldtype": "Link",
+      "label": "Target Currency",
+      "options": "Currency",
+      "description": "Used when creating a new selling price list. Existing selling lists keep their configured currency."
     },
     {
       "fieldname": "column_break_identity",

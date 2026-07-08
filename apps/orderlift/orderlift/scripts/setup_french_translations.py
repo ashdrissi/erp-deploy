@@ -21,6 +21,8 @@ FRENCH_TRANSLATIONS = {
     "CRM Dashboard": "Tableau de bord CRM",
     "Projects List": "Liste des projets",
     "Campaign Manager": "Gestionnaire de campagnes",
+    "Marketing User": "Utilisateur marketing",
+    "SAV Technician": "Technicien SAV",
     "Campaign Builder": "Créateur de campagnes",
     "Opportunity Pipeline": "Pipeline des opportunités",
     "Lead": "Lead",

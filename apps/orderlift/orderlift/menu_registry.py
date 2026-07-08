@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from orderlift.startup_roles import CAMPAIGN_MANAGER_ROLE, STARTUP_ROLES
+from orderlift.startup_roles import CAMPAIGN_MANAGER_ROLE, SAV_TECHNICIAN_ROLE, STARTUP_ROLES
 
 
 ALL_USERS_ROLE = "All"
@@ -24,7 +24,7 @@ PRICING_MANAGER_ROLES = ["Orderlift Admin", "Pricing Manager"]
 FINANCE_ROLES = ["Orderlift Admin", "Finance User"]
 LOGISTICS_ROLES = ["Orderlift Admin", "Logistics User"]
 PROJECT_ROLES = ["Orderlift Admin", "Installation User", "Sales User"]
-SAV_ROLES = ["Orderlift Admin", "Service User"]
+SAV_ROLES = ["Orderlift Admin", "Service User", SAV_TECHNICIAN_ROLE]
 SIG_ROLES = ["Orderlift Admin", "Installation User"]
 HR_ROLES = ["Orderlift Admin"]
 B2B_ROLES = ["Orderlift Admin", "Sales User", "Pricing Manager"]
@@ -50,7 +50,7 @@ MENU_SECTIONS = [
         "icon": "user-round",
         "roles": [ALL_USERS_ROLE],
         "links": [
-            {"key": "my_work.todo", "label": "ToDo", "link_type": "DocType", "link_to": "ToDo"},
+            {"key": "my_work.todo", "label": "My ToDos", "link_type": "Page", "link_to": "my-todos"},
             {"key": "my_work.calendar", "label": "Calendar", "link_type": "DocType", "link_to": "Event"},
         ],
     },
@@ -252,7 +252,12 @@ MENU_SECTIONS = [
         "links": [
             {"key": "stock.dashboard", "label": "Stock Dashboard", "link_type": "Page", "link_to": "stock-dashboard"},
             {"key": "stock.stock_entry", "label": "Stock Entry", "link_type": "DocType", "link_to": "Stock Entry"},
+            {"key": "stock.delivery_note", "label": "Delivery Note", "link_type": "DocType", "link_to": "Delivery Note"},
+            {"key": "stock.purchase_receipt", "label": "Purchase Receipt", "link_type": "DocType", "link_to": "Purchase Receipt"},
+            {"key": "stock.pick_list", "label": "Pick List", "link_type": "DocType", "link_to": "Pick List"},
             {"key": "stock.warehouse_tree", "label": "Warehouse Tree", "link_type": "DocType", "link_to": "Warehouse"},
+            {"key": "stock.bins", "label": "Bins", "link_type": "DocType", "link_to": "Bin"},
+            {"key": "stock.stock_settings", "label": "Stock Settings", "link_type": "DocType", "link_to": "Stock Settings"},
             {"key": "stock.warehouse_report", "label": "Warehouse Report", "link_type": "Report", "link_to": "Warehouse Wise Stock Balance"},
             {"key": "stock.balance", "label": "Stock Balance", "link_type": "Report", "link_to": "Stock Balance"},
             {"key": "stock.ledger", "label": "Stock Ledger", "link_type": "Report", "link_to": "Stock Ledger"},

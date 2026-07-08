@@ -11,6 +11,74 @@ from orderlift.orderlift_sales.utils.tax_inclusive import (
     apply_quotation_sales_tax_template,
     sync_quotation_item_tax_inclusive_fields,
 )
+from orderlift.sales.utils.pricing_projection import calculate_agent_commission
+
+
+OTHER_CHARGE_ITEM_CODE = "OTHER-CHARGES"
+
+
+@frappe.whitelist()
+def get_other_charge_item(company: str | None = None) -> dict:
+    if not frappe.has_permission("Quotation", "create") and not frappe.has_permission("Quotation", "write"):
+        frappe.throw(_("Not permitted to add other charges."), frappe.PermissionError)
+
+    if not frappe.db.exists("Item", OTHER_CHARGE_ITEM_CODE):
+        item = frappe.new_doc("Item")
+        item.item_code = OTHER_CHARGE_ITEM_CODE
+        item.item_name = _("Other Charges")
+        item.description = _("Other Charges")
+        item.item_group = _default_service_item_group()
+        item.stock_uom = _default_service_uom()
+        item.is_stock_item = 0
+        item.is_sales_item = 1
+        item.is_purchase_item = 0
+        if item.meta.get_field("include_item_in_manufacturing"):
+            item.include_item_in_manufacturing = 0
+        item.insert(ignore_permissions=True)
+
+    values = frappe.db.get_value(
+        "Item",
+        OTHER_CHARGE_ITEM_CODE,
+        ["name", "item_name", "description", "stock_uom"],
+        as_dict=True,
+    ) or {}
+    return {
+        "item_code": values.get("name") or OTHER_CHARGE_ITEM_CODE,
+        "item_name": values.get("item_name") or _("Other Charges"),
+        "description": values.get("description") or _("Other Charges"),
+        "uom": values.get("stock_uom") or _default_service_uom(),
+    }
+
+
+@frappe.whitelist()
+def get_transportation_charge_item(company: str | None = None) -> dict:
+    return get_other_charge_item(company=company)
+
+
+def _default_service_item_group() -> str:
+    for name in ("Services", "Service", "All Item Groups"):
+        if frappe.db.exists("Item Group", name):
+            return name
+    row = frappe.get_all(
+        "Item Group",
+        filters={"is_group": 0} if frappe.db.has_column("Item Group", "is_group") else None,
+        pluck="name",
+        order_by="name asc",
+        limit_page_length=1,
+    )
+    if row:
+        return row[0]
+    frappe.throw(_("Create an Item Group before adding transportation charges."))
+
+
+def _default_service_uom() -> str:
+    for name in ("Nos", "Unit", "Pce", "Service"):
+        if frappe.db.exists("UOM", name):
+            return name
+    row = frappe.get_all("UOM", pluck="name", order_by="name asc", limit_page_length=1)
+    if row:
+        return row[0]
+    frappe.throw(_("Create a UOM before adding transportation charges."))
 
 
 def apply_quotation_party_defaults(doc, method=None) -> None:
@@ -33,9 +101,60 @@ def apply_quotation_party_defaults(doc, method=None) -> None:
 
 
 def sync_quotation_pricing_snapshot_fields(doc, method=None) -> None:
+    sync_quotation_item_price_input_fields(doc)
     reprice_quotation_items_from_selected_price_lists(doc)
+    sync_quotation_item_price_input_fields(doc)
     apply_quotation_sales_tax_template(doc)
     sync_quotation_item_tax_inclusive_fields(doc)
+
+
+def sync_quotation_item_price_input_fields(doc, method=None) -> None:
+    """Keep direct Quotation price-input fields consistent before validation.
+
+    The browser lets users enter discount %, discount amount, PU HT, or PU TTC.
+    ERPNext accounting remains HT-based, so the saved rate is authoritative and
+    the helper fields are normalized from it server-side.
+    """
+    for row in doc.get("items") or []:
+        gross_rate = flt(row.get("source_gross_sell_rate") or row.get("price_list_rate") or 0)
+        current_rate = flt(row.get("rate") or 0)
+        if gross_rate <= 0 or current_rate < 0:
+            continue
+
+        qty = flt(row.get("qty") or 1) or 1
+        discount = max((1 - (current_rate / gross_rate)) * 100, 0)
+        current_rate = flt(current_rate, row.precision("rate"))
+        row.rate = current_rate
+        row.amount = flt(current_rate * qty, row.precision("amount"))
+        if row.meta.get_field("discount_percentage"):
+            row.discount_percentage = flt(discount, row.precision("discount_percentage"))
+        if row.meta.get_field("source_price_list_sell_rate") and not flt(row.get("source_price_list_sell_rate") or 0):
+            row.source_price_list_sell_rate = flt(gross_rate, row.precision("source_price_list_sell_rate"))
+        if row.meta.get_field("source_discount_percent"):
+            row.source_discount_percent = flt(discount, row.precision("source_discount_percent"))
+        if row.meta.get_field("source_discount_amount"):
+            row.source_discount_amount = flt(max(gross_rate - current_rate, 0), row.precision("source_discount_amount"))
+        if row.meta.get_field("source_discounted_sell_rate"):
+            row.source_discounted_sell_rate = flt(current_rate, row.precision("source_discounted_sell_rate"))
+        if row.meta.get_field("source_commission_amount"):
+            max_discount = flt(row.get("source_max_discount_percent") or 0)
+            commission_rate = flt(row.get("source_commission_rate") or 0)
+            try:
+                commission = calculate_agent_commission(
+                    price_list_unit_price=gross_rate,
+                    actual_unit_price=current_rate,
+                    qty=qty,
+                    max_discount_percent=max_discount,
+                    commission_rate=commission_rate,
+                    enforce_discount_cap=not can_override_quotation_pricing(),
+                )
+            except ValueError:
+                row.source_commission_amount = 0
+                continue
+            row.source_commission_amount = flt(
+                commission.get("commission_amount") or 0,
+                row.precision("source_commission_amount"),
+            )
 
 
 def populate_quotation_stock_snapshot(doc, method=None) -> None:

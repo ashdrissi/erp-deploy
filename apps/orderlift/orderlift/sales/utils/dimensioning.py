@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import math
 import operator
 import re
@@ -37,6 +38,7 @@ STRUCTURED_OPERATORS = {
     "<=": operator.le,
 }
 NUMERIC_FIELD_TYPES = {"Int", "Float"}
+CONDITION_VALUE_SOURCES = {"integer", "decimal", "text", "check", "parameter", "manual"}
 
 
 def validate_dimensioning_key(key: str) -> str:
@@ -89,6 +91,10 @@ def evaluate_structured_condition(rule: Any, values: dict[str, Any], field_types
     if mode != "based":
         raise ValueError(f"Unsupported condition mode '{mode}'.")
 
+    condition_rows = get_condition_rule_rows(rule)
+    if condition_rows:
+        return evaluate_condition_rule_rows(condition_rows, values, field_types)
+
     question_key = (_get(rule, "question_key") or "").strip()
     if not question_key:
         raise ValueError("Condition question is required.")
@@ -115,6 +121,83 @@ def evaluate_structured_condition(rule: Any, values: dict[str, Any], field_types
     return bool(STRUCTURED_OPERATORS[operator_key](left, right))
 
 
+def get_condition_rule_rows(rule: Any) -> list[dict[str, Any]]:
+    rows = _get(rule, "condition_rules")
+    if rows is None:
+        raw = _get(rule, "condition_rules_json")
+        if raw:
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+            except Exception as exc:
+                raise ValueError(f"Invalid condition rules JSON: {exc}") from exc
+            rows = parsed.get("rows") if isinstance(parsed, dict) else parsed
+    if not rows:
+        return []
+    if not isinstance(rows, list):
+        raise ValueError("Condition rules must be a list.")
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def evaluate_condition_rule_rows(
+    rows: list[dict[str, Any]],
+    values: dict[str, Any],
+    field_types: dict[str, str] | None = None,
+) -> bool:
+    result = None
+    for idx, row in enumerate(rows, start=1):
+        row_result = _evaluate_condition_rule_row(row, values, field_types or {}, idx)
+        if result is None:
+            result = row_result
+            continue
+        join = (row.get("join") or "and").strip().lower()
+        if join == "or":
+            result = bool(result or row_result)
+        elif join == "and":
+            result = bool(result and row_result)
+        else:
+            raise ValueError(f"Condition row {idx}: unsupported join '{join}'.")
+    return bool(result)
+
+
+def _evaluate_condition_rule_row(row: dict[str, Any], values: dict[str, Any], field_types: dict[str, str], idx: int) -> bool:
+    parameter = (row.get("parameter") or row.get("question_key") or "").strip()
+    if not parameter:
+        raise ValueError(f"Condition row {idx}: parameter is required.")
+    if parameter not in values:
+        raise ValueError(f"Condition row {idx}: unknown parameter '{parameter}'.")
+
+    operator_key = normalize_condition_rule_operator(row.get("operator") or "==")
+    left = values[parameter]
+    right = _condition_rule_right_value(row, values, field_types, idx)
+    if operator_key == "contains":
+        return str(right or "").lower() in str(left or "").lower()
+    return bool(STRUCTURED_OPERATORS[operator_key](left, right))
+
+
+def _condition_rule_right_value(row: dict[str, Any], values: dict[str, Any], field_types: dict[str, str], idx: int) -> Any:
+    source = (row.get("value_source") or "manual").strip().lower()
+    if source not in CONDITION_VALUE_SOURCES:
+        raise ValueError(f"Condition row {idx}: unsupported value source '{source}'.")
+    if source == "parameter":
+        parameter = (row.get("value_parameter") or "").strip()
+        if not parameter or parameter not in values:
+            raise ValueError(f"Condition row {idx}: unknown value parameter '{parameter}'.")
+        return values[parameter]
+    if source == "integer":
+        raw = str(row.get("value") or "").strip()
+        if not re.fullmatch(r"-?\d+", raw):
+            raise ValueError(f"Condition row {idx}: integer value is required.")
+        return int(raw)
+    if source == "decimal":
+        return float(str(row.get("value") or "0").replace(",", "."))
+    if source == "check":
+        return coerce_dimensioning_value("Check", row.get("value"))
+    if source == "text":
+        return "" if row.get("value") is None else str(row.get("value")).strip()
+    left_type = field_types.get((row.get("parameter") or row.get("question_key") or "").strip(), "Data")
+    return coerce_dimensioning_value(left_type, row.get("value"))
+
+
 def evaluate_structured_quantity(rule: Any, values: dict[str, Any]) -> float:
     mode = (_get(rule, "quantity_mode") or "fixed").strip()
     if mode == "fixed":
@@ -136,6 +219,13 @@ def normalize_structured_operator(operator_key: str) -> str:
     return normalized
 
 
+def normalize_condition_rule_operator(operator_key: str) -> str:
+    normalized = (operator_key or "==").strip()
+    if normalized == "contains":
+        return normalized
+    return normalize_structured_operator(normalized)
+
+
 def allowed_structured_operators(field_type: str) -> set[str]:
     if (field_type or "Data").strip().title() in NUMERIC_FIELD_TYPES:
         return set(STRUCTURED_OPERATORS)
@@ -148,6 +238,11 @@ def validate_structured_condition(rule: Any, field_types: dict[str, str]) -> Non
         return
     if mode != "based":
         raise ValueError(f"Unsupported condition mode '{mode}'.")
+
+    condition_rows = get_condition_rule_rows(rule)
+    if condition_rows:
+        validate_condition_rule_rows(condition_rows, field_types)
+        return
 
     question_key = (_get(rule, "question_key") or "").strip()
     if not question_key or question_key not in field_types:
@@ -163,6 +258,50 @@ def validate_structured_condition(rule: Any, field_types: dict[str, str]) -> Non
             raise ValueError(f"Unknown compare question '{compare_question_key}'.")
     elif compare_source != "manual":
         raise ValueError(f"Unsupported compare source '{compare_source}'.")
+
+
+def validate_condition_rule_rows(rows: list[dict[str, Any]], field_types: dict[str, str]) -> None:
+    if not rows:
+        raise ValueError("At least one condition row is required.")
+    for idx, row in enumerate(rows, start=1):
+        if idx > 1 and (row.get("join") or "and").strip().lower() not in {"and", "or"}:
+            raise ValueError(f"Condition row {idx}: join must be AND or OR.")
+        parameter = (row.get("parameter") or row.get("question_key") or "").strip()
+        if not parameter or parameter not in field_types:
+            raise ValueError(f"Condition row {idx}: unknown parameter '{parameter}'.")
+        operator_key = normalize_condition_rule_operator(row.get("operator") or "==")
+        source = (row.get("value_source") or "manual").strip().lower()
+        if source not in CONDITION_VALUE_SOURCES:
+            raise ValueError(f"Condition row {idx}: unsupported value source '{source}'.")
+        if source == "parameter":
+            value_parameter = (row.get("value_parameter") or "").strip()
+            if not value_parameter or value_parameter not in field_types:
+                raise ValueError(f"Condition row {idx}: unknown value parameter '{value_parameter}'.")
+        if source == "integer" and not re.fullmatch(r"-?\d+", str(row.get("value") or "").strip()):
+            raise ValueError(f"Condition row {idx}: integer value is required.")
+        if source == "decimal":
+            try:
+                float(str(row.get("value") or "0").replace(",", "."))
+            except ValueError as exc:
+                raise ValueError(f"Condition row {idx}: decimal value is required.") from exc
+        if operator_key == "contains":
+            if source not in {"text", "manual", "parameter"}:
+                raise ValueError(f"Condition row {idx}: contains requires text or parameter value.")
+            continue
+        if operator_key not in {"==", "!="}:
+            left_type = field_types[parameter]
+            right_type = field_types.get((row.get("value_parameter") or "").strip()) if source == "parameter" else None
+            if left_type not in NUMERIC_FIELD_TYPES:
+                raise ValueError(f"Condition row {idx}: operator '{operator_key}' requires a numeric parameter.")
+            if source == "parameter" and right_type not in NUMERIC_FIELD_TYPES:
+                raise ValueError(f"Condition row {idx}: operator '{operator_key}' requires a numeric value parameter.")
+            if source not in {"integer", "decimal", "manual", "parameter"}:
+                raise ValueError(f"Condition row {idx}: operator '{operator_key}' requires a numeric value.")
+            if source == "manual":
+                try:
+                    coerce_dimensioning_value(left_type, row.get("value"))
+                except ValueError as exc:
+                    raise ValueError(f"Condition row {idx}: numeric value is required.") from exc
 
 
 def validate_structured_quantity(rule: Any, field_types: dict[str, str]) -> None:

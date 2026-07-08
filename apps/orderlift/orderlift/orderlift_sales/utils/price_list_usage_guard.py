@@ -29,6 +29,8 @@ ITEM_PRICE_MARGIN_STAMP_FIELDS = (
     "custom_target_margin_percent",
 )
 
+MANUAL_CHARGE_ITEM_CODES = {"OTHER-CHARGES", "TRANSPORTATION-CHARGE"}
+
 
 def validate_quotation_price_list(doc, method=None):
     price_lists = _quotation_price_lists(doc)
@@ -50,14 +52,18 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
         return
 
     item_rows = list(doc.get("items") or [])
-    item_codes = sorted({(row.get("item_code") or "").strip() for row in item_rows if (row.get("item_code") or "").strip()})
+    item_codes = sorted({
+        (row.get("item_code") or "").strip()
+        for row in item_rows
+        if (row.get("item_code") or "").strip() and not _is_manual_charge_item(row.get("item_code"))
+    })
     if not item_codes:
         return
 
     price_map = _get_transaction_item_price_map(item_codes, price_lists, kind="selling")
     for row in item_rows:
         item_code = (row.get("item_code") or "").strip()
-        if not item_code:
+        if not item_code or _is_manual_charge_item(item_code):
             continue
         prices = price_map.get(item_code) or []
         if not prices:
@@ -78,7 +84,7 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
 
     for row in item_rows:
         item_code = (row.get("item_code") or "").strip()
-        if not item_code:
+        if not item_code or _is_manual_charge_item(item_code):
             continue
         prices = price_map.get(item_code) or []
         selected_price = _selected_row_price(row, prices)
@@ -94,17 +100,26 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
 
 def validate_sales_order_price_list(doc, method=None):
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
-    _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
+    if not can_override_quotation_pricing():
+        if _has_quotation_pricing_source(doc):
+            return
+        _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
 
 
 def validate_sales_invoice_price_list(doc, method=None):
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
-    _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
+    if not can_override_quotation_pricing():
+        if _has_submitted_sales_order_pricing_source(doc):
+            return
+        _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
 
 
 def validate_delivery_note_price_list(doc, method=None):
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
-    _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
+    if not can_override_quotation_pricing():
+        if _has_submitted_sales_order_pricing_source(doc):
+            return
+        _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
 
 
 def validate_purchase_order_price_list(doc, method=None):
@@ -170,7 +185,7 @@ def _transaction_item_rows(doc) -> list[dict]:
     out = []
     for row in doc.get("items") or []:
         item_code = (row.get("item_code") or "").strip()
-        if not item_code:
+        if not item_code or _is_manual_charge_item(item_code):
             continue
         out.append(
             {
@@ -184,10 +199,73 @@ def _transaction_item_rows(doc) -> list[dict]:
     return out
 
 
+def _is_manual_charge_item(item_code: str | None) -> bool:
+    return (item_code or "").strip() in MANUAL_CHARGE_ITEM_CODES
+
+
 def _has_policy_pricing_source(doc, item_rows: list[dict]) -> bool:
     if not (doc.get("source_pricing_sheet") or "").strip():
         return False
     return bool(item_rows) and all(_flt(row.get("source_gross_sell_rate")) > 0 for row in item_rows)
+
+
+def _has_quotation_pricing_source(doc) -> bool:
+    if not doc or getattr(doc, "doctype", "") not in ("", "Sales Order"):
+        return False
+    item_rows = _transaction_item_rows(doc)
+    if not item_rows:
+        return False
+    for row in doc.get("items") or []:
+        item_code = (row.get("item_code") or "").strip()
+        if not item_code:
+            continue
+        source_doctype = (row.get("prevdoc_doctype") or "").strip()
+        source_docname = (row.get("prevdoc_docname") or "").strip()
+        source_detail = (row.get("prevdoc_detail_docname") or "").strip()
+        if source_doctype and source_doctype != "Quotation":
+            return False
+        if not source_docname or not source_detail or _flt(row.get("source_gross_sell_rate")) <= 0:
+            return False
+    return True
+
+
+def _has_submitted_sales_order_pricing_source(doc) -> bool:
+    doctype = getattr(doc, "doctype", "")
+    if doctype not in {"Sales Invoice", "Delivery Note"}:
+        return False
+    item_rows = _transaction_item_rows(doc)
+    if not item_rows:
+        return False
+
+    sales_orders = {}
+    for row in doc.get("items") or []:
+        item_code = (row.get("item_code") or "").strip()
+        if not item_code:
+            continue
+        sales_order = (row.get("sales_order") or row.get("against_sales_order") or "").strip()
+        sales_order_detail = (row.get("so_detail") or "").strip()
+        if not sales_order or not sales_order_detail:
+            return False
+        if sales_order not in sales_orders:
+            sales_orders[sales_order] = frappe.get_doc("Sales Order", sales_order)
+        source_doc = sales_orders[sales_order]
+        if int(_flt(source_doc.get("docstatus"))) != 1:
+            return False
+        source_row = _source_sales_order_row(source_doc, sales_order_detail)
+        if not source_row:
+            return False
+        if item_code != (source_row.get("item_code") or "").strip():
+            return False
+        if abs(_flt(row.get("rate")) - _flt(source_row.get("rate"))) > 0.000001:
+            return False
+    return True
+
+
+def _source_sales_order_row(source_doc, detail_name: str):
+    for row in source_doc.get("items") or []:
+        if (row.get("name") or "").strip() == detail_name:
+            return row
+    return None
 
 
 def _item_prices_by_item(rows: list[dict], price_lists: list[str]) -> dict[str, list[dict]]:
@@ -262,6 +340,7 @@ def _apply_price_to_quotation_row(row, price: dict) -> None:
         "amount": net_rate * qty,
         "discount_percentage": discount,
         "source_selling_price_list": price.get("price_list") or "",
+        "source_price_list_sell_rate": gross_rate,
         "source_gross_sell_rate": gross_rate,
         "source_max_discount_percent": max_discount,
         "source_discount_percent": discount,

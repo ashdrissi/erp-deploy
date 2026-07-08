@@ -347,11 +347,17 @@ def import_opportunity_items_to_pricing_sheet(pricing_sheet, opportunity=None, r
 
 
 @frappe.whitelist()
-def generate_builder_quotation(pricing_sheet, pricing_mode=None):
+def get_pricing_sheet_quotation_options(pricing_sheet):
+    doc = _get_writable_sheet(pricing_sheet)
+    return {"quotations": doc.get_linked_quotations()}
+
+
+@frappe.whitelist()
+def generate_builder_quotation(pricing_sheet, pricing_mode=None, target_quotation=None):
     doc = _get_writable_sheet(pricing_sheet)
     _apply_builder_mode_flag(doc, pricing_mode)
     doc.save()
-    quotation = doc.generate_quotation()
+    quotation = doc.generate_quotation(target_quotation=target_quotation)
     return {"quotation": quotation, "sheet": _serialize_sheet(doc)}
 
 

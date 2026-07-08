@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe import _
 from frappe.utils import cint
@@ -21,7 +23,7 @@ from orderlift.orderlift_sales.utils.price_list_scope import (
     get_price_list_type,
     get_visible_price_lists,
 )
-from orderlift.startup_roles import COMMISSION_MANAGER_ROLE
+from orderlift.startup_roles import COMMISSION_MANAGER_ROLE, SAV_TECHNICIAN_ROLE
 
 
 SEGMENT_ASSIGNMENT_DOCTYPE = "CRM Segment Assignment"
@@ -97,6 +99,8 @@ def has_company_permission(
     if getattr(doc, "doctype", None) == "SAV Ticket":
         if not _sav_ticket_company_allowed(doc, user, permission_type):
             return False
+        if not _sav_ticket_role_scope_allowed(doc, user, permission_type):
+            return False
     elif not _doc_company_allowed(doc, user, permission_type):
         return False
     if not _doc_business_type_allowed(doc, user):
@@ -118,6 +122,24 @@ def opportunity_query(user: str | None = None) -> str | None:
 
 def quotation_query(user: str | None = None) -> str | None:
     return _company_query("Quotation", user=user)
+
+
+def normalize_company_filters_for_request() -> None:
+    form_dict = getattr(getattr(frappe, "local", None), "form_dict", None)
+    if not form_dict:
+        return
+    doctype = (form_dict.get("doctype") or "").strip()
+    if doctype not in COMPANY_SCOPED_DOCTYPES:
+        return
+    field = company_field_for(doctype)
+    if not field or not _has_company_field(doctype, field):
+        return
+    user = getattr(getattr(frappe, "session", None), "user", None)
+    allowed_companies = get_allowed_companies(user)
+    active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
+    if not active_company:
+        return
+    _normalize_request_company_filter(doctype, field, active_company)
 
 
 def sales_order_query(user: str | None = None) -> str | None:
@@ -312,6 +334,7 @@ def _company_query(doctype: str, user: str | None = None) -> str | None:
     active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
     if not active_company:
         return f"{table}.name is null"
+    _normalize_request_company_filter(doctype, field, active_company)
     company_clause = f"{table}.{field} = {frappe.db.escape(active_company)}"
 
     bt_clause = _business_type_clause(doctype, user)
@@ -357,6 +380,8 @@ def _sav_ticket_query(user: str | None = None) -> str | None:
         return f"{table}.name is null"
 
     clauses = ["(" + " or ".join(company_checks) + ")"]
+    if _is_sav_technician_only(user):
+        clauses.append(_sav_ticket_technician_clause(table, user))
     owned_clause = _owned_only_clause("SAV Ticket", user)
     if owned_clause:
         clauses.append(owned_clause)
@@ -452,6 +477,60 @@ def _active_company_for_query(user: str | None = None, allowed_companies: list[s
     return resolve_current_company(user=user, allowed_companies=allowed_companies)
 
 
+def _normalize_request_company_filter(doctype: str, field: str, active_company: str) -> None:
+    """Replace stale Desk list/report company filters with the active company.
+
+    The permission query already enforces the active company. If Report View sends a
+    saved filter for a previous company, SQL receives both conditions and returns no
+    rows. Normalizing the request keeps the visible filter and the permission query
+    aligned with the sidebar company switcher.
+    """
+    form_dict = getattr(getattr(frappe, "local", None), "form_dict", None)
+    if not form_dict or not active_company:
+        return
+    for key in ("filters", "or_filters"):
+        raw = form_dict.get(key)
+        normalized = _normalized_company_filters(raw, doctype, field, active_company)
+        if normalized is not raw:
+            form_dict[key] = json.dumps(normalized) if isinstance(raw, str) else normalized
+
+
+def _normalized_company_filters(filters, doctype: str, field: str, active_company: str):
+    if not filters:
+        return filters
+    was_string = isinstance(filters, str)
+    if was_string:
+        try:
+            filters = json.loads(filters or "[]")
+        except Exception:
+            return filters
+    if isinstance(filters, dict):
+        if field in filters and filters.get(field) != active_company:
+            filters = dict(filters)
+            filters[field] = active_company
+        return filters
+    if not isinstance(filters, list):
+        return filters
+
+    changed = False
+    normalized = []
+    for row in filters:
+        if isinstance(row, list) and _is_company_filter_row(row, doctype, field):
+            row = list(row)
+            value_index = 3 if len(row) >= 4 and row[0] == doctype else 2
+            if len(row) > value_index and row[value_index] != active_company:
+                row[value_index] = active_company
+                changed = True
+        normalized.append(row)
+    return normalized if changed else filters
+
+
+def _is_company_filter_row(row: list, doctype: str, field: str) -> bool:
+    if len(row) >= 4 and row[0] == doctype and row[1] == field and row[2] in {"=", "in"}:
+        return True
+    return len(row) >= 3 and row[0] == field and row[1] in {"=", "in"}
+
+
 def _price_list_shared_edit_allowed(doc, user: str, permission_type: str | None = None) -> bool:
     """Block write operations on shared (mirrored) price lists."""
     if user == "Administrator":
@@ -544,6 +623,31 @@ def _sav_ticket_company_allowed(doc, user: str, permission_type: str | None = No
     if not companies:
         return bool(permission_type == "create" and _is_new_doc(doc))
     return bool(set(companies).intersection(set(get_allowed_companies(user))))
+
+
+def _sav_ticket_role_scope_allowed(doc, user: str, permission_type: str | None = None) -> bool:
+    if not _is_sav_technician_only(user):
+        return True
+    if permission_type == "create" or _is_new_doc(doc):
+        return True
+    if not hasattr(doc, "get"):
+        return False
+    if (doc.get("assigned_technician") or "") == user:
+        return True
+    name = (doc.get("name") or "").strip()
+    if not name:
+        return False
+    return bool(
+        frappe.db.exists(
+            "ToDo",
+            {
+                "reference_type": "SAV Ticket",
+                "reference_name": name,
+                "allocated_to": user,
+                "status": "Open",
+            },
+        )
+    )
 
 
 def _sav_ticket_company_from_doc(doc) -> str:
@@ -1190,6 +1294,23 @@ def _sav_ticket_user_clause(ticket_ref: str, user: str) -> str:
                 f"and {clause_fn(alias, user)})"
             )
     return "(" + " or ".join(checks) + ")"
+
+
+def _sav_ticket_technician_clause(ticket_ref: str, user: str) -> str:
+    escaped = frappe.db.escape(user)
+    return _owned_or_opportunity_child_clause(
+        f"{ticket_ref}.assigned_technician = {escaped}",
+        _open_todo_assignment_clause("SAV Ticket", user, table_ref=ticket_ref),
+    )
+
+
+def _is_sav_technician_only(user: str) -> bool:
+    roles = set(frappe.get_roles(user) or [])
+    if SAV_TECHNICIAN_ROLE not in roles:
+        return False
+    if {"Administrator", "System Manager", "Developer", "Orderlift Admin", "Service User"}.intersection(roles):
+        return False
+    return True
 
 
 def _owner_assignment_checks(doctype: str, table_ref: str, user: str, extra_owner_fields: tuple[str, ...] = ()) -> list[str]:

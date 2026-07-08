@@ -69,13 +69,22 @@ def get_pricing_sheet_manager_data(search=None, customer=None, mode=None, attent
 
 
 @frappe.whitelist()
-def generate_pricing_sheet_quotation(pricing_sheet):
+def get_pricing_sheet_quotation_options(pricing_sheet):
+    if not pricing_sheet:
+        frappe.throw(_("Pricing Sheet is required."))
+    doc = frappe.get_doc("Pricing Sheet", pricing_sheet)
+    doc.check_permission("write")
+    return {"quotations": doc.get_linked_quotations()}
+
+
+@frappe.whitelist()
+def generate_pricing_sheet_quotation(pricing_sheet, target_quotation=None):
     if not pricing_sheet:
         frappe.throw(_("Pricing Sheet is required."))
     doc = frappe.get_doc("Pricing Sheet", pricing_sheet)
     doc.check_permission("write")
     doc.save()
-    quotation = doc.generate_quotation()
+    quotation = doc.generate_quotation(target_quotation=target_quotation)
     return {"quotation": quotation}
 
 

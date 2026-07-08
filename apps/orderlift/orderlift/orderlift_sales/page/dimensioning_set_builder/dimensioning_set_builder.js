@@ -24,15 +24,26 @@ frappe.pages["dimensioning-set-builder"].on_page_show = function (wrapper) {
 
 const ODS_FIELD_TYPES = ["Int", "Float", "Data", "Select", "Check"];
 const ODS_CONDITION_OPERATORS = ["==", "!=", ">", ">=", "<", "<="];
+const ODS_FORMULA_MATH_OPERATORS = ["+", "-", "*", "/"];
+const ODS_FORMULA_CONDITION_OPERATORS = ["==", "!=", ">", ">=", "<", "<=", "contains"];
+const ODS_FORMULA_JOINS = ["and", "or"];
+const ODS_STRUCTURED_VALUE_SOURCES = ["integer", "decimal", "text", "check", "parameter"];
 const ODS_ITEM_FILTER_OPERATORS = ["==", "!=", "contains", ">", ">=", "<", "<="];
 const ODS_ITEM_FILTER_FIELDS = [
+    { value: "item_code", label: "Item Code" },
+    { value: "item_name", label: "Item Name" },
+    { value: "description", label: "Description" },
     { value: "item_group", label: "Item Group" },
     { value: "brand", label: "Brand" },
+    { value: "stock_uom", label: "Stock UOM" },
+    { value: "custom_item_category", label: "Item Category" },
     { value: "custom_material", label: "Material" },
+    { value: "custom_customs_material", label: "Customs Material" },
     { value: "custom_length_cm", label: "Length (cm)" },
     { value: "custom_width_cm", label: "Width (cm)" },
     { value: "custom_height_cm", label: "Height (cm)" },
-    { value: "item_name", label: "Item Name" },
+    { value: "weight_per_unit", label: "Weight per Unit" },
+    { value: "variant_of", label: "Variant Of" },
 ];
 const ODS_NAV_ITEMS = [
     { key: "start", label: "Start", step: "01" },
@@ -41,60 +52,8 @@ const ODS_NAV_ITEMS = [
     { key: "preview", label: "Test", step: "04" },
 ];
 
-const ODS_SAMPLE_ITEMS = [
-    { item: "IT.1-1", item_name: "Cabine inox standard", item_group: "CABINE & ARCADE", unit: "Pc" },
-    { item: "IT.1-7", item_name: "Arcade cabine et contre-poids", item_group: "CABINE & ARCADE", unit: "SET" },
-    { item: "IT.3", item_name: "Porte paliere automatique epoxy", item_group: "PORTE", unit: "Pc" },
-    { item: "IT.4", item_name: "Operateur automatique", item_group: "OPERATEUR", unit: "Pc" },
-    { item: "IT.57", item_name: "Bouton palier avec afficheur", item_group: "BOUTONS", unit: "Pc" },
-    { item: "IT.69", item_name: "Armoire VVVF", item_group: "ARMOIRE", unit: "SET" },
-    { item: "IT.98", item_name: "Demo article needing a price", item_group: "OPTION", unit: "Pc", missing_price: true },
-];
-const ODS_ITEM_CACHE = Object.fromEntries(ODS_SAMPLE_ITEMS.map((row) => [row.item, row]));
+const ODS_ITEM_CACHE = {};
 const ODS_ITEM_LINK_CONTROLS = new Map();
-
-const ODS_INITIAL_SETS = [
-    {
-        name: "Ascenseur Complet",
-        description: "Configuration for a complete lift package. All business fields are config-driven.",
-        is_active: true,
-        fields: [
-            fieldRow("lift_type", "Type", "Select", "VVVF", "VVVF\nHYDRAULIQUE\nGEARLESS\n2V", true, "Main technical family", "General"),
-            fieldRow("persons", "Personnes", "Int", "4", "", true, "Capacity requested by customer", "General"),
-            fieldRow("levels", "Niveaux", "Int", "4", "", true, "Number of stops/levels", "General"),
-            fieldRow("door_material", "Porte materiau", "Select", "EPOXY", "EPOXY\nINOX\nPANORAMIQUE", false, "Door finish", "Doors"),
-            fieldRow("door_type", "Porte type", "Select", "AUTOMATIQUE", "AUTOMATIQUE\nSEMI", false, "Door mechanism", "Doors"),
-            fieldRow("tactile_button", "Bouton tactile", "Check", "0", "", false, "If enabled, skip standard cabin button", "Options"),
-        ],
-        derived_fields: [
-            derivedRow("capacity_class", "Capacite", "Data", 'ifelse(persons < 5, "MAX4", ifelse(persons < 7, "MAX6", ifelse(persons < 9, "MAX8", "MAX10")))', "Derived from persons", "General"),
-            derivedRow("door_count", "Nombre de portes", "Int", "levels", "Default door count follows levels", "Doors"),
-        ],
-        item_rules: [
-            ruleRow("Cabine standard", "IT.1-1", "CABINE & ARCADE", "1", "", true),
-            ruleRow("Arcades", "IT.1-7", "CABINE & ARCADE", "1", "", true),
-            ruleRow("Portes palieres", "IT.3", "PORTE", "door_count", 'door_type == "AUTOMATIQUE"', true),
-            ruleRow("Operateur", "IT.4", "OPERATEUR", "1", 'door_type == "AUTOMATIQUE"', true),
-            ruleRow("Boutons palier", "IT.57", "BOUTONS", "levels", "", true),
-            ruleRow("Armoire VVVF", "IT.69", "ARMOIRE", "1", 'lift_type == "VVVF"', true),
-            ruleRow("Option tactile alternative", "IT.98", "OPTION", "1", "tactile_button", false),
-        ],
-    },
-    {
-        name: "Pieces Detachees",
-        description: "Small article-selection set proving that the builder is not tied to elevator package fields.",
-        is_active: true,
-        fields: [
-            fieldRow("family", "Famille", "Select", "PORTE", "PORTE\nBOUTONS\nAUTRES", true, "Which article family to include", "Selection"),
-            fieldRow("quantity", "Quantite", "Int", "1", "", true, "Requested quantity", "Selection"),
-        ],
-        derived_fields: [derivedRow("is_bulk", "Commande volume", "Check", "quantity >= 5", "Used by preview warnings", "Selection")],
-        item_rules: [
-            ruleRow("Porte unitaire", "IT.3", "PORTE", "quantity", 'family == "PORTE"', true),
-            ruleRow("Bouton palier", "IT.57", "BOUTONS", "quantity", 'family == "BOUTONS"', true),
-        ],
-    },
-];
 
 const ODS_STATE = {
     sets: [],
@@ -109,6 +68,7 @@ const ODS_STATE = {
     validation: [],
     lastPreview: null,
     isSaving: false,
+    isPreviewing: false,
 };
 
 function fieldRow(field_key, label, field_type, default_value, options, is_required, help_text, group) {
@@ -132,7 +92,9 @@ function ruleRow(rule_label, item, display_group, qty_formula, condition_formula
         item_filters_json: "",
         display_group,
         qty_formula,
+        qty_formula_builder_json: "",
         condition_formula,
+        condition_formula_builder_json: "",
         show_in_detail: !!show_in_detail,
         condition_mode: condition.mode,
         question_key: condition.question_key,
@@ -140,6 +102,7 @@ function ruleRow(rule_label, item, display_group, qty_formula, condition_formula
         compare_source: condition.compare_source,
         manual_value: condition.manual_value,
         compare_question_key: condition.compare_question_key,
+        condition_rules_json: "",
         quantity_mode: quantity.mode,
         fixed_qty: quantity.fixed_qty,
         quantity_question_key: quantity.quantity_question_key,
@@ -147,7 +110,7 @@ function ruleRow(rule_label, item, display_group, qty_formula, condition_formula
 }
 
 function resetDimensioningBuilderState() {
-    ODS_STATE.sets = JSON.parse(JSON.stringify(ODS_INITIAL_SETS));
+    ODS_STATE.sets = [newBlankDimensioningSet()];
     ODS_STATE.selectedSet = 0;
     ODS_STATE.activeSection = "start";
     ODS_STATE.selectedRule = 0;
@@ -177,14 +140,12 @@ function applyDimensioningBuilderHeader(page) {
     page.clear_actions_menu();
     page.set_primary_action(__("Save Dimensioning Set"), () => saveActiveDimensioningSet(page));
     page.add_action_item(__("Run Test"), () => {
-        ODS_STATE.activeSection = "preview";
-        ODS_STATE.lastPreview = buildPreview(getActiveSet(), ODS_STATE.testValues);
-        ODS_STATE.validation = validateSet(getActiveSet(), ODS_STATE.lastPreview);
-        renderDimensioningBuilder(page);
+        runDimensioningBuilderPreview(page);
     });
     page.add_action_item(__("Load Existing Set"), () => promptLoadDimensioningSet(page));
+    page.add_action_item(__("Duplicate Set"), () => duplicateActiveDimensioningSet(page));
     page.add_action_item(__("Delete Dimensioning Set"), () => confirmDeleteActiveDimensioningSet(page));
-    page.add_action_item(__("Reset Sample Data"), () => {
+    page.add_action_item(__("New Blank Set"), () => {
         resetDimensioningBuilderState();
         renderDimensioningBuilder(page);
     });
@@ -533,13 +494,17 @@ function renderArticleRuleGroup(group, groupIndex, set) {
                 <div class="ods-article-number">${groupIndex + 1}</div>
                 <div>
                     <span class="ods-hierarchy-kicker">${__("Rule")} ${groupIndex + 1}</span>
-                    <h3>${hasFormula ? __("Workbook formulas") : conditionMode === "always" ? __("Always included") : __("Based on one answer")}</h3>
+                    <h3>${hasFormula ? __("Workbook formulas") : conditionMode === "always" ? __("Always included") : conditionMode === "formula" ? __("Based on formula") : __("Based on answers")}</h3>
                     <p>${frappe.utils.escape_html(hasFormula ? __("Each article uses its imported quantity formula.") : conditionLabel)}</p>
                     ${articlePreview}
                 </div>
                 <div class="ods-article-status">
-                    <span class="ods-badge ${hasFormula || conditionMode !== "always" ? "warn" : ""}">${hasFormula ? __("Formula") : conditionMode === "always" ? __("Always") : __("Conditional")}</span>
+                    <span class="ods-badge ${hasFormula || conditionMode !== "always" ? "warn" : ""}">${hasFormula ? __("Formula") : conditionMode === "always" ? __("Always") : conditionMode === "formula" ? __("Formula") : __("Conditional")}</span>
                     <span class="ods-badge ok-soft">${group.rules.length} ${__("article(s)")}</span>
+                </div>
+                <div class="ods-rule-group-actions">
+                    <button class="btn btn-xs btn-default" type="button" data-duplicate-rule-group="${groupIndex}">${__("Duplicate")}</button>
+                    <button class="btn btn-xs btn-default ods-danger-action" type="button" data-delete-rule-group="${groupIndex}">${__("Delete")}</button>
                 </div>
                 <span class="ods-rule-toggle-indicator">${isOpen ? __("Collapse") : __("Expand")}</span>
             </div>
@@ -557,10 +522,7 @@ function renderArticleRuleGroup(group, groupIndex, set) {
                         <button class="btn btn-xs btn-default" type="button" data-add-rule-article="${groupIndex}">${__("Add Article")}</button>
                     </div>
                     <div class="ods-group-article-list" role="list">${articles || renderEmptyArticleRows()}</div>
-                    <details class="ods-article-picker-details">
-                        <summary>${__("Quick add from sample catalog")}</summary>
-                        ${renderArticlePicker(groupIndex)}
-                    </details>
+                    ${renderArticlePicker(groupIndex)}
                 </div>
             </div>` : ""}
         </article>
@@ -580,15 +542,7 @@ function renderRuleGroupArticlePreview(group, set) {
 function renderArticlePicker(groupIndex) {
     return `
         <div class="ods-article-picker">
-            <button class="btn btn-xs btn-primary" type="button" data-open-item-picker="${groupIndex}">${__("Choose Item from Catalog")}</button>
-            <div>
-                ${ODS_SAMPLE_ITEMS.map((item) => `
-                    <button class="ods-picker-chip" type="button" data-add-catalog-article="${groupIndex}" data-catalog-item="${frappe.utils.escape_html(item.item)}">
-                        <strong>${frappe.utils.escape_html(item.item)}</strong>
-                        <small>${frappe.utils.escape_html(item.item_name)}</small>
-                    </button>
-                `).join("")}
-            </div>
+            <button class="btn btn-xs btn-primary" type="button" data-open-item-picker="${groupIndex}">${__("Choose Item")}</button>
         </div>
     `;
 }
@@ -622,42 +576,192 @@ function renderRuleConditionControls(group, groupIndex, set) {
                 <span>${__("When should this rule apply?")}</span>
                 <select data-group-condition-mode="${groupIndex}">
                     <option value="always" ${mode === "always" ? "selected" : ""}>${__("Always")}</option>
-                    <option value="based" ${mode === "based" ? "selected" : ""}>${__("Based on one answer")}</option>
+                    <option value="based" ${mode === "based" ? "selected" : ""}>${__("Based on answers")}</option>
+                    <option value="formula" ${mode === "formula" ? "selected" : ""}>${__("Based on formula")}</option>
                 </select>
             </label>
-            ${mode === "based" ? `
-                <label class="ods-field">
-                    <span>${__("Question")}</span>
-                    <select data-group-condition-question="${groupIndex}">${renderQuestionOptions(set, selectedField)}</select>
-                </label>
-                <label class="ods-field">
-                    <span>${__("Condition")}</span>
-                    <select data-group-condition-operator="${groupIndex}">${renderOperatorOptions(set, selectedField, operator)}</select>
-                </label>
-                <label class="ods-field">
-                    <span>${__("Compare with")}</span>
-                    <select data-group-compare-source="${groupIndex}">
-                        <option value="manual" ${compareSource === "manual" ? "selected" : ""}>${__("Typed value")}</option>
-                        <option value="question" ${compareSource === "question" ? "selected" : ""}>${__("Another question")}</option>
-                    </select>
-                </label>
-                ${compareSource === "question" ? `
-                    <label class="ods-field">
-                        <span>${__("Other question")}</span>
-                        <select data-group-compare-question="${groupIndex}">${renderQuestionOptions(set, compareQuestion)}</select>
-                    </label>
-                ` : `
-                    <label class="ods-field">
-                        <span>${__("Value")}</span>
-                        <input data-group-manual-value="${groupIndex}" value="${frappe.utils.escape_html(manualValue)}" placeholder="VALUE">
-                    </label>
-                `}
+            ${mode === "formula" ? `
+                ${renderConditionFormulaBuilder(state, groupIndex, set)}
+                <div class="ods-helper-strip wide"><span class="ods-helper-label">${__("Available keys")}</span>${renderTokenButtons(set)}</div>
                 <div class="ods-condition-summary">
                     <span>${__("Rule preview")}</span>
-                    <strong>${frappe.utils.escape_html(compileStructuredCondition({ ...state, condition_mode: "based", question_key: selectedField, operator, compare_source: compareSource, manual_value: manualValue, compare_question_key: compareQuestion }, set) || __("Always"))}</strong>
+                    <strong>${frappe.utils.escape_html(normalizeUserFormulaInput(state.condition_formula || "0") || __("Formula required"))}</strong>
+                </div>
+            ` : ""}
+            ${mode === "based" ? `
+                ${renderStructuredConditionBuilder(state, groupIndex, set)}
+                <div class="ods-condition-summary">
+                    <span>${__("Rule preview")}</span>
+                    <strong>${frappe.utils.escape_html(compileStructuredCondition({ ...state, condition_mode: "based" }, set) || __("Always"))}</strong>
                 </div>
             ` : ""}
         </div>
+    `;
+}
+
+function renderConditionFormulaBuilder(state, groupIndex, set) {
+    const builder = normalizeConditionFormulaBuilder(state, set);
+    const rows = builder.rows.map((row, rowIndex) => renderConditionFormulaBuilderRow(row, groupIndex, rowIndex, set)).join("");
+    const warning = builder.custom ? `<div class="ods-formula-builder-warning">${__("Advanced custom formula: visual rows may not represent the raw formula exactly.")}</div>` : "";
+    return `
+        <div class="ods-formula-builder wide">
+            <div class="ods-filter-editor-head">
+                <div>
+                    <strong>${__("Condition Formula Builder")}</strong>
+                    <span>${__("Build rows like: nbr_etage >= 4 AND hauteur_cabine > 2")}</span>
+                </div>
+                <button class="btn btn-xs btn-default" type="button" data-add-condition-builder-row="${groupIndex}">${__("Add Condition")}</button>
+            </div>
+            <div class="ods-formula-builder-list">${rows}</div>
+            ${warning}
+            <details class="ods-advanced-inline">
+                <summary>${__("Advanced formula")}</summary>
+                <label class="ods-field wide">
+                    <span>${__("Raw condition formula")}</span>
+                    <textarea class="ods-code-input" data-group-condition-formula="${groupIndex}" rows="3" placeholder='nbr_etage >= 4 and hauteur_cabine > 2'>${frappe.utils.escape_html(state.condition_formula || "")}</textarea>
+                    <small>${__("Use field keys. Example: nbr_etage >= 4 and hauteur_cabine > 2")}</small>
+                </label>
+            </details>
+        </div>
+    `;
+}
+
+function renderConditionFormulaBuilderRow(row, groupIndex, rowIndex, set) {
+    const join = row.join || "and";
+    const operator = row.operator || ">";
+    const valueSource = row.value_source || "manual";
+    return `
+        <div class="ods-formula-builder-row condition">
+            <label class="ods-compact-field ods-formula-join-field">
+                <span>${rowIndex ? __("Join") : __("Start")}</span>
+                ${rowIndex ? `<select data-condition-builder-field="join" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${ODS_FORMULA_JOINS.map((item) => `<option value="${item}" ${item === join ? "selected" : ""}>${frappe.utils.escape_html(item.toUpperCase())}</option>`).join("")}</select>` : `<strong>${__("WHEN")}</strong>`}
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Parameter")}</span>
+                <select data-condition-builder-field="parameter" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${renderFormulaKeyOptions(set, row.parameter)}</select>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Operator")}</span>
+                <select data-condition-builder-field="operator" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${ODS_FORMULA_CONDITION_OPERATORS.map((item) => `<option value="${item}" ${item === operator ? "selected" : ""}>${frappe.utils.escape_html(item)}</option>`).join("")}</select>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Value From")}</span>
+                <select data-condition-builder-field="value_source" data-group-index="${groupIndex}" data-row-index="${rowIndex}">
+                    <option value="manual" ${valueSource === "manual" ? "selected" : ""}>${__("Typed")}</option>
+                    <option value="parameter" ${valueSource === "parameter" ? "selected" : ""}>${__("Parameter")}</option>
+                </select>
+            </label>
+            ${valueSource === "parameter" ? `
+                <label class="ods-compact-field">
+                    <span>${__("Other Parameter")}</span>
+                    <select data-condition-builder-field="value_parameter" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${renderFormulaKeyOptions(set, row.value_parameter)}</select>
+                </label>
+            ` : `
+                <label class="ods-compact-field">
+                    <span>${__("Value")}</span>
+                    <input data-condition-builder-field="value" data-group-index="${groupIndex}" data-row-index="${rowIndex}" value="${frappe.utils.escape_html(row.value || "")}" placeholder="4">
+                </label>
+            `}
+            <button class="ods-icon-button danger" type="button" data-remove-condition-builder-row="${groupIndex}" data-row-index="${rowIndex}" aria-label="${__("Remove condition")}">x</button>
+        </div>
+    `;
+}
+
+function renderStructuredConditionBuilder(state, groupIndex, set) {
+    const builder = normalizeStructuredConditionBuilder(state, set);
+    const rows = builder.rows.map((row, rowIndex) => renderStructuredConditionBuilderRow(row, groupIndex, rowIndex, set)).join("");
+    return `
+        <div class="ods-formula-builder wide ods-structured-condition-builder">
+            <div class="ods-filter-editor-head">
+                <div>
+                    <strong>${__("Answer Conditions")}</strong>
+                    <span>${__("Add AND/OR conditions using typed values such as integer, decimal, text, yes/no, or another parameter.")}</span>
+                </div>
+                <button class="btn btn-xs btn-default" type="button" data-add-structured-condition-row="${groupIndex}">${__("Add Condition")}</button>
+            </div>
+            <div class="ods-formula-builder-list">${rows}</div>
+        </div>
+    `;
+}
+
+function renderStructuredConditionBuilderRow(row, groupIndex, rowIndex, set) {
+    const join = row.join || "and";
+    const operator = row.operator || "==";
+    const valueSource = row.value_source || inferStructuredValueSource(getContextField(set, row.parameter));
+    return `
+        <div class="ods-formula-builder-row structured-condition">
+            <label class="ods-compact-field ods-formula-join-field">
+                <span>${rowIndex ? __("Join") : __("Start")}</span>
+                ${rowIndex ? `<select data-structured-condition-field="join" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${ODS_FORMULA_JOINS.map((item) => `<option value="${item}" ${item === join ? "selected" : ""}>${frappe.utils.escape_html(item.toUpperCase())}</option>`).join("")}</select>` : `<strong>${__("WHEN")}</strong>`}
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Parameter")}</span>
+                <select data-structured-condition-field="parameter" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${renderFormulaKeyOptions(set, row.parameter)}</select>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Operator")}</span>
+                <select data-structured-condition-field="operator" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${renderStructuredOperatorOptions(set, row.parameter, operator, valueSource)}</select>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Value Type")}</span>
+                <select data-structured-condition-field="value_source" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${renderStructuredValueSourceOptions(valueSource)}</select>
+            </label>
+            ${renderStructuredConditionValueControl(row, groupIndex, rowIndex, set, valueSource)}
+            <button class="ods-icon-button danger" type="button" data-remove-structured-condition-row="${groupIndex}" data-row-index="${rowIndex}" aria-label="${__("Remove condition")}">x</button>
+        </div>
+    `;
+}
+
+function renderStructuredOperatorOptions(set, parameter, selectedOperator, valueSource) {
+    return getStructuredConditionOperators(set, parameter, valueSource).map((operator) => `<option value="${operator}" ${operator === selectedOperator ? "selected" : ""}>${frappe.utils.escape_html(operatorLabel(operator))}</option>`).join("");
+}
+
+function getStructuredConditionOperators(set, parameter, valueSource) {
+    const field = getContextField(set, parameter);
+    let operators = getConditionOperators(field);
+    if (["text", "parameter"].includes(valueSource)) operators = [...operators, "contains"];
+    return [...new Set(operators)];
+}
+
+function renderStructuredValueSourceOptions(selected) {
+    const labels = {
+        integer: __("Integer value"),
+        decimal: __("Decimal value"),
+        text: __("Text value"),
+        check: __("Yes / No"),
+        parameter: __("Another parameter"),
+    };
+    return ODS_STRUCTURED_VALUE_SOURCES.map((source) => `<option value="${source}" ${source === selected ? "selected" : ""}>${frappe.utils.escape_html(labels[source] || source)}</option>`).join("");
+}
+
+function renderStructuredConditionValueControl(row, groupIndex, rowIndex, set, valueSource) {
+    if (valueSource === "parameter") {
+        return `
+            <label class="ods-compact-field">
+                <span>${__("Other Parameter")}</span>
+                <select data-structured-condition-field="value_parameter" data-group-index="${groupIndex}" data-row-index="${rowIndex}">${renderFormulaKeyOptions(set, row.value_parameter)}</select>
+            </label>
+        `;
+    }
+    if (valueSource === "check") {
+        const value = String(row.value || "0");
+        return `
+            <label class="ods-compact-field">
+                <span>${__("Value")}</span>
+                <select data-structured-condition-field="value" data-group-index="${groupIndex}" data-row-index="${rowIndex}">
+                    <option value="1" ${value === "1" || value.toLowerCase() === "true" ? "selected" : ""}>${__("Yes")}</option>
+                    <option value="0" ${value === "0" || value.toLowerCase() === "false" ? "selected" : ""}>${__("No")}</option>
+                </select>
+            </label>
+        `;
+    }
+    const inputType = valueSource === "integer" || valueSource === "decimal" ? "number" : "text";
+    const step = valueSource === "integer" ? "1" : valueSource === "decimal" ? "0.01" : "";
+    return `
+        <label class="ods-compact-field">
+            <span>${valueSource === "integer" ? __("Integer value") : valueSource === "decimal" ? __("Decimal value") : __("Value")}</span>
+            <input type="${inputType}" ${step ? `step="${step}"` : ""} data-structured-condition-field="value" data-group-index="${groupIndex}" data-row-index="${rowIndex}" value="${frappe.utils.escape_html(row.value || "")}" placeholder="${valueSource === "integer" ? "4" : valueSource === "decimal" ? "2.5" : "INOX"}">
+        </label>
     `;
 }
 
@@ -687,19 +791,22 @@ function getArticleRuleGroups(set) {
 
 function extractConditionState(rule) {
     return {
-        mode: ["always", "based"].includes(rule.condition_mode) ? rule.condition_mode : "based",
+        mode: ["always", "based", "formula"].includes(rule.condition_mode) ? rule.condition_mode : "based",
         question_key: rule.question_key || "",
         operator: rule.operator || "==",
         compare_source: rule.compare_source || "manual",
         manual_value: rule.manual_value || "",
         compare_question_key: rule.compare_question_key || "",
+        condition_rules_json: rule.condition_rules_json || "",
         condition_formula: rule.condition_formula || "",
+        condition_formula_builder_json: rule.condition_formula_builder_json || "",
     };
 }
 
 function ensureStructuredRule(rule, set) {
     if (!["fixed", "filtered"].includes(rule.item_selection_mode)) rule.item_selection_mode = "fixed";
     normalizeRuleItemFilters(rule);
+    normalizeRuleFormulaBuilders(rule, set);
     if (rule.uses_advanced_formula) {
         rule.condition_mode = rule.condition_mode || "always";
         rule.quantity_mode = rule.quantity_mode || "fixed";
@@ -712,7 +819,7 @@ function ensureStructuredRule(rule, set) {
     if (!rule.quantity_mode) {
         Object.assign(rule, quantityFields(parseQuantityFormula(rule.qty_formula)));
     }
-    if (!["always", "based"].includes(rule.condition_mode)) rule.condition_mode = "based";
+    if (!["always", "based", "formula"].includes(rule.condition_mode)) rule.condition_mode = "based";
     if (rule.condition_mode === "based") {
         rule.question_key = rule.question_key || getQuestionKeys(set)[0] || "";
         rule.operator = getCompatibleOperator(set, rule.question_key, rule.operator || "==");
@@ -721,9 +828,9 @@ function ensureStructuredRule(rule, set) {
             rule.manual_value = defaultComparisonValue(getContextField(set, rule.question_key));
         }
     }
-    if (!["fixed", "question"].includes(rule.quantity_mode)) rule.quantity_mode = "fixed";
+    if (!["fixed", "question", "formula"].includes(rule.quantity_mode)) rule.quantity_mode = "fixed";
     rule.condition_formula = compileStructuredCondition(rule, set);
-    rule.qty_formula = compileQuantityFormula(rule);
+    rule.qty_formula = compileQuantityFormula(rule, set);
 }
 
 function conditionFields(condition) {
@@ -749,6 +856,8 @@ function quantityFields(quantity) {
 function describeConditionGroup(group, set) {
     const state = group.condition_state;
     if (!state || state.mode === "always") return __("Always add these articles");
+    if (state.mode === "formula") return normalizeUserFormulaInput(state.condition_formula || "") || __("Formula required");
+    if (state.condition_rules_json) return compileStructuredCondition({ ...state, condition_mode: "based" }, set) || __("Condition required");
     const left = getContextFieldLabel(set, state.question_key);
     const operator = operatorLabel(state.operator || "==");
     const right = state.compare_source === "question" ? getContextFieldLabel(set, state.compare_question_key) : state.manual_value;
@@ -774,6 +883,7 @@ function operatorLabel(operator) {
         ">=": __("is at least"),
         "<": __("is less than"),
         "<=": __("is at most"),
+        contains: __("contains"),
     }[operator] || operator;
 }
 
@@ -804,7 +914,7 @@ function parseStructuredCondition(condition) {
     const bare = expr.match(/^([A-Za-z_][A-Za-z0-9_]*)$/);
     if (bare) return { mode: "based", question_key: bare[1], operator: "==", compare_source: "manual", manual_value: "1", compare_question_key: "" };
     const match = expr.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*(?:"([^"]*)"|'([^']*)'|([A-Za-z_][A-Za-z0-9_]*)|(-?\d+(?:\.\d+)?)|(true|false))$/i);
-    if (!match) return { mode: "based", question_key: "", operator: "==", compare_source: "manual", manual_value: "VALUE", compare_question_key: "" };
+    if (!match) return { mode: "formula", question_key: "", operator: "==", compare_source: "manual", manual_value: "", compare_question_key: "" };
     const rightToken = match[5] || "";
     if (rightToken && !["true", "false"].includes(rightToken.toLowerCase())) {
         return { mode: "based", question_key: match[1], operator: match[2], compare_source: "question", manual_value: "", compare_question_key: rightToken };
@@ -820,7 +930,14 @@ function parseStructuredCondition(condition) {
 }
 
 function compileStructuredCondition(rule, set) {
+    if ((rule.condition_mode || "always") === "formula") {
+        const builder = normalizeConditionFormulaBuilder(rule, set);
+        return builder.custom ? normalizeUserFormulaInput(rule.condition_formula || "") : compileConditionFormulaBuilder(builder);
+    }
     if ((rule.condition_mode || "always") === "always") return "";
+    if ((rule.condition_mode || "always") === "based") {
+        return compileStructuredConditionBuilder(normalizeStructuredConditionBuilder(rule, set));
+    }
     const questionKey = rule.question_key || getQuestionKeys(set)[0] || "";
     if (!questionKey) return "";
     const operator = getCompatibleOperator(set, questionKey, rule.operator || "==");
@@ -843,10 +960,14 @@ function parseQuantityFormula(qtyFormula) {
     const formula = String(qtyFormula || "").trim();
     if (/^-?\d+(\.\d+)?$/.test(formula)) return { mode: "fixed", fixed_qty: formula, quantity_question_key: "" };
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(formula)) return { mode: "question", fixed_qty: "1", quantity_question_key: formula };
-    return { mode: "fixed", fixed_qty: "1", quantity_question_key: "" };
+    return { mode: "formula", fixed_qty: "1", quantity_question_key: "" };
 }
 
-function compileQuantityFormula(rule) {
+function compileQuantityFormula(rule, set = getActiveSet()) {
+    if ((rule.quantity_mode || "fixed") === "formula") {
+        const builder = normalizeQuantityFormulaBuilder(rule, set);
+        return builder.custom ? normalizeUserFormulaInput(rule.qty_formula || "") : compileQuantityFormulaBuilder(builder);
+    }
     if ((rule.quantity_mode || "fixed") === "question") return rule.quantity_question_key || "1";
     return String(rule.fixed_qty || "1");
 }
@@ -859,7 +980,9 @@ function updateRuleGroupCondition(groupIndex, changes) {
         const rule = set.item_rules[index];
         if (!rule) return;
         Object.assign(rule, changes);
-        if (rule.condition_mode === "based") {
+        if (rule.condition_mode === "formula") {
+            rule.condition_formula = normalizeUserFormulaInput(rule.condition_formula || changes.condition_formula || "");
+        } else if (rule.condition_mode === "based") {
             rule.question_key = rule.question_key || getQuestionKeys(set)[0] || "";
             rule.operator = getCompatibleOperator(set, rule.question_key, rule.operator || "==");
             rule.compare_source = rule.compare_source || "manual";
@@ -882,8 +1005,201 @@ function updateRuleQuantity(ruleIndex, changes) {
     if (rule.quantity_mode === "question" && !rule.quantity_question_key) {
         rule.quantity_question_key = getQuestionKeys(set)[0] || "";
     }
+    if (rule.quantity_mode === "formula") {
+        rule.qty_formula = normalizeUserFormulaInput(rule.qty_formula || changes.qty_formula || "");
+    }
     if (rule.quantity_mode === "fixed" && !rule.fixed_qty) rule.fixed_qty = "1";
-    rule.qty_formula = compileQuantityFormula(rule);
+    rule.qty_formula = compileQuantityFormula(rule, set);
+}
+
+function updateQuantityFormulaBuilder(ruleIndex, rowIndex, field, value) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    keepArticleSettingsOpen(ruleIndex);
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    if (!builder.rows[rowIndex]) return;
+    builder.rows[rowIndex][field] = field === "value" || field === "final_multiplier" ? normalizeFormulaNumber(value) : field === "wrap_int" ? !!value : value;
+    builder.custom = false;
+    rule.quantity_mode = "formula";
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+    rule.qty_formula = compileQuantityFormulaBuilder(builder);
+}
+
+function updateQuantityFormulaBuilderFinalMultiplier(ruleIndex, value) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    keepArticleSettingsOpen(ruleIndex);
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    builder.final_multiplier = normalizeFormulaNumber(value);
+    builder.custom = false;
+    rule.quantity_mode = "formula";
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+    rule.qty_formula = compileQuantityFormulaBuilder(builder);
+}
+
+function updateQuantityFormulaBuilderResultAsInteger(ruleIndex, checked) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    keepArticleSettingsOpen(ruleIndex);
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    builder.result_as_integer = !!checked;
+    builder.custom = false;
+    rule.quantity_mode = "formula";
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+    rule.qty_formula = compileQuantityFormulaBuilder(builder);
+}
+
+function addQuantityFormulaBuilderRow(ruleIndex) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    keepArticleSettingsOpen(ruleIndex);
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    builder.rows.push({ ...defaultQuantityFormulaBuilder(set).rows[0] });
+    builder.custom = false;
+    rule.quantity_mode = "formula";
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+    rule.qty_formula = compileQuantityFormulaBuilder(builder);
+}
+
+function removeQuantityFormulaBuilderRow(ruleIndex, rowIndex) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    keepArticleSettingsOpen(ruleIndex);
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    builder.rows.splice(rowIndex, 1);
+    if (!builder.rows.length) builder.rows.push({ ...defaultQuantityFormulaBuilder(set).rows[0] });
+    builder.custom = false;
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+    rule.qty_formula = compileQuantityFormulaBuilder(builder);
+}
+
+function updateQuantityFormulaRaw(ruleIndex, value) {
+    const set = getActiveSet();
+    const rule = set.item_rules[ruleIndex];
+    if (!rule) return;
+    keepArticleSettingsOpen(ruleIndex);
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    builder.custom = true;
+    rule.quantity_mode = "formula";
+    rule.qty_formula = normalizeUserFormulaInput(value);
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+}
+
+function updateConditionFormulaBuilder(groupIndex, rowIndex, field, value) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeConditionFormulaBuilder(group.rules[0].rule, set);
+    if (!builder.rows[rowIndex]) return;
+    builder.rows[rowIndex][field] = value;
+    builder.custom = false;
+    applyConditionFormulaBuilderToGroup(group, builder, set);
+}
+
+function addConditionFormulaBuilderRow(groupIndex) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeConditionFormulaBuilder(group.rules[0].rule, set);
+    builder.rows.push({ ...defaultConditionFormulaBuilder(set).rows[0] });
+    builder.custom = false;
+    applyConditionFormulaBuilderToGroup(group, builder, set);
+}
+
+function removeConditionFormulaBuilderRow(groupIndex, rowIndex) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeConditionFormulaBuilder(group.rules[0].rule, set);
+    builder.rows.splice(rowIndex, 1);
+    if (!builder.rows.length) builder.rows.push({ ...defaultConditionFormulaBuilder(set).rows[0] });
+    builder.custom = false;
+    applyConditionFormulaBuilderToGroup(group, builder, set);
+}
+
+function updateStructuredConditionBuilder(groupIndex, rowIndex, field, value) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeStructuredConditionBuilder(group.rules[0].rule, set);
+    const row = builder.rows[rowIndex];
+    if (!row) return;
+    row[field] = field === "value" ? normalizeStructuredConditionValue(value, row.value_source) : value;
+    if (field === "parameter") {
+        const parameterField = getContextField(set, row.parameter);
+        row.value_source = inferStructuredValueSource(parameterField);
+        row.operator = getCompatibleOperator(set, row.parameter, row.operator || "==");
+        row.value = defaultComparisonValue(parameterField);
+    }
+    if (field === "value_source") {
+        row.value = normalizeStructuredConditionValue(defaultComparisonValue(getContextField(set, row.parameter)), row.value_source);
+    }
+    if (!getStructuredConditionOperators(set, row.parameter, row.value_source).includes(row.operator)) {
+        row.operator = getStructuredConditionOperators(set, row.parameter, row.value_source)[0] || "==";
+    }
+    applyStructuredConditionBuilderToGroup(group, builder, set);
+}
+
+function addStructuredConditionBuilderRow(groupIndex) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeStructuredConditionBuilder(group.rules[0].rule, set);
+    builder.rows.push({ ...defaultStructuredConditionBuilder(set).rows[0], join: "and" });
+    applyStructuredConditionBuilderToGroup(group, builder, set);
+}
+
+function removeStructuredConditionBuilderRow(groupIndex, rowIndex) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeStructuredConditionBuilder(group.rules[0].rule, set);
+    builder.rows.splice(rowIndex, 1);
+    if (!builder.rows.length) builder.rows.push({ ...defaultStructuredConditionBuilder(set).rows[0] });
+    applyStructuredConditionBuilderToGroup(group, builder, set);
+}
+
+function applyStructuredConditionBuilderToGroup(group, builder, set) {
+    const formula = compileStructuredConditionBuilder(builder);
+    group.rules.forEach(({ index }) => {
+        const rule = set.item_rules[index];
+        if (!rule) return;
+        rule.condition_mode = "based";
+        rule.condition_rules_json = JSON.stringify(builder);
+        mirrorFirstStructuredConditionRow(rule, builder.rows[0] || {}, set);
+        rule.condition_formula = formula;
+    });
+}
+
+function updateConditionFormulaRaw(groupIndex, value) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group?.rules?.length) return;
+    const builder = normalizeConditionFormulaBuilder(group.rules[0].rule, set);
+    builder.custom = true;
+    group.rules.forEach(({ index }) => {
+        const rule = set.item_rules[index];
+        if (!rule) return;
+        rule.condition_mode = "formula";
+        rule.condition_formula = normalizeUserFormulaInput(value);
+        rule.condition_formula_builder_json = JSON.stringify(builder);
+    });
+}
+
+function applyConditionFormulaBuilderToGroup(group, builder, set) {
+    const formula = compileConditionFormulaBuilder(builder);
+    group.rules.forEach(({ index }) => {
+        const rule = set.item_rules[index];
+        if (!rule) return;
+        rule.condition_mode = "formula";
+        rule.condition_formula = formula;
+        rule.condition_formula_builder_json = JSON.stringify(builder);
+    });
 }
 
 function renderArticleRuleRow(rule, index, articleIndex, set) {
@@ -895,29 +1211,32 @@ function renderArticleRuleRow(rule, index, articleIndex, set) {
     const quantityMode = rule.quantity_mode || "fixed";
     return `
         <article class="ods-article-row ${rule.is_active ? "" : "muted"}" role="listitem">
-            <div class="ods-article-row-main">
-                <div class="ods-article-row-title">
-                    <span class="ods-article-row-index">${articleIndex + 1}</span>
-                    <label class="ods-compact-field">
-                        <span>${__("Item Source")}</span>
-                        <select data-rule-item-selection-mode="${index}">
-                            <option value="fixed" ${selectionMode === "fixed" ? "selected" : ""}>${__("Fixed")}</option>
-                            <option value="filtered" ${selectionMode === "filtered" ? "selected" : ""}>${__("Filtered")}</option>
-                        </select>
-                    </label>
+            <div class="ods-article-row-top">
+                <span class="ods-article-row-index">${articleIndex + 1}</span>
+                <label class="ods-compact-field ods-item-source-field">
+                    <span>${__("Item Source")}</span>
+                    <select data-rule-item-selection-mode="${index}">
+                        <option value="fixed" ${selectionMode === "fixed" ? "selected" : ""}>${__("Fixed")}</option>
+                        <option value="filtered" ${selectionMode === "filtered" ? "selected" : ""}>${__("Filtered")}</option>
+                    </select>
+                </label>
+                <div class="ods-article-item-slot">
                     ${renderRuleItemSelector(rule, index, selectionMode)}
-                    <div class="ods-article-name">
-                        <strong>${frappe.utils.escape_html(itemName)}</strong>
-                        <small>${frappe.utils.escape_html(selectionMode === "filtered" ? __("Resolved when tested/saved") : rule.display_group || itemInfo.item_group || __("No section"))}</small>
-                    </div>
+                </div>
+                <div class="ods-article-name">
+                    <strong>${frappe.utils.escape_html(itemName)}</strong>
+                    <small>${frappe.utils.escape_html(selectionMode === "filtered" ? __("Resolved when tested/saved") : rule.display_group || itemInfo.item_group || __("No section"))}</small>
+                </div>
+                <button class="ods-icon-button ods-article-duplicate" type="button" data-duplicate-rule="${index}" aria-label="${__("Duplicate article")}">C</button>
+                <button class="ods-icon-button danger ods-article-remove" type="button" data-remove-rule="${index}" aria-label="${__("Remove article")}">x</button>
+            </div>
+            <div class="ods-article-row-bottom">
+                ${renderQuantityInlineControl(rule, index, quantityMode, set)}
+                <div class="ods-article-row-flags">
+                    ${compactCheck("rule", index, "is_active", __("Active"), rule.is_active)}
+                    ${compactCheck("rule", index, "show_in_detail", __("Detail"), rule.show_in_detail)}
                 </div>
             </div>
-            ${renderQuantityInlineControl(rule, index, quantityMode, set)}
-            <div class="ods-article-row-flags">
-                ${compactCheck("rule", index, "is_active", __("Active"), rule.is_active)}
-                ${compactCheck("rule", index, "show_in_detail", __("Detail"), rule.show_in_detail)}
-            </div>
-            <button class="ods-icon-button danger ods-article-remove" type="button" data-remove-rule="${index}" aria-label="${__("Remove article")}">x</button>
             <details class="ods-article-row-more" data-article-settings="${index}" ${settingsOpen ? "open" : ""}>
                 <summary>${__("More article settings")}</summary>
                 <div class="ods-form-grid three">
@@ -1067,6 +1386,7 @@ function renderQuantityInlineControl(rule, index, quantityMode, set) {
                 <select data-rule-quantity-mode="${index}">
                     <option value="fixed" ${quantityMode === "fixed" ? "selected" : ""}>${__("Fixed")}</option>
                     <option value="question" ${quantityMode === "question" ? "selected" : ""}>${__("From answer")}</option>
+                    <option value="formula" ${quantityMode === "formula" ? "selected" : ""}>${__("Formula")}</option>
                 </select>
             </label>
             ${quantityMode === "question" ? `
@@ -1074,12 +1394,99 @@ function renderQuantityInlineControl(rule, index, quantityMode, set) {
                     <span>${__("Answer")}</span>
                     <select data-rule-quantity-question="${index}">${renderQuestionOptions(set, questionKey)}</select>
                 </label>
+            ` : quantityMode === "formula" ? `
+                ${renderQuantityFormulaBuilder(rule, index, set)}
             ` : `
                 <label class="ods-compact-field">
                     <span>${__("Number")}</span>
                     <input type="number" step="0.01" data-rule-fixed-qty="${index}" value="${frappe.utils.escape_html(String(rule.fixed_qty || "1"))}">
                 </label>
             `}
+        </div>
+    `;
+}
+
+function renderQuantityFormulaBuilder(rule, ruleIndex, set) {
+    const builder = normalizeQuantityFormulaBuilder(rule, set);
+    const rows = builder.rows.map((row, rowIndex) => renderQuantityFormulaBuilderRow(row, ruleIndex, rowIndex, set)).join("");
+    const warning = builder.custom ? `<div class="ods-formula-builder-warning">${__("Advanced custom formula: visual rows may not represent the raw formula exactly.")}</div>` : "";
+    return `
+        <div class="ods-formula-builder ods-qty-formula-builder">
+            <div class="ods-filter-editor-head">
+                <div>
+                    <strong>${__("Formula Builder")}</strong>
+                    <span>${__("Build rows like: hauteur_cabine * 2 + nbr_etage * 4, then multiply by 1.05")}</span>
+                </div>
+                <button class="btn btn-xs btn-default" type="button" data-add-qty-builder-row="${ruleIndex}">${__("Add Part")}</button>
+            </div>
+            <div class="ods-formula-builder-list">${rows}</div>
+            <div class="ods-formula-builder-options">
+                <label class="ods-compact-field ods-final-multiplier-field">
+                    <span>${__("Then multiply total by")}</span>
+                    <input data-qty-builder-final-multiplier="${ruleIndex}" value="${frappe.utils.escape_html(builder.final_multiplier || "")}" placeholder="1.05">
+                </label>
+                <label class="ods-compact-check ods-result-integer-check">
+                    <input type="checkbox" data-qty-builder-result-integer="${ruleIndex}" ${builder.result_as_integer ? "checked" : ""}>
+                    <span>${__("Integer result")}</span>
+                </label>
+            </div>
+            <div class="ods-condition-summary">
+                <span>${__("Compiled quantity formula")}</span>
+                <strong>${frappe.utils.escape_html(rule.qty_formula || compileQuantityFormulaBuilder(builder))}</strong>
+            </div>
+            ${warning}
+            <details class="ods-advanced-inline">
+                <summary>${__("Advanced formula")}</summary>
+                <label class="ods-compact-field ods-qty-formula-field">
+                    <span>${__("Raw formula")}</span>
+                    <textarea data-rule-quantity-formula="${ruleIndex}" rows="2" placeholder="(hauteur_cabine * 2 + nbr_etage * 4) * 1.05">${frappe.utils.escape_html(rule.qty_formula || "")}</textarea>
+                </label>
+            </details>
+        </div>
+    `;
+}
+
+function renderQuantityFormulaBuilderRow(row, ruleIndex, rowIndex, set) {
+    const join = row.join || "+";
+    const operator = row.operator || "*";
+    const valueType = row.value_type || "number";
+    return `
+        <div class="ods-formula-builder-row quantity">
+            <label class="ods-compact-field ods-formula-join-field">
+                <span>${rowIndex ? __("Join") : __("Start")}</span>
+                ${rowIndex ? `<select data-qty-builder-field="join" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}">${["+", "-"].map((item) => `<option value="${item}" ${item === join ? "selected" : ""}>${item}</option>`).join("")}</select>` : `<strong>${__("START")}</strong>`}
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Parameter")}</span>
+                <select data-qty-builder-field="parameter" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}">${renderFormulaKeyOptions(set, row.parameter)}</select>
+            </label>
+            <label class="ods-compact-check ods-row-integer-check">
+                <input type="checkbox" data-qty-builder-field="wrap_int" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}" ${row.wrap_int ? "checked" : ""}>
+                <span>${__("Integer value")}</span>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Operator")}</span>
+                <select data-qty-builder-field="operator" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}">${ODS_FORMULA_MATH_OPERATORS.map((item) => `<option value="${item}" ${item === operator ? "selected" : ""}>${item}</option>`).join("")}</select>
+            </label>
+            <label class="ods-compact-field">
+                <span>${__("Value Type")}</span>
+                <select data-qty-builder-field="value_type" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}">
+                    <option value="number" ${valueType === "number" ? "selected" : ""}>${__("Number")}</option>
+                    <option value="parameter" ${valueType === "parameter" ? "selected" : ""}>${__("Parameter")}</option>
+                </select>
+            </label>
+            ${valueType === "parameter" ? `
+                <label class="ods-compact-field">
+                    <span>${__("Value Parameter")}</span>
+                    <select data-qty-builder-field="value_parameter" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}">${renderFormulaKeyOptions(set, row.value_parameter)}</select>
+                </label>
+            ` : `
+                <label class="ods-compact-field">
+                    <span>${__("Number")}</span>
+                    <input data-qty-builder-field="value" data-rule-index="${ruleIndex}" data-row-index="${rowIndex}" value="${frappe.utils.escape_html(row.value || "")}" placeholder="2">
+                </label>
+            `}
+            <button class="ods-icon-button danger" type="button" data-remove-qty-builder-row="${ruleIndex}" data-row-index="${rowIndex}" aria-label="${__("Remove part")}">x</button>
         </div>
     `;
 }
@@ -1112,6 +1519,209 @@ function defaultItemFilter(set) {
         formula: "",
         enabled: 1,
     };
+}
+
+function normalizeRuleFormulaBuilders(rule, set) {
+    normalizeStructuredConditionBuilder(rule, set);
+    normalizeQuantityFormulaBuilder(rule, set);
+    normalizeConditionFormulaBuilder(rule, set);
+}
+
+function defaultStructuredConditionBuilder(set) {
+    const firstKey = getQuestionKeys(set)[0] || "value";
+    const field = getContextField(set, firstKey);
+    return {
+        rows: [{
+            join: "and",
+            parameter: firstKey,
+            operator: "==",
+            value_source: inferStructuredValueSource(field),
+            value: defaultComparisonValue(field),
+            value_parameter: firstKey,
+        }],
+    };
+}
+
+function defaultQuantityFormulaBuilder(set) {
+    const firstKey = getQuestionKeys(set)[0] || "value";
+    return {
+        rows: [{ join: "+", parameter: firstKey, wrap_int: false, operator: "*", value_type: "number", value: "1", value_parameter: firstKey }],
+        final_multiplier: "",
+        result_as_integer: false,
+        custom: false,
+    };
+}
+
+function defaultConditionFormulaBuilder(set) {
+    const firstKey = getQuestionKeys(set)[0] || "value";
+    return {
+        rows: [{ join: "and", parameter: firstKey, operator: ">", value_source: "manual", value: "0", value_parameter: firstKey }],
+        custom: false,
+    };
+}
+
+function normalizeQuantityFormulaBuilder(rule, set) {
+    const hadBuilder = !!String(rule.qty_formula_builder_json || "").trim();
+    const builder = parseFormulaBuilderJson(rule.qty_formula_builder_json, defaultQuantityFormulaBuilder(set));
+    builder.rows = (builder.rows || []).map((row) => ({
+        join: ["+", "-"].includes(row.join) ? row.join : "+",
+        parameter: row.parameter || getQuestionKeys(set)[0] || "value",
+        wrap_int: !!row.wrap_int,
+        operator: ODS_FORMULA_MATH_OPERATORS.includes(row.operator) ? row.operator : "*",
+        value_type: ["number", "parameter"].includes(row.value_type) ? row.value_type : "number",
+        value: normalizeFormulaNumber(row.value || "1"),
+        value_parameter: row.value_parameter || getQuestionKeys(set)[0] || "value",
+    }));
+    if (!builder.rows.length) builder.rows = defaultQuantityFormulaBuilder(set).rows;
+    builder.final_multiplier = normalizeFormulaNumber(builder.final_multiplier || "");
+    builder.result_as_integer = !!builder.result_as_integer;
+    builder.custom = !!builder.custom || (!hadBuilder && !!String(rule.qty_formula || "").trim());
+    rule.qty_formula_builder_json = JSON.stringify(builder);
+    return builder;
+}
+
+function normalizeConditionFormulaBuilder(row, set) {
+    const hadBuilder = !!String(row.condition_formula_builder_json || "").trim();
+    const builder = parseFormulaBuilderJson(row.condition_formula_builder_json, defaultConditionFormulaBuilder(set));
+    builder.rows = (builder.rows || []).map((entry) => ({
+        join: ODS_FORMULA_JOINS.includes(entry.join) ? entry.join : "and",
+        parameter: entry.parameter || getQuestionKeys(set)[0] || "value",
+        operator: ODS_FORMULA_CONDITION_OPERATORS.includes(entry.operator) ? entry.operator : ">",
+        value_source: ["manual", "parameter"].includes(entry.value_source) ? entry.value_source : "manual",
+        value: entry.value ?? "0",
+        value_parameter: entry.value_parameter || getQuestionKeys(set)[0] || "value",
+    }));
+    if (!builder.rows.length) builder.rows = defaultConditionFormulaBuilder(set).rows;
+    builder.custom = !!builder.custom || (!hadBuilder && !!String(row.condition_formula || "").trim());
+    row.condition_formula_builder_json = JSON.stringify(builder);
+    return builder;
+}
+
+function normalizeStructuredConditionBuilder(row, set) {
+    const parsed = parseFormulaBuilderJson(row.condition_rules_json, null);
+    let builder = parsed && Array.isArray(parsed.rows) ? parsed : null;
+    if (!builder) builder = structuredBuilderFromLegacyCondition(row, set);
+    builder.rows = (builder.rows || []).map((entry, index) => {
+        const parameter = entry.parameter || entry.question_key || getQuestionKeys(set)[0] || "value";
+        const field = getContextField(set, parameter);
+        const valueSource = ODS_STRUCTURED_VALUE_SOURCES.includes(entry.value_source) ? entry.value_source : inferStructuredValueSource(field);
+        return {
+            join: index && ODS_FORMULA_JOINS.includes(entry.join) ? entry.join : "and",
+            parameter,
+            operator: [...ODS_FORMULA_CONDITION_OPERATORS, ...ODS_CONDITION_OPERATORS].includes(entry.operator) ? entry.operator : getCompatibleOperator(set, parameter, "=="),
+            value_source: valueSource,
+            value: normalizeStructuredConditionValue(entry.value ?? defaultComparisonValue(field), valueSource),
+            value_parameter: entry.value_parameter || entry.compare_question_key || getQuestionKeys(set)[0] || "value",
+        };
+    });
+    if (!builder.rows.length) builder = defaultStructuredConditionBuilder(set);
+    row.condition_rules_json = JSON.stringify(builder);
+    mirrorFirstStructuredConditionRow(row, builder.rows[0] || {}, set);
+    return builder;
+}
+
+function structuredBuilderFromLegacyCondition(row, set) {
+    const parameter = row.question_key || getQuestionKeys(set)[0] || "value";
+    const field = getContextField(set, parameter);
+    const compareSource = row.compare_source || "manual";
+    const valueSource = compareSource === "question" ? "parameter" : inferStructuredValueSource(field);
+    return {
+        rows: [{
+            join: "and",
+            parameter,
+            operator: row.operator || "==",
+            value_source: valueSource,
+            value: row.manual_value || defaultComparisonValue(field),
+            value_parameter: row.compare_question_key || getQuestionKeys(set)[0] || parameter,
+        }],
+    };
+}
+
+function inferStructuredValueSource(field) {
+    if (!field) return "text";
+    if (field.field_type === "Int") return "integer";
+    if (field.field_type === "Float") return "decimal";
+    if (field.field_type === "Check") return "check";
+    return "text";
+}
+
+function normalizeStructuredConditionValue(value, valueSource) {
+    if (valueSource === "integer") return String(value ?? "").replace(/[^0-9\-]/g, "");
+    if (valueSource === "decimal") return normalizeUserFormulaInput(value).replace(/[^0-9.+\-]/g, "");
+    if (valueSource === "check") return value === true || String(value).toLowerCase() === "true" || String(value) === "1" ? "1" : "0";
+    return value == null ? "" : String(value);
+}
+
+function mirrorFirstStructuredConditionRow(target, row, set) {
+    target.question_key = row.parameter || getQuestionKeys(set)[0] || "";
+    target.operator = row.operator || "==";
+    target.compare_source = row.value_source === "parameter" ? "question" : "manual";
+    target.manual_value = row.value || "";
+    target.compare_question_key = row.value_parameter || "";
+}
+
+function parseFormulaBuilderJson(raw, fallback) {
+    try {
+        const parsed = typeof raw === "string" ? JSON.parse(raw || "") : raw;
+        if (parsed && typeof parsed === "object") return { ...fallback, ...parsed };
+    } catch (error) {
+        return JSON.parse(JSON.stringify(fallback));
+    }
+    return JSON.parse(JSON.stringify(fallback));
+}
+
+function compileQuantityFormulaBuilder(builder) {
+    const terms = (builder.rows || []).map((row, index) => {
+        const leftParameter = row.parameter || "0";
+        const left = row.wrap_int ? `int(${leftParameter})` : leftParameter;
+        const right = row.value_type === "parameter" ? row.value_parameter || "0" : normalizeFormulaNumber(row.value || "0") || "0";
+        const term = `${left} ${row.operator || "*"} ${right}`;
+        return index ? `${row.join || "+"} ${term}` : term;
+    });
+    const base = terms.join(" ") || "0";
+    const multiplier = normalizeFormulaNumber(builder.final_multiplier || "");
+    const formula = multiplier ? `(${base}) * ${multiplier}` : base;
+    return builder.result_as_integer ? `int(${formula})` : formula;
+}
+
+function compileConditionFormulaBuilder(builder) {
+    return (builder.rows || []).map((row, index) => {
+        const left = row.parameter || "";
+        const right = row.value_source === "parameter" ? row.value_parameter || "" : formulaBuilderLiteral(row.value || "");
+        const condition = row.operator === "contains" ? `contains(${left}, ${right})` : `${left} ${row.operator || "=="} ${right}`;
+        return index ? `${row.join || "and"} ${condition}` : condition;
+    }).join(" ");
+}
+
+function compileStructuredConditionBuilder(builder) {
+    return (builder.rows || []).reduce((expression, row, index) => {
+        const left = row.parameter || "";
+        const right = row.value_source === "parameter" ? row.value_parameter || "" : structuredConditionLiteral(row.value, row.value_source);
+        const condition = row.operator === "contains" ? `contains(${left}, ${right})` : `${left} ${row.operator || "=="} ${right}`;
+        return index ? `(${expression} ${row.join || "and"} ${condition})` : condition;
+    }, "");
+}
+
+function structuredConditionLiteral(value, valueSource) {
+    if (["integer", "decimal"].includes(valueSource)) return normalizeStructuredConditionValue(value, valueSource) || "0";
+    if (valueSource === "check") return normalizeStructuredConditionValue(value, valueSource) === "1" ? "true" : "false";
+    return JSON.stringify(value == null ? "" : String(value));
+}
+
+function formulaBuilderLiteral(value) {
+    const raw = normalizeUserFormulaInput(value);
+    if (/^-?\d+(\.\d+)?$/.test(raw)) return raw;
+    if (["true", "false"].includes(raw.toLowerCase())) return raw.toLowerCase();
+    return JSON.stringify(raw);
+}
+
+function normalizeFormulaNumber(value) {
+    return normalizeUserFormulaInput(value).replace(/[^0-9.+\-]/g, "");
+}
+
+function renderFormulaKeyOptions(set, selected) {
+    const keys = getQuestionKeys(set);
+    return keys.map((key) => `<option value="${frappe.utils.escape_html(key)}" ${key === selected ? "selected" : ""}>${frappe.utils.escape_html(getContextFieldLabel(set, key))}</option>`).join("");
 }
 
 function normalizeRuleItemFilters(rule) {
@@ -1224,7 +1834,7 @@ function renderPreviewSection(set, preview, validation) {
                     <h2>${__("Try it like a sales user")}</h2>
                     <p>${__("Change answers on the left and confirm the generated article list looks right.")}</p>
                 </div>
-                <button class="btn btn-primary btn-sm" type="button" data-refresh-preview>${__("Run Test")}</button>
+                <button class="btn btn-primary btn-sm" type="button" data-refresh-preview ${ODS_STATE.isPreviewing ? "disabled" : ""}>${ODS_STATE.isPreviewing ? __("Testing...") : __("Run Test")}</button>
             </div>
             ${renderTestSummary(preview, validation)}
             <div class="ods-preview-layout">
@@ -1307,7 +1917,8 @@ function renderGeneratedItems(preview) {
 function renderGeneratedRow(row) {
     const warnings = [];
     if (row.missing_item) warnings.push(`<span class="ods-badge danger">${__("Missing item")}</span>`);
-    if (row.filtered_item) warnings.push(`<span class="ods-badge warn">${__("Server match")}</span>`);
+    if (row.filtered_item && !row.missing_item) warnings.push(`<span class="ods-badge ok-soft">${__("Resolved by filters")}</span>`);
+    if (row.resolution_warning) warnings.push(`<span class="ods-badge warn">${frappe.utils.escape_html(row.resolution_warning)}</span>`);
     if (row.missing_price) warnings.push(`<span class="ods-badge warn">${__("Missing price")}</span>`);
     if (!row.show_in_detail) warnings.push(`<span class="ods-badge muted">${__("Summary only")}</span>`);
     return `
@@ -1350,7 +1961,7 @@ function renderLivePanel(set, preview, validation) {
                 <select data-select-set>
                     ${ODS_STATE.sets.map((row, index) => `<option value="${index}" ${index === ODS_STATE.selectedSet ? "selected" : ""}>${frappe.utils.escape_html(row.name)}</option>`).join("")}
                 </select>
-                <p>${__("Direct URL only. This page does not update live records yet.")}</p>
+                <p>${__("Draft workspace. Changes apply after saving this Dimensioning Set.")}</p>
             </div>
             <div class="ods-mini-card ods-next-card">
                 <h3>${__("Recommended next step")}</h3>
@@ -1396,7 +2007,7 @@ function renderBottomBar(set, validation) {
             <div class="ods-bottom-actions">
                 ${deleteButton}
                 <button class="btn btn-default" type="button" data-reset-builder>${__("Reset")}</button>
-                <button class="btn btn-primary" type="button" data-bottom-validate>${errorCount ? __("Review Issues") : __("Run Test")}</button>
+                <button class="btn btn-primary" type="button" data-bottom-validate ${ODS_STATE.isPreviewing ? "disabled" : ""}>${ODS_STATE.isPreviewing ? __("Testing...") : errorCount ? __("Review Issues") : __("Run Test")}</button>
             </div>
         </div>
     `;
@@ -1452,8 +2063,8 @@ function bindDimensioningBuilderEvents(page) {
     root.find("[data-test-key]").on("change", function () {
         const key = this.dataset.testKey;
         ODS_STATE.testValues[key] = this.type === "checkbox" ? this.checked : this.value;
-        ODS_STATE.lastPreview = buildPreview(getActiveSet(), ODS_STATE.testValues);
-        ODS_STATE.validation = validateSet(getActiveSet(), ODS_STATE.lastPreview);
+        ODS_STATE.lastPreview = null;
+        ODS_STATE.validation = [];
         renderDimensioningBuilder(page);
     });
     root.find("[data-add-field]").on("click", () => {
@@ -1487,17 +2098,6 @@ function bindDimensioningBuilderEvents(page) {
         ODS_STATE.selectedRule = set.item_rules.length - 1;
         renderDimensioningBuilder(page);
     });
-    root.find("[data-add-catalog-article]").on("click", function () {
-        const set = getActiveSet();
-        const group = getArticleRuleGroups(set)[Number(this.dataset.addCatalogArticle) || 0];
-        const itemInfo = ODS_SAMPLE_ITEMS.find((row) => row.item === this.dataset.catalogItem);
-        if (!group || !itemInfo) return;
-        const rule = ruleRow(itemInfo.item_name, itemInfo.item, itemInfo.item_group, "1", group.condition, true);
-        rule.rule_group = group.key;
-        set.item_rules.push(rule);
-        ODS_STATE.selectedRule = set.item_rules.length - 1;
-        renderDimensioningBuilder(page);
-    });
     root.find("[data-open-item-picker]").on("click", function () {
         openDimensioningItemPicker(page, Number(this.dataset.openItemPicker) || 0);
     });
@@ -1516,11 +2116,11 @@ function bindDimensioningBuilderEvents(page) {
         getActiveSet().derived_fields.splice(Number(this.dataset.removeDerived), 1);
         renderDimensioningBuilder(page);
     });
+    root.find("[data-duplicate-rule]").on("click", function () {
+        duplicateArticleRule(page, Number(this.dataset.duplicateRule) || 0);
+    });
     root.find("[data-remove-rule]").on("click", function () {
-        const set = getActiveSet();
-        set.item_rules.splice(Number(this.dataset.removeRule), 1);
-        ODS_STATE.selectedRule = Math.max(0, ODS_STATE.selectedRule - 1);
-        renderDimensioningBuilder(page);
+        deleteArticleRule(page, Number(this.dataset.removeRule) || 0);
     });
     root.find("[data-select-rule]").on("click", function () {
         ODS_STATE.selectedRule = Number(this.dataset.selectRule) || 0;
@@ -1542,6 +2142,16 @@ function bindDimensioningBuilderEvents(page) {
         event.preventDefault();
         toggleRuleGroup(page, Number(this.dataset.toggleRuleGroup) || 0);
     });
+    root.find("[data-duplicate-rule-group]").on("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        duplicateRuleGroup(page, Number(this.dataset.duplicateRuleGroup) || 0);
+    });
+    root.find("[data-delete-rule-group]").on("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteRuleGroup(page, Number(this.dataset.deleteRuleGroup) || 0);
+    });
     root.find("[data-article-settings]").on("toggle", function () {
         ODS_STATE.openArticleSettings[Number(this.dataset.articleSettings) || 0] = this.open;
     });
@@ -1556,7 +2166,52 @@ function bindDimensioningBuilderEvents(page) {
             operator: "==",
             compare_source: "manual",
             manual_value: defaultComparisonValue(getContextField(set, token)),
+            condition_formula: nextMode === "formula" ? `${token} > 0` : "",
         });
+        if (nextMode === "formula") {
+            const group = getArticleRuleGroups(set)[groupIndex];
+            if (group) {
+                const builder = defaultConditionFormulaBuilder(set);
+                builder.rows[0].parameter = token;
+                builder.custom = false;
+                applyConditionFormulaBuilderToGroup(group, builder, set);
+            }
+        }
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-group-condition-formula]").on("change", function () {
+        updateConditionFormulaRaw(Number(this.dataset.groupConditionFormula) || 0, this.value);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-add-condition-builder-row]").on("click", function () {
+        addConditionFormulaBuilderRow(Number(this.dataset.addConditionBuilderRow) || 0);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-remove-condition-builder-row]").on("click", function () {
+        removeConditionFormulaBuilderRow(Number(this.dataset.removeConditionBuilderRow) || 0, Number(this.dataset.rowIndex) || 0);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-condition-builder-field]").on("change", function () {
+        updateConditionFormulaBuilder(Number(this.dataset.groupIndex) || 0, Number(this.dataset.rowIndex) || 0, this.dataset.conditionBuilderField, this.value);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-add-structured-condition-row]").on("click", function () {
+        addStructuredConditionBuilderRow(Number(this.dataset.addStructuredConditionRow) || 0);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-remove-structured-condition-row]").on("click", function () {
+        removeStructuredConditionBuilderRow(Number(this.dataset.removeStructuredConditionRow) || 0, Number(this.dataset.rowIndex) || 0);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-structured-condition-field]").on("change", function () {
+        updateStructuredConditionBuilder(Number(this.dataset.groupIndex) || 0, Number(this.dataset.rowIndex) || 0, this.dataset.structuredConditionField, this.value);
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
     });
@@ -1593,7 +2248,17 @@ function bindDimensioningBuilderEvents(page) {
         renderDimensioningBuilder(page);
     });
     root.find("[data-rule-quantity-mode]").on("change", function () {
-        updateRuleQuantity(Number(this.dataset.ruleQuantityMode) || 0, { quantity_mode: this.value });
+        const ruleIndex = Number(this.dataset.ruleQuantityMode) || 0;
+        const rule = getActiveSet().item_rules[ruleIndex];
+        const token = getQuestionKeys(getActiveSet())[0] || "1";
+        updateRuleQuantity(ruleIndex, { quantity_mode: this.value, qty_formula: this.value === "formula" ? rule?.qty_formula || token : rule?.qty_formula || "" });
+        if (this.value === "formula" && rule) {
+            const builder = defaultQuantityFormulaBuilder(getActiveSet());
+            builder.rows[0].parameter = token;
+            builder.custom = false;
+            rule.qty_formula_builder_json = JSON.stringify(builder);
+            rule.qty_formula = compileQuantityFormulaBuilder(builder);
+        }
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
     });
@@ -1603,6 +2268,38 @@ function bindDimensioningBuilderEvents(page) {
     });
     root.find("[data-rule-quantity-question]").on("change", function () {
         updateRuleQuantity(Number(this.dataset.ruleQuantityQuestion) || 0, { quantity_mode: "question", quantity_question_key: this.value });
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-rule-quantity-formula]").on("change", function () {
+        const ruleIndex = Number(this.dataset.ruleQuantityFormula) || 0;
+        keepArticleSettingsOpen(ruleIndex);
+        updateQuantityFormulaRaw(ruleIndex, this.value);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-add-qty-builder-row]").on("click", function () {
+        addQuantityFormulaBuilderRow(Number(this.dataset.addQtyBuilderRow) || 0);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-remove-qty-builder-row]").on("click", function () {
+        removeQuantityFormulaBuilderRow(Number(this.dataset.removeQtyBuilderRow) || 0, Number(this.dataset.rowIndex) || 0);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-qty-builder-field]").on("change", function () {
+        updateQuantityFormulaBuilder(Number(this.dataset.ruleIndex) || 0, Number(this.dataset.rowIndex) || 0, this.dataset.qtyBuilderField, this.type === "checkbox" ? this.checked : this.value);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-qty-builder-final-multiplier]").on("change", function () {
+        updateQuantityFormulaBuilderFinalMultiplier(Number(this.dataset.qtyBuilderFinalMultiplier) || 0, this.value);
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
+    root.find("[data-qty-builder-result-integer]").on("change", function () {
+        updateQuantityFormulaBuilderResultAsInteger(Number(this.dataset.qtyBuilderResultInteger) || 0, this.checked);
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
     });
@@ -1695,12 +2392,7 @@ function bindDimensioningBuilderEvents(page) {
         updateRuleItemFilter(ruleIndex, Number(this.dataset.filterIndex) || 0, { formula: this.value });
         ODS_STATE.lastPreview = null;
     });
-    root.find("[data-refresh-preview], [data-bottom-validate]").on("click", () => {
-        ODS_STATE.activeSection = "preview";
-        ODS_STATE.lastPreview = buildPreview(getActiveSet(), ODS_STATE.testValues);
-        ODS_STATE.validation = validateSet(getActiveSet(), ODS_STATE.lastPreview);
-        renderDimensioningBuilder(page);
-    });
+    root.find("[data-refresh-preview], [data-bottom-validate]").on("click", () => runDimensioningBuilderPreview(page));
     root.find("[data-reset-builder]").on("click", () => {
         resetDimensioningBuilderState();
         renderDimensioningBuilder(page);
@@ -1927,6 +2619,60 @@ async function loadDimensioningSet(page, setName) {
     renderDimensioningBuilder(page);
 }
 
+async function runDimensioningBuilderPreview(page) {
+    if (ODS_STATE.isPreviewing) return;
+    const set = getActiveSet();
+    ODS_STATE.activeSection = "preview";
+    ODS_STATE.isPreviewing = true;
+    renderDimensioningBuilder(page);
+    try {
+        const response = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.preview_dimensioning_builder_payload",
+            args: {
+                payload: JSON.stringify(payloadFromBuilderSet(set)),
+                input_values_json: JSON.stringify(ODS_STATE.testValues || {}),
+            },
+        });
+        ODS_STATE.lastPreview = previewFromServerMessage(set, response.message || {});
+        ODS_STATE.validation = validateSet(set, ODS_STATE.lastPreview);
+    } catch (error) {
+        ODS_STATE.lastPreview = buildPreview(set, ODS_STATE.testValues);
+        ODS_STATE.validation = validateSet(set, ODS_STATE.lastPreview);
+        frappe.msgprint({
+            title: __("Test preview failed"),
+            message: extractDimensioningBuilderError(error) || __("Using formula-only preview. Item resolution may be incomplete."),
+            indicator: "orange",
+        });
+    } finally {
+        ODS_STATE.isPreviewing = false;
+        renderDimensioningBuilder(page);
+    }
+}
+
+function previewFromServerMessage(set, message) {
+    const local = buildPreview(set, ODS_STATE.testValues);
+    const generated = (message.items || []).map((row) => ({
+        rule_label: row.rule_label || row.item || "",
+        item: row.item || "",
+        item_name: row.item_name || row.description || "",
+        unit: row.stock_uom || row.unit || "",
+        qty: row.qty,
+        display_group: row.display_group || row.rule_group || "Ungrouped",
+        show_in_detail: !!row.show_in_detail,
+        missing_item: !!row.missing_item,
+        filtered_item: (row.item_selection_mode || "fixed") === "filtered",
+        resolution_warning: row.resolution_warning || "",
+        missing_price: false,
+    }));
+    return {
+        ...local,
+        generated,
+        matched_count: generated.length,
+        server_backed: true,
+        values: message.values || {},
+    };
+}
+
 async function saveActiveDimensioningSet(page) {
     if (ODS_STATE.isSaving) return;
     const set = getActiveSet();
@@ -1985,10 +2731,11 @@ function builderSetFromPayload(payload) {
                 article.rule_label || article.item,
                 article.item || "",
                 article.display_group || "",
-                article.quantity_mode === "question" ? article.quantity_question_key || "1" : String(article.fixed_qty || "1"),
+                article.quantity_mode === "formula" ? article.qty_formula || "" : article.quantity_mode === "question" ? article.quantity_question_key || "1" : String(article.fixed_qty || "1"),
                 "",
                 !!article.show_in_detail
             );
+            const quantity = article.quantity_mode ? { mode: article.quantity_mode } : parseQuantityFormula(article.qty_formula || "");
             Object.assign(rule, {
                 sequence: article.sequence || group.sequence || 10,
                 is_active: !!article.is_active,
@@ -1999,15 +2746,18 @@ function builderSetFromPayload(payload) {
                 compare_source: group.compare_source || "manual",
                 manual_value: group.manual_value || "",
                 compare_question_key: group.compare_question_key || "",
-                quantity_mode: article.quantity_mode === "question" ? "question" : "fixed",
+                condition_rules_json: group.condition_rules_json || article.condition_rules_json || "",
+                quantity_mode: ["fixed", "question", "formula"].includes(quantity.mode) ? quantity.mode : "fixed",
                 fixed_qty: String(article.fixed_qty || "1"),
                 quantity_question_key: article.quantity_question_key || "",
                 item_selection_mode: article.item_selection_mode || "fixed",
                 item_filters_json: article.item_filters_json || "",
                 item_filters: parseRuleItemFilters(article.item_filters_json),
-                condition_formula: article.condition_formula || "",
-                qty_formula: article.qty_formula || "",
-                uses_advanced_formula: !!((article.condition_formula || "").trim() || (article.qty_formula || "").trim()),
+                condition_formula: normalizeUserFormulaInput(article.condition_formula || ""),
+                condition_formula_builder_json: article.condition_formula_builder_json || "",
+                qty_formula: normalizeUserFormulaInput(article.qty_formula || ""),
+                qty_formula_builder_json: article.qty_formula_builder_json || "",
+                uses_advanced_formula: !!((article.condition_formula || "").trim() || (article.qty_formula || "").trim()) && group.condition_mode !== "formula" && quantity.mode !== "formula",
             });
             ensureStructuredRule(rule, set);
             set.item_rules.push(rule);
@@ -2042,6 +2792,7 @@ function payloadFromBuilderSet(set) {
             compare_source: group.condition_state.compare_source || "manual",
             manual_value: group.condition_state.manual_value || "",
             compare_question_key: group.condition_state.compare_question_key || "",
+            condition_rules_json: group.condition_state.condition_rules_json || "",
             articles: group.rules.map(({ rule, index }, articleIndex) => ({
                 sequence: rule.sequence || (groupIndex + 1) * 100 + articleIndex + 1,
                 is_active: rule.is_active ? 1 : 0,
@@ -2049,12 +2800,15 @@ function payloadFromBuilderSet(set) {
                 item_selection_mode: rule.item_selection_mode || "fixed",
                 item: rule.item || "",
                 item_filters_json: JSON.stringify(normalizeRuleItemFilters(rule)),
+                condition_rules_json: rule.condition_rules_json || group.condition_state.condition_rules_json || "",
                 display_group: rule.display_group || "",
-                quantity_mode: rule.quantity_mode === "question" ? "question" : "fixed",
+                quantity_mode: ["fixed", "question", "formula"].includes(rule.quantity_mode) ? rule.quantity_mode : "fixed",
                 fixed_qty: rule.fixed_qty || 1,
                 quantity_question_key: rule.quantity_question_key || "",
-                condition_formula: rule.uses_advanced_formula ? compileStructuredCondition(rule, set) : "",
-                qty_formula: rule.uses_advanced_formula ? compileQuantityFormula(rule) : "",
+                condition_formula: rule.uses_advanced_formula || rule.condition_mode === "formula" ? compileStructuredCondition(rule, set) : "",
+                condition_formula_builder_json: rule.condition_formula_builder_json || "",
+                qty_formula: rule.uses_advanced_formula || rule.quantity_mode === "formula" ? compileQuantityFormula(rule, set) : "",
+                qty_formula_builder_json: rule.qty_formula_builder_json || "",
                 show_in_detail: rule.show_in_detail ? 1 : 0,
             })),
         })),
@@ -2080,6 +2834,7 @@ function updateConfigValue(el) {
     if (!target) return;
     if (el.type === "checkbox") target[field] = el.checked;
     else if (field === "sequence") target[field] = Number(el.value) || 0;
+    else if (kind === "rule" && ["condition_formula", "qty_formula"].includes(field)) target[field] = normalizeUserFormulaInput(el.value);
     else target[field] = el.value;
     if (kind === "field" && field === "label" && isGeneratedDimensioningKey(target.field_key)) {
         target.field_key = uniqueDimensioningKey(set, target.label || "question", index);
@@ -2148,7 +2903,7 @@ function buildPreview(set, rawValues) {
                 qty,
                 display_group: rule.display_group || itemInfo.item_group || "Ungrouped",
                 show_in_detail: !!rule.show_in_detail,
-                missing_item: !isFilteredItem && !!rule.item && (!itemInfo.item || itemInfo.missing),
+                missing_item: false,
                 filtered_item: isFilteredItem,
                 missing_price: !!itemInfo.missing_price,
             });
@@ -2176,16 +2931,60 @@ function validateSet(set, preview) {
         } else if (!rule.item) {
             issues.push({ level: "error", title: "Article rule needs an item", message: `${rule.rule_label || "Rule"} needs an item code.` });
         }
+        if ((rule.condition_mode || "always") === "formula" && !String(rule.condition_formula || "").trim()) {
+            issues.push({ level: "error", title: "Condition formula required", message: `${rule.rule_label || "Rule"} needs a condition formula.` });
+        }
+        if ((rule.condition_mode || "always") === "based") {
+            issues.push(...validateStructuredConditionRows(rule, set));
+        }
+        if ((rule.quantity_mode || "fixed") === "formula" && !String(rule.qty_formula || "").trim()) {
+            issues.push({ level: "error", title: "Quantity formula required", message: `${rule.rule_label || rule.item || "Rule"} needs a quantity formula.` });
+        }
         if (!rule.qty_formula) issues.push({ level: "error", title: "Article rule needs a quantity", message: `${rule.rule_label || rule.item || "Rule"} needs a quantity value or formula.` });
     }
     for (const error of preview.errors || []) {
         issues.push({ level: "error", title: `Formula needs review: ${error.source}`, message: error.message });
     }
     for (const row of preview.generated || []) {
-        if (row.missing_item) issues.push({ level: "warning", title: "Item not found", message: `${row.item || row.rule_label} was not found in the item catalog.` });
-        if (row.filtered_item) issues.push({ level: "warning", title: "Filtered item resolves on server", message: `${row.rule_label || row.item} will resolve against the live Item catalog when generated.` });
-        if (row.missing_price) issues.push({ level: "warning", title: "Price warning", message: `${row.item} generated but has a sample missing price warning.` });
+        if (preview.server_backed && row.missing_item) issues.push({ level: "warning", title: "Item not found", message: row.resolution_warning || `${row.item || row.rule_label} was not found in the Items list.` });
+        if (preview.server_backed && row.filtered_item && row.resolution_warning) issues.push({ level: "warning", title: "Filtered item needs review", message: row.resolution_warning });
+        if (row.missing_price) issues.push({ level: "warning", title: "Price warning", message: `${row.item} generated but has a missing price warning.` });
     }
+    return issues;
+}
+
+function validateStructuredConditionRows(rule, set) {
+    const issues = [];
+    const builder = normalizeStructuredConditionBuilder(rule, set);
+    (builder.rows || []).forEach((row, index) => {
+        const label = `${rule.rule_label || "Rule"}, condition ${index + 1}`;
+        if (index && !ODS_FORMULA_JOINS.includes(row.join || "and")) {
+            issues.push({ level: "error", title: "Condition join needs review", message: `${label} must use AND or OR.` });
+        }
+        if (!getContextField(set, row.parameter)) {
+            issues.push({ level: "error", title: "Condition parameter missing", message: `${label} references an unknown parameter.` });
+        }
+        if (row.value_source === "parameter" && !getContextField(set, row.value_parameter)) {
+            issues.push({ level: "error", title: "Condition comparison missing", message: `${label} compares to an unknown parameter.` });
+        }
+        if (row.value_source === "integer" && !/^-?\d+$/.test(String(row.value || "").trim())) {
+            issues.push({ level: "error", title: "Integer condition value required", message: `${label} needs a whole-number value.` });
+        }
+        if (row.value_source === "decimal" && !/^-?\d+(\.\d+)?$/.test(String(row.value || "").trim())) {
+            issues.push({ level: "error", title: "Decimal condition value required", message: `${label} needs a decimal or whole-number value.` });
+        }
+        if (row.operator === "contains" && !["text", "parameter"].includes(row.value_source)) {
+            issues.push({ level: "error", title: "Contains needs text", message: `${label} should compare against text or another parameter.` });
+        }
+        if (!["==", "!=", "contains"].includes(row.operator || "==")) {
+            const leftType = getContextField(set, row.parameter)?.field_type || "Data";
+            const rightType = row.value_source === "parameter" ? getContextField(set, row.value_parameter)?.field_type || "Data" : "";
+            const hasNumericValue = ["integer", "decimal"].includes(row.value_source) || [leftType, rightType].some((type) => ["Int", "Float"].includes(type));
+            if (!hasNumericValue) {
+                issues.push({ level: "error", title: "Numeric condition required", message: `${label} uses ${row.operator}, which requires numeric values.` });
+            }
+        }
+    });
     return issues;
 }
 
@@ -2224,6 +3023,16 @@ function normalizeBuilderFormula(expression) {
         .replace(/\bnot\b/gi, "!")
         .replace(/\btrue\b/gi, "true")
         .replace(/\bfalse\b/gi, "false");
+}
+
+function normalizeUserFormulaInput(expression) {
+    return String(expression || "")
+        .trim()
+        .replace(/×/g, "*")
+        .replace(/\s+[xX]\s+/g, " * ")
+        .replace(/(\d),(\d)/g, "$1.$2")
+        .replace(/(\d+(?:\.\d+)?)\s*(ml|m|cm)\b/gi, "$1")
+        .replace(/\s+/g, " ");
 }
 
 function getCachedItemInfo(itemCode) {
@@ -2396,6 +3205,7 @@ function injectDimensioningBuilderStyles() {
         .ods-guidance-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
         .ods-guidance-grid > div { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 14px; padding: 14px; }
         .ods-helper-strip { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 14px; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; padding: 10px; }
+        .ods-helper-strip.wide { grid-column: 1 / -1; margin-bottom: 0; }
         .ods-helper-label { align-items: center; color: #64748b; display: inline-flex; font-size: 12px; font-weight: 750; margin-right: 2px; }
         .ods-token { background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 999px; color: #1d4ed8; font-family: ui-monospace, monospace; font-size: 12px; padding: 4px 8px; }
         .ods-advanced-inline { border-top: 1px solid #e4e8f0; margin-top: 14px; padding-top: 12px; }
@@ -2439,16 +3249,17 @@ function injectDimensioningBuilderStyles() {
         .ods-picker-chip { background: #fff; border: 1px solid #e2e8f0; border-radius: 9px; color: #334155; min-height: 34px; max-width: 210px; padding: 5px 8px; text-align: left; transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s cubic-bezier(.16, 1, .3, 1); }
         .ods-picker-chip:hover { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; transform: translateY(-1px); }
         .ods-picker-chip strong, .ods-picker-chip small { display: block; } .ods-picker-chip small { color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ods-article-row { align-items: start; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; display: grid; gap: 8px; grid-template-columns: minmax(260px, 1.3fr) minmax(190px, .8fr) auto 40px; padding: 8px; transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }
+        .ods-article-row { align-items: stretch; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; display: grid; gap: 8px; grid-template-columns: 1fr; padding: 9px; transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }
         .ods-article-row:hover { background: #fbfdff; border-color: #bae6fd; box-shadow: 0 8px 18px -18px rgba(15,23,42,.42); }
         .ods-article-row.muted { opacity: .68; }
-        .ods-article-row-main { min-width: 0; }
-        .ods-article-row-title { align-items: end; display: grid; gap: 7px; grid-template-columns: 24px minmax(94px, 116px) minmax(132px, 180px) minmax(0, 1fr); }
-        .ods-article-row-index { align-items: center; align-self: center; background: #e0f2fe; border-radius: 999px; color: #0369a1; display: inline-flex; font-size: 11px; font-weight: 900; height: 24px; justify-content: center; width: 24px; }
+        .ods-article-row-top { align-items: end; display: grid; gap: 8px; grid-template-columns: 28px minmax(116px, 140px) minmax(360px, 1.6fr) minmax(180px, .8fr) 34px 34px; min-width: 0; }
+        .ods-article-row-bottom { align-items: start; border-top: 1px solid #f1f5f9; display: grid; gap: 8px; grid-template-columns: minmax(360px, 1fr) auto; padding-top: 8px; }
+        .ods-article-item-slot { min-width: 0; }
+        .ods-article-row-index { align-items: center; align-self: center; background: #e0f2fe; border-radius: 999px; color: #0369a1; display: inline-flex; font-size: 11px; font-weight: 900; height: 26px; justify-content: center; width: 26px; }
         .ods-article-name { align-self: center; display: grid; gap: 1px; min-width: 0; }
         .ods-article-name strong { color: #0f172a; font-size: 12px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ods-article-name small { color: #94a3b8; font-size: 10px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ods-filter-summary { align-self: end; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; display: grid; gap: 2px; min-height: 36px; min-width: 0; padding: 6px 9px; }
+        .ods-filter-summary { align-self: end; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; display: grid; gap: 2px; min-height: 36px; min-width: 0; padding: 6px 9px; width: 100%; }
         .ods-filter-summary span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
         .ods-filter-summary strong { color: #0f172a; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ods-item-filter-editor.wide { grid-column: 1 / -1; }
@@ -2459,23 +3270,40 @@ function injectDimensioningBuilderStyles() {
         .ods-filter-editor-head span { color: #64748b; font-size: 11px; margin-top: 2px; }
         .ods-item-filter-list { display: grid; gap: 6px; }
         .ods-item-filter-row { align-items: end; background: #fff; border: 1px solid #e8ebef; border-radius: 12px; display: grid; gap: 7px; grid-template-columns: minmax(96px, .8fr) minmax(128px, 1fr) 86px 100px minmax(136px, 1fr) 34px; padding: 7px; }
+        .ods-formula-builder { background: #f8fafc; border: 1px solid #e8ebef; border-radius: 14px; display: grid; gap: 8px; padding: 9px; }
+        .ods-formula-builder.wide, .ods-qty-formula-builder { grid-column: 1 / -1; }
+        .ods-formula-builder-list { display: grid; gap: 6px; }
+        .ods-formula-builder-options { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
+        .ods-formula-builder-row { align-items: end; background: #fff; border: 1px solid #e8ebef; border-radius: 12px; display: grid; gap: 7px; padding: 7px; }
+        .ods-formula-builder-row.quantity { grid-template-columns: 72px minmax(140px, 1fr) 112px 78px 110px minmax(120px, 1fr) 34px; }
+        .ods-formula-builder-row.condition { grid-template-columns: 72px minmax(140px, 1fr) 90px 110px minmax(120px, 1fr) 34px; }
+        .ods-formula-join-field strong { align-items: center; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; color: #3730a3; display: flex; font-size: 10px; height: 36px; justify-content: center; }
+        .ods-final-multiplier-field { max-width: 260px; }
+        .ods-result-integer-check, .ods-row-integer-check { background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1d4ed8; min-height: 36px; padding: 0 10px; }
+        .ods-formula-builder-warning { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #92400e; font-size: 11px; font-weight: 700; padding: 7px 9px; }
         .ods-compact-field { display: grid; gap: 3px; min-width: 0; }
         .ods-compact-field span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
-        .ods-compact-field input, .ods-compact-field select { background: #f8fafc; border: 1px solid #dbe3ef; border-radius: 9px; color: #0f172a; font-size: 11px; font-weight: 750; height: 31px; outline: none; padding: 0 8px; width: 100%; }
-        .ods-compact-field input:focus, .ods-compact-field select:focus { background: #fff; border-color: #00b0c8; box-shadow: 0 0 0 3px rgba(0,176,200,.1); }
-        .ods-item-search-row { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) auto; }
+        .ods-compact-field input, .ods-compact-field select, .ods-compact-field textarea { background: #f8fafc; border: 1px solid #dbe3ef; border-radius: 9px; color: #0f172a; font-size: 11px; font-weight: 750; min-height: 31px; outline: none; padding: 0 8px; width: 100%; }
+        .ods-compact-field input, .ods-compact-field select { height: 31px; }
+        .ods-compact-field textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.35; min-height: 52px; padding: 7px 8px; resize: vertical; }
+        .ods-qty-formula-field { grid-column: span 1; }
+        .ods-compact-field input:focus, .ods-compact-field select:focus, .ods-compact-field textarea:focus { background: #fff; border-color: #00b0c8; box-shadow: 0 0 0 3px rgba(0,176,200,.1); }
+        .ods-item-code-field { min-width: 0; width: 100%; }
+        .ods-item-search-row { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(280px, 1fr) auto; width: 100%; }
         .ods-item-search-row .btn { white-space: nowrap; }
         .ods-item-link-host, .ods-item-link-host .awesomplete { overflow: visible; position: relative; }
         .ods-item-link-host .awesomplete > ul { bottom: auto !important; max-height: 320px; min-width: 280px; overflow-y: auto; top: calc(100% + 4px) !important; z-index: 10050 !important; }
         .ods-item-link-host.ods-awesomplete-above .awesomplete > ul { bottom: calc(100% + 4px) !important; top: auto !important; }
-        .ods-article-row-qty { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px; display: grid; gap: 6px; grid-template-columns: minmax(88px, .72fr) minmax(90px, 1fr); padding: 7px; }
+        .ods-article-row-qty { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px; display: grid; gap: 6px; grid-template-columns: minmax(118px, .35fr) minmax(260px, 1fr); padding: 7px; }
         .ods-formula-summary { grid-template-columns: 1fr; }
         .ods-formula-summary span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
         .ods-formula-summary code { color: #0f172a; display: block; font-size: 10px; line-height: 1.35; max-height: 46px; overflow: auto; white-space: pre-wrap; }
-        .ods-article-row-flags { align-content: start; display: grid; gap: 5px; min-width: 84px; padding-top: 1px; }
+        .ods-article-row-flags { align-content: start; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; min-width: 150px; padding-top: 4px; }
         .ods-compact-check { align-items: center; color: #475569; display: flex; font-size: 11px; font-weight: 760; gap: 5px; min-height: 24px; white-space: nowrap; }
         .ods-compact-check input { margin: 0; }
         .ods-article-remove { align-self: start; height: 34px; width: 34px; }
+        .ods-article-duplicate { align-self: start; height: 34px; width: 34px; }
+        .ods-rule-group-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
         .ods-article-row-more { border-top: 1px solid #eef2f7; grid-column: 1 / -1; margin-top: 1px; padding-top: 6px; }
         .ods-article-row-more summary { color: #64748b; cursor: pointer; font-size: 10px; font-weight: 850; list-style-position: inside; }
         .ods-article-row-more .ods-form-grid { margin-top: 7px; }
@@ -2597,9 +3425,9 @@ function injectDimensioningBuilderStyles() {
         .ods-badge.danger { background: #fff1f2; border-color: #ffe4e6; color: #be123c; }
         .ods-form-grid { gap: 10px; }
         .ods-field span, .ods-check-field span, .ods-compact-field span, .ods-hierarchy-label { color: #9099a6; font-size: 9px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-        .ods-field input, .ods-field select, .ods-field textarea, .ods-mini-card select, .ods-assistant select, .ods-compact-field input, .ods-compact-field select, .ods-item-link-host input { min-height: 36px; border-color: #e2e8f0; border-radius: 12px; background: #f8fafc; color: #334155; font-size: 12px; font-weight: 650; }
+        .ods-field input, .ods-field select, .ods-field textarea, .ods-mini-card select, .ods-assistant select, .ods-compact-field input, .ods-compact-field select, .ods-compact-field textarea, .ods-item-link-host input { min-height: 36px; border-color: #e2e8f0; border-radius: 12px; background: #f8fafc; color: #334155; font-size: 12px; font-weight: 650; }
         .ods-compact-field input, .ods-compact-field select { height: 34px; }
-        .ods-field input:focus, .ods-field select:focus, .ods-field textarea:focus, .ods-compact-field input:focus, .ods-compact-field select:focus, .ods-item-link-host input:focus { background: #fff; border-color: #00b0c8; box-shadow: 0 0 0 4px rgba(0,176,200,.1); }
+        .ods-field input:focus, .ods-field select:focus, .ods-field textarea:focus, .ods-compact-field input:focus, .ods-compact-field select:focus, .ods-compact-field textarea:focus, .ods-item-link-host input:focus { background: #fff; border-color: #00b0c8; box-shadow: 0 0 0 4px rgba(0,176,200,.1); }
         .ods-sales-preview-card { border-width: 1px; background: #fff; }
         .ods-sales-preview-card::before { content: ""; display: block; height: 4px; margin: -14px -14px 12px; background: linear-gradient(90deg, #00b0c8, #6366f1); border-radius: 18px 18px 0 0; }
         .ods-sales-question { border-width: 1px; }
@@ -2608,11 +3436,10 @@ function injectDimensioningBuilderStyles() {
         .ods-group-articles-head strong, .ods-preview-title strong { color: #11151f; }
         .ods-picker-chip { border-radius: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
         .ods-picker-chip:hover, .ods-picker-chip:focus { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; outline: 3px solid rgba(99,102,241,.12); }
-        .ods-article-row { grid-template-columns: minmax(420px, 1.25fr) minmax(210px, .8fr) auto 40px; }
         .ods-generated-row { border-color: #e8ebef; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
         .ods-bottom-bar { border-color: #e8ebef; border-radius: 18px; box-shadow: 0 18px 42px rgba(15,23,42,.12); backdrop-filter: blur(12px); }
         @media (max-width: 1180px) { .ods-nav, .ods-live-panel { position: static; } .ods-nav-title { display: none; } .ods-nav-item { flex: 0 0 150px; white-space: nowrap; } .ods-hero { grid-template-columns: 1fr; } .ods-hero-stats { min-width: 0; } }
-        @media (max-width: 760px) { .ods-hero, .ods-workspace, .ods-nav { padding-left: 14px; padding-right: 14px; } .ods-hero-stats, .ods-start-grid, .ods-question-layout, .ods-rule-condition-card, .ods-quantity-controls, .ods-form-grid.two, .ods-form-grid.three, .ods-guidance-grid, .ods-rule-layout, .ods-test-summary, .ods-preview-layout, .ods-article-row, .ods-article-row-title, .ods-article-row-qty, .ods-item-filter-row { grid-template-columns: 1fr; } .ods-sales-preview-card { position: static; } .ods-rule-group-head { align-items: start; grid-template-columns: 34px 1fr; } .ods-rule-group-head .ods-article-status, .ods-rule-toggle-indicator { grid-column: 1 / -1; justify-content: flex-start; } .ods-article-head, .ods-article-card .ods-article-head { align-items: start; grid-template-columns: 1fr; } .ods-article-row-flags { display: flex; flex-wrap: wrap; } .ods-article-status, .ods-article-head .ods-icon-button { grid-column: 1 / -1; justify-content: flex-start; margin-left: 0; } .ods-generated-row { grid-template-columns: 1fr; } .ods-bottom-bar { align-items: stretch; flex-direction: column; gap: 10px; margin-left: 14px; margin-right: 14px; max-width: calc(100% - 28px); } .ods-bottom-actions { display: grid; grid-template-columns: 1fr; } }
+        @media (max-width: 760px) { .ods-hero, .ods-workspace, .ods-nav { padding-left: 14px; padding-right: 14px; } .ods-hero-stats, .ods-start-grid, .ods-question-layout, .ods-rule-condition-card, .ods-quantity-controls, .ods-form-grid.two, .ods-form-grid.three, .ods-guidance-grid, .ods-rule-layout, .ods-test-summary, .ods-preview-layout, .ods-article-row, .ods-article-row-top, .ods-article-row-bottom, .ods-article-row-qty, .ods-item-filter-row, .ods-item-search-row, .ods-formula-builder-row.quantity, .ods-formula-builder-row.condition { grid-template-columns: 1fr; } .ods-sales-preview-card { position: static; } .ods-rule-group-head { align-items: start; grid-template-columns: 34px 1fr; } .ods-rule-group-head .ods-article-status, .ods-rule-toggle-indicator { grid-column: 1 / -1; justify-content: flex-start; } .ods-article-head, .ods-article-card .ods-article-head { align-items: start; grid-template-columns: 1fr; } .ods-article-row-index { justify-self: start; } .ods-article-row-flags { justify-content: flex-start; } .ods-article-remove { justify-self: start; margin-left: 0; } .ods-article-status, .ods-article-head .ods-icon-button { grid-column: 1 / -1; justify-content: flex-start; margin-left: 0; } .ods-generated-row { grid-template-columns: 1fr; } .ods-bottom-bar { align-items: stretch; flex-direction: column; gap: 10px; margin-left: 14px; margin-right: 14px; max-width: calc(100% - 28px); } .ods-bottom-actions { display: grid; grid-template-columns: 1fr; } }
     `;
     document.head.appendChild(style);
 }

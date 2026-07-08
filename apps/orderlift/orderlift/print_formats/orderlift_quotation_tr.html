@@ -260,13 +260,13 @@ table.ol-items td {
 
 /* --- Totals --- */
 .ol-totals-container {
-  display: flex;
-  justify-content: flex-end;
+  text-align: right;
   margin-bottom: 15px;
 }
 
 .ol-totals-table {
-  width: 250px;
+  display: inline-table;
+  width: 280px;
   border-collapse: collapse;
 }
 
@@ -274,6 +274,11 @@ table.ol-items td {
   padding: 4px 8px;
   font-size: 10px;
   color: #4b5563;
+}
+
+.ol-totals-value-inner {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .ol-totals-value {
@@ -512,55 +517,55 @@ table.ol-items td {
     {%- if ol_simple_ttc %}
     <tr class="ol-totals-grand-row">
       <td class="tr"><b>{{ _("Total") }}</b> ({{ doc.currency }}) :</td>
-      <td class="ol-totals-value"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></div></td>
     </tr>
     {%- elif ol_print_ttc %}
     <tr class="ol-totals-grand-row">
       <td class="tr"><b>{{ _("Grand Total Incl. Tax") }}</b> ({{ doc.currency }}) :</td>
-      <td class="ol-totals-value"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner"><b>{{ format_currency_fr(ol_ttc.total_ttc, doc.currency) }}</b></div></td>
     </tr>
     {%- for tax in doc.taxes %}
     <tr>
       <td class="tr">{{ tax.description }} :</td>
-      <td class="ol-totals-value">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</div></td>
     </tr>
     {%- endfor %}
     {%- if not doc.taxes and ol_ttc.total_tax %}
     <tr>
       <td class="tr">{{ _("Tax") }} :</td>
-      <td class="ol-totals-value">{{ format_currency_fr(ol_ttc.total_tax, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">{{ format_currency_fr(ol_ttc.total_tax, doc.currency) }}</div></td>
     </tr>
     {%- endif %}
     {%- if doc.discount_amount %}
     <tr>
       <td class="tr">{{ _("Discount") }} :</td>
-      <td class="ol-totals-value">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</div></td>
     </tr>
     {%- endif %}
     <tr>
       <td class="tr">{{ _("Total Excl. Tax") }} :</td>
-      <td class="ol-totals-value">{{ format_currency_fr(ol_ttc.total_ht, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">{{ format_currency_fr(ol_ttc.total_ht, doc.currency) }}</div></td>
     </tr>
     {%- else %}
     <tr>
       <td class="tr">{{ _("Total Excl. Tax") }} :</td>
-      <td class="ol-totals-value">{{ format_currency_fr(doc.total, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">{{ format_currency_fr(doc.total, doc.currency) }}</div></td>
     </tr>
     {%- for tax in doc.taxes %}
     <tr>
       <td class="tr">{{ tax.description }} :</td>
-      <td class="ol-totals-value">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">{{ format_currency_fr(tax.tax_amount, doc.currency) }}</div></td>
     </tr>
     {%- endfor %}
     {%- if doc.discount_amount %}
     <tr>
       <td class="tr">{{ _("Discount") }} :</td>
-      <td class="ol-totals-value">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner">- {{ format_currency_fr(doc.discount_amount, doc.currency) }}</div></td>
     </tr>
     {%- endif %}
     <tr class="ol-totals-grand-row">
       <td class="tr"><b>{{ _("Grand Total Incl. Tax") }}</b> ({{ doc.currency }}) :</td>
-      <td class="ol-totals-value"><b>{{ format_currency_fr(doc.grand_total, doc.currency) }}</b></td>
+      <td class="ol-totals-value"><div class="ol-totals-value-inner"><b>{{ format_currency_fr(doc.grand_total, doc.currency) }}</b></div></td>
     </tr>
     {%- endif %}
   </table>

@@ -19,7 +19,7 @@ from orderlift.menu_access import (
     user_can_access_all_business_types,
     user_can_access_all_companies,
 )
-from orderlift.menu_registry import BUSINESS_ROLES
+from orderlift.menu_registry import BUSINESS_ROLES, iter_menu_items
 from orderlift.company_access import ORDERLIFT_MANAGED_SHARE_DISABLED_DOCTYPES
 from orderlift.role_capabilities import (
     ROLE_CAPABILITY_FIELD,
@@ -37,6 +37,24 @@ from orderlift.warehouse_access import (
 
 SUPERADMIN_VISIBLE_ROLES = ["Administrator", "System Manager", "Developer"]
 BUSINESS_ROLE_SET = set(BUSINESS_ROLES)
+BASE_PERMISSION_ROLE = "All"
+BASE_PERMISSION_LABEL = _("Base Permissions (All Users)")
+GENERAL_PERMISSION_DOCTYPES = {
+    "Address",
+    "Communication",
+    "Contact",
+    "Country",
+    "Event",
+    "File",
+    "Gender",
+    "Language",
+    "Notification Log",
+    "Payment Terms Template",
+    "Salutation",
+    "Tag",
+    "Tag Link",
+    "ToDo",
+}
 
 
 PERMISSION_FIELDS = (
@@ -63,12 +81,27 @@ ADMIN_ROLES = {"Administrator", "System Manager", "Developer"}
 HIGH_ACCESS_ROLES = {"System Manager", "Administrator", "Developer", "Orderlift Admin"}
 PROTECTED_DOCTYPES = {"User", "Role", "DocType", "Custom DocPerm", "DocPerm", "Page", "Report", "Workspace"}
 BACKEND_FINANCE_PERMISSION_DOCTYPES = {"Account", "Cost Center", "Accounting Dimension", "Accounting Dimension Detail"}
+SUPERADMIN_ONLY_PERMISSION_DOCTYPES = PROTECTED_DOCTYPES | BACKEND_FINANCE_PERMISSION_DOCTYPES | {
+    "Assignment Rule",
+    "Client Script",
+    "Custom Field",
+    "Customize Form",
+    "Module Def",
+    "Property Setter",
+    "Role Profile",
+    "Server Script",
+    "User Permission",
+    "Workflow",
+    "Workflow State",
+}
+SENSITIVE_PAGE_ACCESS_TARGETS = {"access-command-center", "menu-editor"}
 LEGACY_ROLE_KEYWORDS = ("legacy", "old", "deprecated")
 NON_BUSINESS_CUSTOM_ROLES = {"Employee Self Service"}
 CRITICAL_USERS = {"Administrator"}
 AUDIT_DOCTYPES = ["User", "Role", "Custom DocPerm", "Page", "Report", "User Permission", "Orderlift Menu Access Rule"]
 MATRIX_DOCTYPE_LIMIT = 10000
 ACCESS_CENTER_USER_PERMISSION_DOCTYPES = {"Company", "CRM Business Type", "Warehouse"}
+MATRIX_SINGLE_DOCTYPES = {"Stock Settings"}
 
 
 MATRIX_DOCTYPE_GROUPS = (
@@ -121,7 +154,10 @@ MATRIX_DOCTYPE_GROUPS = (
     {
         "key": "stock_warehouse",
         "label": "Stock & Warehouse",
-        "members": ("Warehouse", "Bin", "Stock Entry", "Stock Ledger Entry", "Stock Reconciliation", "Pick List", "Delivery Note", "Quality Inspection"),
+        "members": (
+            "Warehouse", "Bin", "Stock Entry", "Stock Ledger Entry", "Stock Reconciliation", "Pick List",
+            "Delivery Note", "Purchase Receipt", "Quality Inspection", "Quality Inspection Template", "Stock Settings",
+        ),
         "prefixes": ("Warehouse", "Bin", "Stock", "Pick List", "Delivery Note", "Quality Inspection", "Serial No", "Batch"),
     },
     {
@@ -180,7 +216,11 @@ def get_access_command_center_data(
     _require_access_manager()
     users = _get_users(search)
     roles = _get_roles(search)
-    selected_role = selected_role if selected_role and selected_role in _visible_role_names() and frappe.db.exists("Role", selected_role) else _default_role(roles)
+    selected_role = (
+        selected_role
+        if selected_role and selected_role in _visible_permission_role_names() and frappe.db.exists("Role", selected_role)
+        else _default_role(roles)
+    )
     return {
         "summary": _get_summary(),
         "users": users,
@@ -584,14 +624,14 @@ def get_user_detail(user_name: str) -> dict:
 @frappe.whitelist()
 def save_custom_docperm(role: str, doctype_name: str, values: str | dict, audit_note: str | None = None) -> dict:
     _require_access_manager()
-    _assert_role_scope([role])
+    _assert_permission_role_scope(role)
     if not frappe.db.exists("Role", role):
         frappe.throw(_("Role {0} was not found.").format(role))
     if not frappe.db.exists("DocType", doctype_name):
         frappe.throw(_("DocType {0} was not found.").format(doctype_name))
 
     data = _loads(values)
-    flags = _coerce_permission_flags(data)
+    flags = _coerce_permission_flags(data, doctype_name)
     permlevel = cint(data.get("permlevel", 0))
     docperm = _save_custom_docperm_record(role, doctype_name, flags, permlevel)
     _add_audit_note("Custom DocPerm", docperm.name, audit_note, _("Updated permission override."))
@@ -603,7 +643,7 @@ def save_custom_docperm(role: str, doctype_name: str, values: str | dict, audit_
 @frappe.whitelist()
 def save_custom_docperms(role: str, changes: str | list, audit_note: str | None = None) -> dict:
     _require_access_manager()
-    _assert_role_scope([role])
+    _assert_permission_role_scope(role)
     if not frappe.db.exists("Role", role):
         frappe.throw(_("Role {0} was not found.").format(role))
 
@@ -659,7 +699,7 @@ def _save_custom_docperm_record(role: str, doctype_name: str, flags: dict, perml
 @frappe.whitelist()
 def delete_custom_docperm(role: str, doctype_name: str, permlevel: int = 0, audit_note: str | None = None) -> dict:
     _require_access_manager()
-    _assert_role_scope([role])
+    _assert_permission_role_scope(role)
     _validate_permission_edit(role, doctype_name, {field: 1 for field in PERMISSION_FIELDS})
     doc_name = frappe.db.exists("Custom DocPerm", {"parent": doctype_name, "role": role, "permlevel": cint(permlevel)})
     if doc_name:
@@ -675,6 +715,7 @@ def save_page_access(page_name: str, roles: str | list, audit_note: str | None =
     _require_access_manager()
     if not frappe.db.exists("Page", page_name):
         frappe.throw(_("Page {0} was not found.").format(page_name))
+    _assert_page_access_target(page_name)
     _save_child_roles("Page", page_name, roles)
     _add_audit_note("Page", page_name, audit_note, _("Updated page access roles."))
     frappe.db.commit()
@@ -686,6 +727,7 @@ def save_report_access(report_name: str, roles: str | list, audit_note: str | No
     _require_access_manager()
     if not frappe.db.exists("Report", report_name):
         frappe.throw(_("Report {0} was not found.").format(report_name))
+    _assert_report_access_target(report_name)
     _save_child_roles("Report", report_name, roles)
     _add_audit_note("Report", report_name, audit_note, _("Updated report access roles."))
     frappe.db.commit()
@@ -706,6 +748,8 @@ def save_report_role_access(report_names: str | list, role: str, enabled: int = 
     missing = [name for name in report_names if not frappe.db.exists("Report", name)]
     if missing:
         frappe.throw(_("Unknown reports: {0}").format(", ".join(missing[:10])))
+    for report_name in report_names:
+        _assert_report_access_target(report_name)
 
     updated = []
     for report_name in report_names:
@@ -875,15 +919,15 @@ def _get_menu_access() -> list[dict]:
 def _get_permission_matrix(role: str | None, doctype_search: str | None = None) -> dict:
     if not role:
         return {"role": "", "rows": []}
-    _assert_role_scope([role])
-    filters = {"issingle": 0}
+    _assert_permission_role_scope(role)
+    filters = {}
     clean_search = (doctype_search or "").strip()
     if clean_search:
         filters["name"] = ["like", f"%{clean_search}%"]
     doctypes = frappe.get_all(
         "DocType",
         filters=filters,
-        fields=["name", "module", "custom", "istable"],
+        fields=["name", "module", "custom", "istable", "issingle"],
         order_by="module asc, name asc",
         limit_page_length=MATRIX_DOCTYPE_LIMIT,
     )
@@ -891,12 +935,13 @@ def _get_permission_matrix(role: str | None, doctype_search: str | None = None) 
         doctypes,
         _permission_doctype_names_for_role(role, clean_search),
     )
+    doctypes = [doctype for doctype in doctypes if not cint(doctype.get("issingle")) or doctype.name in MATRIX_SINGLE_DOCTYPES]
     if missing_permission_doctypes:
         doctypes.extend(
             frappe.get_all(
                 "DocType",
-                filters={"issingle": 0, "name": ["in", missing_permission_doctypes]},
-                fields=["name", "module", "custom", "istable"],
+                filters={"name": ["in", missing_permission_doctypes]},
+                fields=["name", "module", "custom", "istable", "issingle"],
                 order_by="module asc, name asc",
                 limit_page_length=0,
             )
@@ -909,10 +954,21 @@ def _get_permission_matrix(role: str | None, doctype_search: str | None = None) 
         group = _permission_matrix_group(doctype.name, doctype.get("module"), cint(doctype.get("istable")), child_parent_map)
         standard_rows = _perm_rows("DocPerm", doctype.name, role)
         custom_rows = _perm_rows("Custom DocPerm", doctype.name, role)
-        for permlevel in _permission_levels_for_matrix(standard_rows, custom_rows):
+        base_standard_rows = {} if role == BASE_PERMISSION_ROLE else _perm_rows("DocPerm", doctype.name, BASE_PERMISSION_ROLE)
+        base_custom_rows = {} if role == BASE_PERMISSION_ROLE else _perm_rows("Custom DocPerm", doctype.name, BASE_PERMISSION_ROLE)
+        for permlevel in _permission_levels_for_matrix(standard_rows, custom_rows, base_standard_rows, base_custom_rows):
             standard = standard_rows.get(permlevel, {})
             custom = custom_rows.get(permlevel, {})
-            effective = custom or standard or {}
+            base_standard = base_standard_rows.get(permlevel, {})
+            base_custom = base_custom_rows.get(permlevel, {})
+            resolved = _resolve_permission_matrix_row(
+                doctype.name,
+                role,
+                standard,
+                custom,
+                base_standard,
+                base_custom,
+            )
             rows.append(
                 {
                     "row_key": f"{doctype.name}::{permlevel}",
@@ -922,12 +978,9 @@ def _get_permission_matrix(role: str | None, doctype_search: str | None = None) 
                     "is_child_table": cint(doctype.get("istable")),
                     "is_protected": doctype.name in PROTECTED_DOCTYPES,
                     "permlevel": permlevel,
-                    "source": "custom" if custom else ("standard" if standard else "none"),
-                    "standard": _permission_flag_payload(doctype.name, standard) if standard else {},
-                    "custom": _permission_flag_payload(doctype.name, custom) if custom else {},
-                    "effective": _permission_flag_payload(doctype.name, effective),
+                    **resolved,
                     "disabled_permission_fields": list(_disabled_permission_fields(doctype.name)),
-                    "risk": _permission_risk(doctype.name, role, effective),
+                    "risk": _permission_risk(doctype.name, role, resolved.get("effective") or {}),
                     **group,
                 }
             )
@@ -967,6 +1020,15 @@ def _matrix_child_parent_map(doctype_names: list[str]) -> dict[str, list[str]]:
 
 def _permission_matrix_group(doctype: str, module: str | None, is_child_table: int, child_parent_map: dict[str, list[str]]) -> dict:
     group_index = {group["key"]: index for index, group in enumerate(MATRIX_DOCTYPE_GROUPS)}
+    if doctype in GENERAL_PERMISSION_DOCTYPES:
+        return {
+            "group_key": "general_permissions",
+            "group_label": _("General Permissions"),
+            "group_order": -100,
+            "group_relation": "general",
+            "group_parent_doctype": "",
+        }
+
     direct_group = _doctype_group_by_member(doctype)
     parent_doctype = ""
     relation = "primary"
@@ -1032,7 +1094,10 @@ def _preferred_matrix_parent(parents: list[str]) -> str:
 
 def _permission_doctype_names_for_role(role: str, doctype_search: str | None = None) -> set[str]:
     names = set()
-    filters = {"role": role}
+    roles = [role]
+    if role != BASE_PERMISSION_ROLE:
+        roles.append(BASE_PERMISSION_ROLE)
+    filters = {"role": ["in", roles]}
     clean_search = (doctype_search or "").strip()
     if clean_search:
         filters["parent"] = ["like", f"%{clean_search}%"]
@@ -1051,7 +1116,7 @@ def _missing_permission_doctype_names(doctypes: list[dict], permission_doctype_n
 def _permission_matrix_sort_key(row: dict) -> tuple:
     effective = row.get("effective") or {}
     has_permission = any(cint(effective.get(field)) for field in PERMISSION_FIELDS)
-    source_order = {"custom": 0, "standard": 1, "none": 2}.get(row.get("source"), 3)
+    source_order = {"mixed": 0, "direct": 1, "base": 2, "none": 3}.get(row.get("source"), 4)
     risk_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(row.get("risk"), 4)
     return (
         0 if has_permission else 1,
@@ -1079,6 +1144,7 @@ def _get_page_access(search: str | None = None) -> list[dict]:
             "roles": role_map.get(row.name, []),
         }
         for row in rows
+        if _page_access_target_visible(row.name)
     ]
 
 
@@ -1110,6 +1176,7 @@ def _get_report_access(search: str | None = None) -> list[dict]:
             "roles": role_map.get(row.name, []),
         }
         for row in rows
+        if _report_access_target_visible(row.name, row.get("ref_doctype"))
     ]
 
 
@@ -1264,8 +1331,78 @@ def _perm_rows(doctype: str, parent: str, role: str) -> dict[int, dict]:
     return result
 
 
-def _permission_levels_for_matrix(standard_rows: dict[int, dict], custom_rows: dict[int, dict]) -> list[int]:
-    return sorted({0, *standard_rows.keys(), *custom_rows.keys()})
+def _permission_levels_for_matrix(*row_groups: dict[int, dict]) -> list[int]:
+    levels = {0}
+    for rows in row_groups:
+        levels.update((rows or {}).keys())
+    return sorted(levels)
+
+
+def _resolve_permission_matrix_row(
+    doctype_name: str,
+    role: str,
+    standard: dict | None,
+    custom: dict | None,
+    base_standard: dict | None = None,
+    base_custom: dict | None = None,
+) -> dict:
+    direct_source = custom or standard or {}
+    base_source = base_custom or base_standard or {}
+    direct = _permission_flag_payload(doctype_name, direct_source)
+    base = _permission_flag_payload(doctype_name, base_source)
+    effective = _merge_permission_payloads(base, direct)
+    direct_has_row = bool(custom or standard)
+    base_has_row = bool(base_custom or base_standard)
+    direct_active = _permission_payload_has_access(direct)
+    base_active = _permission_payload_has_access(base)
+    has_custom_override = bool(custom)
+
+    if role == BASE_PERMISSION_ROLE:
+        source = "base" if direct_has_row else "none"
+        source_label = BASE_PERMISSION_LABEL if direct_has_row else _("No Access")
+        source_role = BASE_PERMISSION_ROLE if direct_has_row else ""
+    elif direct_active and base_active:
+        source = "mixed"
+        source_label = _("Base + Role")
+        source_role = _("{0} + {1}").format(BASE_PERMISSION_LABEL, role)
+    elif direct_has_row:
+        source = "direct"
+        source_label = _("Role Override")
+        source_role = role
+    elif base_active:
+        source = "base"
+        source_label = BASE_PERMISSION_LABEL
+        source_role = BASE_PERMISSION_ROLE
+    else:
+        source = "none"
+        source_label = _("No Access")
+        source_role = ""
+
+    return {
+        "source": source,
+        "source_label": source_label,
+        "source_role": source_role,
+        "standard": _permission_flag_payload(doctype_name, standard) if standard else {},
+        "custom": _permission_flag_payload(doctype_name, custom) if custom else {},
+        "base_standard": _permission_flag_payload(doctype_name, base_standard) if base_standard else {},
+        "base_custom": _permission_flag_payload(doctype_name, base_custom) if base_custom else {},
+        "direct": direct,
+        "base": base,
+        "effective": effective,
+        "has_direct_permission": direct_has_row,
+        "has_base_permission": base_active,
+        "has_custom_override": has_custom_override,
+        "can_reset": has_custom_override,
+        "is_base_role": role == BASE_PERMISSION_ROLE,
+    }
+
+
+def _merge_permission_payloads(*payloads: dict) -> dict:
+    return {field: 1 if any(cint((payload or {}).get(field)) for payload in payloads) else 0 for field in PERMISSION_FIELDS}
+
+
+def _permission_payload_has_access(payload: dict | None) -> bool:
+    return any(cint((payload or {}).get(field)) for field in PERMISSION_FIELDS)
 
 
 def _child_role_map(parenttype: str, parents: list[str]) -> dict[str, list[str]]:
@@ -1348,7 +1485,11 @@ def _visible_role_names() -> list[str]:
     custom_business_roles = _custom_business_role_names()
     if _is_superadmin_session():
         return _dedupe([*BUSINESS_ROLES, *custom_business_roles, *SUPERADMIN_VISIBLE_ROLES])
-    return _dedupe([*BUSINESS_ROLES, *custom_business_roles])
+    return _dedupe(BUSINESS_ROLES)
+
+
+def _visible_permission_role_names() -> list[str]:
+    return _dedupe([BASE_PERMISSION_ROLE, *_visible_role_names()])
 
 
 def _custom_business_role_names() -> list[str]:
@@ -1376,6 +1517,8 @@ def _custom_business_role_names() -> list[str]:
 
 
 def _business_scope_role_set() -> set[str]:
+    if not _is_superadmin_session():
+        return BUSINESS_ROLE_SET
     return BUSINESS_ROLE_SET | set(_custom_business_role_names())
 
 
@@ -1393,10 +1536,17 @@ def _assert_role_scope(roles: list[str]) -> None:
     restricted = [
         role
         for role in roles
-        if role not in business_scope_roles and (role in ADMIN_ROLES or role in SUPERADMIN_VISIBLE_ROLES or _role_exists(role))
+        if role and role not in business_scope_roles
     ]
     if restricted:
         frappe.throw(_("Orderlift Admins can manage business roles only: {0}").format(", ".join(restricted)))
+
+
+def _assert_permission_role_scope(role: str | None) -> None:
+    role = _validate_role_name(role)
+    if role == BASE_PERMISSION_ROLE:
+        return
+    _assert_role_scope([role])
 
 
 def _merge_scoped_roles(current_roles: list[str], requested_roles: list[str]) -> list[str]:
@@ -1527,11 +1677,45 @@ def _require_access_manager() -> None:
 
 
 def _permission_doctype_visible(doctype_name: str, role: str | None = None) -> bool:
-    if doctype_name in PROTECTED_DOCTYPES:
+    if doctype_name in SUPERADMIN_ONLY_PERMISSION_DOCTYPES:
         return _is_superadmin_session() and role in ADMIN_ROLES
-    if doctype_name not in BACKEND_FINANCE_PERMISSION_DOCTYPES:
+    return True
+
+
+def _managed_menu_targets(link_type: str) -> set[str]:
+    return {
+        item.get("link_to")
+        for item in iter_menu_items(include_home=True)
+        if item.get("link_type") == link_type and item.get("link_to")
+    }
+
+
+def _page_access_target_visible(page_name: str) -> bool:
+    if _is_superadmin_session():
         return True
-    return _is_superadmin_session() and role in ADMIN_ROLES
+    page_name = (page_name or "").strip()
+    return page_name in _managed_menu_targets("Page") and page_name not in SENSITIVE_PAGE_ACCESS_TARGETS
+
+
+def _report_access_target_visible(report_name: str, ref_doctype: str | None = None) -> bool:
+    if _is_superadmin_session():
+        return True
+    report_name = (report_name or "").strip()
+    if report_name not in _managed_menu_targets("Report"):
+        return False
+    ref_doctype = ref_doctype if ref_doctype is not None else frappe.db.get_value("Report", report_name, "ref_doctype")
+    return not ref_doctype or _permission_doctype_visible(ref_doctype, "Orderlift Admin")
+
+
+def _assert_page_access_target(page_name: str) -> None:
+    if not _page_access_target_visible(page_name):
+        frappe.throw(_("Only superadmins can manage access for this Page."), frappe.PermissionError)
+
+
+def _assert_report_access_target(report_name: str) -> None:
+    ref_doctype = frappe.db.get_value("Report", report_name, "ref_doctype") if report_name else ""
+    if not _report_access_target_visible(report_name, ref_doctype):
+        frappe.throw(_("Only superadmins can manage access for this Report."), frappe.PermissionError)
 
 
 def _assert_role_profile_scope(role_profile: str | None) -> None:

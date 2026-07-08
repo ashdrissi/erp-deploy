@@ -85,6 +85,7 @@ class DbStub:
 class TestPriceListUsageGuard(unittest.TestCase):
     def setUp(self):
         self.original_db = getattr(price_list_usage_guard.frappe, "db", None)
+        self.original_get_doc = getattr(price_list_usage_guard.frappe, "get_doc", None)
         self.original_validate_visible_price_list = price_list_usage_guard.validate_visible_price_list
         self.original_get_roles = price_list_usage_guard.frappe.get_roles
         self.original_user = price_list_usage_guard.frappe.session.user
@@ -102,6 +103,11 @@ class TestPriceListUsageGuard(unittest.TestCase):
             delattr(price_list_usage_guard.frappe, "db")
         else:
             price_list_usage_guard.frappe.db = self.original_db
+        if self.original_get_doc is None:
+            if hasattr(price_list_usage_guard.frappe, "get_doc"):
+                delattr(price_list_usage_guard.frappe, "get_doc")
+        else:
+            price_list_usage_guard.frappe.get_doc = self.original_get_doc
         price_list_usage_guard.validate_visible_price_list = self.original_validate_visible_price_list
         price_list_usage_guard.frappe.get_roles = self.original_get_roles
         price_list_usage_guard.frappe.session.user = self.original_user
@@ -163,6 +169,25 @@ class TestPriceListUsageGuard(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "below the allowed net rate"):
             price_list_usage_guard.validate_quotation_price_list(doc)
+
+    def test_orderlift_admin_can_go_below_selected_list_discount_floor(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        price_list_usage_guard.frappe.db = DbStub(
+            [
+                {
+                    "item_code": "ITEM-001",
+                    "price_list": "Sell A",
+                    "price_list_rate": 100,
+                    "custom_policy_max_discount_percent": 10,
+                }
+            ]
+        )
+        doc = DocStub(
+            selected_selling_price_lists=[{"price_list": "Sell A", "is_active": 1, "sequence": 10}],
+            items=[{"item_code": "ITEM-001", "rate": 80, "idx": 1}],
+        )
+
+        price_list_usage_guard.validate_quotation_price_list(doc)
 
     def test_quotation_rate_at_selected_list_discount_floor_is_allowed(self):
         price_list_usage_guard.frappe.db = DbStub(
@@ -305,6 +330,7 @@ class TestPriceListUsageGuard(unittest.TestCase):
 
         row = doc["items"][0]
         self.assertEqual(row["source_selling_price_list"], "Sell Min")
+        self.assertAlmostEqual(row["source_price_list_sell_rate"], 15033.213)
         self.assertEqual(row["source_discount_percent"], 0)
         self.assertAlmostEqual(row["rate"], 15033.213)
         self.assertAlmostEqual(row["source_discounted_sell_rate"], 15033.213)
@@ -409,8 +435,7 @@ class TestPriceListUsageGuard(unittest.TestCase):
             items=[{"item_code": "ITEM-001", "rate": 10}],
         )
 
-        with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
-            price_list_usage_guard.validate_sales_order_price_list(doc)
+        price_list_usage_guard.validate_sales_order_price_list(doc)
 
     def test_commercial_sales_order_cannot_bypass(self):
         price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
@@ -422,6 +447,115 @@ class TestPriceListUsageGuard(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
             price_list_usage_guard.validate_sales_order_price_list(doc)
+
+    def test_admin_override_bypasses_delivery_note_min_rate_guard(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        price_list_usage_guard.frappe.db = DbStub()
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10}],
+        )
+
+        price_list_usage_guard.validate_delivery_note_price_list(doc)
+
+    def test_admin_override_bypasses_sales_invoice_min_rate_guard(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        price_list_usage_guard.frappe.db = DbStub()
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10}],
+        )
+
+        price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_commercial_delivery_note_cannot_bypass(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10}],
+        )
+
+        with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
+            price_list_usage_guard.validate_delivery_note_price_list(doc)
+
+    def test_commercial_sales_invoice_cannot_bypass(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10}],
+        )
+
+        with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
+            price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_commercial_sales_invoice_can_use_submitted_sales_order_rate(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            docstatus=1,
+            items=[{"name": "SO-ITEM-1", "item_code": "ITEM-001", "rate": 10}],
+        )
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10, "sales_order": "SO-001", "so_detail": "SO-ITEM-1"}],
+        )
+        doc.doctype = "Sales Invoice"
+
+        price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_commercial_delivery_note_can_use_submitted_sales_order_rate(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            docstatus=1,
+            items=[{"name": "SO-ITEM-1", "item_code": "ITEM-001", "rate": 10}],
+        )
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10, "against_sales_order": "SO-001", "so_detail": "SO-ITEM-1"}],
+        )
+        doc.doctype = "Delivery Note"
+
+        price_list_usage_guard.validate_delivery_note_price_list(doc)
+
+    def test_commercial_sales_invoice_changed_rate_falls_back_to_min_rate_guard(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            docstatus=1,
+            items=[{"name": "SO-ITEM-1", "item_code": "ITEM-001", "rate": 10}],
+        )
+        doc = DocStub(
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 5, "sales_order": "SO-001", "so_detail": "SO-ITEM-1"}],
+        )
+        doc.doctype = "Sales Invoice"
+
+        with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
+            price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_quotation_sourced_sales_order_uses_inherited_snapshot_not_current_item_price(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        doc = DocStub(
+            selling_price_list="Sell A",
+            selected_selling_price_lists=[{"price_list": "Sell A", "is_active": 1, "sequence": 10}],
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "rate": 90,
+                    "prevdoc_doctype": "Quotation",
+                    "prevdoc_docname": "QTN-001",
+                    "prevdoc_detail_docname": "QTN-ITEM-1",
+                    "source_gross_sell_rate": 100,
+                }
+            ],
+        )
+        doc.doctype = "Sales Order"
+
+        price_list_usage_guard.validate_sales_order_price_list(doc)
 
     def test_builder_stamped_quotation_item_gets_margin_from_stamp_base_price_basis(self):
         price_list_usage_guard.frappe.db = DbStub(

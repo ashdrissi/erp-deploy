@@ -68,6 +68,7 @@ Practical examples:
 - Commissions: a sales agent sees only commission rows for their own Sales Person. Managers can see broader team data.
 - Catalogue items: a restricted static agent sees an item only when it has an Item Price in one of the selected allowed selling price lists.
 - Price lists: `Price List` and `Item Price` rows are limited to allowed selling, buying, or benchmark lists.
+- Sales Orders: document create/write permission is not pricing authority. Users without `Pricing Override` must create Sales Orders from submitted Quotations and inherited prices stay locked.
 - Purchase user: sees purchase documents in allowed companies and, if concerned-only is enabled, only owned, assigned, or linked purchase documents.
 - Stock user: stock entries must pass company scope, warehouse scope, and concerned links when concerned-only is enabled.
 
@@ -93,6 +94,7 @@ When troubleshooting a hidden record, check role permission, company, business t
 - Direct Administration menu links stay limited to control entry points. User, role, permission, workflow, and assignment setup is managed from Access Command Center instead of separate Desk list links.
 - Sidebar visibility is UX control. Custom page APIs should still validate role and company access server-side before returning data.
 - `Pricing Sheet` and `Customer Segmentation Engine` are company-scoped through their `custom_company` fields.
+- `Pricing Override` in Access Command Center role capabilities controls direct/manual Sales Order pricing. Without it, Sales Order pricing must come from a submitted Quotation even if the role can create or write Sales Orders.
 - Frappe `DocShare` is blocked for Orderlift-managed business doctypes because it can re-grant records after central role/company/concerned-only checks deny them; migrations also normalize managed `share` flags back to `0`.
 
 ## Runtime Notes

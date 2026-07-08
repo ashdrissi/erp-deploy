@@ -244,6 +244,8 @@ def get_item_price_grid(item_code: str, price_type: str) -> dict:
     item_code = _validate_item(item_code, permission_type="read")
     config = _price_type_config(price_type)
     _check_item_price_permission("read")
+    if config["kind"] == "buying":
+        _assert_price_kind_access(config, permission_type="read")
 
     stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or ""
     access = get_item_price_access(config["kind"])
@@ -552,6 +554,8 @@ def get_transaction_item_prices(item_codes=None, price_list="", price_lists=None
     kind = (price_list_type or "selling").strip().lower()
     if kind not in {"selling", "buying"}:
         kind = "selling"
+    if kind == "buying":
+        _assert_price_kind_access(PRICE_TYPE_CONFIG["buying"], permission_type="read")
     if not item_codes:
         return {"rows": {}}
 
@@ -655,10 +659,13 @@ def _item_price_max_discount_percent(row) -> float:
 def _valid_transaction_price_lists(price_lists: list[str], *, kind: str) -> list[str]:
     out = []
     for value in price_lists or []:
-        try:
+        if kind == "buying":
             price_list = validate_visible_price_list(value, kind=kind, required=True)
-        except Exception:
-            continue
+        else:
+            try:
+                price_list = validate_visible_price_list(value, kind=kind, required=True)
+            except Exception:
+                continue
         if price_list and price_list not in out:
             out.append(price_list)
     return out
@@ -939,9 +946,14 @@ def _check_item_permission(permission_type: str) -> None:
 
 
 def _allowed_price_lists_or_throw(config: dict) -> list[str]:
+    return _assert_price_kind_access(config, permission_type="write")
+
+
+def _assert_price_kind_access(config: dict, permission_type: str = "read") -> list[str]:
     access = get_item_price_access(config["kind"])
     if not access["permitted"]:
         frappe.throw(_("You are not allowed to manage {0} prices.").format(config["label"].lower()))
+    _check_item_price_permission(permission_type)
     return access["price_lists"]
 
 

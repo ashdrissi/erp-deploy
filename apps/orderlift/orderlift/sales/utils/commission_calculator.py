@@ -8,6 +8,9 @@ Sales Invoices are fully paid, and become Paid only after payout.
 from __future__ import annotations
 
 import frappe
+from frappe.utils import flt
+
+from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
 def create_sales_order_commissions(doc, method=None):
@@ -81,31 +84,23 @@ def _build_sales_order_snapshot_commissions(sales_order):
     results = {}
 
     for item in sales_order.items or []:
-        quotation_item_name = getattr(item, "quotation_item", None)
-        if not quotation_item_name:
-            continue
+        quotation_item_name = getattr(item, "quotation_item", None) or getattr(item, "prevdoc_detail_docname", None)
 
-        qitem = frappe.db.get_value(
-            "Quotation Item",
-            quotation_item_name,
-            [
-                "source_sales_person",
-                "source_commission_rate",
-                "source_commission_amount",
-                "source_discount_amount",
-                "qty",
-            ],
-            as_dict=True,
-        ) or {}
+        qitem = _quotation_item_commission_snapshot(quotation_item_name) if quotation_item_name else {}
+        source = qitem or _row_snapshot(item)
 
-        salesperson = qitem.get("source_sales_person")
-        commission_amount = float(qitem.get("source_commission_amount") or 0)
-        commission_rate = float(qitem.get("source_commission_rate") or 0)
-        discount_amount = float(qitem.get("source_discount_amount") or 0)
-        quotation_qty = float(qitem.get("qty") or 0)
-        order_qty = float(getattr(item, "qty", 0) or 0)
+        salesperson = source.get("source_sales_person")
+        commission_rate = flt(source.get("source_commission_rate") or 0)
+        order_qty = flt(getattr(item, "qty", 0) or 0)
+        quotation_qty = flt(qitem.get("qty") or 0)
         denominator = quotation_qty or order_qty or 1.0
         factor = order_qty / denominator if denominator else 0
+        commission_amount = flt(source.get("source_commission_amount") or 0)
+        discount_amount = flt(source.get("source_discount_amount") or 0)
+        if commission_amount <= 0:
+            recalculated = _calculate_snapshot_commission(source, denominator)
+            commission_amount = flt(recalculated.get("commission_amount") or 0)
+            discount_amount = flt(recalculated.get("discount_amount") or discount_amount)
         prorated_commission = commission_amount * factor
         prorated_discount = discount_amount * factor
 
@@ -133,6 +128,65 @@ def _build_sales_order_snapshot_commissions(sales_order):
         bucket["commission_amount"] += prorated_commission
 
     return list(results.values())
+
+
+def _quotation_item_commission_snapshot(quotation_item_name):
+    return frappe.db.get_value(
+        "Quotation Item",
+        quotation_item_name,
+        [
+            "source_sales_person",
+            "source_commission_rate",
+            "source_commission_amount",
+            "source_discount_amount",
+            "source_gross_sell_rate",
+            "source_discounted_sell_rate",
+            "source_max_discount_percent",
+            "qty",
+        ],
+        as_dict=True,
+    ) or {}
+
+
+def _row_snapshot(item):
+    get = getattr(item, "get", None)
+
+    def value(fieldname, default=0):
+        if callable(get):
+            return get(fieldname) or default
+        return getattr(item, fieldname, default) or default
+
+    return {
+        "source_sales_person": value("source_sales_person", ""),
+        "source_commission_rate": value("source_commission_rate"),
+        "source_commission_amount": value("source_commission_amount"),
+        "source_discount_amount": value("source_discount_amount"),
+        "source_gross_sell_rate": value("source_gross_sell_rate") or value("price_list_rate"),
+        "source_discounted_sell_rate": value("source_discounted_sell_rate") or value("rate"),
+        "source_max_discount_percent": value("source_max_discount_percent"),
+    }
+
+
+def _calculate_snapshot_commission(source, qty):
+    price_list_unit = flt(source.get("source_gross_sell_rate") or 0)
+    actual_unit = flt(source.get("source_discounted_sell_rate") or 0)
+    if price_list_unit <= 0 or actual_unit <= 0:
+        return {}
+    try:
+        commission = calculate_agent_commission(
+            price_list_unit_price=price_list_unit,
+            actual_unit_price=actual_unit,
+            qty=qty,
+            max_discount_percent=flt(source.get("source_max_discount_percent") or 0),
+            commission_rate=flt(source.get("source_commission_rate") or 0),
+            enforce_discount_cap=False,
+        )
+    except ValueError:
+        return {}
+    return {
+        "commission_amount": commission.get("commission_amount") or 0,
+        "discount_amount": max(price_list_unit - actual_unit, 0) * flt(qty),
+    }
 
 
 def _sync_sales_order_commissions(sales_order_name):

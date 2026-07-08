@@ -18,47 +18,45 @@ def get_map_projects(filters: dict | str | None = None) -> list[dict]:
     if not isinstance(filters, dict):
         filters = {}
 
-    conditions = ["(p.custom_latitude IS NOT NULL AND p.custom_latitude != 0)"]
-    values = {}
+    project_filters = [["Project", "custom_latitude", "is", "set"], ["Project", "custom_latitude", "!=", 0]]
 
     if filters.get("project_type"):
-        conditions.append("p.custom_project_type_ol = %(project_type)s")
-        values["project_type"] = filters["project_type"]
+        project_filters.append(["Project", "custom_project_type_ol", "=", filters["project_type"]])
 
     if filters.get("qc_status"):
-        conditions.append("p.custom_qc_status = %(qc_status)s")
-        values["qc_status"] = filters["qc_status"]
+        project_filters.append(["Project", "custom_qc_status", "=", filters["qc_status"]])
 
     if filters.get("status"):
-        conditions.append("p.status = %(status)s")
-        values["status"] = filters["status"]
+        project_filters.append(["Project", "status", "=", filters["status"]])
 
-    where = " AND ".join(conditions)
-
-    rows = frappe.db.sql(
-        f"""
-        SELECT
-            p.name,
-            p.project_name,
-            p.status,
-            p.customer,
-            p.expected_start_date,
-            p.expected_end_date,
-            p.custom_project_type_ol  AS project_type,
-            p.custom_qc_status        AS qc_status,
-            p.custom_site_address     AS site_address,
-            p.custom_city             AS city,
-            p.custom_latitude         AS latitude,
-            p.custom_longitude        AS longitude
-        FROM `tabProject` p
-        WHERE {where}
-        ORDER BY p.modified DESC
-        LIMIT 500
-        """,
-        values,
-        as_dict=True,
+    rows = frappe.get_list(
+        "Project",
+        filters=project_filters,
+        fields=[
+            "name", "project_name", "status", "customer", "expected_start_date", "expected_end_date",
+            "custom_project_type_ol", "custom_qc_status", "custom_site_address", "custom_city",
+            "custom_latitude", "custom_longitude",
+        ],
+        order_by="modified desc",
+        limit_page_length=500,
     )
-    return rows
+    return [
+        {
+            "name": row.get("name"),
+            "project_name": row.get("project_name"),
+            "status": row.get("status"),
+            "customer": row.get("customer"),
+            "expected_start_date": row.get("expected_start_date"),
+            "expected_end_date": row.get("expected_end_date"),
+            "project_type": row.get("custom_project_type_ol"),
+            "qc_status": row.get("custom_qc_status"),
+            "site_address": row.get("custom_site_address"),
+            "city": row.get("custom_city"),
+            "latitude": row.get("custom_latitude"),
+            "longitude": row.get("custom_longitude"),
+        }
+        for row in rows
+    ]
 
 
 @frappe.whitelist(allow_guest=False)
@@ -68,6 +66,7 @@ def get_project_qc_summary(project_name: str) -> dict:
     Used in the map popup detail panel.
     """
     project = frappe.get_doc("Project", project_name)
+    project.check_permission("read")
     rows = project.custom_qc_checklist or []
 
     total = len(rows)

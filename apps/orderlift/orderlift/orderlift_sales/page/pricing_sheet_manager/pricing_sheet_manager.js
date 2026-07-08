@@ -172,6 +172,9 @@
         page.main.find("[data-generate-quote]").on("click", function () {
             generateQuotation(page, $(this).attr("data-generate-quote"));
         });
+        page.main.find("[data-open-quotations]").on("click", function () {
+            openLinkedQuotations($(this).attr("data-open-quotations"));
+        });
     }
 
     function card(row) {
@@ -188,6 +191,7 @@
                     </div>
                     <div class="psm-card-actions">
                         <button type="button" class="psm-btn psm-btn-primary" data-open-sheet="${escapeHtml(row.name)}">${__("Open")}</button>
+                        <button type="button" class="psm-btn psm-btn-ghost" data-open-quotations="${escapeHtml(row.name)}">${__("Quotations")}</button>
                         <button type="button" class="psm-btn psm-btn-ghost" data-generate-quote="${escapeHtml(row.name)}">${__("Quote")}</button>
                     </div>
                 </div>
@@ -208,20 +212,108 @@
     }
 
     async function generateQuotation(page, sheetName) {
-        frappe.confirm(__("Generate a Quotation from this Pricing Sheet?"), async () => {
+        const targetQuotation = await chooseQuotationTarget(sheetName);
+        if (targetQuotation === null) return;
+        frappe.confirm(targetQuotation ? __("Update draft Quotation {0} from this Pricing Sheet?", [targetQuotation]) : __("Generate a new Quotation from this Pricing Sheet?"), async () => {
             const res = await frappe.call({
                 method: "orderlift.orderlift_sales.page.pricing_sheet_manager.pricing_sheet_manager.generate_pricing_sheet_quotation",
-                args: { pricing_sheet: sheetName },
+                args: { pricing_sheet: sheetName, target_quotation: targetQuotation || "" },
                 freeze: true,
             });
             const quotation = (res.message || {}).quotation;
             if (quotation) {
-                frappe.show_alert({ message: __("Quotation {0} created", [quotation]), indicator: "green" });
+                frappe.show_alert({ message: targetQuotation ? __("Quotation {0} updated", [quotation]) : __("Quotation {0} created", [quotation]), indicator: "green" });
                 frappe.set_route("Form", "Quotation", quotation);
             } else {
                 load(page);
             }
         });
+    }
+
+    async function chooseQuotationTarget(sheetName) {
+        const res = await frappe.call({
+            method: "orderlift.orderlift_sales.page.pricing_sheet_manager.pricing_sheet_manager.get_pricing_sheet_quotation_options",
+            args: { pricing_sheet: sheetName },
+        });
+        const quotations = (res.message || {}).quotations || [];
+        const draftQuotations = quotations.filter((row) => Number(row.docstatus || 0) === 0);
+        if (!draftQuotations.length) {
+            if (quotations.length) {
+                frappe.show_alert({ message: __("Submitted Quotations cannot be updated. A new Quotation will be created."), indicator: "orange" });
+            }
+            return "";
+        }
+        return new Promise((resolve) => {
+            const createValue = __("Create New Quotation");
+            let resolved = false;
+            const finish = (value) => {
+                if (resolved) return;
+                resolved = true;
+                resolve(value);
+            };
+            const options = [createValue]
+                .concat(draftQuotations.map((row) => row.name))
+                .join("\n");
+            const dialog = new frappe.ui.Dialog({
+                title: draftQuotations.length === 1 ? __("Update Existing Quotation?") : __("Choose Draft Quotation to Update"),
+                fields: [
+                    {
+                        fieldname: "target_quotation",
+                        fieldtype: "Select",
+                        label: __("Quotation Action"),
+                        options,
+                        default: draftQuotations.length === 1 ? draftQuotations[0].name : createValue,
+                        description: __("Only draft Quotations can be updated. Submitted Quotations are never changed."),
+                    },
+                ],
+                primary_action_label: __("Continue"),
+                primary_action(values) {
+                    finish(values.target_quotation === createValue ? "" : values.target_quotation);
+                    dialog.hide();
+                },
+            });
+            dialog.onhide = () => finish(null);
+            dialog.show();
+        });
+    }
+
+    async function openLinkedQuotations(sheetName) {
+        const res = await frappe.call({
+            method: "orderlift.orderlift_sales.page.pricing_sheet_manager.pricing_sheet_manager.get_pricing_sheet_quotation_options",
+            args: { pricing_sheet: sheetName },
+        });
+        const quotations = (res.message || {}).quotations || [];
+        if (!quotations.length) {
+            frappe.msgprint({
+                title: __("No Linked Quotations"),
+                message: __("No Quotations are linked to this Pricing Sheet yet."),
+                indicator: "orange",
+            });
+            return;
+        }
+        if (quotations.length === 1) {
+            frappe.set_route("Form", "Quotation", quotations[0].name);
+            return;
+        }
+        const dialog = new frappe.ui.Dialog({
+            title: __("Open Linked Quotation"),
+            fields: [
+                {
+                    fieldname: "quotation",
+                    fieldtype: "Select",
+                    label: __("Quotation"),
+                    options: quotations.map((row) => row.name).join("\n"),
+                    default: quotations[0].name,
+                    description: __("Shows only Quotations linked to this Pricing Sheet."),
+                },
+            ],
+            primary_action_label: __("Open"),
+            primary_action(values) {
+                dialog.hide();
+                if (values.quotation) frappe.set_route("Form", "Quotation", values.quotation);
+            },
+        });
+        dialog.show();
     }
 
     async function deleteSelectedSheets(page) {

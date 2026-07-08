@@ -24,10 +24,10 @@ class TestPageRoleSync(unittest.TestCase):
         self.assertIn("Sales User", page_roles["sales-order-pipeline"])
         self.assertIn("Installation User", page_roles["sales-order-pipeline"])
         self.assertIn("campaign-editor", page_roles)
-        self.assertIn("Campaign Manager", page_roles["campaign-editor"])
+        self.assertIn("Marketing User", page_roles["campaign-editor"])
         self.assertNotIn("Sales User", page_roles["campaign-editor"])
         self.assertIn("campaign-manager", page_roles)
-        self.assertIn("Campaign Manager", page_roles["campaign-manager"])
+        self.assertIn("Marketing User", page_roles["campaign-manager"])
         self.assertNotIn("Sales User", page_roles["campaign-manager"])
         self.assertIn("project-pipeline", page_roles)
         self.assertIn("Sales User", page_roles["project-pipeline"])
@@ -40,8 +40,8 @@ class TestPageRoleSync(unittest.TestCase):
     def test_campaign_page_roles_are_strict(self):
         strict_page_roles = sync_page_roles_from_menu_registry.strict_menu_page_role_map()
 
-        self.assertEqual(strict_page_roles["campaign-manager"], ["Orderlift Admin", "Campaign Manager"])
-        self.assertEqual(strict_page_roles["campaign-editor"], ["Orderlift Admin", "Campaign Manager"])
+        self.assertEqual(strict_page_roles["campaign-manager"], ["Orderlift Admin", "Marketing User"])
+        self.assertEqual(strict_page_roles["campaign-editor"], ["Orderlift Admin", "Marketing User"])
 
     def test_sync_script_updates_page_and_menu_rule_roles(self):
         source = sync_page_roles_from_menu_registry.__loader__.get_source(

@@ -32,6 +32,86 @@ function isRestrictedAgentUser() {
     return isCommercial && !isPrivileged;
 }
 
+async function choosePricingSheetQuotationTarget(frm) {
+    const r = await frm.call("get_linked_quotations");
+    const quotations = r.message || [];
+    const draftQuotations = quotations.filter((row) => Number(row.docstatus || 0) === 0);
+    if (!draftQuotations.length) {
+        if (quotations.length) {
+            frappe.show_alert({ message: __("Submitted Quotations cannot be updated. A new Quotation will be created."), indicator: "orange" });
+        }
+        return "";
+    }
+    return new Promise((resolve) => {
+        const createValue = __("Create New Quotation");
+        let resolved = false;
+        const finish = (value) => {
+            if (resolved) return;
+            resolved = true;
+            resolve(value);
+        };
+        const options = [createValue]
+            .concat(draftQuotations.map((row) => row.name))
+            .join("\n");
+        const dialog = new frappe.ui.Dialog({
+            title: draftQuotations.length === 1 ? __("Update Existing Quotation?") : __("Choose Draft Quotation to Update"),
+            fields: [
+                {
+                    fieldname: "target_quotation",
+                    fieldtype: "Select",
+                    label: __("Quotation Action"),
+                    options,
+                    default: draftQuotations.length === 1 ? draftQuotations[0].name : createValue,
+                    description: __("Only draft Quotations can be updated. Submitted Quotations are never changed."),
+                },
+            ],
+            primary_action_label: __("Continue"),
+            primary_action(values) {
+                finish(values.target_quotation === createValue ? "" : values.target_quotation);
+                dialog.hide();
+            },
+        });
+        dialog.onhide = () => finish(null);
+        dialog.show();
+    });
+}
+
+async function openPricingSheetLinkedQuotations(frm) {
+    const r = await frm.call("get_linked_quotations");
+    const quotations = r.message || [];
+    if (!quotations.length) {
+        frappe.msgprint({
+            title: __("No Linked Quotations"),
+            message: __("No Quotations are linked to this Pricing Sheet yet."),
+            indicator: "orange",
+        });
+        return;
+    }
+    if (quotations.length === 1) {
+        frappe.set_route("Form", "Quotation", quotations[0].name);
+        return;
+    }
+    const dialog = new frappe.ui.Dialog({
+        title: __("Open Linked Quotation"),
+        fields: [
+            {
+                fieldname: "quotation",
+                fieldtype: "Select",
+                label: __("Quotation"),
+                options: quotations.map((row) => row.name).join("\n"),
+                default: quotations[0].name,
+                description: __("Shows only Quotations linked to this Pricing Sheet."),
+            },
+        ],
+        primary_action_label: __("Open"),
+        primary_action(values) {
+            dialog.hide();
+            if (values.quotation) frappe.set_route("Form", "Quotation", values.quotation);
+        },
+    });
+    dialog.show();
+}
+
 function setGridFieldVisibility(grid, fieldnames, hidden) {
     if (!grid) return;
     fieldnames.forEach((fieldname) => {
@@ -264,16 +344,17 @@ const PRICING_SHEET_WORKSPACE_LABELS = {
     margin_unit_amount: "Base Marge U",
     margin_total_amount: "Base Margin",
     margin_pct: "Profit Margin %",
-    projected_unit_price: "PUV",
-    projected_total_price: "Sell Price",
-    manual_sell_unit_price: "PUV Override",
-    final_sell_unit_price: "PUV Final",
-    final_sell_total: "PTV Brut",
+    projected_unit_price: "Cout PU HT",
+    projected_total_price: "Cout PT HT",
+    static_list_price: "PU List HT",
+    manual_sell_unit_price: "Manual Unit Override",
+    final_sell_unit_price: "PU HT",
+    final_sell_total: "PT HT",
     max_discount_percent_allowed: "Max Discount %",
     discount_percent: "Remise %",
-    discount_amount: "Discount Amount",
-    discounted_sell_unit_price: "Discounted Sell Price Unit",
-    discounted_sell_total: "PTV Net",
+    discount_amount: "Remise HT",
+    discounted_sell_unit_price: "PU HT net",
+    discounted_sell_total: "PT HT net",
     commission_rate: "Commission %",
     commission_amount: "Commission",
 };
@@ -665,15 +746,15 @@ function getPricingSheetWorkspaceSummary(frm) {
             value: formatPricingSheetCurrency(totalMargin),
         },
         {
-            label: __("Sell Total Price"),
+            label: __("PT HT"),
             value: formatPricingSheetCurrency(finalSell),
         },
         {
-            label: __("Discount"),
+            label: __("Remise HT"),
             value: formatPricingSheetCurrency(totalDiscount),
         },
         {
-            label: __("Total After Discount"),
+            label: __("PT HT net"),
             value: formatPricingSheetCurrency(discountedSell),
         },
         {
@@ -2586,6 +2667,7 @@ frappe.ui.form.on("Pricing Sheet", {
         $(document).off("keydown.psheet");
 
         if (!frm.is_new()) {
+            frm.add_custom_button(__("Open Quotations"), () => openPricingSheetLinkedQuotations(frm), __("Pricing"));
             frm.page.set_primary_action(__("Generate Quotation"), async () => {
                 try {
                     if (frm.is_dirty()) {
@@ -2595,12 +2677,26 @@ frappe.ui.form.on("Pricing Sheet", {
                     if (!approved) {
                         return;
                     }
-                    const r = await frm.call("generate_quotation");
+                    const targetQuotation = await choosePricingSheetQuotationTarget(frm);
+                    if (targetQuotation === null) {
+                        return;
+                    }
+                    const confirmed = await new Promise((resolve) => {
+                        frappe.confirm(
+                            targetQuotation ? __("Update draft Quotation {0} from this Pricing Sheet?", [targetQuotation]) : __("Generate a new Quotation now?"),
+                            () => resolve(true),
+                            () => resolve(false)
+                        );
+                    });
+                    if (!confirmed) {
+                        return;
+                    }
+                    const r = await frm.call("generate_quotation", { target_quotation: targetQuotation || "" });
                     const quotationName = r.message;
                     if (!quotationName) {
                         frappe.throw(__("Quotation was not created."));
                     }
-                    frappe.show_alert({ message: __("Quotation {0} created", [quotationName]), indicator: "green" });
+                    frappe.show_alert({ message: targetQuotation ? __("Quotation {0} updated", [quotationName]) : __("Quotation {0} created", [quotationName]), indicator: "green" });
                     frappe.set_route("Form", "Quotation", quotationName);
                 } catch (e) {
                     frappe.msgprint({

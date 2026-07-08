@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from orderlift.sales.utils.dimensioning import (
@@ -46,9 +47,16 @@ class TestDimensioning(unittest.TestCase):
         self.assertEqual(evaluate_formula("ceil(abs(delta))", variables), 3)
 
     def test_formula_supports_dimensioning_quantity_expression(self):
-        variables = {"hauteur_de_la_gaine": 8}
+        variables = {"hauteur_de_la_gaine": 8, "hauteur_cabine": 2.5, "nbr_etage": 4}
 
         self.assertEqual(evaluate_formula("(hauteur_de_la_gaine + 3) * 4 + 5", variables), 49)
+        self.assertEqual(evaluate_formula("(hauteur_cabine * 2 + nbr_etage * 4) * 1.05", variables), 22.05)
+        self.assertEqual(evaluate_formula("int((hauteur_cabine * 2 + nbr_etage * 4) * 1.05)", variables), 22)
+
+    def test_formula_supports_dimensioning_condition_expression(self):
+        variables = {"nbr_etage": 5, "hauteur_cabine": 2.5}
+
+        self.assertTrue(evaluate_formula("nbr_etage >= 4 and hauteur_cabine > 2", variables))
 
     def test_coerce_dimensioning_values(self):
         self.assertEqual(coerce_dimensioning_value("Int", "4"), 4)
@@ -79,6 +87,132 @@ class TestDimensioning(unittest.TestCase):
 
         self.assertTrue(evaluate_structured_condition(rule, {"door_count": 4, "levels": 4}))
         self.assertFalse(evaluate_structured_condition(rule, {"door_count": 3, "levels": 4}))
+
+    def test_condition_rules_json_multiple_and_rows(self):
+        rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps(
+                {
+                    "rows": [
+                        {"parameter": "levels", "operator": ">=", "value_source": "integer", "value": "4"},
+                        {"join": "and", "parameter": "finish", "operator": "==", "value_source": "text", "value": "INOX"},
+                    ]
+                }
+            ),
+        }
+        values = {"levels": 5, "finish": "INOX"}
+        field_types = {"levels": "Int", "finish": "Data"}
+
+        self.assertTrue(evaluate_structured_condition(rule, values, field_types))
+        self.assertFalse(evaluate_structured_condition(rule, {**values, "finish": "EPOXY"}, field_types))
+        validate_structured_condition(rule, field_types)
+
+    def test_condition_rules_json_multiple_or_rows(self):
+        rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps(
+                {
+                    "rows": [
+                        {"parameter": "finish", "operator": "==", "value_source": "text", "value": "INOX"},
+                        {"join": "or", "parameter": "finish", "operator": "==", "value_source": "text", "value": "PANORAMIQUE"},
+                    ]
+                }
+            ),
+        }
+
+        self.assertTrue(evaluate_structured_condition(rule, {"finish": "PANORAMIQUE"}, {"finish": "Data"}))
+        self.assertFalse(evaluate_structured_condition(rule, {"finish": "EPOXY"}, {"finish": "Data"}))
+
+    def test_condition_rules_json_mixed_join_is_left_to_right(self):
+        rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps(
+                {
+                    "rows": [
+                        {"parameter": "a", "operator": "==", "value_source": "integer", "value": "1"},
+                        {"join": "or", "parameter": "b", "operator": "==", "value_source": "integer", "value": "1"},
+                        {"join": "and", "parameter": "c", "operator": "==", "value_source": "integer", "value": "1"},
+                    ]
+                }
+            ),
+        }
+        field_types = {"a": "Int", "b": "Int", "c": "Int"}
+
+        self.assertFalse(evaluate_structured_condition(rule, {"a": 1, "b": 0, "c": 0}, field_types))
+        self.assertTrue(evaluate_structured_condition(rule, {"a": 1, "b": 0, "c": 1}, field_types))
+
+    def test_condition_rules_json_typed_values(self):
+        integer_rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps({"rows": [{"parameter": "levels", "operator": ">", "value_source": "integer", "value": "3"}]}),
+        }
+        decimal_rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps({"rows": [{"parameter": "height", "operator": ">=", "value_source": "decimal", "value": "2.5"}]}),
+        }
+        check_rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps({"rows": [{"parameter": "premium", "operator": "==", "value_source": "check", "value": "1"}]}),
+        }
+
+        self.assertTrue(evaluate_structured_condition(integer_rule, {"levels": 4}, {"levels": "Int"}))
+        self.assertTrue(evaluate_structured_condition(decimal_rule, {"height": 2.5}, {"height": "Float"}))
+        self.assertTrue(evaluate_structured_condition(check_rule, {"premium": True}, {"premium": "Check"}))
+
+    def test_condition_rules_json_text_contains(self):
+        rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps(
+                {"rows": [{"parameter": "finish", "operator": "contains", "value_source": "text", "value": "inox"}]}
+            ),
+        }
+
+        self.assertTrue(evaluate_structured_condition(rule, {"finish": "INOX BROSSE"}, {"finish": "Data"}))
+        self.assertFalse(evaluate_structured_condition(rule, {"finish": "EPOXY"}, {"finish": "Data"}))
+
+    def test_condition_rules_json_parameter_comparison(self):
+        rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps(
+                {
+                    "rows": [
+                        {
+                            "parameter": "door_count",
+                            "operator": "==",
+                            "value_source": "parameter",
+                            "value_parameter": "levels",
+                        }
+                    ]
+                }
+            ),
+        }
+
+        self.assertTrue(evaluate_structured_condition(rule, {"door_count": 4, "levels": 4}, {"door_count": "Int", "levels": "Int"}))
+        self.assertFalse(evaluate_structured_condition(rule, {"door_count": 3, "levels": 4}, {"door_count": "Int", "levels": "Int"}))
+
+    def test_condition_rules_json_rejects_invalid_integer_and_decimal(self):
+        integer_rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps({"rows": [{"parameter": "levels", "operator": ">", "value_source": "integer", "value": "4.5"}]}),
+        }
+        decimal_rule = {
+            "condition_mode": "based",
+            "condition_rules_json": json.dumps({"rows": [{"parameter": "height", "operator": ">", "value_source": "decimal", "value": "abc"}]}),
+        }
+
+        with self.assertRaises(ValueError):
+            validate_structured_condition(integer_rule, {"levels": "Int"})
+        with self.assertRaises(ValueError):
+            validate_structured_condition(decimal_rule, {"height": "Float"})
+
+    def test_condition_rules_json_is_ignored_for_always_mode(self):
+        rule = {
+            "condition_mode": "always",
+            "condition_rules_json": json.dumps({"rows": [{"parameter": "levels", "operator": ">", "value_source": "integer", "value": "99"}]}),
+        }
+
+        self.assertTrue(evaluate_structured_condition(rule, {"levels": 1}, {"levels": "Int"}))
+        validate_structured_condition(rule, {"levels": "Int"})
 
     def test_structured_quantity_modes(self):
         self.assertEqual(evaluate_structured_quantity({"quantity_mode": "fixed", "fixed_qty": "2"}, {}), 2)

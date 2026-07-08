@@ -317,7 +317,7 @@
   {
    "fieldname": "final_sell_unit_price",
    "fieldtype": "Currency",
-     "label": "Prix vente PU HT",
+      "label": "PU HT",
      "read_only": 1,
      "in_list_view": 1
    },
@@ -490,7 +490,7 @@
   {
    "fieldname": "final_sell_total",
    "fieldtype": "Currency",
-      "label": "Prix vente PT HT",
+      "label": "PT HT",
       "read_only": 1,
       "in_list_view": 1
     },
@@ -504,28 +504,28 @@
    {
     "fieldname": "discount_percent",
     "fieldtype": "Percent",
-    "label": "Discount %",
+     "label": "Remise %",
     "default": "0",
     "in_list_view": 1
    },
    {
     "fieldname": "discount_amount",
     "fieldtype": "Currency",
-    "label": "Discount Amount",
+    "label": "Remise HT",
     "read_only": 1,
     "in_list_view": 1
    },
    {
     "fieldname": "discounted_sell_unit_price",
     "fieldtype": "Currency",
-    "label": "Discounted Sell Unit",
+    "label": "PU HT net",
     "read_only": 1,
     "in_list_view": 1
    },
    {
     "fieldname": "discounted_sell_total",
     "fieldtype": "Currency",
-    "label": "Discounted Sell Total",
+    "label": "PT HT net",
     "read_only": 1,
     "in_list_view": 1
    },
@@ -657,7 +657,7 @@
    {
     "fieldname": "static_list_price",
     "fieldtype": "Currency",
-    "label": "List Price",
+     "label": "PU List HT",
     "read_only": 1,
     "in_list_view": 0,
     "description": "Price fetched from the selling price list in Static mode"

@@ -107,6 +107,7 @@ DOCTYPE_CONFIG = {
 def _compute_doc_totals(doctype, doc_name, packaging_overrides=None):
     """Compute weight/volume totals and line items for any source doc."""
     doc = frappe.get_doc(doctype, doc_name)
+    doc.check_permission("read")
     cfg = DOCTYPE_CONFIG.get(doctype, {})
     items_field = cfg.get("items_table", "items")
 
@@ -285,6 +286,28 @@ def _apply_company_filter(filters, doctype, company):
         filters["custom_company"] = company
 
 
+def _get_source_doc_for_plan(plan_doc, source_doctype, source_name, permission_type="read"):
+    if source_doctype not in DOCTYPE_CONFIG:
+        frappe.throw(f"Unsupported source document type: {source_doctype}")
+    source_doc = frappe.get_doc(source_doctype, source_name)
+    source_doc.check_permission(permission_type)
+    plan_company = (getattr(plan_doc, "company", None) or getattr(plan_doc, "custom_company", None) or "").strip()
+    source_company = _source_doc_company(source_doc, source_doctype)
+    if plan_company and source_company and source_company != plan_company:
+        frappe.throw(f"{source_doctype} {source_name} belongs to {source_company}, not {plan_company}.")
+    return source_doc
+
+
+def _source_doc_company(doc, doctype):
+    if getattr(doc, "company", None):
+        return (doc.company or "").strip()
+    if getattr(doc, "custom_company", None):
+        return (doc.custom_company or "").strip()
+    if doctype == "Opportunity" and getattr(doc, "company", None):
+        return (doc.company or "").strip()
+    return ""
+
+
 def _price_list_options(kind, company=None):
     from orderlift.orderlift_sales.utils.price_list_scope import get_item_price_access
 
@@ -383,7 +406,10 @@ def get_forecast_source_queue(company=None, flow_scope=None, shipping_responsibi
         if _has_column(dt, cfg["party_link_field"]):
             fields.append(f"`{cfg['party_link_field']}` as party_link")
 
-        docs = frappe.get_all(
+        if not frappe.has_permission(dt, "read"):
+            continue
+
+        docs = frappe.get_list(
             dt,
             filters=filters,
             fields=fields,
@@ -624,6 +650,8 @@ def add_item_to_plan(plan_name, source_doctype, source_name):
             f"Allowed: {', '.join(allowed)}"
         )
 
+    source_doc = _get_source_doc_for_plan(doc, source_doctype, source_name, permission_type="read")
+
     # Check capacity before adding
     totals = _compute_doc_totals(source_doctype, source_name)
     can_add, cur_vol, cur_wt, max_vol, max_wt, over_vol, over_wt = _check_capacity(
@@ -644,8 +672,6 @@ def add_item_to_plan(plan_name, source_doctype, source_name):
 
     cfg = DOCTYPE_CONFIG.get(source_doctype, {})
     totals = _compute_doc_totals(source_doctype, source_name)
-    source_doc = frappe.get_doc(source_doctype, source_name)
-
     party_type = cfg.get("party_type", "Customer")
     party = ""
     if cfg.get("party_link_field"):
@@ -707,13 +733,13 @@ def _link_source_docs(forecast):
         if row.source_doctype not in ("Sales Order", "Purchase Order", "Delivery Note"):
             continue
 
-        # Check docstatus via DB
-        docstatus = frappe.db.get_value(row.source_doctype, row.source_name, "docstatus")
-        if docstatus != 1:
+        source_doc = _get_source_doc_for_plan(forecast, row.source_doctype, row.source_name, permission_type="write")
+        if source_doc.docstatus != 1:
             continue
 
-        # Direct DB update to bypass submit validation
-        current = frappe.db.get_value(row.source_doctype, row.source_name, field)
+        if not _has_column(row.source_doctype, field):
+            continue
+        current = source_doc.get(field)
         if current != forecast.name:
             frappe.db.set_value(row.source_doctype, row.source_name, field, forecast.name)
             linked.append(f"{row.source_doctype} {row.source_name}")
@@ -734,7 +760,10 @@ def _unlink_source_docs(forecast):
         if row.source_doctype not in ("Sales Order", "Purchase Order", "Delivery Note"):
             continue
 
-        current = frappe.db.get_value(row.source_doctype, row.source_name, field)
+        source_doc = _get_source_doc_for_plan(forecast, row.source_doctype, row.source_name, permission_type="write")
+        if not _has_column(row.source_doctype, field):
+            continue
+        current = source_doc.get(field)
         if current == forecast.name:
             frappe.db.set_value(row.source_doctype, row.source_name, field, None)
             unlinked.append(f"{row.source_doctype} {row.source_name}")
@@ -800,6 +829,7 @@ def validate_plan_for_confirm(plan_name):
         elif sd == "Sales Order":
             try:
                 so = frappe.get_doc("Sales Order", row.source_name)
+                so.check_permission("read")
             except frappe.DoesNotExistError:
                 issues.append({"type": "missing", "doctype": sd, "docname": row.source_name, "message": f"Sales Order {row.source_name} not found"})
                 continue
@@ -823,6 +853,7 @@ def validate_plan_for_confirm(plan_name):
         elif sd == "Purchase Order":
             try:
                 po = frappe.get_doc("Purchase Order", row.source_name)
+                po.check_permission("read")
             except frappe.DoesNotExistError:
                 issues.append({"type": "missing", "doctype": sd, "docname": row.source_name, "message": f"Purchase Order {row.source_name} not found"})
                 continue
@@ -1149,13 +1180,28 @@ def remove_item_line(plan_name, row_name):
 def _active_planner_company(company=None):
     clean = (company or "").strip()
     if clean:
+        _assert_planner_company_access(clean)
         return clean
     try:
         from orderlift.menu_access import resolve_current_company
 
-        return (resolve_current_company(user=frappe.session.user) or "").strip()
+        resolved = (resolve_current_company(user=frappe.session.user) or "").strip()
     except Exception:
         return ""
+    if resolved:
+        _assert_planner_company_access(resolved)
+    return resolved
+
+
+def _assert_planner_company_access(company):
+    if not company:
+        return
+    try:
+        from orderlift.menu_access import user_can_access_company
+    except Exception:
+        return
+    if not user_can_access_company(company, user=frappe.session.user):
+        frappe.throw(f"You do not have access to company {company}.", frappe.PermissionError)
 
 
 def _company_item_codes(company: str) -> set[str]:

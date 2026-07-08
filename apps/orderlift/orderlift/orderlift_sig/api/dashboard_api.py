@@ -9,67 +9,48 @@ def get_dashboard_data() -> dict:
     """
     Aggregate KPIs and project lists for the SIG dashboard.
     """
-    # ── KPI counts ────────────────────────────────────────────
-    total_projects = frappe.db.count("Project", filters={"status": ["!=", "Cancelled"]})
-
-    open_projects = frappe.db.count("Project", filters={"status": "Open"})
-
-    complete_projects = frappe.db.count(
-        "Project",
-        filters={"status": "Completed", "custom_qc_status": "Complete"},
-    )
-
-    blocked_qc = frappe.db.count(
-        "Project",
-        filters={"custom_qc_status": "Blocked", "status": ["!=", "Completed"]},
-    )
-
-    projects = frappe.get_all(
+    projects = frappe.get_list(
         "Project",
         filters={"status": ["!=", "Cancelled"]},
         fields=["custom_project_type_ol", "custom_qc_status", "custom_latitude"],
         limit_page_length=0,
     )
 
+    total_projects = len(projects)
+    open_projects = len(_project_names({"status": "Open"}))
+    complete_projects = len(_project_names({"status": "Completed", "custom_qc_status": "Complete"}))
+    blocked_qc = len(_project_names({"custom_qc_status": "Blocked", "status": ["!=", "Completed"]}))
+
     geocoded = sum(1 for row in projects if row.get("custom_latitude") not in (None, 0, 0.0, ""))
     by_type = _group_counts(projects, "custom_project_type_ol", "Unspecified", "project_type")
     by_qc = _group_counts(projects, "custom_qc_status", "Not Started", "qc_status")
 
     # ── Recent active projects ────────────────────────────────
-    recent_projects = frappe.db.sql(
-        """
-        SELECT
-            name, project_name, status, customer,
-            custom_project_type_ol  AS project_type,
-            custom_qc_status        AS qc_status,
-            custom_city             AS city,
-            custom_latitude         AS latitude,
-            custom_longitude        AS longitude,
-            modified
-        FROM `tabProject`
-        WHERE status NOT IN ('Cancelled', 'Completed')
-        ORDER BY modified DESC
-        LIMIT 20
-        """,
-        as_dict=True,
+    recent_projects = _serialize_project_rows(
+        frappe.get_list(
+            "Project",
+            filters={"status": ["not in", ["Cancelled", "Completed"]]},
+            fields=[
+                "name", "project_name", "status", "customer", "custom_project_type_ol",
+                "custom_qc_status", "custom_city", "custom_latitude", "custom_longitude", "modified",
+            ],
+            order_by="modified desc",
+            limit_page_length=20,
+        )
     )
 
     # ── Blocked projects (need attention) ────────────────────
-    blocked_projects = frappe.db.sql(
-        """
-        SELECT
-            name, project_name, status, customer,
-            custom_project_type_ol  AS project_type,
-            custom_qc_status        AS qc_status,
-            custom_city             AS city,
-            modified
-        FROM `tabProject`
-        WHERE custom_qc_status = 'Blocked'
-          AND status NOT IN ('Cancelled', 'Completed')
-        ORDER BY modified ASC
-        LIMIT 10
-        """,
-        as_dict=True,
+    blocked_projects = _serialize_project_rows(
+        frappe.get_list(
+            "Project",
+            filters={"custom_qc_status": "Blocked", "status": ["not in", ["Cancelled", "Completed"]]},
+            fields=[
+                "name", "project_name", "status", "customer", "custom_project_type_ol",
+                "custom_qc_status", "custom_city", "modified",
+            ],
+            order_by="modified asc",
+            limit_page_length=10,
+        )
     )
 
     return {
@@ -99,6 +80,28 @@ def _group_counts(rows: list[dict], source_key: str, default_label: str, output_
     ]
 
 
+def _project_names(filters: dict) -> list[str]:
+    return frappe.get_list("Project", filters=filters, pluck="name", limit_page_length=0)
+
+
+def _serialize_project_rows(rows: list[dict]) -> list[dict]:
+    out = []
+    for row in rows:
+        out.append({
+            "name": row.get("name"),
+            "project_name": row.get("project_name"),
+            "status": row.get("status"),
+            "customer": row.get("customer"),
+            "project_type": row.get("custom_project_type_ol"),
+            "qc_status": row.get("custom_qc_status"),
+            "city": row.get("custom_city"),
+            "latitude": row.get("custom_latitude"),
+            "longitude": row.get("custom_longitude"),
+            "modified": row.get("modified"),
+        })
+    return out
+
+
 @frappe.whitelist(allow_guest=False)
 def get_qc_checklist(project_name: str) -> dict:
     """
@@ -106,6 +109,7 @@ def get_qc_checklist(project_name: str) -> dict:
     Used by the mobile QC page.
     """
     project = frappe.get_doc("Project", project_name)
+    project.check_permission("read")
     rows = []
     for r in (project.custom_qc_checklist or []):
         rows.append({

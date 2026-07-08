@@ -21,6 +21,7 @@ from orderlift.startup_roles import (
     OPPORTUNITY_ASSIGNER_ROLE,
     PAYMENT_VALIDATOR_ROLE,
     QUOTATION_CREATOR_ROLE,
+    SAV_TECHNICIAN_ROLE,
     STARTUP_ROLES,
     STOCK_QUANTITY_VIEWER_ROLE,
 )
@@ -31,6 +32,32 @@ READ_SELECT = {"read": 1, "select": 1}
 READ_WRITE_CREATE = {"read": 1, "write": 1, "create": 1, "report": 1, "print": 1, "email": 1}
 READ_WRITE = {"read": 1, "write": 1, "report": 1, "print": 1, "email": 1}
 FULL_NON_DELETE = {"read": 1, "write": 1, "create": 1, "report": 1, "export": 1, "import": 1, "print": 1, "email": 1}
+STOCK_OPERATIONAL = {
+    "read": 1,
+    "select": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "submit": 1,
+    "cancel": 1,
+    "amend": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+}
+STOCK_READ_ONLY = {"read": 1, "select": 1, "report": 1, "export": 1, "print": 1, "email": 1}
+STOCK_SETTINGS_ACCESS = {"read": 1, "write": 1, "create": 1, "print": 1, "email": 1}
+STOCK_ENTRY_TYPE_ACCESS = {"read": 1, "select": 1, "write": 1, "create": 1, "print": 1, "email": 1}
+STOCK_SETTINGS_USER_PERMISSION_EXEMPT_FIELDS = (
+    "item_group",
+    "default_warehouse",
+    "sample_retention_warehouse",
+    "stock_uom",
+    "role_allowed_to_over_deliver_receive",
+    "role_allowed_to_create_edit_back_dated_transactions",
+    "stock_auth_role",
+)
 
 COMMERCIAL_AGENT_PERMISSIONS = {
     "Item": READ_ONLY,
@@ -54,6 +81,112 @@ SALES_MANAGER_PERMISSIONS = {
     "Prospect": READ_WRITE_CREATE,
     "Lead": READ_WRITE_CREATE,
     "Agent Pricing Rules": READ_ONLY,
+}
+
+ITEM_CATALOG_READ_PERMISSIONS = {
+    "Item": READ_ONLY,
+    "Item Category": READ_ONLY,
+    "Item Group": READ_ONLY,
+    "Product Bundle": READ_ONLY,
+    "Item Price": READ_ONLY,
+    "Price List": READ_ONLY,
+}
+
+SALES_USER_PERMISSIONS = {
+    **ITEM_CATALOG_READ_PERMISSIONS,
+    "Lead": READ_ONLY,
+    "Prospect": READ_ONLY,
+    "Customer": READ_ONLY,
+    "Contact": READ_ONLY,
+    "Address": READ_ONLY,
+    "Communication": READ_ONLY,
+    "Appointment": READ_ONLY,
+    "Opportunity": READ_WRITE_CREATE,
+    "Quotation": READ_ONLY,
+    "Sales Order": READ_ONLY,
+    "Project": READ_ONLY,
+    "Contract": READ_ONLY,
+    "Task": READ_ONLY,
+    "Timesheet": READ_ONLY,
+    "Maintenance Schedule": READ_ONLY,
+    "Sales Commission": READ_ONLY,
+    "Portal Customer Group Policy": READ_ONLY,
+    "Portal Quote Request": READ_ONLY,
+}
+
+PRICING_MANAGER_PERMISSIONS = {
+    **ITEM_CATALOG_READ_PERMISSIONS,
+    "Lead": READ_ONLY,
+    "Prospect": READ_ONLY,
+    "Customer": READ_ONLY,
+    "Contact": READ_ONLY,
+    "Address": READ_ONLY,
+    "Communication": READ_ONLY,
+    "Appointment": READ_ONLY,
+    "Opportunity": READ_ONLY,
+    "Quotation": READ_ONLY,
+    "Sales Order": READ_ONLY,
+    "Project": READ_ONLY,
+    "Contract": READ_ONLY,
+    "Sales Commission": READ_ONLY,
+    "Pricing Sheet": READ_WRITE_CREATE,
+    "Pricing Scenario": READ_WRITE_CREATE,
+    "Pricing Benchmark Policy": READ_WRITE_CREATE,
+    "Pricing Customs Policy": READ_WRITE_CREATE,
+    "Pricing Tier": READ_WRITE_CREATE,
+    "Agent Pricing Rules": READ_WRITE_CREATE,
+    "Customer Segmentation Engine": READ_WRITE_CREATE,
+    "Portal Customer Group Policy": READ_ONLY,
+    "Portal Quote Request": READ_ONLY,
+}
+
+FINANCE_USER_PERMISSIONS = {
+    "Sales Invoice": READ_WRITE_CREATE,
+    "Purchase Invoice": READ_WRITE_CREATE,
+    "Payment Entry": READ_WRITE_CREATE,
+    "Payment Request": READ_ONLY,
+    "Payment Terms Template": READ_ONLY,
+    "Payment Schedule": READ_ONLY,
+    "Sales Order": READ_ONLY,
+    "Purchase Order": READ_ONLY,
+    "Customer": READ_ONLY,
+    "Supplier": READ_ONLY,
+}
+
+INSTALLATION_USER_PERMISSIONS = {
+    "Project": READ_WRITE_CREATE,
+    "Contract": READ_WRITE_CREATE,
+    "Task": READ_WRITE_CREATE,
+    "Timesheet": READ_WRITE_CREATE,
+    "Maintenance Schedule": READ_WRITE_CREATE,
+    "QC Checklist Template": READ_WRITE_CREATE,
+    "Sales Order": READ_ONLY,
+    "Opportunity": READ_ONLY,
+}
+
+SERVICE_USER_PERMISSIONS = {
+    "SAV Ticket": READ_WRITE_CREATE,
+    "Issue": READ_ONLY,
+    "Warranty Claim": READ_ONLY,
+    "Customer": READ_ONLY,
+    "Sales Order": READ_ONLY,
+    "Delivery Note": READ_ONLY,
+    "Sales Invoice": READ_ONLY,
+}
+
+SAV_TECHNICIAN_PERMISSIONS = {
+    "SAV Ticket": READ_WRITE_CREATE,
+    "Customer": READ_ONLY,
+    "Contact": READ_ONLY,
+    "Address": READ_ONLY,
+    "Sales Order": READ_ONLY,
+    "Delivery Note": READ_ONLY,
+    "Sales Invoice": READ_ONLY,
+    "Project": READ_ONLY,
+    "ToDo": READ_WRITE_CREATE,
+    "Event": READ_WRITE_CREATE,
+    "Communication": READ_WRITE_CREATE,
+    "File": READ_WRITE_CREATE,
 }
 
 EXECUTIVE_READ_PERMISSIONS = {
@@ -107,14 +240,57 @@ DOCTYPE_PERMISSIONS = {
     },
     "Logistics Manager": {
         "Forecast Load Plan": READ_WRITE_CREATE,
-        "Delivery Note": READ_WRITE_CREATE,
-        "Purchase Receipt": READ_WRITE_CREATE,
-        "Stock Entry": READ_WRITE_CREATE,
-        "Material Request": READ_WRITE_CREATE,
-        "Request for Quotation": READ_WRITE_CREATE,
-        "Purchase Order": READ_ONLY,
+        "Delivery Note": STOCK_OPERATIONAL,
+        "Purchase Receipt": STOCK_OPERATIONAL,
+        "Stock Entry": STOCK_OPERATIONAL,
+        "Material Request": STOCK_OPERATIONAL,
+        "Request for Quotation": STOCK_OPERATIONAL,
+        "Purchase Order": STOCK_OPERATIONAL,
+        "Pick List": STOCK_OPERATIONAL,
+        "Quality Inspection": STOCK_OPERATIONAL,
+        "Warehouse": STOCK_READ_ONLY,
+        "Bin": STOCK_READ_ONLY,
+        "Stock Ledger Entry": STOCK_READ_ONLY,
+        "Stock Settings": STOCK_SETTINGS_ACCESS,
+        "Supplier": READ_WRITE_CREATE,
         "Item": READ_ONLY,
+        "Quality Inspection Template": READ_WRITE_CREATE,
+        "Stock Entry Type": STOCK_ENTRY_TYPE_ACCESS,
         "Container Profile": READ_WRITE_CREATE,
+    },
+    "Logistics User": {
+        **ITEM_CATALOG_READ_PERMISSIONS,
+        "Forecast Load Plan": READ_WRITE_CREATE,
+        "Delivery Note": STOCK_OPERATIONAL,
+        "Purchase Receipt": STOCK_OPERATIONAL,
+        "Stock Entry": STOCK_OPERATIONAL,
+        "Material Request": STOCK_OPERATIONAL,
+        "Request for Quotation": STOCK_OPERATIONAL,
+        "Purchase Order": STOCK_OPERATIONAL,
+        "Pick List": STOCK_OPERATIONAL,
+        "Quality Inspection": STOCK_OPERATIONAL,
+        "Warehouse": STOCK_READ_ONLY,
+        "Bin": STOCK_READ_ONLY,
+        "Stock Ledger Entry": STOCK_READ_ONLY,
+        "Stock Settings": STOCK_SETTINGS_ACCESS,
+        "Supplier": READ_WRITE_CREATE,
+        "Quality Inspection Template": READ_WRITE_CREATE,
+        "Stock Entry Type": STOCK_ENTRY_TYPE_ACCESS,
+        "Container Profile": READ_WRITE_CREATE,
+    },
+    "Stock Manager": {
+        "Bin": STOCK_READ_ONLY,
+        "Warehouse": STOCK_READ_ONLY,
+        "Stock Ledger Entry": STOCK_READ_ONLY,
+        "Stock Entry": STOCK_OPERATIONAL,
+        "Pick List": STOCK_OPERATIONAL,
+        "Delivery Note": STOCK_OPERATIONAL,
+        "Purchase Receipt": STOCK_OPERATIONAL,
+        "Quality Inspection": STOCK_OPERATIONAL,
+        "Quality Inspection Template": READ_WRITE_CREATE,
+        "Stock Settings": STOCK_SETTINGS_ACCESS,
+        "Stock Entry Type": STOCK_ENTRY_TYPE_ACCESS,
+        "Item": READ_ONLY,
     },
     "BET Technical User": {
         "Item": READ_ONLY,
@@ -148,10 +324,12 @@ DOCTYPE_PERMISSIONS = {
         "Goal": READ_WRITE_CREATE,
         "Employee": READ_ONLY,
     },
-    "Sales User": {
-        "Quotation": READ_ONLY,
-        "Opportunity": READ_WRITE_CREATE,
-    },
+    "Sales User": SALES_USER_PERMISSIONS,
+    "Pricing Manager": PRICING_MANAGER_PERMISSIONS,
+    "Finance User": FINANCE_USER_PERMISSIONS,
+    "Installation User": INSTALLATION_USER_PERMISSIONS,
+    "Service User": SERVICE_USER_PERMISSIONS,
+    SAV_TECHNICIAN_ROLE: SAV_TECHNICIAN_PERMISSIONS,
     QUOTATION_CREATOR_ROLE: {
         "Quotation": READ_WRITE_CREATE,
         "Price List": READ_SELECT,
@@ -257,6 +435,7 @@ MENU_ROLE_MAP = {
     ITEM_MASTER_EDITOR_ROLE: ["items.item", "items.item_price", "items.price_list"],
     AGENT_PRICING_MANAGER_ROLE: ["policies.agent_rules"],
     CAMPAIGN_MANAGER_ROLE: ["crm.campaign_manager", "crm.campaign_builder"],
+    SAV_TECHNICIAN_ROLE: ["sav.tickets", "training.center"],
     DASHBOARD_MANAGER_ROLE: ["home.dashboard", "crm.crm_dashboard", "sales.pricing_dashboard"],
     COMMISSION_MANAGER_ROLE: ["sales.commission_dashboard", "sales.commissions"],
     "Purchase Manager": [
@@ -275,8 +454,12 @@ MENU_ROLE_MAP = {
         "items.item",
         "items.item_category",
         "items.item_group",
+        "stock.delivery_note",
+        "stock.purchase_receipt",
         "purchasing.delivery_note",
         "purchasing.pick_list",
+        "stock.pick_list",
+        "stock.stock_settings",
     ],
     "Project Manager": [
         "projects.project_pipeline",
@@ -301,10 +484,39 @@ MENU_ROLE_MAP = {
         "logistics.pipeline",
         "logistics.container_planning",
         "logistics.container_profiles",
+        "stock.stock_entry",
+        "stock.delivery_note",
+        "stock.purchase_receipt",
+        "stock.pick_list",
+        "stock.stock_settings",
         "purchasing.delivery_note",
         "purchasing.purchase_receipt",
         "purchasing.material_request",
         "stock.dashboard",
+    ],
+    "Logistics User": [
+        "logistics.pipeline",
+        "logistics.container_planning",
+        "logistics.container_profiles",
+        "stock.dashboard",
+        "stock.stock_entry",
+        "stock.delivery_note",
+        "stock.purchase_receipt",
+        "stock.pick_list",
+        "stock.stock_settings",
+        "stock.balance",
+        "stock.ledger",
+        "stock.warehouse_tree",
+        "stock.warehouse_report",
+        "stock.quality_inspection",
+        "stock.qi_templates",
+        "purchasing.suppliers",
+        "purchasing.material_request",
+        "purchasing.rfq",
+        "purchasing.purchase_order",
+        "purchasing.purchase_receipt",
+        "purchasing.delivery_note",
+        "purchasing.pick_list",
     ],
     "BET Technical User": [
         "items.item",
@@ -341,8 +553,14 @@ MENU_ROLE_MAP = {
 
 
 @frappe.whitelist()
-def run(assign_existing_sales_users: int = 0) -> dict:
+def run(
+    assign_existing_sales_users: int = 0,
+    overwrite_existing_docperms: int = 0,
+    remove_stale_docperms: int = 0,
+) -> dict:
     frappe.only_for("System Manager")
+    overwrite_existing_docperms = cint(overwrite_existing_docperms)
+    remove_stale_docperms = cint(remove_stale_docperms)
     results = {
         "roles": [],
         "custom_docperms": [],
@@ -360,11 +578,19 @@ def run(assign_existing_sales_users: int = 0) -> dict:
             continue
         for doctype, flags in doctype_permissions.items():
             if frappe.db.exists("DocType", doctype):
-                _ensure_custom_docperm(doctype, role_name, _with_default_flags(flags), results)
+                _ensure_custom_docperm(
+                    doctype,
+                    role_name,
+                    _with_default_flags(flags),
+                    results,
+                    overwrite_existing=overwrite_existing_docperms,
+                )
 
-    _remove_stale_custom_docperms(results)
+    if remove_stale_docperms:
+        _remove_stale_custom_docperms(results)
 
     _ensure_menu_roles(results)
+    _ensure_stock_settings_user_permission_exempt_fields(results)
 
     if cint(assign_existing_sales_users):
         _assign_role_to_sales_users(QUOTATION_CREATOR_ROLE, results)
@@ -389,12 +615,15 @@ def _ensure_role(role_name: str, results: dict) -> None:
     results["roles"].append({"role": role_name, "action": action})
 
 
-def _ensure_custom_docperm(doctype: str, role: str, values: dict, results: dict) -> None:
+def _ensure_custom_docperm(doctype: str, role: str, values: dict, results: dict, overwrite_existing: int = 0) -> None:
     filters = {"parent": doctype, "role": role, "permlevel": 0}
     existing = frappe.db.exists("Custom DocPerm", filters)
     if existing:
-        frappe.db.set_value("Custom DocPerm", existing, values)
-        action = "updated"
+        if overwrite_existing:
+            frappe.db.set_value("Custom DocPerm", existing, values)
+            action = "updated"
+        else:
+            action = "exists"
     else:
         doc = frappe.get_doc(
             {
@@ -468,6 +697,50 @@ def _ensure_link_role(menu_key: str, role: str, results: dict) -> None:
         ).insert(ignore_permissions=True)
         action = "created"
     results["page_roles"].append({"parenttype": parenttype, "parent": parent, "role": role, "action": action})
+
+
+def _ensure_stock_settings_user_permission_exempt_fields(results: dict) -> None:
+    if not frappe.db.exists("DocType", "Stock Settings"):
+        return
+    for fieldname in STOCK_SETTINGS_USER_PERMISSION_EXEMPT_FIELDS:
+        if not frappe.get_meta("Stock Settings").get_field(fieldname):
+            continue
+        _ensure_field_property_setter(
+            "Stock Settings",
+            fieldname,
+            "ignore_user_permissions",
+            "Check",
+            1,
+            results,
+        )
+
+
+def _ensure_field_property_setter(
+    doctype: str,
+    fieldname: str,
+    property_name: str,
+    property_type: str,
+    value,
+    results: dict,
+) -> None:
+    filters = {"doc_type": doctype, "field_name": fieldname, "property": property_name}
+    existing = frappe.db.get_value("Property Setter", filters, "name")
+    setter = frappe.get_doc("Property Setter", existing) if existing else frappe.new_doc("Property Setter")
+    setter.doc_type = doctype
+    setter.doctype_or_field = "DocField"
+    setter.field_name = fieldname
+    setter.property = property_name
+    setter.property_type = property_type
+    setter.value = str(value)
+    if existing:
+        setter.save(ignore_permissions=True)
+        action = "updated"
+    else:
+        setter.insert(ignore_permissions=True)
+        action = "created"
+    results.setdefault("property_setters", []).append(
+        {"doctype": doctype, "fieldname": fieldname, "property": property_name, "action": action}
+    )
 
 
 def _assign_role_to_sales_users(role: str, results: dict) -> None:

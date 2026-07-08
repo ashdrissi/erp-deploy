@@ -11,10 +11,11 @@ from six import string_types
 @frappe.whitelist()
 def get_module_name_from_doctype(doc_name, current_module=""):
     # frappe.msgprint("======"+str(doc_name))
+    params = {"doc_name": doc_name, "current_module": current_module}
     condition = ""
     if doc_name:
         if current_module:
-            condition = "and  w.`name` = {current_module} ".format(current_module=current_module)
+            condition = "and w.`name` = %(current_module)s"
 
         list_od_dicts = frappe.db.sql("""
             select *
@@ -24,11 +25,11 @@ def get_module_name_from_doctype(doc_name, current_module=""):
                                              from  tabWorkspace w
                                              inner join
                                                         `tabWorkspace Link` l
-                                                        on w.`name` = l.parent
-                                                         where l.link_to = '{doc_name}'
-                                                          %s
+                                                         on w.`name` = l.parent
+                                                          where l.link_to = %(doc_name)s
+                                                           %s
                                 )	T
-        """.format(doc_name=doc_name), (condition), as_dict=True, debug=False)
+        """ % condition, params, as_dict=True, debug=False)
         if list_od_dicts:
             return [{"module": list_od_dicts[0]["module"]}]
         else:
@@ -40,10 +41,10 @@ def get_module_name_from_doctype(doc_name, current_module=""):
                                                  from  tabWorkspace w
                                                  inner join
                                                             `tabWorkspace Link` l
-                                                            on w.`name` = l.parent
-                                                             where l.link_to = '{doc_name}'
+                                                             on w.`name` = l.parent
+                                                              where l.link_to = %(doc_name)s
                                     )	T
-            """.format(doc_name=doc_name), as_dict=True, debug=False)
+            """, params, as_dict=True, debug=False)
         if list_od_dicts:
             return [{"module": list_od_dicts[0]["module"]}]
 
@@ -245,6 +246,7 @@ def get_events(start=getdate(), end=getdate().year, user=None, for_reminder=Fals
 
 @frappe.whitelist()
 def update_menu_modules(modules):
+    _require_workspace_manager()
     modules_list = json.loads(modules)
     for module in modules_list:
         if frappe.db.exists("Workspace", module["name"]):
@@ -270,6 +272,15 @@ def update_menu_modules(modules):
                 workspace.save(ignore_permissions=True)
 
     return True
+
+
+def _require_workspace_manager():
+    if frappe.session.user == "Administrator":
+        return
+    roles = set(frappe.get_roles(frappe.session.user) or [])
+    if roles.intersection({"System Manager", "Developer"}):
+        return
+    frappe.throw(_("Only System Managers can update Workspace modules."), frappe.PermissionError)
 
 
 def clear():
