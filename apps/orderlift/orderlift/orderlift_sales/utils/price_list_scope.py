@@ -40,8 +40,6 @@ def can_override_quotation_pricing():
     except (AttributeError, TypeError):
         return False
     legacy_allowed = bool(roles & (QUOTATION_PRICE_OVERRIDE_ROLES | {"System Manager"}))
-    if legacy_allowed:
-        return True
     return role_capability_decision(
         CAPABILITY_QUOTATION_OVERRIDE,
         legacy_allowed,

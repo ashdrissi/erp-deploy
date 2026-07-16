@@ -94,9 +94,10 @@ def role_capability_decision(
     context: str = "",
 ) -> bool:
     capability_allowed = user_has_capability(capability, user=user, roles=roles)
-    if capability_allowed != bool(legacy_allowed):
+    use_capabilities = _use_role_capabilities()
+    if not use_capabilities and capability_allowed != bool(legacy_allowed):
         _log_capability_mismatch(capability, bool(legacy_allowed), capability_allowed, user=user, context=context)
-    if _use_role_capabilities():
+    if use_capabilities:
         return capability_allowed
     return bool(legacy_allowed)
 
