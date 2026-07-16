@@ -430,8 +430,6 @@ extend_doctype_class = {
 # ---------------------------------------------------------
 scheduler_events = {
     "daily": [
-        # Check contact schedules and create overdue Tasks
-        "orderlift.crm.utils.notification_scheduler.run_daily",
         # Check reorder levels and draft Purchase Orders
         "orderlift.logistics.utils.reorder_manager.check_reorder_levels",
         # Recompute every open Appraisal Cycle's performance snapshots
