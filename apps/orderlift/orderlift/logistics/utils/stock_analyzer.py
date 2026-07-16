@@ -189,7 +189,16 @@ def _send_analysis_report(flags_to_set):
     if not stock_managers:
         return
 
-    emails = [user.parent for user in stock_managers]
+    emails = []
+    for user in stock_managers:
+        user_name = (user.parent or "").strip()
+        email = (frappe.db.get_value("User", user_name, "email") or "").strip()
+        if not email and "@" in user_name:
+            email = user_name
+        if email and email not in emails:
+            emails.append(email)
+    if not emails:
+        return
 
     # Build email content
     html_content = "<h2>Weekly Stock Analysis Report</h2>"
