@@ -137,6 +137,26 @@ class TestStockAnalyzer(unittest.TestCase):
             {"slow_moving": False, "overstock": True, "dormant": False},
         )
 
+    def test_stock_report_resolves_role_users_to_valid_email_addresses(self):
+        db = StockDB()
+        db.get_value = lambda doctype, name, fieldname: {
+            "Administrator": "admin@example.com",
+            "stock@example.com": "stock@example.com",
+        }.get(name, "") if doctype == "User" and fieldname == "email" else ""
+        module = self._load(db)
+        sent = []
+        module.frappe.get_all = lambda doctype, **_kwargs: (
+            [Row(parent="Administrator"), Row(parent="stock@example.com")]
+            if doctype == "Has Role"
+            else []
+        )
+        module.frappe.sendmail = lambda **kwargs: sent.append(kwargs)
+
+        module._send_analysis_report({"slow_moving": [], "overstock": [], "dormant": []})
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["recipients"], ["admin@example.com", "stock@example.com"])
+
 
 if __name__ == "__main__":
     unittest.main()
