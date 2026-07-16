@@ -22,7 +22,6 @@ def send_weekly_efficiency_digest():
             "status",
             "weight_utilization_pct",
             "volume_utilization_pct",
-            "limiting_factor",
             "departure_date",
         ],
         order_by="modified desc",

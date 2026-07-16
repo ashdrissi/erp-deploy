@@ -8,8 +8,7 @@ Called via hooks.py scheduler_events (weekly).
 """
 
 import frappe
-from frappe.utils import add_days, nowdate, flt
-from datetime import datetime, timedelta
+from frappe.utils import add_days, flt, getdate, nowdate
 
 
 def flag_slow_moving_items():
@@ -72,19 +71,19 @@ def _analyze_item(item_code):
     """, item_code, as_dict=True)[0].qty
 
     # Check for slow-moving (no movement in 90+ days)
-    ninety_days_ago = add_days(nowdate(), -90)
+    ninety_days_ago = getdate(add_days(nowdate(), -90))
     last_movement = frappe.db.sql("""
         SELECT MAX(posting_date) as last_date
         FROM `tabStock Ledger Entry`
         WHERE item_code = %s AND is_cancelled = 0
     """, item_code, as_dict=True)[0].last_date
 
-    if last_movement is None or last_movement < ninety_days_ago:
+    if last_movement is None or getdate(last_movement) < ninety_days_ago:
         flags["slow_moving"] = True
 
     # Check for dormant (zero stock for 30+ days)
     if total_qty <= 0:
-        thirty_days_ago = add_days(nowdate(), -30)
+        thirty_days_ago = getdate(add_days(nowdate(), -30))
         zero_stock_since = frappe.db.sql("""
             SELECT MIN(posting_date) as earliest_zero_date
             FROM `tabStock Ledger Entry`
@@ -96,7 +95,7 @@ def _analyze_item(item_code):
         """, item_code, as_dict=True)
 
         if zero_stock_since and zero_stock_since[0].earliest_zero_date:
-            if zero_stock_since[0].earliest_zero_date < thirty_days_ago:
+            if getdate(zero_stock_since[0].earliest_zero_date) < thirty_days_ago:
                 flags["dormant"] = True
 
     # Check for overstock (qty > reorder_qty * 3)
