@@ -383,12 +383,31 @@ def after_migrate():
             ],
             "Quotation": [
                 {
+                    "fieldname": "custom_customer_tax_id",
+                    "label": "ICE / Tax ID",
+                    "fieldtype": "Data",
+                    "insert_after": "customer_name",
+                    "read_only": 1,
+                    "print_hide": 1,
+                    "description": "Customer ICE / Tax ID snapshot used on this Quotation and its print formats.",
+                },
+                {
                     "fieldname": "source_pricing_sheet",
                     "label": "Source Pricing Sheet",
                     "fieldtype": "Link",
                     "options": "Pricing Sheet",
                     "insert_after": "order_type",
                     "in_standard_filter": 1,
+                },
+                {
+                    "fieldname": "commission_sales_person",
+                    "label": "Commission Salesperson",
+                    "fieldtype": "Link",
+                    "options": "Sales Person",
+                    "insert_after": "source_pricing_sheet",
+                    "in_standard_filter": 1,
+                    "print_hide": 1,
+                    "description": "Automatically assigned and locked for sales users. Managers may choose any enabled Sales Person or leave it blank for no commission.",
                 },
                 {
                     "fieldname": "selected_selling_price_lists",
@@ -487,6 +506,7 @@ def after_migrate():
                     "options": "Sales Person",
                     "insert_after": "source_margin_rule",
                     "read_only": 1,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "source_geography",
@@ -585,6 +605,7 @@ def after_migrate():
                     "options": "Sales Person",
                     "insert_after": "source_margin_rule",
                     "read_only": 1,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "source_geography",
@@ -649,6 +670,7 @@ def after_migrate():
     )
     _sync_existing_price_list_types()
     ensure_customer_pricing_tier_field_visibility()
+    ensure_tax_id_labels()
     _upsert_property_setter(
         "Item",
         "customs_tariff_number",
@@ -688,6 +710,24 @@ def after_migrate():
     ensure_default_pricing_tiers()
     seed_default_role_capabilities()
     ensure_pricing_workspace()
+
+
+def ensure_tax_id_labels():
+    """Use one Morocco-friendly label for the standard ERPNext tax fields."""
+    tax_id_fields = (
+        ("Company", "tax_id"),
+        ("Customer", "tax_id"),
+        ("Supplier", "tax_id"),
+        ("Sales Order", "tax_id"),
+        ("Delivery Note", "tax_id"),
+        ("Sales Invoice", "tax_id"),
+        ("Sales Invoice", "company_tax_id"),
+    )
+    for doctype, fieldname in tax_id_fields:
+        if not frappe.get_meta(doctype).get_field(fieldname):
+            continue
+        _upsert_property_setter(doctype, fieldname, "label", "ICE / Tax ID", "Data")
+        frappe.clear_cache(doctype=doctype)
 
 
 def _sync_existing_price_list_types():
@@ -1095,6 +1135,7 @@ def ensure_quotation_discount_snapshot_fields():
                     "fieldtype": "Currency",
                     "insert_after": "source_commission_rate",
                     "read_only": 1,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "custom_pu_ttc",
@@ -1177,6 +1218,7 @@ def ensure_quotation_discount_snapshot_fields():
                     "fieldtype": "Currency",
                     "insert_after": "source_commission_rate",
                     "read_only": 1,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "custom_pu_ttc",
@@ -1378,8 +1420,6 @@ def ensure_quotation_pricing_layout():
         "source_geography",
         "source_customs_applied",
         "source_customs_basis",
-        "source_margin_basis",
-        "source_margin_percent",
     ]
     for fieldname in quotation_item_hidden_fields:
         if not frappe.get_meta("Quotation Item").get_field(fieldname):
@@ -1397,6 +1437,8 @@ def ensure_quotation_pricing_layout():
         ("source_max_discount_percent", "Max Discount %"),
         ("source_discount_amount", "Remise HT"),
         ("source_discounted_sell_rate", "PU HT net"),
+        ("source_margin_percent", "Margin %"),
+        ("source_margin_basis", "Margin Basis"),
         ("source_commission_rate", "Commission %"),
         ("source_commission_amount", "Commission Amount"),
         ("custom_applied_taxes", "Applied Taxes"),

@@ -43,6 +43,7 @@
         { fieldname: "source_discount_amount", columns: 1, sticky: 0 },
         { fieldname: "source_discounted_sell_rate", columns: 1, sticky: 0 },
         { fieldname: "amount", columns: 1, sticky: 0 },
+        { fieldname: "source_margin_percent", columns: 1, sticky: 0 },
         { fieldname: "custom_pu_ttc", columns: 1, sticky: 0 },
         { fieldname: "custom_pt_ttc", columns: 1, sticky: 0 },
     ];
@@ -511,18 +512,53 @@
         const gridViewSettings = frappe.model && frappe.model.user_settings
             ? (frappe.model.user_settings[frm.doctype] = frappe.model.user_settings[frm.doctype] || {})
             : null;
+        const defaultColumns = QUOTATION_ITEM_GRID_COLUMNS.map((column) => Object.assign({}, column));
+        let activeColumns = defaultColumns;
         if (gridViewSettings) {
             gridViewSettings.GridView = gridViewSettings.GridView || {};
-            gridViewSettings.GridView[grid.doctype] = QUOTATION_ITEM_GRID_COLUMNS.map((column) => Object.assign({}, column));
+            const savedColumns = Array.isArray(gridViewSettings.GridView[grid.doctype])
+                ? gridViewSettings.GridView[grid.doctype].filter((column) => column && column.fieldname)
+                : [];
+            if (savedColumns.length) {
+                activeColumns = savedColumns;
+            }
         }
+        const activeColumnByField = new Map(activeColumns.map((column) => [column.fieldname, column]));
+        (grid.user_defined_columns || []).forEach((column) => {
+            const fieldname = column && (column.fieldname || (column.df && column.df.fieldname));
+            if (!fieldname || activeColumnByField.has(fieldname)) return;
+            activeColumnByField.set(fieldname, {
+                fieldname,
+                columns: Number(column.columns || (column.df && column.df.columns) || 1),
+                sticky: Number(column.sticky || (column.df && column.df.sticky) || 0),
+            });
+        });
+        (grid.visible_columns || []).forEach((column) => {
+            const fieldname = column && (column.fieldname || (column.df && column.df.fieldname));
+            if (!fieldname || activeColumnByField.has(fieldname)) return;
+            activeColumnByField.set(fieldname, {
+                fieldname,
+                columns: Number(column.columns || (column.df && column.df.columns) || 1),
+                sticky: Number(column.sticky || (column.df && column.df.sticky) || 0),
+            });
+        });
+        (grid.docfields || []).forEach((df) => {
+            if (!df || !df.fieldname || !df.in_list_view || activeColumnByField.has(df.fieldname)) return;
+            activeColumnByField.set(df.fieldname, {
+                fieldname: df.fieldname,
+                columns: Number(df.columns || 1),
+                sticky: Number(df.sticky || 0),
+            });
+        });
 
         (grid.docfields || []).forEach((df) => {
             if (!df || !df.fieldname) return;
-            const column = QUOTATION_ITEM_GRID_COLUMNS.find((entry) => entry.fieldname === df.fieldname);
+            const column = activeColumnByField.get(df.fieldname);
             if (column) {
                 df.in_list_view = 1;
-                df.columns = column.columns;
-                df.sticky = column.sticky;
+                df.hidden = 0;
+                df.columns = Number(column.columns || 1);
+                df.sticky = Number(column.sticky || 0);
                 if (["amount", "custom_pt_ttc"].includes(df.fieldname)) df.read_only = 1;
             } else {
                 df.in_list_view = 0;
@@ -531,7 +567,6 @@
             }
         });
         grid.visible_columns = [];
-        grid.user_defined_columns = [];
     }
 
     function disableQuotationItemRowForms(frm) {
@@ -591,29 +626,61 @@
                     overflow-x: auto;
                     padding-bottom: 6px;
                 }
+                .orderlift-inline-items-grid .form-grid,
+                .orderlift-inline-items-grid .grid-body,
+                .orderlift-inline-items-grid .rows {
+                    overflow-x: visible;
+                }
                 .orderlift-inline-items-grid .grid-heading-row,
                 .orderlift-inline-items-grid .grid-row .data-row,
                 .orderlift-inline-items-grid .grid-row-open {
-                    min-width: 1700px;
+                    min-width: 2200px;
+                    width: max-content;
                 }
                 .orderlift-inline-items-grid .grid-static-col[data-fieldname],
                 .orderlift-inline-items-grid .grid-editable-row [data-fieldname] {
-                    flex: 0 0 140px;
+                    box-sizing: border-box;
+                    flex: 0 0 170px;
                     max-width: none;
-                    width: 140px;
+                    min-width: 170px;
+                    width: 170px;
                 }
                 .orderlift-inline-items-grid [data-fieldname="item_code"] {
-                    flex-basis: 260px;
-                    width: 260px;
+                    flex-basis: 320px;
+                    min-width: 320px;
+                    width: 320px;
                 }
                 .orderlift-inline-items-grid [data-fieldname="qty"] {
-                    flex-basis: 90px;
-                    width: 90px;
+                    flex-basis: 110px;
+                    min-width: 110px;
+                    width: 110px;
                 }
+                .orderlift-inline-items-grid [data-fieldname="amount"],
+                .orderlift-inline-items-grid [data-fieldname="custom_pu_ttc"],
+                .orderlift-inline-items-grid [data-fieldname="custom_pt_ttc"],
                 .orderlift-inline-items-grid [data-fieldname="source_discount_amount"],
                 .orderlift-inline-items-grid [data-fieldname="source_discounted_sell_rate"] {
-                    flex-basis: 170px;
-                    width: 170px;
+                    flex-basis: 190px;
+                    min-width: 190px;
+                    width: 190px;
+                }
+                .orderlift-inline-items-grid [data-fieldname="source_discount_percent"],
+                .orderlift-inline-items-grid [data-fieldname="source_max_discount_percent"],
+                .orderlift-inline-items-grid [data-fieldname="source_margin_percent"] {
+                    flex-basis: 150px;
+                    min-width: 150px;
+                    width: 150px;
+                }
+                .orderlift-inline-items-grid .grid-static-col .form-control,
+                .orderlift-inline-items-grid .grid-static-col input,
+                .orderlift-inline-items-grid .grid-static-col select,
+                .orderlift-inline-items-grid .grid-editable-row .form-control,
+                .orderlift-inline-items-grid .grid-editable-row input,
+                .orderlift-inline-items-grid .grid-editable-row select {
+                    box-sizing: border-box;
+                    max-width: 100%;
+                    min-width: 0;
+                    width: 100%;
                 }
                 .orderlift-inline-items-grid .grid-static-col {
                     white-space: nowrap;

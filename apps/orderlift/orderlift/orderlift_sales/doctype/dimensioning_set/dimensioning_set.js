@@ -53,8 +53,7 @@ function prepareNewDimensioningSetForm(frm) {
 }
 
 function openDimensioningSetBuilder(frm) {
-    frappe.route_options = { dimensioning_set: frm.doc.name };
-    frappe.set_route("dimensioning-set-builder");
+    frappe.set_route("dimensioning-set-builder", frm.doc.set_name || frm.doc.name, frm.doc.name);
 }
 
 frappe.ui.form.on("Dimensioning Set Field", {

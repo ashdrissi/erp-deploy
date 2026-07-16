@@ -6,6 +6,71 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestQuotationFormSimplify(unittest.TestCase):
+    def test_draft_quotation_has_deterministic_ttc_recalculation_action(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        for token in [
+            "addRecalculateTTCGridButton",
+            "recalculateQuotationTTC",
+            'grid.add_custom_button(__("Recalculate TTC"), recalculate);',
+            "frm.cscript.calculate_taxes_and_totals",
+            "frappe.after_ajax",
+            'data-orderlift-recalculate-ttc',
+        ]:
+            self.assertIn(token, script)
+        self.assertNotIn("[100, 500, 1200]", script)
+
+    def test_quotation_margin_fields_are_available_to_column_selector(self):
+        pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
+        hidden_block = pricing_setup.split("quotation_item_hidden_fields = [", 1)[1].split("]", 1)[0]
+        visible_block = pricing_setup.split("quotation_item_visible_fields = [", 1)[1].split("]", 1)[0]
+
+        self.assertNotIn('"source_margin_percent"', hidden_block)
+        self.assertNotIn('"source_margin_basis"', hidden_block)
+        self.assertIn('("source_margin_percent", "Margin %")', visible_block)
+        self.assertIn('("source_margin_basis", "Margin Basis")', visible_block)
+
+    def test_quotation_item_grid_preserves_user_configured_columns(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        for token in [
+            "configuredQuotationItemGridColumns",
+            'frappe.get_user_settings(frm.doctype, "GridView")',
+            "savedColumns",
+            'fieldname === "source_margin_percent"',
+        ]:
+            self.assertIn(token, script)
+        self.assertNotIn("gridViewSettings.GridView[grid.doctype] =", script)
+
+    def test_quotation_item_grid_keeps_last_data_field_full_width(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        for token in [
+            "--orderlift-grid-cell-width",
+            ".grid-static-col[data-fieldname]:last-child",
+            "position: static",
+            "min-width: max-content",
+        ]:
+            self.assertIn(token, script)
+        self.assertNotIn('canViewQuotationMargins() ? "2100px" : "1820px"', script)
+
+    def test_quotation_item_grid_uses_one_aligned_horizontal_scroll_layout(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        for token in [
+            ".orderlift-inline-items-grid .form-grid-container.column-limit-reached",
+            ".column-limit-reached .form-grid .grid-static-col[data-fieldname]",
+            "justify-content: flex-start",
+            "box-sizing: border-box",
+            "--orderlift-grid-cell-width: 140px",
+            "width: max-content",
+        ]:
+            self.assertIn(token, script)
+        self.assertNotIn(
+            ".orderlift-inline-items-grid {\n                    overflow-x: auto;",
+            script,
+        )
+
     def test_quotation_form_simplifier_is_wired_and_hides_only_discount_fields(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
@@ -177,6 +242,53 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('field === "taxes_and_charges_template"', builder_js)
         self.assertIn("filters.company = company", builder_js)
 
+    def test_direct_quotation_commission_has_explicit_salesperson_context(self):
+        pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
+        quotation_hooks = (APP_ROOT / "orderlift_sales" / "quotation_hooks.py").read_text()
+        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
+        quotation_script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        self.assertIn('"fieldname": "commission_sales_person"', pricing_setup)
+        self.assertIn("resolve_quotation_commission_context", quotation_hooks)
+        self.assertIn('row.source_sales_person = sales_person', quotation_hooks)
+        self.assertIn("commission_sales_person(frm)", price_queries)
+        self.assertIn("sales_person: frm.doc.commission_sales_person", price_queries)
+        self.assertIn('setChildValue(row, "source_sales_person"', price_queries)
+        self.assertIn('{ fieldname: "source_commission_rate", columns: 1, sticky: 0 }', quotation_script)
+        self.assertIn('{ fieldname: "source_commission_amount", columns: 1, sticky: 0 }', quotation_script)
+        for fieldname in ("commission_sales_person", "source_sales_person", "source_commission_rate", "source_commission_amount"):
+            field_block = pricing_setup.split(f'"fieldname": "{fieldname}"', 1)[1].split("},", 1)[0]
+            self.assertIn('"print_hide": 1', field_block)
+
+    def test_quotation_commission_salesperson_ui_follows_role_matrix(self):
+        quotation_hooks = (APP_ROOT / "orderlift_sales" / "quotation_hooks.py").read_text()
+        item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
+        price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
+
+        self.assertIn("get_quotation_commission_assignment_context", quotation_hooks)
+        self.assertNotIn("Select a Commission Salesperson before submitting", quotation_hooks)
+        self.assertIn("applyQuotationCommissionAssignment", price_queries)
+        self.assertIn("can_edit_sales_person", price_queries)
+        self.assertIn("No commission will be generated", price_queries)
+        self.assertIn("!context.can_edit_sales_person", price_queries)
+        self.assertIn('return "" if _can_select_any_commission_salesperson() else own_sales_person', item_tools)
+
+    def test_commission_workflow_is_wired_to_customer_payment_events(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        calculator = (APP_ROOT / "sales" / "utils" / "commission_calculator.py").read_text()
+        commission_controller = (
+            APP_ROOT / "orderlift_sales" / "doctype" / "sales_commission" / "sales_commission.py"
+        ).read_text()
+        commission_form = (
+            APP_ROOT / "orderlift_sales" / "doctype" / "sales_commission" / "sales_commission.js"
+        ).read_text()
+
+        self.assertIn("sync_commissions_from_payment_entry", hooks)
+        self.assertIn("_sales_order_is_fully_billed", calculator)
+        self.assertIn('self.status != "To Pay"', commission_controller)
+        self.assertIn('frm.doc.status === "To Pay"', commission_form)
+        self.assertNotIn("base_amount * (frm.doc.commission_rate / 100)", commission_form)
+
     def test_quotation_and_pricing_sheet_stock_snapshot_wiring(self):
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
         quotation_js = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
@@ -285,7 +397,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             '{ fieldname: "custom_pu_ttc", columns: 1, sticky: 0 }',
             '{ fieldname: "custom_pt_ttc", columns: 1, sticky: 0 }',
             "enforceQuotationItemGridColumns",
-            "gridViewSettings.GridView[grid.doctype]",
+            "configuredQuotationItemGridColumns",
             "grid.visible_columns = []",
             "df.in_list_view = 0",
             "df.columns = 0",
@@ -293,7 +405,9 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "scheduleItemTTCFieldsSync",
             "price_list_rate(frm)",
             "source_gross_sell_rate(frm)",
-            "[100, 500, 1200].forEach",
+            "recalculateQuotationTTC",
+            "frappe.after_ajax(runLatest)",
+            "frm.cscript.calculate_taxes_and_totals",
             'if (changed) frm.refresh_field("items")',
         ]:
             self.assertIn(token, script)
@@ -556,6 +670,37 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "sync_supplier_quotation_tax_inclusive_fields",
         ]:
             self.assertIn(token, tax_inclusive)
+
+    def test_customer_ice_tax_id_is_configured_and_printed_below_customer_name(self):
+        setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
+        quotation_html = (APP_ROOT / "print_formats" / "orderlift_quotation.html").read_text()
+        sales_html = (APP_ROOT / "print_formats" / "orderlift_sales_document.html").read_text()
+        quotation_tr_html = (APP_ROOT / "print_formats" / "orderlift_quotation_tr.html").read_text()
+        sales_tr_html = (APP_ROOT / "print_formats" / "orderlift_sales_document_tr.html").read_text()
+
+        self.assertIn('"fieldname": "custom_customer_tax_id"', setup)
+        self.assertIn('"label": "ICE / Tax ID"', setup)
+        self.assertIn("ensure_tax_id_labels()", setup)
+
+        for html in (quotation_html, sales_html, quotation_tr_html, sales_tr_html):
+            customer_name_position = html.index('class="ol-info-client-name"')
+            tax_id_position = html.index('{{ _("ICE / Tax ID") }}', customer_name_position)
+            address_position = html.index("doc.address_display", customer_name_position)
+            self.assertLess(customer_name_position, tax_id_position)
+            self.assertLess(tax_id_position, address_position)
+
+    def test_draft_quotation_refreshes_customer_ice_from_customer_master(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        for token in [
+            "syncCustomerTaxId(frm)",
+            'frappe.db.get_value("Customer", customer, "tax_id")',
+            'frm.set_value("custom_customer_tax_id", taxId)',
+            "Number(frm.doc.docstatus || 0) !== 0",
+            "party_name(frm)",
+            "quotation_to(frm)",
+        ]:
+            self.assertIn(token, script)
 
     def test_bulk_quantity_is_doctype_scoped_without_global_interval(self):
         hooks = (APP_ROOT / "hooks.py").read_text()

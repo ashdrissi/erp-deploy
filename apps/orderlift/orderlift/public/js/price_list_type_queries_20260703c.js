@@ -10,6 +10,14 @@
     };
 
     const PRICE_OVERRIDE_ROLES = new Set(["Administrator", "System Manager", "Orderlift Admin", "Orderlift Business Admin"]);
+    const COMMISSION_ASSIGNMENT_MANAGER_ROLES = new Set([
+        "Administrator",
+        "Orderlift Admin",
+        "Orderlift Business Admin",
+        "Sales Manager",
+        "Pricing Manager",
+        "System Manager",
+    ]);
 
     function canOverrideQuotationPricing() {
         var roles = frappe.user_roles || [];
@@ -27,6 +35,8 @@
                 if (doctype === "Quotation") {
                     applyQuotationSelectedPriceListQuery(frm);
                     applyQuotationItemSourcePriceListQuery(frm);
+                    applyQuotationCommissionSalesPersonQuery(frm);
+                    applyQuotationCommissionAssignment(frm);
                     clearUnselectedQuotationPrimaryPriceList(frm);
                 }
             },
@@ -36,6 +46,8 @@
                 if (doctype === "Quotation") {
                     applyQuotationSelectedPriceListQuery(frm);
                     applyQuotationItemSourcePriceListQuery(frm);
+                    applyQuotationCommissionSalesPersonQuery(frm);
+                    applyQuotationCommissionAssignment(frm);
                     clearUnselectedQuotationPrimaryPriceList(frm);
                     syncQuotationPrimarySellingPriceList(frm);
                     // NOTE: do NOT re-price items here. refresh() fires after every
@@ -64,6 +76,18 @@
                 syncQuotationPrimarySellingPriceList(frm);
                 refreshQuotationItemPrices(frm);
                 applyTransactionItemQuery(frm, FORM_QUERIES.Quotation);
+            },
+            commission_sales_person(frm) {
+                if (doctype !== "Quotation") return;
+                updateQuotationCommissionFieldDescription(frm);
+                refreshQuotationItemPrices(frm);
+            },
+            before_submit(frm) {
+                if (doctype !== "Quotation" || String(frm.doc.commission_sales_person || "").trim()) return;
+                frappe.show_alert({
+                    message: __("No Commission Salesperson is assigned. No commission will be generated."),
+                    indicator: "orange",
+                }, 7);
             },
         });
     });
@@ -127,6 +151,61 @@
             if (priceLists.length) filters.name = ["in", priceLists];
             return { filters };
         });
+    }
+
+    function applyQuotationCommissionSalesPersonQuery(frm) {
+        if (!frm || !frm.fields_dict || !frm.fields_dict.commission_sales_person) return;
+        frm.set_query("commission_sales_person", () => ({
+            filters: { enabled: 1, is_group: 0 },
+        }));
+    }
+
+    function applyQuotationCommissionAssignment(frm) {
+        if (!frm || !frm.fields_dict || !frm.fields_dict.commission_sales_person) return;
+        const localContext = { can_edit_sales_person: currentUserCanAssignCommissionSalesPerson() };
+        applyQuotationCommissionFieldState(frm, localContext);
+        updateQuotationCommissionFieldDescription(frm);
+
+        if (!frm.__orderlift_commission_assignment_context) {
+            frm.__orderlift_commission_assignment_context = frappe.call({
+                method: "orderlift.orderlift_sales.quotation_hooks.get_quotation_commission_assignment_context",
+            }).then((response) => response.message || {});
+        }
+        frm.__orderlift_commission_assignment_context.then((context) => {
+            applyQuotationCommissionFieldState(frm, context);
+            const isNew = typeof frm.is_new === "function" ? frm.is_new() : Boolean(frm.doc.__islocal);
+            const isDirect = !String(frm.doc.source_pricing_sheet || "").trim();
+            if (isNew && isDirect && !context.can_edit_sales_person && !frm.doc.commission_sales_person && context.sales_person) {
+                frm.set_value("commission_sales_person", context.sales_person);
+            }
+            updateQuotationCommissionFieldDescription(frm);
+        }).catch((error) => {
+            console.error("Unable to resolve Quotation commission assignment", error);
+        });
+    }
+
+    function applyQuotationCommissionFieldState(frm, context) {
+        const editable = Number(frm.doc.docstatus || 0) === 0
+            && !String(frm.doc.source_pricing_sheet || "").trim()
+            && Boolean(context && context.can_edit_sales_person);
+        frm.toggle_enable("commission_sales_person", editable);
+    }
+
+    function updateQuotationCommissionFieldDescription(frm) {
+        if (!frm || !frm.set_df_property || !frm.fields_dict || !frm.fields_dict.commission_sales_person) return;
+        const assigned = String(frm.doc.commission_sales_person || "").trim();
+        const description = assigned
+            ? __("The selected Sales Person receives the commission calculated from this Quotation.")
+            : __("Optional. No commission will be generated when no Commission Salesperson is assigned.");
+        frm.set_df_property("commission_sales_person", "description", description);
+    }
+
+    function currentUserCanAssignCommissionSalesPerson() {
+        let roles = frappe.user_roles || [];
+        if (!roles.length && frappe.boot && frappe.boot.user && Array.isArray(frappe.boot.user.roles)) {
+            roles = frappe.boot.user.roles;
+        }
+        return roles.some((role) => COMMISSION_ASSIGNMENT_MANAGER_ROLES.has(role));
     }
 
     function buildFilters(priceListType, company) {
@@ -204,6 +283,7 @@
                     item_codes: JSON.stringify(itemCodes),
                     price_lists: JSON.stringify(priceLists),
                     price_list_type: "selling",
+                    sales_person: frm.doc.commission_sales_person || "",
                 },
             });
             const rows = (res.message || {}).rows || {};
@@ -227,6 +307,7 @@
                     item_codes: JSON.stringify([row.item_code]),
                     price_lists: JSON.stringify(priceLists),
                     price_list_type: "selling",
+                    sales_person: frm.doc.commission_sales_person || "",
                 },
             });
             const payload = ((res.message || {}).rows || {})[row.item_code];
@@ -271,6 +352,7 @@
             setChildValue(row, "source_discount_percent", discount);
             setChildValue(row, "source_discount_amount", Math.max(rate - netRate, 0));
             setChildValue(row, "source_discounted_sell_rate", netRate);
+            setChildValue(row, "source_sales_person", payload.sales_person || frm.doc.commission_sales_person || "");
             setChildValue(row, "source_commission_rate", commissionRate);
             setChildValue(row, "source_commission_amount", commissionAmount);
             if (frm.doc.selling_price_list !== payload.price_list && payload.price_list) {

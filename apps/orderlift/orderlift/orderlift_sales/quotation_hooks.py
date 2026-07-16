@@ -15,6 +15,13 @@ from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
 OTHER_CHARGE_ITEM_CODE = "OTHER-CHARGES"
+COMMISSION_ASSIGNMENT_MANAGER_ROLES = {
+    "Orderlift Admin",
+    "Orderlift Business Admin",
+    "Sales Manager",
+    "Pricing Manager",
+    "System Manager",
+}
 
 
 @frappe.whitelist()
@@ -55,6 +62,15 @@ def get_transportation_charge_item(company: str | None = None) -> dict:
     return get_other_charge_item(company=company)
 
 
+@frappe.whitelist()
+def get_quotation_commission_assignment_context() -> dict:
+    """Return only the current user's safe Quotation commission UI context."""
+    return {
+        "sales_person": _sales_person_for_user(frappe.session.user),
+        "can_edit_sales_person": _can_assign_any_commission_salesperson(),
+    }
+
+
 def _default_service_item_group() -> str:
     for name in ("Services", "Service", "All Item Groups"):
         if frappe.db.exists("Item Group", name):
@@ -90,6 +106,12 @@ def apply_quotation_party_defaults(doc, method=None) -> None:
     defaults = get_party_defaults(party_type, party_name) or {}
     if doc.meta.get_field("customer_name") and not (doc.get("customer_name") or "").strip():
         doc.customer_name = defaults.get("display_name") or doc.get("customer_name") or party_name
+    if doc.meta.get_field("custom_customer_tax_id"):
+        doc.custom_customer_tax_id = (
+            frappe.db.get_value("Customer", party_name, "tax_id") or ""
+            if party_type == "Customer"
+            else ""
+        )
     _set_if_empty(doc, "territory", defaults.get("territory"))
     _set_if_empty(doc, "customer_address", defaults.get("address_name"))
     _set_if_empty(doc, "address_display", defaults.get("address"))
@@ -101,11 +123,87 @@ def apply_quotation_party_defaults(doc, method=None) -> None:
 
 
 def sync_quotation_pricing_snapshot_fields(doc, method=None) -> None:
+    resolve_quotation_commission_context(doc)
     sync_quotation_item_price_input_fields(doc)
     reprice_quotation_items_from_selected_price_lists(doc)
     sync_quotation_item_price_input_fields(doc)
     apply_quotation_sales_tax_template(doc)
     sync_quotation_item_tax_inclusive_fields(doc)
+
+
+def resolve_quotation_commission_context(doc, method=None) -> str:
+    """Resolve one auditable salesperson/rate for Pricing Sheet and direct quotes."""
+    source_pricing_sheet = (doc.get("source_pricing_sheet") or "").strip()
+    selected = (doc.get("commission_sales_person") or "").strip()
+    snapshot_people = {
+        (row.get("source_sales_person") or "").strip()
+        for row in (doc.get("items") or [])
+        if (row.get("source_sales_person") or "").strip()
+    }
+
+    if source_pricing_sheet:
+        sheet_sales_person = frappe.db.get_value("Pricing Sheet", source_pricing_sheet, "sales_person") or ""
+        sales_person = sheet_sales_person or (next(iter(snapshot_people)) if len(snapshot_people) == 1 else "")
+    elif _can_assign_any_commission_salesperson():
+        # Managers explicitly choose the beneficiary. Blank is intentional and
+        # means that this Quotation does not create a commission snapshot.
+        sales_person = selected
+    else:
+        # A normal sales user cannot redirect commission through a crafted
+        # request. Existing assignments remain immutable; a new Quotation is
+        # attributed to its creator's Sales Person mapping when one exists.
+        sales_person = _locked_direct_quotation_sales_person(doc)
+
+    if sales_person and frappe.db.has_column("Sales Person", "enabled"):
+        if not frappe.db.get_value("Sales Person", sales_person, "enabled"):
+            frappe.throw(_("Commission Salesperson must be enabled."))
+
+    if doc.meta.get_field("commission_sales_person"):
+        doc.commission_sales_person = sales_person
+
+    commission_rate = _agent_commission_rate(sales_person)
+    for row in doc.get("items") or []:
+        if row.meta.get_field("source_sales_person"):
+            row.source_sales_person = sales_person
+        if not source_pricing_sheet and row.meta.get_field("source_commission_rate"):
+            row.source_commission_rate = commission_rate
+
+    return sales_person
+
+
+def _locked_direct_quotation_sales_person(doc) -> str:
+    if not doc.is_new():
+        before = doc.get_doc_before_save()
+        if before:
+            get = getattr(before, "get", None)
+            previous = get("commission_sales_person") if callable(get) else getattr(before, "commission_sales_person", "")
+            previous = (previous or "").strip()
+            if previous:
+                return previous
+    creator = getattr(doc, "owner", None) or frappe.session.user
+    return _sales_person_for_user(creator)
+
+
+def _sales_person_for_user(user: str) -> str:
+    if not user or not frappe.db.exists("DocType", "Sales Person") or not frappe.db.has_column("Sales Person", "user"):
+        return ""
+    filters = {"user": user}
+    if frappe.db.has_column("Sales Person", "enabled"):
+        filters["enabled"] = 1
+    return frappe.db.get_value("Sales Person", filters, "name") or ""
+
+
+def _agent_commission_rate(sales_person: str) -> float:
+    if not sales_person:
+        return 0.0
+    rule = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name")
+    return flt(frappe.db.get_value("Agent Pricing Rules", rule, "commission_rate") or 0) if rule else 0.0
+
+
+def _can_assign_any_commission_salesperson() -> bool:
+    if frappe.session.user == "Administrator":
+        return True
+    return bool(COMMISSION_ASSIGNMENT_MANAGER_ROLES.intersection(set(frappe.get_roles(frappe.session.user) or [])))
 
 
 def sync_quotation_item_price_input_fields(doc, method=None) -> None:
@@ -133,6 +231,8 @@ def sync_quotation_item_price_input_fields(doc, method=None) -> None:
         if row.meta.get_field("source_discount_percent"):
             row.source_discount_percent = flt(discount, row.precision("source_discount_percent"))
         if row.meta.get_field("source_discount_amount"):
+            # Quotation input/display is a per-unit discount. Commission payout
+            # totals are derived separately from rates and ordered quantity.
             row.source_discount_amount = flt(max(gross_rate - current_rate, 0), row.precision("source_discount_amount"))
         if row.meta.get_field("source_discounted_sell_rate"):
             row.source_discounted_sell_rate = flt(current_rate, row.precision("source_discounted_sell_rate"))

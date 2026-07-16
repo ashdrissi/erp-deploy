@@ -37,6 +37,7 @@ def create_sales_order_commissions(doc, method=None):
             commission.commission_amount = payload["commission_amount"]
             commission.status = "Approved"
             commission.sales_invoice = ""
+            commission.flags.orderlift_commission_snapshot_update = True
             commission.save(ignore_permissions=True)
             if commission.docstatus == 0:
                 commission.submit()
@@ -55,6 +56,36 @@ def sync_commissions_from_invoice(doc, method=None):
         if getattr(item, "sales_order", None)
     }
     for sales_order_name in seen_orders:
+        _sync_sales_order_commissions(sales_order_name)
+
+
+def sync_commissions_from_payment_entry(doc, method=None):
+    """Re-evaluate commissions when customer payments are submitted or cancelled."""
+    invoice_names = _payment_entry_sales_invoices(doc)
+    if not invoice_names:
+        return
+
+    sales_orders = frappe.get_all(
+        "Sales Invoice Item",
+        filters={"parent": ["in", invoice_names], "sales_order": ["!=", ""]},
+        pluck="sales_order",
+    )
+    for sales_order_name in dict.fromkeys(name for name in sales_orders if name):
+        _sync_sales_order_commissions(sales_order_name)
+
+
+def reconcile_open_commissions():
+    """Safety-net reconciliation for payment/reposting paths that bypass document hooks."""
+    sales_orders = frappe.get_all(
+        "Sales Commission",
+        filters={
+            "docstatus": 1,
+            "status": ["in", ["Approved", "To Pay"]],
+            "sales_order": ["!=", ""],
+        },
+        pluck="sales_order",
+    )
+    for sales_order_name in dict.fromkeys(name for name in sales_orders if name):
         _sync_sales_order_commissions(sales_order_name)
 
 
@@ -96,13 +127,15 @@ def _build_sales_order_snapshot_commissions(sales_order):
         denominator = quotation_qty or order_qty or 1.0
         factor = order_qty / denominator if denominator else 0
         commission_amount = flt(source.get("source_commission_amount") or 0)
-        discount_amount = flt(source.get("source_discount_amount") or 0)
         if commission_amount <= 0:
             recalculated = _calculate_snapshot_commission(source, denominator)
             commission_amount = flt(recalculated.get("commission_amount") or 0)
-            discount_amount = flt(recalculated.get("discount_amount") or discount_amount)
         prorated_commission = commission_amount * factor
-        prorated_discount = discount_amount * factor
+        prorated_discount = _line_discount_amount(
+            source.get("source_gross_sell_rate"),
+            source.get("source_discounted_sell_rate"),
+            order_qty,
+        )
 
         if not salesperson or not prorated_commission:
             continue
@@ -118,6 +151,7 @@ def _build_sales_order_snapshot_commissions(sales_order):
                 "project": sales_order.project,
                 "customer": sales_order.customer,
                 "company": sales_order.company,
+                "currency": getattr(sales_order, "currency", None) or "",
                 "commission_rate": commission_rate,
                 "base_amount": 0.0,
                 "commission_amount": 0.0,
@@ -185,21 +219,43 @@ def _calculate_snapshot_commission(source, qty):
         return {}
     return {
         "commission_amount": commission.get("commission_amount") or 0,
-        "discount_amount": max(price_list_unit - actual_unit, 0) * flt(qty),
+        "discount_amount": _line_discount_amount(price_list_unit, actual_unit, qty),
     }
 
 
-def _sync_sales_order_commissions(sales_order_name):
+def _line_discount_amount(gross_unit_price, actual_unit_price, qty):
+    return max(flt(gross_unit_price) - flt(actual_unit_price), 0) * flt(qty)
+
+
+def _payment_entry_sales_invoices(payment_entry):
+    invoice_names = []
+    for reference in getattr(payment_entry, "references", None) or []:
+        if getattr(reference, "reference_doctype", None) != "Sales Invoice":
+            continue
+        name = (getattr(reference, "reference_name", None) or "").strip()
+        if name and name not in invoice_names:
+            invoice_names.append(name)
+    return invoice_names
+
+
+def _sales_order_is_fully_billed(sales_order_name):
+    per_billed = frappe.db.get_value("Sales Order", sales_order_name, "per_billed")
+    return flt(per_billed or 0) >= 99.99
+
+
+def sales_order_commission_eligibility(sales_order_name):
+    """Return the persisted payout gate for one submitted Sales Order."""
+    if not sales_order_name or not _sales_order_is_fully_billed(sales_order_name):
+        return {"eligible": False, "latest_invoice": ""}
+
     invoice_names = frappe.get_all(
         "Sales Invoice Item",
         filters={"sales_order": sales_order_name, "docstatus": 1},
         pluck="parent",
     )
     invoice_names = list(dict.fromkeys(invoice_names))
-
     if not invoice_names:
-        _update_commission_status(sales_order_name, status="Approved", sales_invoice="")
-        return
+        return {"eligible": False, "latest_invoice": ""}
 
     invoices = frappe.get_all(
         "Sales Invoice",
@@ -207,11 +263,21 @@ def _sync_sales_order_commissions(sales_order_name):
         fields=["name", "outstanding_amount", "posting_date"],
         order_by="posting_date desc, modified desc",
     )
-    fully_paid = invoices and all(float(inv.outstanding_amount or 0) <= 0.0001 for inv in invoices)
+    fully_paid = bool(invoices) and all(flt(inv.outstanding_amount or 0) <= 0.0001 for inv in invoices)
+    return {
+        "eligible": fully_paid,
+        "latest_invoice": invoices[0].name if fully_paid and invoices else "",
+    }
 
-    if fully_paid:
-        latest_invoice = invoices[0].name if invoices else ""
-        _update_commission_status(sales_order_name, status="To Pay", sales_invoice=latest_invoice)
+
+def _sync_sales_order_commissions(sales_order_name):
+    eligibility = sales_order_commission_eligibility(sales_order_name)
+    if eligibility["eligible"]:
+        _update_commission_status(
+            sales_order_name,
+            status="To Pay",
+            sales_invoice=eligibility["latest_invoice"],
+        )
         return
 
     _update_commission_status(sales_order_name, status="Approved", sales_invoice="")

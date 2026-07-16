@@ -42,7 +42,7 @@ app_include_js = [
     "/assets/orderlift/js/finance_account_guard_20260501a.js?v=20260501b",
     "/assets/orderlift/js/item_price_uom_default_20260506a.js?v=20260507a",
     "/assets/orderlift/js/item_form_prices_20260608a.js?v=20260618a",
-    "/assets/orderlift/js/price_list_type_queries_20260703c.js?v=20260708a",
+    "/assets/orderlift/js/price_list_type_queries_20260703c.js?v=20260713b",
     "/assets/orderlift/js/orderlift_print_controls_20260703a.js?v=20260707a",
     "/assets/orderlift/js/document_annex_dialog_20260519a.js?v=20260612a",
     "/assets/orderlift/js/connection_dashboard_links_20260616j.js?v=20260616j",
@@ -129,6 +129,8 @@ doc_events = {
     "Payment Entry": {
         "before_validate": "orderlift.orderlift_finance.account_governance.apply_document_account_defaults",
         "validate": "orderlift.orderlift_finance.account_governance.validate_finance_document",
+        "on_submit": "orderlift.sales.utils.commission_calculator.sync_commissions_from_payment_entry",
+        "on_cancel": "orderlift.sales.utils.commission_calculator.sync_commissions_from_payment_entry",
     },
     "ToDo": {
         "before_validate": "orderlift.orderlift_crm.todo_hooks.normalize_todo_priority_on_validate",
@@ -382,7 +384,7 @@ doctype_js = {
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Item Price": "public/js/item_price_uom_default_20260506a.js",
     "Price List": "public/js/price_list_import_20260602c.js",
-     "Quotation": "public/js/quotation_form_simplify_20260707f.js",
+     "Quotation": "public/js/quotation_form_simplify_20260707f.js?v=20260715b",
     "Sales Order": [
         "public/js/sales_order_logistics_20260425d.js",
         "public/js/generic_ttc_field_sync_20260629a.js",
@@ -434,6 +436,8 @@ scheduler_events = {
         "orderlift.logistics.utils.reorder_manager.check_reorder_levels",
         # Recompute every open Appraisal Cycle's performance snapshots
         "orderlift.orderlift_hr.api.performance.recompute_open_cycles",
+        # Repair commission eligibility after payment reconciliations/reposts.
+        "orderlift.sales.utils.commission_calculator.reconcile_open_commissions",
     ],
     "weekly": [
         # Flag slow-moving and overstock items for dashboard
@@ -637,6 +641,7 @@ jinja = {
         "orderlift.utils.jinja_helpers.format_currency_fr",
         "orderlift.utils.jinja_helpers.get_quotation_ttc_print_context",
         "orderlift.utils.jinja_helpers.get_ttc_print_context",
+        "orderlift.utils.jinja_helpers.get_customer_tax_id",
         "orderlift.utils.jinja_helpers.get_doc_print_title",
         "orderlift.utils.jinja_helpers.get_print_payment_terms",
         "orderlift.utils.jinja_helpers.get_print_trade_terms",

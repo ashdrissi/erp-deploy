@@ -5,6 +5,7 @@
         history: [],
         loading: false,
         saving: false,
+        calculating: false,
         error: "",
         filter: "",
         status: "",
@@ -26,6 +27,11 @@
     let autosaveTimer = null;
     let savePromise = null;
     let autoRecalculateTimer = null;
+    let mutationQueue = Promise.resolve();
+    let editRevision = 0;
+    let persistedRevision = 0;
+    let loadRequestId = 0;
+    let loadingRouteName = "";
     const SOURCING_RULE_FIELDS = ["buying_price_list", "pricing_scenario", "customs_policy", "benchmark_policy"];
     const NUMERIC_FIELDS = new Set([
         "base_buy_price",
@@ -135,10 +141,15 @@
         if (!wrapper.page) return;
         applyHeader(wrapper.page);
         STATE.autoRecalculate = readAutoRecalculate();
-        load(wrapper.page, currentName());
+        const name = currentName();
+        if (STATE.loading && loadingRouteName === name) return;
+        load(wrapper.page, name);
     };
 
     frappe.pages["pricing-builder-builder"].on_page_hide = function () {
+        loadRequestId += 1;
+        STATE.loading = false;
+        loadingRouteName = "";
         stopAutoRecalculateLoop();
     };
 
@@ -149,10 +160,12 @@
 
     function applyHeader(page) {
         page.set_title(__("Pricing Builder"));
-        page.set_primary_action(__("Save"), () => save(page));
+        page.set_primary_action(__("Save"), () => saveLatest(page));
     }
 
     async function load(page, name) {
+        const requestId = ++loadRequestId;
+        loadingRouteName = name || "new";
         stopAutoRecalculateLoop();
         STATE.loading = true;
         STATE.error = "";
@@ -162,27 +175,38 @@
                 method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.get_builder_page_data",
                 args: { name: name || "new" },
             });
+            if (requestId !== loadRequestId) return;
             const data = res.message || {};
             STATE.doc = normalizeDoc(data.doc || {});
+            editRevision = 0;
+            persistedRevision = 0;
             STATE.refs = data.references || {};
             STATE.history = data.history || [];
             STATE.priceListMode = resolvePriceListMode(STATE.doc, STATE.refs);
             ensureBreakdownSelection();
             startOpenRefreshFlow(page, name);
         } catch (error) {
+            if (requestId !== loadRequestId) return;
             console.error("Pricing Builder load failed", error);
             STATE.error = __("Unable to load this builder.");
             STATE.doc = null;
         } finally {
+            if (requestId !== loadRequestId) return;
             STATE.loading = false;
+            loadingRouteName = "";
             render(page);
         }
     }
 
+    function enqueueMutation(task) {
+        const scheduled = mutationQueue.then(task, task);
+        mutationQueue = scheduled.catch(() => null);
+        return scheduled;
+    }
+
     async function save(page, options) {
         if (!STATE.doc) return null;
-        if (STATE.saving) return savePromise;
-        options = options || {};
+        options = Object.assign({}, options || {});
         syncVisibleInputs(page);
         if (options.autosave) {
             const blockReason = autosaveBlockReason(STATE.doc);
@@ -191,42 +215,58 @@
                 return null;
             }
         }
+        const scheduled = enqueueMutation(() => performSave(page, options));
+        savePromise = scheduled;
+        try {
+            return await scheduled;
+        } finally {
+            if (savePromise === scheduled) savePromise = null;
+        }
+    }
+
+    async function performSave(page, options) {
+        if (!STATE.doc) return null;
+        const requestRevision = editRevision;
+        const payload = cloneDoc(STATE.doc);
         const draftRuleRows = options.autosave ? (STATE.doc.sourcing_rules || []).filter(isBlankSourcingRule).map(cloneSourcingRule) : [];
         STATE.saving = true;
-        STATE.autosaveStatus = options.autosave ? __("Autosaving...") : __("Saving...");
+        STATE.autosaveStatus = options.autosave ? __("Saving builder changes...") : __("Saving builder...");
         if (options.render !== false) render(page);
-        savePromise = (async () => {
+        try {
             const res = await frappe.call({
                 method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.save_builder_page_doc",
-                args: { payload: STATE.doc, create_history: 1, history_label: options.historyLabel || (options.autosave ? __("Autosaved") : __("Saved")) },
-                freeze: Boolean(options && options.freeze),
+                args: { payload, create_history: 1, history_label: options.historyLabel || (options.autosave ? __("Autosaved") : __("Saved")) },
+                freeze: Boolean(options.freeze),
                 freeze_message: __("Saving builder..."),
             });
-            STATE.doc = normalizeDoc((res.message || {}).doc || {});
-            if (draftRuleRows.length) {
+            const serverDoc = normalizeDoc((res.message || {}).doc || {});
+            const hasNewerChanges = applyServerDoc(serverDoc, requestRevision);
+            persistedRevision = Math.max(persistedRevision, requestRevision);
+            if (!hasNewerChanges && draftRuleRows.length) {
                 STATE.doc.sourcing_rules = (STATE.doc.sourcing_rules || []).concat(draftRuleRows);
             }
             STATE.history = (res.message || {}).history || STATE.history || [];
             ensureBreakdownSelection();
-            if (!options.noRoute && STATE.doc.name && currentName() !== STATE.doc.name) {
+            if (!hasNewerChanges && !options.noRoute && STATE.doc.name && currentName() !== STATE.doc.name) {
                 frappe.set_route("pricing-builder-builder", STATE.doc.name);
             }
-            STATE.autosaveStatus = options.autosave ? __("Autosaved") : __("Saved");
+            STATE.autosaveStatus = hasNewerChanges
+                ? __("Newer changes are waiting to save")
+                : options.autosave ? __("Builder autosaved") : __("Builder saved");
             if (!options.autosave && options.showCustomsAlert !== false) showCustomsIssueAlert(customsIssueRows(customsReviewRows()), __("Customs Review"));
             return STATE.doc;
-        })();
-        try {
-            return await savePromise;
+        } catch (error) {
+            STATE.autosaveStatus = __("Builder save failed");
+            throw error;
         } finally {
             STATE.saving = false;
-            savePromise = null;
             if (options.render !== false) render(page);
         }
     }
 
     async function saveLatest(page, options) {
         clearTimeout(autosaveTimer);
-        if (savePromise) await savePromise;
+        autosaveTimer = null;
         syncVisibleInputs(page);
         return save(page, options || {});
     }
@@ -234,21 +274,33 @@
     async function calculate(page, options) {
         options = options || {};
         const freeze = options.freeze !== false;
-        const doc = await save(page, { freeze, showCustomsAlert: false, render: options.renderSave !== false, noRoute: options.noRoute });
-        if (!doc || !doc.name || doc.name === "new") return;
-        const res = await frappe.call({
-            method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.calculate_builder_page_doc",
-            args: { name: doc.name },
-            freeze,
-            freeze_message: __("Calculating builder prices..."),
+        if (options.saveFirst !== false) {
+            const saved = await saveLatest(page, { freeze, showCustomsAlert: false, render: options.renderSave !== false, noRoute: options.noRoute });
+            if (!saved || !saved.name || saved.name === "new") return;
+        }
+        return enqueueMutation(async () => {
+            const doc = STATE.doc;
+            if (!doc || !doc.name || doc.name === "new") return null;
+            const requestRevision = editRevision;
+            STATE.calculating = true;
+            try {
+                const res = await frappe.call({
+                    method: "orderlift.orderlift_sales.page.pricing_builder_builder.pricing_builder_builder.calculate_builder_page_doc",
+                    args: { name: doc.name },
+                    freeze,
+                    freeze_message: __("Calculating builder prices..."),
+                });
+                applyServerDoc(normalizeDoc((res.message || {}).doc || {}), requestRevision);
+                STATE.history = (res.message || {}).history || [];
+                ensureBreakdownSelection();
+                if (options.showCustomsAlert !== false) showCustomsIssueAlert(customsIssueRows(customsReviewRows()), __("Customs Review"));
+                if (options.status) STATE.autoRecalculateStatus = options.status;
+                render(page, { preserveScroll: Boolean(options.preserveScroll) });
+                return STATE.doc;
+            } finally {
+                STATE.calculating = false;
+            }
         });
-        STATE.doc = normalizeDoc((res.message || {}).doc || {});
-        STATE.history = (res.message || {}).history || [];
-        ensureBreakdownSelection();
-        if (options.showCustomsAlert !== false) showCustomsIssueAlert(customsIssueRows(customsReviewRows()), __("Customs Review"));
-        if (options.status) STATE.autoRecalculateStatus = options.status;
-        render(page, { preserveScroll: Boolean(options.preserveScroll) });
-        return STATE.doc;
     }
 
     async function checkFreshness(page) {
@@ -293,11 +345,14 @@
     }
 
     async function autoRecalculateNow(page) {
-        if (!STATE.autoRecalculate || !STATE.doc || STATE.doc.name === "new" || STATE.loading || STATE.saving) return;
+        if (!STATE.autoRecalculate || !STATE.doc || STATE.doc.name === "new" || STATE.loading || STATE.saving || STATE.calculating) return;
         STATE.autoRecalculateStatus = __("Auto recalculating...");
         render(page, { preserveScroll: true });
         try {
-            await calculate(page, { freeze: false, showCustomsAlert: false, status: __("Auto recalculated {0}", [frappe.datetime.now_time()]), renderSave: false, preserveScroll: true, noRoute: true });
+            if (hasUnsavedChanges()) {
+                await saveLatest(page, { autosave: true, render: false, noRoute: true, showCustomsAlert: false });
+            }
+            await calculate(page, { freeze: false, showCustomsAlert: false, status: __("Auto recalculated {0}", [frappe.datetime.now_time()]), preserveScroll: true, noRoute: true, saveFirst: false });
         } catch (error) {
             console.error("Pricing Builder auto recalculation failed", error);
             STATE.autoRecalculateStatus = __("Auto recalculation failed");
@@ -1156,7 +1211,7 @@
     function bind(page) {
         page.main.find("[data-back]").on("click", () => frappe.set_route("pricing-builder-manager"));
         page.main.find("[data-native]").on("click", () => STATE.doc.name !== "new" && frappe.set_route("Form", "Pricing Builder", STATE.doc.name));
-        page.main.find("[data-save]").on("click", () => save(page, { freeze: true }));
+        page.main.find("[data-save]").on("click", () => saveLatest(page, { freeze: true }));
         page.main.find("[data-calculate]").on("click", () => calculate(page));
         page.main.find("[data-preview-publish]").on("click", () => previewPublish(page));
         page.main.find("[data-auto-recalculate]").on("change", function () {
@@ -1299,13 +1354,22 @@
     function scheduleAutosave(page) {
         if (!STATE.doc || STATE.loading) return;
         clearTimeout(autosaveTimer);
+        editRevision += 1;
         STATE.autosaveStatus = __("Unsaved changes");
         autosaveTimer = setTimeout(() => {
+            autosaveTimer = null;
             save(page, { autosave: true, render: false, historyLabel: __("Autosaved") }).then(() => {
                 const status = page.main.find(".pbb-autosave-status");
                 if (status.length) status.text(STATE.autosaveStatus || __("Autosaved"));
+            }).catch(() => {
+                const status = page.main.find(".pbb-autosave-status");
+                if (status.length) status.text(STATE.autosaveStatus || __("Builder save failed"));
             });
         }, 900);
+    }
+
+    function hasUnsavedChanges() {
+        return editRevision > persistedRevision || Boolean(autosaveTimer);
     }
 
     function applyOverride(page, index) {
@@ -1390,6 +1454,23 @@
         if (!match) return;
         STATE.selectedBreakdownKey = match.key;
         render(page);
+    }
+
+    function cloneDoc(doc) {
+        return JSON.parse(JSON.stringify(doc || {}));
+    }
+
+    function applyServerDoc(serverDoc, requestRevision) {
+        const normalized = normalizeDoc(serverDoc || {});
+        const hasNewerChanges = editRevision > requestRevision;
+        if (!hasNewerChanges || !STATE.doc) {
+            STATE.doc = normalized;
+            return false;
+        }
+        STATE.doc.name = normalized.name || STATE.doc.name;
+        STATE.doc.is_new = normalized.is_new;
+        STATE.doc.modified = normalized.modified || STATE.doc.modified;
+        return true;
     }
 
     function normalizeDoc(doc) {

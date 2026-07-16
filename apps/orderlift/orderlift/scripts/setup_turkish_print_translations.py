@@ -89,6 +89,7 @@ TURKISH_PRINT_TRANSLATIONS = {
     "Adresse": "Adres",
     "Email": "E-posta",
     "ICE": "Vergi No",
+    "ICE / Tax ID": "Vergi No / Tax ID",
     "PROPOSITION COMMERCIALE": "TİCARİ TEKLİF",
     "Ascenseurs & Équipements": "Asansörler ve Ekipmanlar",
     "Ascenseurs & Equipements": "Asansörler ve Ekipmanlar",

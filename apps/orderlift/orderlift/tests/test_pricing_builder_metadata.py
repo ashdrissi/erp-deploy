@@ -2,6 +2,7 @@ import json
 import sys
 import types
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 
@@ -41,6 +42,7 @@ utils_stub.now_datetime = lambda: "2026-06-01 12:00:00"
 utils_stub.nowdate = lambda: "2026-06-01"
 utils_stub.getdate = lambda value=None: value or "2026-06-01"
 utils_stub.date_diff = lambda end, start: 0
+utils_stub.get_datetime = lambda value=None: datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 sys.modules["frappe.utils"] = utils_stub
 
 document_module = types.ModuleType("frappe.model.document")
@@ -367,6 +369,37 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         self.assertIn("options.autosave", page_js)
         self.assertIn("Select or enter Selling Price List to enable autosave", page_js)
         self.assertIn("Add a Sourcing Rule to enable autosave", page_js)
+
+    def test_builder_page_serializes_mutations_and_rejects_stale_saves(self):
+        app_root = Path(__file__).resolve().parents[2]
+        page_js = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "page"
+            / "pricing_builder_builder"
+            / "pricing_builder_builder.js"
+        ).read_text()
+
+        self.assertIn("let mutationQueue = Promise.resolve()", page_js)
+        self.assertIn("function enqueueMutation", page_js)
+        self.assertIn("function applyServerDoc", page_js)
+        self.assertIn("const requestRevision = editRevision", page_js)
+        self.assertIn('page.set_primary_action(__("Save"), () => saveLatest(page))', page_js)
+        self.assertIn("requestId !== loadRequestId", page_js)
+        self.assertIn("saveFirst: false", page_js)
+        self.assertIn("function hasUnsavedChanges", page_js)
+
+        current = AttrDict(modified="2026-07-13 20:00:00.000001")
+        pricing_builder_builder._assert_current_version(
+            current,
+            {"modified": "2026-07-13 20:00:00.000001"},
+        )
+        with self.assertRaisesRegex(ValueError, "changed after this page was opened"):
+            pricing_builder_builder._assert_current_version(
+                current,
+                {"modified": "2026-07-13 19:59:59.000001"},
+            )
 
     def test_pricing_builder_target_currency_field_exists(self):
         app_root = Path(__file__).resolve().parents[2]

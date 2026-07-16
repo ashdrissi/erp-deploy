@@ -37,6 +37,12 @@ def update_commission(name, status=None, payout_state=None, payment_reference=No
     elif payout_state == "Unpaid" and next_status == "Paid":
         next_status = "To Pay"
 
+    if next_status in {"To Pay", "Paid"} and commission.sales_order:
+        from orderlift.sales.utils.commission_calculator import sales_order_commission_eligibility
+
+        if not sales_order_commission_eligibility(commission.sales_order)["eligible"]:
+            frappe.throw(_("The Sales Order is not completely invoiced and paid."))
+
     if next_status == "Paid":
         if notes is not None:
             commission.notes = notes or ""

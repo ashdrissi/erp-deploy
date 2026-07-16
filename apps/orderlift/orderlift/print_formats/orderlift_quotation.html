@@ -534,13 +534,14 @@ table.ol-items td {
   <div class="ol-footer-company">{{ co.company_name or doc.company }}</div>
   {%- if co_addr %}<div class="ol-footer-address">{{ _("Adresse") }} : {{ co_addr }}</div>{% endif -%}
   <div class="ol-footer-meta">
-    {%- if co.tax_id %}{{ _("ICE") }} : {{ co.tax_id }}{% endif -%}
+    {%- if co.tax_id %}{{ _("ICE / Tax ID") }} : {{ co.tax_id }}{% endif -%}
     {%- if co.email %}{% if co.tax_id %} - {% endif %}{{ _("Email") }} : <a href="mailto:{{ co.email }}">{{ co.email }}</a>{% endif -%}
   </div>
 </div>
 {% endmacro %}
 
 {% macro render_info_grid() %}
+{%- set customer_tax_id = get_customer_tax_id(doc) -%}
 <div class="ol-title-container">
   <div class="ol-title-text">{{ _("Sales Quotation") }}</div>
   <div class="ol-title-date">{{ _("Date") }}: {{ frappe.utils.formatdate(doc.transaction_date) }}</div>
@@ -551,6 +552,9 @@ table.ol-items td {
     <td style="width: 50%; vertical-align: top; padding-right: 15px;">
       <div class="ol-info-title">{{ _("Recipient") }}</div>
       <div class="ol-info-client-name">{{ doc.customer_name }}</div>
+      {%- if customer_tax_id %}
+      <div class="ol-info-client-details"><b>{{ _("ICE / Tax ID") }}:</b> {{ customer_tax_id }}</div>
+      {%- endif %}
       <div class="ol-info-client-details">
         {%- if doc.address_display -%}
           {{ doc.address_display | replace('\n', '<br>') }}

@@ -165,13 +165,13 @@ function setCard(row) {
 }
 
 function openDimensioningBuilderForCreate() {
-    frappe.route_options = { new_dimensioning_set: true };
-    frappe.set_route("dimensioning-set-builder");
+    frappe.set_route("dimensioning-set-builder", "new");
 }
 
 function openDimensioningBuilderForSet(setName) {
-    frappe.route_options = { dimensioning_set: setName };
-    frappe.set_route("dimensioning-set-builder");
+    const row = ODM_STATE.sets.find((entry) => entry.name === setName) || {};
+    const displayName = String(row.set_name || setName).trim() || setName;
+    frappe.set_route("dimensioning-set-builder", displayName, setName);
 }
 
 async function duplicateDimensioningSet(page, setName) {

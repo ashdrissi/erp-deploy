@@ -8,7 +8,7 @@ Registered in hooks.py under the `jinja` key.
 """
 
 import frappe
-from frappe.utils import flt, formatdate
+from frappe.utils import flt
 
 from orderlift.orderlift_sales.utils.tax_inclusive import quote_item_inclusive_totals
 
@@ -29,6 +29,22 @@ def format_currency_fr(amount, currency=None):
 
 def get_quotation_ttc_print_context(doc):
     return get_ttc_print_context(doc)
+
+
+def get_customer_tax_id(doc):
+    """Return the document snapshot, with a master-data fallback for older documents."""
+    for fieldname in ("custom_customer_tax_id", "tax_id"):
+        value = (doc.get(fieldname) or "").strip()
+        if value:
+            return value
+
+    quotation_to = (doc.get("quotation_to") or "").strip()
+    customer = (doc.get("customer") or "").strip()
+    if quotation_to == "Customer":
+        customer = (doc.get("party_name") or "").strip()
+    if not customer:
+        return ""
+    return frappe.db.get_value("Customer", customer, "tax_id") or ""
 
 
 def get_ttc_print_context(doc):
@@ -106,30 +122,40 @@ def get_doc_print_title(doctype):
 
 
 def get_print_payment_terms(doc):
-    """Return payment terms lines for print formats from document data only."""
+    """Return concise, intentional commercial payment terms for print formats."""
     rows = list(getattr(doc, "payment_schedule", None) or [])
+    template = (getattr(doc, "payment_terms_template", "") or "").strip()
+    if rows and not template:
+        has_explicit_terms = any(
+            (_row_value(row, "payment_term") or "").strip()
+            or (_row_value(row, "description") or "").strip()
+            or (_row_value(row, "mode_of_payment") or "").strip()
+            for row in rows
+        )
+        if not has_explicit_terms:
+            # ERPNext creates an unlabeled 100% row even when no commercial
+            # payment agreement was selected. Do not present that fallback as
+            # an agreed customer condition.
+            return []
+
     lines = []
     for row in rows:
         label = _row_value(row, "payment_term") or _row_value(row, "description") or ""
         portion = flt(_row_value(row, "invoice_portion"))
-        amount = flt(_row_value(row, "payment_amount"))
-        due_date = _row_value(row, "due_date")
+        mode_of_payment = (_row_value(row, "mode_of_payment") or "").strip()
         parts = []
         if label:
             parts.append(str(label))
         if portion:
             parts.append(f"{portion:g}%")
-        if amount:
-            parts.append(format_currency_fr(amount, getattr(doc, "currency", None)))
-        if due_date:
-            parts.append(formatdate(due_date))
+        if mode_of_payment:
+            parts.append(f"{frappe._('Mode of Payment')}: {mode_of_payment}")
         if parts:
             lines.append(" - ".join(parts))
 
     if lines:
         return lines
 
-    template = (getattr(doc, "payment_terms_template", "") or "").strip()
     return [template] if template else []
 
 

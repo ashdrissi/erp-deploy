@@ -195,6 +195,23 @@ class TestDimensioning(unittest.TestCase):
         ]:
             self.assertIn(token, script)
 
+    def test_dimensioning_builder_uses_record_name_in_durable_route(self):
+        builder = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_builder" / "dimensioning_set_builder.js").read_text()
+        manager = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_manager" / "dimensioning_set_manager.js").read_text()
+        form = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.js").read_text()
+
+        for token in [
+            "function currentDimensioningSetRouteName()",
+            "const routeName = currentDimensioningSetRouteName();",
+            "syncDimensioningSetRoute(loadedSet.docname, loadedSet.name);",
+            "syncDimensioningSetRoute(getActiveSet().docname, getActiveSet().name);",
+            'frappe.set_route("dimensioning-set-builder", label, target)',
+        ]:
+            self.assertIn(token, builder)
+        self.assertIn('frappe.set_route("dimensioning-set-builder", "new")', manager)
+        self.assertIn('frappe.set_route("dimensioning-set-builder", displayName, setName)', manager)
+        self.assertIn('frappe.set_route("dimensioning-set-builder", frm.doc.set_name || frm.doc.name, frm.doc.name)', form)
+
     def test_condition_rules_json_parameter_comparison(self):
         rule = {
             "condition_mode": "based",

@@ -3,8 +3,8 @@
 
 frappe.ui.form.on("Sales Commission", {
     refresh: function (frm) {
-        // "Mark as Paid" button — only visible on submitted, approved commissions
-        if (frm.doc.docstatus === 1 && frm.doc.status === "Approved") {
+        // Payout is permitted only after customer invoicing/payment eligibility.
+        if (frm.doc.docstatus === 1 && frm.doc.status === "To Pay") {
             frm.add_custom_button(
                 __("Mark as Paid"),
                 function () {
@@ -47,19 +47,13 @@ frappe.ui.form.on("Sales Commission", {
             frm.page.set_indicator(__("Pending"), "orange");
         } else if (frm.doc.status === "Approved") {
             frm.page.set_indicator(__("Approved"), "blue");
+        } else if (frm.doc.status === "To Pay") {
+            frm.page.set_indicator(__("To Pay"), "orange");
         } else if (frm.doc.status === "Paid") {
             frm.page.set_indicator(__("Paid"), "green");
         } else if (frm.doc.status === "Cancelled") {
             frm.page.set_indicator(__("Cancelled"), "red");
         }
-    },
-
-    commission_rate: function (frm) {
-        _recalculate(frm);
-    },
-
-    base_amount: function (frm) {
-        _recalculate(frm);
     },
 
     sales_order: function (frm) {
@@ -85,10 +79,3 @@ frappe.ui.form.on("Sales Commission", {
         }
     },
 });
-
-function _recalculate(frm) {
-    if (frm.doc.base_amount && frm.doc.commission_rate) {
-        var amount = frm.doc.base_amount * (frm.doc.commission_rate / 100);
-        frm.set_value("commission_amount", flt(amount, 2));
-    }
-}

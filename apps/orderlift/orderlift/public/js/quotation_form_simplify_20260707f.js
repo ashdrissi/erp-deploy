@@ -42,6 +42,8 @@
         { fieldname: "source_discount_percent", columns: 1, sticky: 0 },
         { fieldname: "source_discount_amount", columns: 1, sticky: 0 },
         { fieldname: "source_discounted_sell_rate", columns: 1, sticky: 0 },
+        { fieldname: "source_commission_rate", columns: 1, sticky: 0 },
+        { fieldname: "source_commission_amount", columns: 1, sticky: 0 },
         { fieldname: "amount", columns: 1, sticky: 0 },
         { fieldname: "custom_pu_ttc", columns: 1, sticky: 0 },
         { fieldname: "custom_pt_ttc", columns: 1, sticky: 0 },
@@ -66,6 +68,31 @@
             return frappe.boot.user.roles.some(function (role) { return MARGIN_VIEW_ROLES.has(role); });
         }
         return roles.some(function (role) { return MARGIN_VIEW_ROLES.has(role); });
+    }
+
+    async function syncCustomerTaxId(frm) {
+        if (!frm || !frm.doc || !frm.fields_dict || !frm.fields_dict.custom_customer_tax_id) return;
+        if (Number(frm.doc.docstatus || 0) !== 0) return;
+
+        const partyType = String(frm.doc.quotation_to || "").trim();
+        const customer = partyType === "Customer" ? String(frm.doc.party_name || "").trim() : "";
+        let taxId = "";
+        if (customer) {
+            try {
+                const response = await frappe.db.get_value("Customer", customer, "tax_id");
+                if (
+                    String(frm.doc.quotation_to || "").trim() !== "Customer"
+                    || String(frm.doc.party_name || "").trim() !== customer
+                ) return;
+                taxId = String((response.message || {}).tax_id || "").trim();
+            } catch (error) {
+                console.warn("Orderlift customer ICE / Tax ID refresh failed", error);
+                return;
+            }
+        }
+
+        if (String(frm.doc.custom_customer_tax_id || "").trim() === taxId) return;
+        await frm.set_value("custom_customer_tax_id", taxId);
     }
 
     frappe.ui.form.on("Quotation", {
@@ -109,7 +136,15 @@
             addBulkQuantityGridButton(frm);
             addOtherChargeButton(frm);
             addOtherChargeGridButton(frm);
+            addRecalculateTTCGridButton(frm);
+            void syncCustomerTaxId(frm);
             scheduleItemTTCFieldsSync(frm);
+        },
+        party_name(frm) {
+            void syncCustomerTaxId(frm);
+        },
+        quotation_to(frm) {
+            void syncCustomerTaxId(frm);
         },
         items_add(frm) {
             scheduleQuotationStockSnapshotRefresh(frm);
@@ -126,7 +161,7 @@
         },
         taxes_and_charges(frm) {
             applyTaxTemplateChange(frm);
-            scheduleItemTTCFieldsSync(frm);
+            scheduleItemTTCFieldsSync(frm, { reloadTaxTemplate: true });
         },
     });
 
@@ -167,6 +202,7 @@
         qty(frm, cdt, cdn) {
             // Quantity only changes totals. Do not recalculate PU HT from the
             // rounded discount display, or manual prices drift by cents.
+            refreshRowCommissionTotals(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
@@ -357,8 +393,8 @@
         if (!frm || !frm.doc || Number(frm.doc.docstatus || 0) !== 0) return;
         const template = String(frm.doc.taxes_and_charges || "").trim();
         if (template) {
-            // native ERPNext populates taxes and recalculates; sync TTC after
-            setTimeout(function () { syncItemTTCFields(frm); }, 300);
+            // The native controller loads the selected template asynchronously.
+            // scheduleItemTTCFieldsSync waits for that request before syncing TTC.
             return;
         }
         // Cleared or emptied: zero-out taxes immediately
@@ -503,14 +539,7 @@
         const grid = frm && frm.fields_dict && frm.fields_dict.items && frm.fields_dict.items.grid;
         if (!grid) return;
 
-        const columns = quotationItemGridColumns();
-        const gridViewSettings = frappe.model && frappe.model.user_settings
-            ? (frappe.model.user_settings[frm.doctype] = frappe.model.user_settings[frm.doctype] || {})
-            : null;
-        if (gridViewSettings) {
-            gridViewSettings.GridView = gridViewSettings.GridView || {};
-            gridViewSettings.GridView[grid.doctype] = columns.map((column) => Object.assign({}, column));
-        }
+        const columns = configuredQuotationItemGridColumns(frm, grid);
 
         (grid.docfields || []).forEach((df) => {
             if (!df || !df.fieldname) return;
@@ -528,6 +557,37 @@
         });
         grid.visible_columns = [];
         grid.user_defined_columns = [];
+    }
+
+    function configuredQuotationItemGridColumns(frm, grid) {
+        const defaults = quotationItemGridColumns();
+        if (!frappe.get_user_settings || !frm || !grid) return defaults;
+
+        const gridViewSettings = frappe.get_user_settings(frm.doctype, "GridView") || {};
+        const savedColumns = Array.isArray(gridViewSettings[grid.doctype])
+            ? gridViewSettings[grid.doctype]
+            : [];
+        if (!savedColumns.length) return defaults;
+
+        const validFieldnames = new Set((grid.docfields || []).map((df) => df && df.fieldname).filter(Boolean));
+        const configured = savedColumns
+            .filter((column) => {
+                const fieldname = column && column.fieldname;
+                if (!fieldname || !validFieldnames.has(fieldname)) return false;
+                if (INTERNAL_ITEM_PRICE_FIELDS.includes(fieldname)) return false;
+                if (
+                    (fieldname === "source_margin_percent" || fieldname === "source_margin_basis")
+                    && !canViewQuotationMargins()
+                ) return false;
+                return true;
+            })
+            .map((column) => ({
+                fieldname: column.fieldname,
+                columns: Math.min(Math.max(Number(column.columns) || 1, 1), 10),
+                sticky: Number(column.sticky || 0),
+            }));
+
+        return configured.length ? configured : defaults;
     }
 
     function quotationItemGridColumns() {
@@ -607,32 +667,57 @@
         $("head").append(`
             <style id="orderlift-quotation-items-grid-style">
                 .orderlift-inline-items-grid {
-                    overflow-x: auto;
                     padding-bottom: 6px;
                 }
-                .orderlift-inline-items-grid .grid-heading-row,
-                .orderlift-inline-items-grid .grid-row .data-row,
-                .orderlift-inline-items-grid .grid-row-open {
-                    min-width: ${canViewQuotationMargins() ? "1980px" : "1700px"};
+                .orderlift-inline-items-grid .form-grid-container.column-limit-reached {
+                    overflow-x: auto;
+                    scrollbar-gutter: stable;
                 }
-                .orderlift-inline-items-grid .grid-static-col[data-fieldname],
-                .orderlift-inline-items-grid .grid-editable-row [data-fieldname] {
-                    flex: 0 0 140px;
-                    max-width: none;
-                    width: 140px;
+                .orderlift-inline-items-grid .form-grid-container.column-limit-reached > .form-grid {
+                    min-width: max-content;
+                    width: max-content;
                 }
-                .orderlift-inline-items-grid [data-fieldname="item_code"] {
-                    flex-basis: 260px;
-                    width: 260px;
+                .orderlift-inline-items-grid .column-limit-reached .grid-heading-row .grid-row .data-row.row,
+                .orderlift-inline-items-grid .column-limit-reached .grid-body .rows .grid-row .data-row.row {
+                    justify-content: flex-start;
+                    min-width: max-content;
+                    width: max-content;
                 }
-                .orderlift-inline-items-grid [data-fieldname="qty"] {
-                    flex-basis: 90px;
-                    width: 90px;
+                .orderlift-inline-items-grid .column-limit-reached .form-grid .grid-static-col[data-fieldname] {
+                    --orderlift-grid-cell-width: 140px;
+                    box-sizing: border-box;
+                    flex: 0 0 var(--orderlift-grid-cell-width);
+                    max-width: var(--orderlift-grid-cell-width);
+                    min-width: var(--orderlift-grid-cell-width);
+                    width: var(--orderlift-grid-cell-width);
                 }
-                .orderlift-inline-items-grid [data-fieldname="source_discount_amount"],
-                .orderlift-inline-items-grid [data-fieldname="source_discounted_sell_rate"] {
-                    flex-basis: 170px;
-                    width: 170px;
+                .orderlift-inline-items-grid .column-limit-reached .form-grid .grid-static-col[data-fieldname="item_code"] {
+                    --orderlift-grid-cell-width: 260px;
+                }
+                .orderlift-inline-items-grid .column-limit-reached .form-grid .grid-static-col[data-fieldname="qty"] {
+                    --orderlift-grid-cell-width: 90px;
+                }
+                .orderlift-inline-items-grid .column-limit-reached .form-grid .grid-static-col[data-fieldname="source_discount_amount"],
+                .orderlift-inline-items-grid .column-limit-reached .form-grid .grid-static-col[data-fieldname="source_discounted_sell_rate"] {
+                    --orderlift-grid-cell-width: 170px;
+                }
+                .orderlift-inline-items-grid .column-limit-reached .form-grid .grid-row > .data-row.row > .grid-static-col[data-fieldname]:last-child {
+                    flex: 0 0 var(--orderlift-grid-cell-width);
+                    line-height: inherit;
+                    max-width: var(--orderlift-grid-cell-width);
+                    min-width: var(--orderlift-grid-cell-width);
+                    position: static;
+                    right: auto;
+                    width: var(--orderlift-grid-cell-width);
+                    z-index: auto;
+                }
+                .orderlift-inline-items-grid .column-limit-reached .grid-static-col[data-fieldname] .field-area,
+                .orderlift-inline-items-grid .column-limit-reached .grid-static-col[data-fieldname] .control-input-wrapper,
+                .orderlift-inline-items-grid .column-limit-reached .grid-static-col[data-fieldname] .form-control {
+                    box-sizing: border-box;
+                    max-width: 100%;
+                    min-width: 0;
+                    width: 100%;
                 }
                 .orderlift-inline-items-grid .grid-static-col {
                     white-space: nowrap;
@@ -695,6 +780,43 @@
         });
         $target.prepend($button);
         grid.__orderlift_other_charge_button_added = true;
+    }
+
+    function addRecalculateTTCGridButton(frm) {
+        if (!frm || !frm.doc || Number(frm.doc.docstatus || 0) !== 0) return;
+        const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+        if (!grid || !grid.wrapper || grid.__orderlift_recalculate_ttc_button_added) return;
+
+        const recalculate = async () => {
+            try {
+                await recalculateQuotationTTC(frm, { reloadTaxTemplate: true, showAlert: true });
+            } catch (error) {
+                frappe.msgprint({
+                    title: __("TTC Recalculation Failed"),
+                    message: (error && error.message) || __("Unable to recalculate TTC values."),
+                    indicator: "red",
+                });
+            }
+        };
+
+        if (typeof grid.add_custom_button === "function") {
+            const $button = grid.add_custom_button(__("Recalculate TTC"), recalculate);
+            if ($button) $button.attr("data-orderlift-recalculate-ttc", "1").addClass("btn-secondary");
+            grid.__orderlift_recalculate_ttc_button_added = true;
+            return;
+        }
+
+        const $target = $(grid.wrapper).find(".grid-buttons, .grid-add-multiple-rows").first();
+        if (!$target.length) return;
+        const $button = $(
+            `<button type="button" class="btn btn-xs btn-secondary" data-orderlift-recalculate-ttc="1">${__("Recalculate TTC")}</button>`
+        );
+        $button.on("click", (event) => {
+            event.preventDefault();
+            void recalculate();
+        });
+        $target.prepend($button);
+        grid.__orderlift_recalculate_ttc_button_added = true;
     }
 
     async function openOtherChargeDialog(frm) {
@@ -1206,6 +1328,23 @@
         frm.dirty();
     }
 
+    function refreshRowCommissionTotals(frm, row) {
+        if (!frm || !row || isManualChargeRow(row)) return;
+        const gross = Number(row.source_gross_sell_rate || row.price_list_rate || row.rate || 0);
+        const netRate = Number(row.source_discounted_sell_rate || row.rate || 0);
+        const qty = Number(row.qty || 1) || 1;
+        if (!gross) return;
+        const discount = gross > 0 ? Math.max((1 - netRate / gross) * 100, 0) : 0;
+        if (fieldExists(row.doctype, "source_commission_amount")) {
+            frappe.model.set_value(
+                row.doctype,
+                row.name,
+                "source_commission_amount",
+                commissionFor(gross, qty, discount, row.source_max_discount_percent, row.source_commission_rate, netRate)
+            );
+        }
+    }
+
     function rememberManualPuTtc(row, value) {
         if (!row || !row.name) return;
         if (!value) {
@@ -1305,13 +1444,54 @@
         if (changed) frm.refresh_field("items");
     }
 
-    function scheduleItemTTCFieldsSync(frm) {
-        if (!frm || Number((frm.doc && frm.doc.docstatus) || 0) !== 0) return;
-        [100, 500, 1200].forEach(function (delay) {
-            window.setTimeout(function () {
-                syncItemTTCFields(frm);
-            }, delay);
+    async function recalculateQuotationTTC(frm, options = {}) {
+        if (!frm || !frm.doc || Number(frm.doc.docstatus || 0) !== 0) return false;
+
+        const previous = frm.__orderlift_ttc_recalculation_queue || Promise.resolve();
+        const scheduled = previous.catch(() => null).then(async () => {
+            const template = String(frm.doc.taxes_and_charges || "").trim();
+            const hasTaxes = Boolean((frm.doc.taxes || []).length);
+            const shouldReloadTemplate = Boolean(template && (options.reloadTaxTemplate || !hasTaxes));
+
+            if (
+                shouldReloadTemplate
+                && frm.cscript
+                && typeof frm.cscript.taxes_and_charges === "function"
+            ) {
+                await Promise.resolve(frm.cscript.taxes_and_charges());
+            }
+            if (frm.cscript && typeof frm.cscript.calculate_taxes_and_totals === "function") {
+                await Promise.resolve(frm.cscript.calculate_taxes_and_totals());
+            }
+
+            syncItemTTCFields(frm);
+            ["items", "total", "net_total", "total_taxes_and_charges", "grand_total", "rounded_total"].forEach(
+                (fieldname) => {
+                    if (frm.fields_dict && frm.fields_dict[fieldname]) frm.refresh_field(fieldname);
+                }
+            );
+            if (options.showAlert) {
+                frappe.show_alert({ message: __("TTC values recalculated"), indicator: "green" });
+            }
+            return true;
         });
+        frm.__orderlift_ttc_recalculation_queue = scheduled;
+        return scheduled;
+    }
+
+    function scheduleItemTTCFieldsSync(frm, options = {}) {
+        if (!frm || Number((frm.doc && frm.doc.docstatus) || 0) !== 0) return;
+        const revision = Number(frm.__orderlift_ttc_schedule_revision || 0) + 1;
+        frm.__orderlift_ttc_schedule_revision = revision;
+        const runLatest = function () {
+            if (revision !== frm.__orderlift_ttc_schedule_revision) return;
+            void recalculateQuotationTTC(frm, options);
+        };
+        if (typeof frappe.after_ajax === "function") {
+            frappe.after_ajax(runLatest);
+            return;
+        }
+        Promise.resolve().then(runLatest);
     }
 
     function roundCurrency(value) {

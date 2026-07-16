@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.naming import make_autoname
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, get_datetime
 
 from orderlift.orderlift_sales.doctype.pricing_builder.pricing_builder import builder_exchange_rate_summary, publish_builder_doc
 from orderlift.orderlift_sales.utils.price_list_scope import current_company, get_price_list_names, validate_price_list_scope
@@ -72,6 +72,7 @@ def save_builder_page_doc(payload, create_history=1, history_label=None):
     if name and name != "new" and frappe.db.exists("Pricing Builder", name):
         doc = frappe.get_doc("Pricing Builder", name)
         doc.check_permission("write")
+        _assert_current_version(doc, payload)
     else:
         frappe.has_permission("Pricing Builder", "create", throw=True)
         doc = frappe.new_doc("Pricing Builder")
@@ -102,6 +103,17 @@ def save_builder_page_doc(payload, create_history=1, history_label=None):
     if cint(create_history):
         _create_history(doc, history_label or _("Saved"))
     return {"doc": _serialize_doc(doc), "history": _get_history(doc.name)}
+
+
+def _assert_current_version(doc, payload):
+    client_modified = str((payload or {}).get("modified") or "").strip()
+    server_modified = str(doc.get("modified") or "").strip()
+    if not client_modified or not server_modified or get_datetime(client_modified) == get_datetime(server_modified):
+        return
+    frappe.throw(
+        _("This Pricing Builder changed after this page was opened. Reload it before saving so newer changes are not overwritten."),
+        getattr(frappe, "TimestampMismatchError", Exception),
+    )
 
 
 @frappe.whitelist()

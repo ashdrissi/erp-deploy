@@ -2640,6 +2640,8 @@ class PricingSheet(Document):
         self._apply_quotation_price_list(quotation)
         if frappe.db.has_column("Quotation", "source_pricing_sheet"):
             quotation.source_pricing_sheet = self.name
+        if quotation.meta.get_field("commission_sales_person"):
+            quotation.commission_sales_person = self.sales_person or ""
         if (self.get("taxes_and_charges_template") or "").strip() and quotation.meta.get_field("taxes_and_charges"):
             quotation.taxes_and_charges = self.get("taxes_and_charges_template")
         if self.get("opportunity") and quotation.meta.get_field("opportunity"):
@@ -2802,7 +2804,7 @@ class PricingSheet(Document):
             if frappe.db.has_column("Quotation Item", "source_max_discount_percent"):
                 item_data["source_max_discount_percent"] = flt(row.max_discount_percent_allowed)
             if frappe.db.has_column("Quotation Item", "source_discount_amount"):
-                item_data["source_discount_amount"] = flt(row.discount_amount)
+                item_data["source_discount_amount"] = flt(row.discount_amount) / (flt(row.qty) or 1)
             if frappe.db.has_column("Quotation Item", "source_discounted_sell_rate"):
                 item_data["source_discounted_sell_rate"] = flt(row.discounted_sell_unit_price or row.final_sell_unit_price)
             if frappe.db.has_column("Quotation Item", "source_commission_rate"):

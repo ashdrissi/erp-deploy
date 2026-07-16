@@ -18,7 +18,9 @@ frappe.pages["dimensioning-set-builder"].on_page_load = function (wrapper) {
 frappe.pages["dimensioning-set-builder"].on_page_show = function (wrapper) {
     if (!wrapper.page) return;
     applyDimensioningBuilderHeader(wrapper.page);
-    if (frappe.route_options?.dimensioning_set || frappe.route_options?.new_dimensioning_set) {
+    const requestedName = requestedDimensioningSetName();
+    const activeName = getActiveSet()?.docname || "new";
+    if (requestedName && requestedName !== activeName) {
         loadInitialDimensioningSet(wrapper.page);
     }
 };
@@ -70,6 +72,7 @@ const ODS_STATE = {
     lastPreview: null,
     isSaving: false,
     isPreviewing: false,
+    loadingSetName: "",
 };
 
 function fieldRow(field_key, label, field_type, default_value, options, is_required, help_text, group) {
@@ -148,6 +151,7 @@ function applyDimensioningBuilderHeader(page) {
     page.add_action_item(__("Delete Dimensioning Set"), () => confirmDeleteActiveDimensioningSet(page));
     page.add_action_item(__("New Blank Set"), () => {
         resetDimensioningBuilderState();
+        syncDimensioningSetRoute("new");
         renderDimensioningBuilder(page);
         resetDimensioningBuilderScroll(page);
     });
@@ -2573,7 +2577,12 @@ function extractDimensioningBuilderError(error) {
 
 async function loadInitialDimensioningSet(page) {
     const urlParams = new URLSearchParams(window.location.search || "");
-    const shouldCreate = Boolean(frappe.route_options?.new_dimensioning_set || urlParams.get("new_dimensioning_set"));
+    const routeName = currentDimensioningSetRouteName();
+    const shouldCreate = Boolean(
+        routeName === "new"
+        || frappe.route_options?.new_dimensioning_set
+        || urlParams.get("new_dimensioning_set")
+    );
     if (shouldCreate) {
         if (frappe.route_options) frappe.route_options.new_dimensioning_set = null;
         ODS_STATE.sets = [newBlankDimensioningSet()];
@@ -2584,14 +2593,45 @@ async function loadInitialDimensioningSet(page) {
         ODS_STATE.openRuleGroups = {};
         ODS_STATE.validation = [];
         ODS_STATE.lastPreview = null;
+        syncDimensioningSetRoute("new");
         renderDimensioningBuilder(page);
         resetDimensioningBuilderScroll(page);
         return;
     }
-    const setName = frappe.route_options?.dimensioning_set || urlParams.get("dimensioning_set");
+    const setName = frappe.route_options?.dimensioning_set || urlParams.get("dimensioning_set") || routeName;
     if (!setName) return;
     if (frappe.route_options) frappe.route_options.dimensioning_set = null;
     await loadDimensioningSet(page, setName);
+}
+
+function currentDimensioningSetRouteName() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return route[0] === "dimensioning-set-builder" ? String(route[2] || route[1] || "").trim() : "";
+}
+
+function requestedDimensioningSetName() {
+    const urlParams = new URLSearchParams(window.location.search || "");
+    return String(
+        frappe.route_options?.dimensioning_set
+        || (frappe.route_options?.new_dimensioning_set ? "new" : "")
+        || urlParams.get("dimensioning_set")
+        || (urlParams.get("new_dimensioning_set") ? "new" : "")
+        || currentDimensioningSetRouteName()
+        || ""
+    ).trim();
+}
+
+function syncDimensioningSetRoute(setName, displayName = "") {
+    const target = String(setName || "new").trim() || "new";
+    if (target === "new") {
+        if (currentDimensioningSetRouteName() === "new") return;
+        frappe.set_route("dimensioning-set-builder", "new");
+        return;
+    }
+    const label = String(displayName || target).trim() || target;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    if (currentDimensioningSetRouteName() === target && String(route[1] || "").trim() === label) return;
+    frappe.set_route("dimensioning-set-builder", label, target);
 }
 
 function promptLoadDimensioningSet(page) {
@@ -2605,22 +2645,29 @@ function promptLoadDimensioningSet(page) {
 
 async function loadDimensioningSet(page, setName) {
     if (!setName) return;
-    const response = await frappe.call({
-        method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.get_dimensioning_builder_payload",
-        args: { set_name: setName },
-    });
-    const payload = (response.message || {}).set;
-    if (!payload) return;
-    const loadedSet = builderSetFromPayload(payload);
-    ODS_STATE.sets = [loadedSet, ...ODS_STATE.sets.filter((row) => row.docname !== loadedSet.docname)];
-    ODS_STATE.selectedSet = 0;
-    ODS_STATE.openQuestionCards = {};
-    ODS_STATE.openRuleGroups = {};
-    ODS_STATE.testValues = buildDefaultValues(loadedSet);
-    ODS_STATE.validation = [];
-    ODS_STATE.lastPreview = null;
-    renderDimensioningBuilder(page);
-    resetDimensioningBuilderScroll(page);
+    if (ODS_STATE.loadingSetName === setName) return;
+    ODS_STATE.loadingSetName = setName;
+    try {
+        const response = await frappe.call({
+            method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.get_dimensioning_builder_payload",
+            args: { set_name: setName },
+        });
+        const payload = (response.message || {}).set;
+        if (!payload) return;
+        const loadedSet = builderSetFromPayload(payload);
+        ODS_STATE.sets = [loadedSet, ...ODS_STATE.sets.filter((row) => row.docname !== loadedSet.docname)];
+        ODS_STATE.selectedSet = 0;
+        ODS_STATE.openQuestionCards = {};
+        ODS_STATE.openRuleGroups = {};
+        ODS_STATE.testValues = buildDefaultValues(loadedSet);
+        ODS_STATE.validation = [];
+        ODS_STATE.lastPreview = null;
+        syncDimensioningSetRoute(loadedSet.docname, loadedSet.name);
+        renderDimensioningBuilder(page);
+        resetDimensioningBuilderScroll(page);
+    } finally {
+        if (ODS_STATE.loadingSetName === setName) ODS_STATE.loadingSetName = "";
+    }
 }
 
 async function runDimensioningBuilderPreview(page) {
@@ -2692,6 +2739,7 @@ async function saveActiveDimensioningSet(page) {
             ODS_STATE.sets[ODS_STATE.selectedSet] = builderSetFromPayload(payload);
             ODS_STATE.testValues = buildDefaultValues(getActiveSet());
             ODS_STATE.lastPreview = null;
+            syncDimensioningSetRoute(getActiveSet().docname, getActiveSet().name);
         }
         frappe.show_alert({ message: __("Dimensioning Set saved"), indicator: "green" });
         renderDimensioningBuilder(page);
@@ -2840,6 +2888,7 @@ function duplicateActiveDimensioningSet(page) {
     ODS_STATE.testValues = buildDefaultValues(copy);
     ODS_STATE.validation = [];
     ODS_STATE.lastPreview = null;
+    syncDimensioningSetRoute("new");
     renderDimensioningBuilder(page);
     resetDimensioningBuilderScroll(page);
 }

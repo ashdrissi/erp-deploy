@@ -546,7 +546,13 @@ def item_query_for_transaction_price_list(doctype, txt, searchfield, start, page
 
 
 @frappe.whitelist()
-def get_transaction_item_prices(item_codes=None, price_list="", price_lists=None, price_list_type="selling") -> dict:
+def get_transaction_item_prices(
+    item_codes=None,
+    price_list="",
+    price_lists=None,
+    price_list_type="selling",
+    sales_person="",
+) -> dict:
     item_codes = _clean_list(_parse_json(item_codes, item_codes or []))
     price_lists = _clean_list(_parse_json(price_lists, price_lists or []))
     if price_list and price_list not in price_lists:
@@ -566,9 +572,11 @@ def get_transaction_item_prices(item_codes=None, price_list="", price_lists=None
         return {"rows": {}, "price_lists": []}
     rows = _resolve_transaction_item_prices(item_codes, validated_lists, kind=kind)
     if kind == "selling":
-        commission_rate = _current_agent_commission_rate()
+        resolved_sales_person = _validated_commission_sales_person(sales_person)
+        commission_rate = _agent_commission_rate(resolved_sales_person)
         for row in rows.values():
             row["commission_rate"] = commission_rate
+            row["sales_person"] = resolved_sales_person
     return {"rows": rows, "price_lists": validated_lists}
 
 
@@ -685,12 +693,43 @@ def _current_static_agent_selling_price_lists() -> list[str]:
 
 def _current_agent_commission_rate() -> float:
     sales_person = _current_user_sales_person()
+    return _agent_commission_rate(sales_person)
+
+
+def _agent_commission_rate(sales_person: str) -> float:
     if not sales_person:
         return 0.0
     agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name")
     if not agent_name:
         return 0.0
     return flt(frappe.db.get_value("Agent Pricing Rules", agent_name, "commission_rate") or 0)
+
+
+def _validated_commission_sales_person(sales_person: str = "") -> str:
+    sales_person = (sales_person or "").strip()
+    own_sales_person = _current_user_sales_person()
+    if not sales_person:
+        return "" if _can_select_any_commission_salesperson() else own_sales_person
+    if frappe.db.has_column("Sales Person", "enabled") and not frappe.db.get_value(
+        "Sales Person", sales_person, "enabled"
+    ):
+        frappe.throw(_("Commission Salesperson must be enabled."))
+    if sales_person == own_sales_person or _can_select_any_commission_salesperson():
+        return sales_person
+    frappe.throw(_("You may only price a Quotation for your own Sales Person."), frappe.PermissionError)
+
+
+def _can_select_any_commission_salesperson() -> bool:
+    if frappe.session.user == "Administrator":
+        return True
+    allowed_roles = {
+        "Orderlift Admin",
+        "Orderlift Business Admin",
+        "Sales Manager",
+        "Pricing Manager",
+        "System Manager",
+    }
+    return bool(allowed_roles.intersection(set(frappe.get_roles(frappe.session.user) or [])))
 
 
 def _current_user_sales_person() -> str:

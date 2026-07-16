@@ -56,6 +56,9 @@ const context = {
         get_doc(cdt, cdn) {
             return docs.get(cdn);
         },
+        get_user_settings(doctype, key) {
+            return this.model.user_settings[doctype]?.[key] || {};
+        },
         model: {
             user_settings: {},
             clear_table() {},
@@ -201,7 +204,12 @@ function makeGridFrm() {
         df: {},
         docfields,
         grid_rows: [],
+        customButtons: [],
         wrapper: {},
+        add_custom_button(label, callback, position) {
+            this.customButtons.push({ label, callback, position });
+            return jqueryStub();
+        },
         refresh() {},
         get_field(fieldname) {
             return docfields.find((df) => df.fieldname === fieldname);
@@ -229,11 +237,57 @@ function makeGridFrm() {
     };
 }
 
+async function runDraftTTCRecalculateScenario() {
+    const row = makeRow();
+    row.custom_applied_taxes = 0;
+    row.custom_pu_ttc = 0;
+    row.custom_pt_ttc = 0;
+
+    const frm = makeGridFrm();
+    frm.doc.items = [row];
+    frm.doc.taxes = [];
+    frm.doc.taxes_and_charges = "VAT 20%";
+    let nativeCalculationCalls = 0;
+    frm.cscript = {
+        async calculate_taxes_and_totals() {
+            nativeCalculationCalls += 1;
+            frm.doc.taxes = [{ charge_type: "On Net Total", rate: 20 }];
+        },
+    };
+
+    formHandlers.refresh(frm);
+    await Promise.resolve();
+    if (frm.__orderlift_ttc_recalculation_queue) {
+        await frm.__orderlift_ttc_recalculation_queue;
+    }
+    assertEqual("automatic Draft TTC sync calls native totals", nativeCalculationCalls > 0, true);
+    assertClose("automatic Draft TTC sync -> applied tax", row.custom_applied_taxes, 40);
+    assertClose("automatic Draft TTC sync -> PU TTC", row.custom_pu_ttc, 120);
+    assertClose("automatic Draft TTC sync -> PT TTC", row.custom_pt_ttc, 240);
+
+    row.custom_applied_taxes = 0;
+    row.custom_pu_ttc = 0;
+    row.custom_pt_ttc = 0;
+    const button = frm.fields_dict.items.grid.customButtons.find(
+        (entry) => entry.label === "Recalculate TTC"
+    );
+    if (!button) throw new Error("Draft Quotation item grid is missing Recalculate TTC button");
+    assertEqual("Recalculate TTC button is beside row actions", button.position, undefined);
+
+    await button.callback();
+    assertEqual("manual TTC action calls native totals", nativeCalculationCalls > 0, true);
+    assertClose("manual TTC action -> applied tax", row.custom_applied_taxes, 40);
+    assertClose("manual TTC action -> PU TTC", row.custom_pu_ttc, 120);
+    assertClose("manual TTC action -> PT TTC", row.custom_pt_ttc, 240);
+}
+
 function runGridScenario() {
     const frm = makeGridFrm();
     formHandlers.refresh(frm);
     const grid = frm.fields_dict.items.grid;
-    const visible = context.frappe.model.user_settings.Quotation.GridView["Quotation Item"].map((column) => column.fieldname);
+    const visible = grid.docfields
+        .filter((column) => column.in_list_view && !column.hidden)
+        .map((column) => column.fieldname);
     assertEqual("restricted user margin percent excluded", visible.includes("source_margin_percent"), false);
     assertEqual("restricted user margin basis excluded", visible.includes("source_margin_basis"), false);
     assertEqual("margin percent hidden", grid.get_field("source_margin_percent").hidden, 1);
@@ -242,20 +296,47 @@ function runGridScenario() {
     assertEqual("PU HT net read-only", grid.get_field("source_discounted_sell_rate").read_only, 1);
 }
 
-const finalRow = runPricingScenarios();
-runGridScenario();
+function runConfiguredMarginScenario() {
+    context.frappe.user_roles = ["Orderlift Admin"];
+    context.frappe.boot.user.roles = ["Orderlift Admin"];
+    const savedColumns = [
+        { fieldname: "item_code", columns: 2, sticky: 0 },
+        { fieldname: "source_margin_percent", columns: 1, sticky: 0 },
+    ];
+    context.frappe.model.user_settings.Quotation = {
+        GridView: { "Quotation Item": savedColumns.map((column) => ({ ...column })) },
+    };
 
-console.log(JSON.stringify({
-    ok: true,
-    finalRow: {
-        qty: finalRow.qty,
-        pu_ht: finalRow.source_gross_sell_rate,
-        remise_percent: finalRow.source_discount_percent,
-        remise_ht: finalRow.source_discount_amount,
-        pu_ht_net: finalRow.source_discounted_sell_rate,
-        pt_ht_net: finalRow.amount,
-        pu_ttc_net: finalRow.custom_pu_ttc,
-        pt_ttc_net: finalRow.custom_pt_ttc,
-    },
-    setValueCalls: calls.length,
-}, null, 2));
+    const frm = makeGridFrm();
+    formHandlers.refresh(frm);
+    const persisted = context.frappe.model.user_settings.Quotation.GridView["Quotation Item"];
+    assertEqual("configured columns preserved", JSON.stringify(persisted), JSON.stringify(savedColumns));
+    assertEqual("authorized margin visible", frm.fields_dict.items.grid.get_field("source_margin_percent").hidden, 0);
+}
+
+async function main() {
+    const finalRow = runPricingScenarios();
+    runGridScenario();
+    runConfiguredMarginScenario();
+    await runDraftTTCRecalculateScenario();
+
+    console.log(JSON.stringify({
+        ok: true,
+        finalRow: {
+            qty: finalRow.qty,
+            pu_ht: finalRow.source_gross_sell_rate,
+            remise_percent: finalRow.source_discount_percent,
+            remise_ht: finalRow.source_discount_amount,
+            pu_ht_net: finalRow.source_discounted_sell_rate,
+            pt_ht_net: finalRow.amount,
+            pu_ttc_net: finalRow.custom_pu_ttc,
+            pt_ttc_net: finalRow.custom_pt_ttc,
+        },
+        setValueCalls: calls.length,
+    }, null, 2));
+}
+
+main().catch((error) => {
+    console.error(error && error.stack ? error.stack : error);
+    process.exitCode = 1;
+});

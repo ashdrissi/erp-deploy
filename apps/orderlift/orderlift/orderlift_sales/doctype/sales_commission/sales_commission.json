@@ -166,10 +166,10 @@
     {
       "fieldname": "base_amount",
       "fieldtype": "Currency",
-      "label": "Base Amount",
+  "label": "Actual Discount Amount",
       "options": "currency",
       "read_only": 1,
-      "description": "Invoice net total used to calculate commission",
+  "description": "Total actual line discount snapshot. The commission amount also considers unused allowed discount and above-list uplift.",
       "non_negative": 1
     },
     {
