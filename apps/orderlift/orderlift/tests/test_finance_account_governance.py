@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 frappe_stub = types.ModuleType("frappe")
@@ -260,6 +261,48 @@ class TestFinanceAccountGovernance(unittest.TestCase):
         self.assertEqual(account_map["operating_expenses"], "Operating Expenses - D")
         self.assertEqual(account_map["purchases"], "Operating Expenses - D")
         self.assertEqual(account_map["salary_expense"], "Operating Expenses - D")
+
+    def test_child_missing_account_is_created_at_root_and_resolved_after_sync(self):
+        definition = account_governance.ACCOUNT_DEFINITION_BY_KEY["vat_input"]
+        with (
+            patch.object(account_governance, "_root_company", return_value="Root Company"),
+            patch.object(account_governance, "_find_exact_company_account", return_value=""),
+            patch.object(account_governance, "_create_company_account", return_value="VAT Input - ROOT") as create,
+            patch.object(account_governance, "_find_company_account", return_value="VAT Input - CHILD"),
+        ):
+            account = account_governance._create_missing_company_account("Child Company", definition)
+
+        self.assertEqual(account, "VAT Input - CHILD")
+        create.assert_called_once_with("Root Company", definition)
+
+    def test_existing_root_account_is_reused_without_duplicate_creation(self):
+        definition = account_governance.ACCOUNT_DEFINITION_BY_KEY["purchases"]
+        with (
+            patch.object(account_governance, "_root_company", return_value="Root Company"),
+            patch.object(
+                account_governance,
+                "_find_exact_company_account",
+                return_value="Purchases - ROOT",
+            ),
+            patch.object(account_governance, "_create_company_account") as create,
+            patch.object(account_governance, "_find_company_account", return_value="Purchases - CHILD"),
+        ):
+            account = account_governance._create_missing_company_account("Child Company", definition)
+
+        self.assertEqual(account, "Purchases - CHILD")
+        create.assert_not_called()
+
+    def test_root_company_resolution_follows_the_company_tree(self):
+        parents = {"Turkey": "Orderlift", "Orderlift": ""}
+        original_get_value = account_governance.frappe.db.get_value
+
+        def get_value(doctype, name, fieldname, *args, **kwargs):
+            if doctype == "Company" and fieldname == "parent_company":
+                return parents.get(name, "")
+            return original_get_value(doctype, name, fieldname, *args, **kwargs)
+
+        with patch.object(account_governance.frappe.db, "get_value", side_effect=get_value):
+            self.assertEqual(account_governance._root_company("Turkey"), "Orderlift")
 
     def test_cash_customer_payment_defaults_to_cash_and_receivable(self):
         doc = FakeDoc(
