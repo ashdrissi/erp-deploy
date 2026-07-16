@@ -145,7 +145,7 @@ def get_company_account_map(company: str, create_missing: bool = False) -> dict[
         if not account:
             account = _find_company_account(company, definition)
         if not account and create_missing:
-            account = _create_company_account(company, definition)
+            account = _create_missing_company_account(company, definition)
         if account:
             account_map[definition.key] = account
     _apply_minimal_account_fallbacks(account_map)
@@ -413,6 +413,43 @@ def _find_company_account(company: str, definition: AccountDefinition) -> str:
     return ""
 
 
+def _find_exact_company_account(company: str, definition: AccountDefinition) -> str:
+    return _first_account(
+        {
+            "company": company,
+            "is_group": 0,
+            "account_name": definition.account_name,
+            "root_type": definition.root_type,
+        }
+    )
+
+
+def _create_missing_company_account(company: str, definition: AccountDefinition) -> str:
+    """Create a missing account at the company-tree root and resolve its child copy.
+
+    ERPNext synchronizes a root-company account to descendants during insertion.
+    Creating the ledger directly in a child company is rejected unless an unsafe
+    bypass setting is enabled, so account provisioning must always start at root.
+    """
+    root_company = _root_company(company)
+    root_account = _find_exact_company_account(root_company, definition)
+    if not root_account:
+        root_account = _create_company_account(root_company, definition)
+    if not root_account or root_company == company:
+        return root_account or ""
+
+    account = _find_company_account(company, definition)
+    if not account:
+        frappe.log_error(
+            (
+                f"Root account {root_account} was created or found, but "
+                f"{definition.account_name} did not synchronize to {company}."
+            ),
+            f"Orderlift finance account synchronization incomplete: {company} / {definition.account_name}",
+        )
+    return account or ""
+
+
 def _create_company_account(company: str, definition: AccountDefinition) -> str:
     parent = _parent_account(company, definition.root_type, definition.parent_hints)
     if not parent:
@@ -536,6 +573,21 @@ def _company_is_group(company: str) -> bool:
     if not _has_field("Company", "is_group"):
         return False
     return bool(frappe.db.get_value("Company", company, "is_group"))
+
+
+def _root_company(company: str) -> str:
+    current = (company or "").strip()
+    visited: set[str] = set()
+    while current and current not in visited:
+        visited.add(current)
+        try:
+            parent = (frappe.db.get_value("Company", current, "parent_company") or "").strip()
+        except Exception:
+            parent = ""
+        if not parent:
+            return current
+        current = parent
+    return current or company
 
 
 def _company_setup_filters() -> dict:
