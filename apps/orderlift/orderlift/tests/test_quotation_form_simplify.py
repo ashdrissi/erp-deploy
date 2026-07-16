@@ -492,7 +492,8 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("below the pricing policy net rate", quotation_hooks)
         self.assertIn("QUOTATION_PRICE_OVERRIDE_ROLES", price_scope)
         self.assertIn("def can_override_quotation_pricing", price_scope)
-        self.assertIn("if legacy_allowed:", price_scope)
+        self.assertNotIn("if legacy_allowed:\n        return True", price_scope)
+        self.assertIn("return role_capability_decision(", price_scope)
 
     def test_quotation_new_pricing_sheet_opens_builder(self):
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()

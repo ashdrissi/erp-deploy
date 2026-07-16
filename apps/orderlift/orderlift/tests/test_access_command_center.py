@@ -132,6 +132,30 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
         self.assertEqual(options[role_capabilities.CAPABILITY_TODO_ALL_ACCESS], "All ToDos Access")
         self.assertIn(role_capabilities.CAPABILITY_TODO_ALL_ACCESS, role_capabilities.DEFAULT_ROLE_CAPABILITIES["Orderlift Admin"])
 
+    def test_default_role_capability_matrix_matches_business_roles(self):
+        matrix = role_capabilities.DEFAULT_ROLE_CAPABILITIES
+
+        self.assertEqual(
+            set(matrix["Orderlift Admin"]),
+            set(role_capabilities.ROLE_CAPABILITIES),
+        )
+        self.assertEqual(
+            set(matrix["Purchase Manager"]),
+            {
+                role_capabilities.CAPABILITY_PRIVILEGED_PRICING,
+                role_capabilities.CAPABILITY_PURCHASING_ACCESS,
+            },
+        )
+        self.assertEqual(
+            matrix["Purchase User"],
+            [role_capabilities.CAPABILITY_PURCHASING_ACCESS],
+        )
+        self.assertEqual(
+            matrix["Pricing Manager"],
+            [role_capabilities.CAPABILITY_PRIVILEGED_PRICING],
+        )
+        self.assertNotIn("Sales User", matrix)
+
     def test_role_capability_decision_defaults_to_legacy_result(self):
         original_user_has_capability = role_capabilities.user_has_capability
         role_capabilities.user_has_capability = lambda *args, **kwargs: True
@@ -164,6 +188,58 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
             )
         finally:
             role_capabilities.user_has_capability = original_user_has_capability
+
+    def test_enabled_capability_mode_does_not_log_expected_legacy_mismatch(self):
+        original_user_has_capability = role_capabilities.user_has_capability
+        original_log_error = frappe_stub.log_error
+        logs = []
+        role_capabilities.user_has_capability = lambda *args, **kwargs: True
+        frappe_stub.log_error = lambda *args, **kwargs: logs.append((args, kwargs))
+        frappe_stub.conf.orderlift_use_role_capabilities = 1
+        role_capabilities._logged_capability_mismatches.clear()
+        try:
+            self.assertTrue(
+                role_capabilities.role_capability_decision(
+                    role_capabilities.CAPABILITY_PURCHASING_ACCESS,
+                    False,
+                    user="matrix@example.com",
+                    roles={"Orderlift Admin"},
+                    context="capability_matrix_test",
+                )
+            )
+            self.assertEqual(logs, [])
+        finally:
+            role_capabilities.user_has_capability = original_user_has_capability
+            frappe_stub.log_error = original_log_error
+
+    def test_enabled_capability_mode_enforces_role_matrix_without_user_hardcoding(self):
+        original_get_role_capabilities = role_capabilities.get_role_capabilities
+        frappe_stub.conf.orderlift_use_role_capabilities = 1
+        role_capabilities.get_role_capabilities = lambda role: role_capabilities.DEFAULT_ROLE_CAPABILITIES.get(role, [])
+        cases = [
+            ({"Orderlift Admin"}, role_capabilities.CAPABILITY_PURCHASING_ACCESS, True),
+            ({"Purchase Manager"}, role_capabilities.CAPABILITY_PURCHASING_ACCESS, True),
+            ({"Purchase User"}, role_capabilities.CAPABILITY_PURCHASING_ACCESS, True),
+            ({"Stock Manager"}, role_capabilities.CAPABILITY_PURCHASING_ACCESS, True),
+            ({"Sales User"}, role_capabilities.CAPABILITY_PURCHASING_ACCESS, False),
+            ({"Pricing Manager"}, role_capabilities.CAPABILITY_PRIVILEGED_PRICING, True),
+            ({"Sales Manager"}, role_capabilities.CAPABILITY_QUOTATION_OVERRIDE, False),
+        ]
+        try:
+            for roles, capability, expected in cases:
+                with self.subTest(roles=roles, capability=capability):
+                    self.assertEqual(
+                        role_capabilities.role_capability_decision(
+                            capability,
+                            legacy_allowed=not expected,
+                            user="role-matrix@example.com",
+                            roles=roles,
+                            context="role_matrix_test",
+                        ),
+                        expected,
+                    )
+        finally:
+            role_capabilities.get_role_capabilities = original_get_role_capabilities
 
     def test_role_payload_includes_capabilities(self):
         payload = access_command_center._role_payload(
