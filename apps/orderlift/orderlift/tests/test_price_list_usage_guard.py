@@ -495,11 +495,37 @@ class TestPriceListUsageGuard(unittest.TestCase):
         price_list_usage_guard.frappe.db = DbStub()
         price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
             docstatus=1,
-            items=[{"name": "SO-ITEM-1", "item_code": "ITEM-001", "rate": 10}],
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Sell A",
+            items=[
+                {
+                    "name": "SO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                }
+            ],
         )
         doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
             selling_price_list="Sell A",
-            items=[{"item_code": "ITEM-001", "rate": 10, "sales_order": "SO-001", "so_detail": "SO-ITEM-1"}],
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                    "sales_order": "SO-001",
+                    "so_detail": "SO-ITEM-1",
+                }
+            ],
         )
         doc.doctype = "Sales Invoice"
 
@@ -510,11 +536,37 @@ class TestPriceListUsageGuard(unittest.TestCase):
         price_list_usage_guard.frappe.db = DbStub()
         price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
             docstatus=1,
-            items=[{"name": "SO-ITEM-1", "item_code": "ITEM-001", "rate": 10}],
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Sell A",
+            items=[
+                {
+                    "name": "SO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                }
+            ],
         )
         doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
             selling_price_list="Sell A",
-            items=[{"item_code": "ITEM-001", "rate": 10, "against_sales_order": "SO-001", "so_detail": "SO-ITEM-1"}],
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                    "against_sales_order": "SO-001",
+                    "so_detail": "SO-ITEM-1",
+                }
+            ],
         )
         doc.doctype = "Delivery Note"
 
@@ -525,16 +577,365 @@ class TestPriceListUsageGuard(unittest.TestCase):
         price_list_usage_guard.frappe.db = DbStub()
         price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
             docstatus=1,
-            items=[{"name": "SO-ITEM-1", "item_code": "ITEM-001", "rate": 10}],
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Sell A",
+            items=[
+                {
+                    "name": "SO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                }
+            ],
         )
         doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
             selling_price_list="Sell A",
-            items=[{"item_code": "ITEM-001", "rate": 5, "sales_order": "SO-001", "so_detail": "SO-ITEM-1"}],
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 5,
+                    "sales_order": "SO-001",
+                    "so_detail": "SO-ITEM-1",
+                }
+            ],
         )
         doc.doctype = "Sales Invoice"
 
         with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
             price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_finance_mapped_sales_invoice_can_inherit_hidden_source_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            name=name,
+            docstatus=1,
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Hidden Approved Sell",
+            items=[
+                {
+                    "name": "SO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 90,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Hidden Approved Sell",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 90,
+                    "sales_order": "SO-001",
+                    "so_detail": "SO-ITEM-1",
+                }
+            ],
+        )
+        doc.doctype = "Sales Invoice"
+
+        result = price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+        self.assertTrue(result.trusted)
+        self.assertEqual(result.source_documents, ("SO-001",))
+
+    def test_standalone_sales_invoice_cannot_use_hidden_source_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Hidden Approved Sell",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 90,
+                }
+            ],
+        )
+        doc.doctype = "Sales Invoice"
+
+        with self.assertRaisesRegex(ValueError, "hidden price list"):
+            price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_mapped_sales_invoice_party_mismatch_cannot_inherit_hidden_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            name=name,
+            docstatus=1,
+            company="Orderlift",
+            customer="CUST-OTHER",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Hidden Approved Sell",
+            items=[
+                {
+                    "name": "SO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 90,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Hidden Approved Sell",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 90,
+                    "sales_order": "SO-001",
+                    "so_detail": "SO-ITEM-1",
+                }
+            ],
+        )
+        doc.doctype = "Sales Invoice"
+
+        with self.assertRaisesRegex(ValueError, "hidden price list"):
+            price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+    def test_finance_purchase_invoice_can_inherit_hidden_purchase_order_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            name=name,
+            docstatus=1,
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "name": "PO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                    "purchase_order": "PO-001",
+                    "po_detail": "PO-ITEM-1",
+                }
+            ],
+        )
+        doc.meta = MetaStub({"buying_price_list"})
+        doc.doctype = "Purchase Invoice"
+
+        result = price_list_usage_guard.validate_purchase_invoice_price_list(doc)
+
+        self.assertTrue(result.trusted)
+        self.assertEqual(result.source_documents, ("PO-001",))
+
+    def test_purchase_receipt_can_inherit_hidden_purchase_order_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            name=name,
+            docstatus=1,
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "name": "PO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                    "purchase_order": "PO-001",
+                    "purchase_order_item": "PO-ITEM-1",
+                }
+            ],
+        )
+        doc.meta = MetaStub({"buying_price_list"})
+        doc.doctype = "Purchase Receipt"
+
+        result = price_list_usage_guard.validate_purchase_receipt_price_list(doc)
+
+        self.assertTrue(result.trusted)
+
+    def test_purchase_invoice_can_inherit_hidden_purchase_receipt_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            name=name,
+            docstatus=1,
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "name": "PR-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                    "purchase_receipt": "PR-001",
+                    "pr_detail": "PR-ITEM-1",
+                }
+            ],
+        )
+        doc.meta = MetaStub({"buying_price_list"})
+        doc.doctype = "Purchase Invoice"
+
+        result = price_list_usage_guard.validate_purchase_invoice_price_list(doc)
+
+        self.assertTrue(result.trusted)
+
+    def test_changed_mapped_purchase_rate_cannot_inherit_hidden_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            name=name,
+            docstatus=1,
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "name": "PO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 60,
+                    "purchase_order": "PO-001",
+                    "po_detail": "PO-ITEM-1",
+                }
+            ],
+        )
+        doc.meta = MetaStub({"buying_price_list"})
+        doc.doctype = "Purchase Invoice"
+
+        with self.assertRaisesRegex(ValueError, "hidden price list"):
+            price_list_usage_guard.validate_purchase_invoice_price_list(doc)
+
+    def test_standalone_purchase_invoice_cannot_use_hidden_list(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        doc = DocStub(
+            company="Orderlift",
+            supplier="SUP-001",
+            currency="MAD",
+            conversion_rate=1,
+            buying_price_list="Hidden Approved Buy",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 70,
+                }
+            ],
+        )
+        doc.meta = MetaStub({"buying_price_list"})
+        doc.doctype = "Purchase Invoice"
+
+        with self.assertRaisesRegex(ValueError, "hidden price list"):
+            price_list_usage_guard.validate_purchase_invoice_price_list(doc)
 
     def test_quotation_sourced_sales_order_uses_inherited_snapshot_not_current_item_price(self):
         price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]

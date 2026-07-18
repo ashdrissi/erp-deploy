@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import frappe
 from frappe import _
 from frappe.utils import nowdate
@@ -30,6 +32,14 @@ ITEM_PRICE_MARGIN_STAMP_FIELDS = (
 )
 
 MANUAL_CHARGE_ITEM_CODES = {"OTHER-CHARGES", "TRANSPORTATION-CHARGE"}
+
+
+@dataclass(frozen=True)
+class TrustedPricingSourceResult:
+    trusted: bool
+    reason: str
+    source_doctypes: tuple[str, ...] = ()
+    source_documents: tuple[str, ...] = ()
 
 
 def validate_quotation_price_list(doc, method=None):
@@ -146,19 +156,23 @@ def validate_sales_order_price_list(doc, method=None):
 
 
 def validate_sales_invoice_price_list(doc, method=None):
+    source_result = _trusted_sales_source(doc)
+    if source_result.trusted:
+        return source_result
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
     if not can_override_quotation_pricing():
-        if _has_submitted_sales_order_pricing_source(doc):
-            return
         _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
+    return source_result
 
 
 def validate_delivery_note_price_list(doc, method=None):
+    source_result = _trusted_sales_source(doc)
+    if source_result.trusted:
+        return source_result
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
     if not can_override_quotation_pricing():
-        if _has_submitted_sales_order_pricing_source(doc):
-            return
         _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
+    return source_result
 
 
 def validate_purchase_order_price_list(doc, method=None):
@@ -167,13 +181,21 @@ def validate_purchase_order_price_list(doc, method=None):
 
 
 def validate_purchase_invoice_price_list(doc, method=None):
+    source_result = _trusted_purchase_source(doc)
+    if source_result.trusted:
+        return source_result
     _validate_doc_price_list(doc, fieldname="buying_price_list", kind="buying")
     _validate_transaction_items_priced(doc, fieldname="buying_price_list", kind="buying")
+    return source_result
 
 
 def validate_purchase_receipt_price_list(doc, method=None):
+    source_result = _trusted_purchase_source(doc)
+    if source_result.trusted:
+        return source_result
     _validate_doc_price_list(doc, fieldname="buying_price_list", kind="buying")
     _validate_transaction_items_priced(doc, fieldname="buying_price_list", kind="buying")
+    return source_result
 
 
 def _validate_doc_price_list(doc, *, fieldname: str, kind: str):
@@ -269,42 +291,243 @@ def _has_quotation_pricing_source(doc) -> bool:
 
 
 def _has_submitted_sales_order_pricing_source(doc) -> bool:
+    return _trusted_sales_source(doc).trusted
+
+
+def _trusted_sales_source(doc) -> TrustedPricingSourceResult:
     doctype = getattr(doc, "doctype", "")
     if doctype not in {"Sales Invoice", "Delivery Note"}:
-        return False
-    item_rows = _transaction_item_rows(doc)
+        return _untrusted_source(f"{doctype or 'Document'} is not a supported sales target.")
+    item_rows = _source_validated_item_rows(doc)
     if not item_rows:
-        return False
+        return _untrusted_source("No priced sales rows were found.")
 
     sales_orders = {}
-    for row in doc.get("items") or []:
-        item_code = (row.get("item_code") or "").strip()
-        if not item_code:
-            continue
-        sales_order = (row.get("sales_order") or row.get("against_sales_order") or "").strip()
-        sales_order_detail = (row.get("so_detail") or "").strip()
+    for row in item_rows:
+        sales_order = _text(
+            _value(row, "sales_order") or _value(row, "against_sales_order")
+        )
+        sales_order_detail = _text(_value(row, "so_detail"))
         if not sales_order or not sales_order_detail:
-            return False
+            return _untrusted_source("A sales row has no Sales Order source.")
         if sales_order not in sales_orders:
             sales_orders[sales_order] = frappe.get_doc("Sales Order", sales_order)
         source_doc = sales_orders[sales_order]
         if int(_flt(source_doc.get("docstatus"))) != 1:
-            return False
-        source_row = _source_sales_order_row(source_doc, sales_order_detail)
+            return _untrusted_source(f"Sales Order {sales_order} is not submitted.")
+        mismatch = _parent_context_mismatch(
+            doc,
+            source_doc,
+            party_field="customer",
+            price_list_field="selling_price_list",
+        )
+        if mismatch:
+            return _untrusted_source(f"Sales Order {sales_order}: {mismatch}")
+        source_row = _source_document_row(source_doc, sales_order_detail)
         if not source_row:
-            return False
-        if item_code != (source_row.get("item_code") or "").strip():
-            return False
-        if abs(_flt(row.get("rate")) - _flt(source_row.get("rate"))) > 0.000001:
-            return False
-    return True
+            return _untrusted_source(
+                f"Sales Order row {sales_order_detail} was not found."
+            )
+        mismatch = _row_context_mismatch(row, source_row)
+        if mismatch:
+            return _untrusted_source(
+                f"Sales Order row {sales_order_detail}: {mismatch}"
+            )
+
+    return TrustedPricingSourceResult(
+        trusted=True,
+        reason="Every sales row matches a submitted Sales Order source.",
+        source_doctypes=("Sales Order",),
+        source_documents=tuple(sales_orders),
+    )
 
 
-def _source_sales_order_row(source_doc, detail_name: str):
-    for row in source_doc.get("items") or []:
-        if (row.get("name") or "").strip() == detail_name:
+def _trusted_purchase_source(doc) -> TrustedPricingSourceResult:
+    doctype = getattr(doc, "doctype", "")
+    if doctype not in {"Purchase Receipt", "Purchase Invoice"}:
+        return _untrusted_source(
+            f"{doctype or 'Document'} is not a supported purchase target."
+        )
+    item_rows = _source_validated_item_rows(doc)
+    if not item_rows:
+        return _untrusted_source("No priced purchase rows were found.")
+
+    source_documents = {}
+    source_types = []
+    for row in item_rows:
+        reference = _purchase_source_reference(doctype, row)
+        if not reference:
+            return _untrusted_source("A purchase row has no submitted source row.")
+        source_doctype, source_name, source_detail = reference
+        cache_key = (source_doctype, source_name)
+        if cache_key not in source_documents:
+            source_documents[cache_key] = frappe.get_doc(source_doctype, source_name)
+        source_doc = source_documents[cache_key]
+        if int(_flt(source_doc.get("docstatus"))) != 1:
+            return _untrusted_source(
+                f"{source_doctype} {source_name} is not submitted."
+            )
+        mismatch = _parent_context_mismatch(
+            doc,
+            source_doc,
+            party_field="supplier",
+            price_list_field="buying_price_list",
+        )
+        if mismatch:
+            return _untrusted_source(
+                f"{source_doctype} {source_name}: {mismatch}"
+            )
+        source_row = _source_document_row(source_doc, source_detail)
+        if not source_row:
+            return _untrusted_source(
+                f"{source_doctype} row {source_detail} was not found."
+            )
+        mismatch = _row_context_mismatch(row, source_row)
+        if mismatch:
+            return _untrusted_source(
+                f"{source_doctype} row {source_detail}: {mismatch}"
+            )
+        if source_doctype not in source_types:
+            source_types.append(source_doctype)
+
+    return TrustedPricingSourceResult(
+        trusted=True,
+        reason="Every purchase row matches a submitted Purchase Order or Purchase Receipt source.",
+        source_doctypes=tuple(source_types),
+        source_documents=tuple(name for _doctype, name in source_documents),
+    )
+
+
+def _purchase_source_reference(doctype: str, row) -> tuple[str, str, str] | None:
+    if doctype == "Purchase Receipt":
+        source_name = _text(_value(row, "purchase_order"))
+        source_detail = _text(_value(row, "purchase_order_item"))
+        if source_name and source_detail:
+            return "Purchase Order", source_name, source_detail
+        return None
+
+    purchase_receipt = _text(_value(row, "purchase_receipt"))
+    receipt_detail = _text(_value(row, "pr_detail"))
+    if purchase_receipt or receipt_detail:
+        if purchase_receipt and receipt_detail:
+            return "Purchase Receipt", purchase_receipt, receipt_detail
+        return None
+
+    purchase_order = _text(_value(row, "purchase_order"))
+    order_detail = _text(
+        _value(row, "po_detail") or _value(row, "purchase_order_item")
+    )
+    if purchase_order and order_detail:
+        return "Purchase Order", purchase_order, order_detail
+    return None
+
+
+def _source_validated_item_rows(doc) -> list:
+    return [
+        row
+        for row in (_value(doc, "items") or [])
+        if _text(_value(row, "item_code"))
+        and not _is_manual_charge_item(_value(row, "item_code"))
+    ]
+
+
+def _source_document_row(source_doc, detail_name: str):
+    for row in _value(source_doc, "items") or []:
+        if _text(_value(row, "name")) == detail_name:
             return row
     return None
+
+
+def _parent_context_mismatch(
+    target_doc,
+    source_doc,
+    *,
+    party_field: str,
+    price_list_field: str,
+) -> str:
+    fields = (
+        ("company", "company"),
+        (party_field, party_field),
+        ("currency", "currency"),
+        (price_list_field, price_list_field),
+    )
+    for fieldname, label in fields:
+        target_value = _text(_value(target_doc, fieldname))
+        source_value = _text(_value(source_doc, fieldname))
+        if not target_value or not source_value:
+            return f"{label} is missing."
+        if target_value != source_value:
+            return f"{label} does not match."
+
+    target_conversion = _flt(_value(target_doc, "conversion_rate"))
+    source_conversion = _flt(_value(source_doc, "conversion_rate"))
+    if target_conversion <= 0 or source_conversion <= 0:
+        return "conversion rate is missing."
+    if not _numbers_match(target_conversion, source_conversion, tolerance=0.000000001):
+        return "conversion rate does not match."
+    return ""
+
+
+def _row_context_mismatch(target_row, source_row) -> str:
+    target_item = _text(_value(target_row, "item_code"))
+    source_item = _text(_value(source_row, "item_code"))
+    if not target_item or target_item != source_item:
+        return "item code does not match."
+
+    target_uom = _text(_value(target_row, "uom"))
+    source_uom = _text(_value(source_row, "uom"))
+    if not target_uom or target_uom != source_uom:
+        return "UOM does not match."
+
+    target_conversion = _flt(_value(target_row, "conversion_factor"))
+    source_conversion = _flt(_value(source_row, "conversion_factor"))
+    if target_conversion <= 0 or source_conversion <= 0:
+        return "UOM conversion factor is missing."
+    if not _numbers_match(target_conversion, source_conversion, tolerance=0.000000001):
+        return "UOM conversion factor does not match."
+
+    if not _numbers_match(
+        _flt(_value(target_row, "rate")),
+        _flt(_value(source_row, "rate")),
+        tolerance=_rate_tolerance(target_row, source_row),
+    ):
+        return "rate does not match."
+    return ""
+
+
+def _rate_tolerance(*rows) -> float:
+    precisions = []
+    for row in rows:
+        precision = getattr(row, "precision", None)
+        if callable(precision):
+            try:
+                precisions.append(int(precision("rate")))
+            except (TypeError, ValueError):
+                pass
+    precision = max(precisions or [6])
+    return 0.5 * (10 ** (-precision))
+
+
+def _numbers_match(left: float, right: float, *, tolerance: float) -> bool:
+    return abs(_flt(left) - _flt(right)) <= tolerance
+
+
+def _value(obj, fieldname: str, default=None):
+    if obj is None:
+        return default
+    getter = getattr(obj, "get", None)
+    if callable(getter):
+        value = getter(fieldname)
+        return default if value is None else value
+    return getattr(obj, fieldname, default)
+
+
+def _text(value) -> str:
+    return str(value or "").strip()
+
+
+def _untrusted_source(reason: str) -> TrustedPricingSourceResult:
+    return TrustedPricingSourceResult(trusted=False, reason=reason)
 
 
 def _item_prices_by_item(rows: list[dict], price_lists: list[str]) -> dict[str, list[dict]]:
