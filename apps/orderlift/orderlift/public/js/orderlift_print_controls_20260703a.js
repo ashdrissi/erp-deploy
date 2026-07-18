@@ -3,7 +3,7 @@
     const HIDDEN_CLASS = "orderlift-print-control-hidden";
 
     function isPrintSurface() {
-        const route = typeof frappe !== "undefined" && frappe.get_route ? frappe.get_route() : [];
+        const route = (typeof frappe !== "undefined" && frappe.get_route ? frappe.get_route() : []) || [];
         return window.location.pathname.indexOf("/printview") !== -1
             || route[0] === "print"
             || window.location.hash.indexOf("#print") !== -1;

@@ -267,6 +267,10 @@ EXECUTIVE_READ_PERMISSIONS = {
 }
 
 DOCTYPE_PERMISSIONS = {
+    # Report has customized permissions on configured sites. Keep the native
+    # Desk User read path so individual Report.roles rows can authorize the
+    # reports exposed by the menu without granting report administration.
+    "Desk User": {"Report": READ_ONLY},
     "Orderlift Executive": EXECUTIVE_READ_PERMISSIONS,
     "Sales Distribution Manager": SALES_MANAGER_PERMISSIONS,
     "Sales Installation Manager": {**SALES_MANAGER_PERMISSIONS, "Project": READ_WRITE_CREATE, "Contract": READ_WRITE_CREATE},
@@ -442,6 +446,7 @@ STALE_MENU_ROLE_ASSIGNMENTS = {
 }
 
 WORKFLOW_PERMISSION_SCOPE = {
+    "Desk User": {"Report"},
     "Logistics Manager": {
         "Purchase Order",
         "Supplier",

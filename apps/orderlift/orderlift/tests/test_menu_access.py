@@ -276,6 +276,9 @@ class TestMenuAccessHelpers(unittest.TestCase):
     def test_base_business_roles_have_menu_backing_permissions(self):
         role_permissions = setup_startup_roles.DOCTYPE_PERMISSIONS
 
+        self.assertEqual(role_permissions["Desk User"]["Report"]["read"], 1)
+        self.assertEqual(role_permissions["Desk User"]["Report"].get("write", 0), 0)
+        self.assertEqual(setup_startup_roles.WORKFLOW_PERMISSION_SCOPE["Desk User"], {"Report"})
         self.assertEqual(role_permissions["Pricing Manager"]["Quotation"]["read"], 1)
         self.assertEqual(role_permissions["Pricing Manager"]["Agent Pricing Rules"]["create"], 1)
         self.assertEqual(role_permissions["Finance User"]["Payment Entry"]["create"], 1)

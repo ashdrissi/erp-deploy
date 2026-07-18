@@ -608,6 +608,8 @@ class TestQuotationFormSimplify(unittest.TestCase):
         script = (APP_ROOT / "public" / "js" / "orderlift_print_controls_20260703a.js").read_text()
 
         self.assertIn("orderlift_print_controls_20260703a.js", hooks)
+        self.assertIn('frappe.get_route() : []) || []', script)
+        self.assertIn("orderlift_print_controls_20260703a.js?v=20260718a", hooks)
         self.assertNotIn("PDF", script)
         for token in [
             "Full Page",
