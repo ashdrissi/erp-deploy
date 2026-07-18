@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from pathlib import Path
 
 
 class _Row(dict):
@@ -59,6 +60,24 @@ from orderlift.scripts import setup_master_data
 
 
 class TestReportingMasterData(unittest.TestCase):
+    def test_sales_payment_follow_up_reports_traceable_invoice_balances(self):
+        root = Path(__file__).resolve().parents[1]
+        report = root / "orderlift_sales" / "report" / "sales_payment_follow_up"
+        source = (report / "sales_payment_follow_up.py").read_text()
+        client = (report / "sales_payment_follow_up.js").read_text()
+
+        for token in [
+            "sales_orders",
+            "projects",
+            "payment_modes",
+            "paid_amount",
+            "outstanding_amount",
+            "get_allowed_companies",
+        ]:
+            self.assertIn(token, source)
+        self.assertIn("outstanding_only", client)
+        self.assertNotIn('filters={"disabled": 0}', source)
+
     def test_target_companies_and_currencies_match_orderlift_operating_model(self):
         by_name = {row["name"]: row for row in setup_master_data.TARGET_COMPANIES}
 
@@ -71,6 +90,27 @@ class TestReportingMasterData(unittest.TestCase):
 
     def test_base_warehouse_names_use_company_abbreviation(self):
         self.assertEqual(setup_master_data._warehouse_docname("Main Warehouse", "OMD"), "Main Warehouse - OMD")
+
+    def test_vat_setup_prefers_exact_20_percent_account_over_any_tax_account(self):
+        original_exists = setup_master_data._exists
+        original_get_all = setup_master_data.frappe.get_all
+        try:
+            setup_master_data._exists = lambda doctype, name=None: (
+                doctype == "DocType" and name == "Account"
+            ) or (doctype == "Account" and name == "VAT 20% - OMD")
+            setup_master_data.frappe.get_all = lambda *args, **kwargs: [
+                _Row(name="VAT 10% - OMD")
+            ]
+
+            account = setup_master_data._get_or_create_tax_account(
+                {"name": "Orderlift Maroc Distribution", "abbr": "OMD"},
+                {"created": []},
+            )
+        finally:
+            setup_master_data._exists = original_exists
+            setup_master_data.frappe.get_all = original_get_all
+
+        self.assertEqual(account, "VAT 20% - OMD")
 
     def test_margin_percent_keeps_zero_revenue_safe(self):
         self.assertEqual(reporting.margin_percent(0, 100), 0.0)

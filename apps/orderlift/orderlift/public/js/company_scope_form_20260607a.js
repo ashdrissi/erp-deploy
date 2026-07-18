@@ -21,7 +21,6 @@ frappe.provide("orderlift.company_scope");
     // doctype -> { company: <company fieldname>, bt: <business-type fieldname or null> }
     const SCOPE = {
         Customer: { company: "custom_company", bt: null },
-        Supplier: { company: "custom_company", bt: null },
         "Price List": { company: "custom_company", bt: null },
         Prospect: { company: "company", bt: null },
         Lead: { company: "company", bt: null },

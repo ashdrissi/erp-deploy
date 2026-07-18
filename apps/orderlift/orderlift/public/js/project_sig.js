@@ -9,6 +9,7 @@ frappe.ui.form.on("Project", {
         _render_qc_progress(frm);
         _render_project_contracts(frm);
         _render_project_documents(frm);
+        _render_project_progress_history(frm);
         _add_sig_buttons(frm);
     },
 
@@ -47,6 +48,77 @@ frappe.ui.form.on("Project", {
         }
     },
 });
+
+// ── Native Project Update history ──────────────────────────────────────────
+
+function _render_project_progress_history(frm) {
+    const field = frm.get_field("custom_progress_history_html");
+    if (!field || !field.$wrapper) return;
+    if (frm.is_new()) {
+        field.$wrapper.html(`<div class="ol-progress-empty">${__("Save the project before adding progress updates.")}</div>`);
+        return;
+    }
+
+    field.$wrapper.html(`<div class="ol-progress-empty">${__("Loading progress history...")}</div>`);
+    frappe.db.get_list("Project Update", {
+        filters: { project: frm.doc.name },
+        fields: ["name", "date", "time", "custom_progress", "custom_progress_details", "owner", "modified"],
+        order_by: "date desc, time desc, modified desc",
+        limit: 50,
+    }).then((rows) => {
+        field.$wrapper.html(_project_progress_history_markup(rows || []));
+        field.$wrapper.find("[data-new-project-update]").on("click", () => {
+            frappe.route_options = { project: frm.doc.name };
+            frappe.new_doc("Project Update");
+        });
+        field.$wrapper.find("[data-open-project-update]").on("click", function () {
+            frappe.set_route("Form", "Project Update", $(this).data("open-project-update"));
+        });
+    }).catch((error) => {
+        console.error("Unable to load project progress history", error);
+        field.$wrapper.html(`<div class="ol-progress-empty text-danger">${__("Could not load Project Updates.")}</div>`);
+    });
+}
+
+function _project_progress_history_markup(rows) {
+    _ensure_project_progress_history_styles();
+    const items = rows.map((row) => `
+        <button type="button" class="ol-progress-row" data-open-project-update="${frappe.utils.escape_html(row.name)}">
+            <span class="ol-progress-value">${flt(row.custom_progress || 0)}%</span>
+            <span class="ol-progress-copy">
+                <strong>${frappe.utils.escape_html(row.custom_progress_details || __("Progress update"))}</strong>
+                <small>${frappe.utils.escape_html([row.date || "", row.time || "", row.owner || ""].filter(Boolean).join(" · "))}</small>
+            </span>
+        </button>
+    `).join("");
+    return `
+        <div class="ol-progress-history">
+            <div class="ol-progress-head">
+                <span>${rows.length} ${__("update(s)")}</span>
+                <button type="button" class="btn btn-xs btn-primary" data-new-project-update="1">${__("Add Progress Update")}</button>
+            </div>
+            ${items || `<div class="ol-progress-empty">${__("No progress updates yet.")}</div>`}
+        </div>
+    `;
+}
+
+function _ensure_project_progress_history_styles() {
+    if (document.getElementById("ol-project-progress-history-style")) return;
+    const style = document.createElement("style");
+    style.id = "ol-project-progress-history-style";
+    style.textContent = `
+        .ol-progress-history { border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; background:#fff; }
+        .ol-progress-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+        .ol-progress-row { width:100%; display:flex; align-items:center; gap:12px; border:0; border-bottom:1px solid #f1f5f9; padding:11px 12px; background:#fff; text-align:left; }
+        .ol-progress-row:hover { background:#f8fafc; }
+        .ol-progress-value { min-width:54px; font-weight:800; color:#0f766e; }
+        .ol-progress-copy { display:flex; flex-direction:column; min-width:0; }
+        .ol-progress-copy strong { color:#1f2937; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ol-progress-copy small { color:#64748b; }
+        .ol-progress-empty { padding:14px; color:#64748b; background:#f8fafc; border:1px dashed #d8e2ee; border-radius:10px; }
+    `;
+    document.head.appendChild(style);
+}
 
 // ── Project Contracts tab ──────────────────────────────────────────────────
 

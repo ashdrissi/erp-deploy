@@ -1,6 +1,64 @@
 [
   {
     "doctype": "Custom Field",
+    "name": "Project Update-custom_progress",
+    "dt": "Project Update",
+    "fieldname": "custom_progress",
+    "fieldtype": "Percent",
+    "label": "Progress %",
+    "insert_after": "time",
+    "reqd": 1,
+    "in_list_view": 1,
+    "module": "Orderlift CRM"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project Update-custom_progress_details",
+    "dt": "Project Update",
+    "fieldname": "custom_progress_details",
+    "fieldtype": "Small Text",
+    "label": "Progress Details",
+    "insert_after": "custom_progress",
+    "reqd": 1,
+    "in_list_view": 1,
+    "module": "Orderlift CRM"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project-custom_project_owner",
+    "dt": "Project",
+    "fieldname": "custom_project_owner",
+    "fieldtype": "Link",
+    "label": "Project Manager",
+    "options": "User",
+    "insert_after": "project_name",
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "description": "Primary person responsible for this project. Also included in Project Users for progress collection."
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project-custom_progress_history_section",
+    "dt": "Project",
+    "fieldname": "custom_progress_history_section",
+    "fieldtype": "Section Break",
+    "label": "Progress History",
+    "insert_after": "message",
+    "collapsible": 1,
+    "module": "Orderlift CRM"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Project-custom_progress_history_html",
+    "dt": "Project",
+    "fieldname": "custom_progress_history_html",
+    "fieldtype": "HTML",
+    "label": "Progress History",
+    "insert_after": "custom_progress_history_section",
+    "module": "Orderlift CRM"
+  },
+  {
+    "doctype": "Custom Field",
     "name": "Project-custom_sig_tab",
     "dt": "Project",
     "fieldname": "custom_sig_tab",

@@ -32,6 +32,7 @@ frappe_utils_stub.nowdate = lambda: "2026-04-27"
 sys.modules["frappe.utils"] = frappe_utils_stub
 
 from orderlift.orderlift_crm.api import pipeline
+from orderlift.orderlift_crm import project_responsibility
 from orderlift import company_access
 
 
@@ -47,6 +48,22 @@ class TestCrmPipelineFilters(unittest.TestCase):
     def tearDown(self):
         pipeline.frappe = self.original_pipeline_frappe
         company_access.frappe = self.original_company_access_frappe
+
+    def test_project_manager_defaults_to_creator_and_joins_native_project_users(self):
+        class Project(dict):
+            meta = types.SimpleNamespace(get_field=lambda fieldname: fieldname in {"custom_project_owner", "users"})
+
+            def append(self, fieldname, value):
+                self.setdefault(fieldname, []).append(_Row(**value))
+
+            def set(self, fieldname, value):
+                self[fieldname] = value
+
+        project = Project(owner="manager@example.com", custom_project_owner="", users=[])
+        project_responsibility.ensure_project_responsibility(project)
+
+        self.assertEqual(project["custom_project_owner"], "manager@example.com")
+        self.assertEqual([row.user for row in project["users"]], ["manager@example.com"])
 
     def test_opportunity_pipeline_filters_by_crm_segment_field(self):
         calls = []
@@ -127,9 +144,9 @@ class TestCrmPipelineFilters(unittest.TestCase):
         original_owned_flag = pipeline._owned_pipeline_visibility_enabled
         try:
             pipeline.frappe.get_list = lambda doctype, **kwargs: [
-                _Row(name="PROJ-OWNED", project_owner="demo@example.com"),
-                _Row(name="PROJ-ASSIGNED", project_owner="other@example.com"),
-                _Row(name="PROJ-HIDDEN", project_owner="other2@example.com"),
+                _Row(name="PROJ-OWNED", custom_project_owner="demo@example.com"),
+                _Row(name="PROJ-ASSIGNED", custom_project_owner="other@example.com"),
+                _Row(name="PROJ-HIDDEN", custom_project_owner="other2@example.com"),
             ]
             pipeline._owned_pipeline_visibility_enabled = lambda: True
 

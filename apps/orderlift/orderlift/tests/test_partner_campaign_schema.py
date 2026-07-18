@@ -67,6 +67,7 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertEqual(classification_by_name["Quotation-custom_crm_business_type"]["insert_after"], "party_name")
         self.assertEqual(status_by_name["Sales Order-custom_orderlift_order_status"]["insert_after"], "customer_name")
         self.assertEqual(status_by_name["Sales Order-custom_crm_business_type"]["insert_after"], "custom_orderlift_order_status")
+        self.assertEqual(status_by_name["Sales Order-custom_crm_business_type"].get("in_list_view"), 0)
         self.assertEqual(status_by_name["Project-custom_crm_business_type"]["insert_after"], "custom_project_status")
 
     def test_partner_campaign_doctype_has_required_child_tables_and_kpis(self):

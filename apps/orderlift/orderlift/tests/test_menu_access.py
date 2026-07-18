@@ -959,6 +959,15 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertIn("userHasPrivilegedRole", script)
         self.assertIn("Orderlift Admin", script)
 
+    def test_sales_order_list_uses_short_status_and_fetches_owner(self):
+        from orderlift import hooks
+
+        self.assertEqual(hooks.doctype_list_js["Sales Order"], "public/js/sales_order_list_20260717a.js")
+        script = (APP_ROOT / "orderlift" / "public" / "js" / "sales_order_list_20260717a.js").read_text()
+        self.assertIn('"owner"', script)
+        self.assertIn("shortStatus", script)
+        self.assertIn("custom_orderlift_order_status", script)
+
 
 if __name__ == "__main__":
     unittest.main()

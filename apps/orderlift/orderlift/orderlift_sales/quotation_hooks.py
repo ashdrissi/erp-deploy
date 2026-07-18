@@ -213,17 +213,28 @@ def sync_quotation_item_price_input_fields(doc, method=None) -> None:
     ERPNext accounting remains HT-based, so the saved rate is authoritative and
     the helper fields are normalized from it server-side.
     """
+    previous_rows = _quotation_item_rows_before_save(doc)
     for row in doc.get("items") or []:
         gross_rate = flt(row.get("source_gross_sell_rate") or row.get("price_list_rate") or 0)
         current_rate = flt(row.get("rate") or 0)
         if gross_rate <= 0 or current_rate < 0:
             continue
 
+        previous_row = previous_rows.get((row.get("name") or "").strip())
+        current_rate, gross_rate_changed = _resolve_changed_quotation_price_input(
+            doc,
+            row,
+            previous_row,
+            gross_rate,
+            current_rate,
+        )
         qty = flt(row.get("qty") or 1) or 1
         discount = max((1 - (current_rate / gross_rate)) * 100, 0)
         current_rate = flt(current_rate, row.precision("rate"))
         row.rate = current_rate
         row.amount = flt(current_rate * qty, row.precision("amount"))
+        if gross_rate_changed and row.meta.get_field("price_list_rate"):
+            row.price_list_rate = flt(gross_rate, row.precision("price_list_rate"))
         if row.meta.get_field("discount_percentage"):
             row.discount_percentage = flt(discount, row.precision("discount_percentage"))
         if row.meta.get_field("source_price_list_sell_rate") and not flt(row.get("source_price_list_sell_rate") or 0):
@@ -255,6 +266,66 @@ def sync_quotation_item_price_input_fields(doc, method=None) -> None:
                 commission.get("commission_amount") or 0,
                 row.precision("source_commission_amount"),
             )
+
+
+def _quotation_item_rows_before_save(doc) -> dict[str, object]:
+    get_before = getattr(doc, "get_doc_before_save", None)
+    if not callable(get_before):
+        return {}
+    before = get_before()
+    if not before:
+        return {}
+    get = getattr(before, "get", None)
+    items = get("items") if callable(get) else getattr(before, "items", None)
+    return {
+        (row.get("name") or "").strip(): row
+        for row in (items or [])
+        if (row.get("name") or "").strip()
+    }
+
+
+def _resolve_changed_quotation_price_input(doc, row, previous_row, gross_rate: float, current_rate: float) -> tuple[float, bool]:
+    """Recover inline helper-field edits that did not reach ERPNext's rate field."""
+    if not previous_row:
+        discount = flt(row.get("source_discount_percent") or 0)
+        expected_rate = gross_rate * (1 - (discount / 100.0))
+        if abs(expected_rate - current_rate) > 0.000001:
+            return max(expected_rate, 0), True
+        return current_rate, False
+
+    previous_rate = flt(previous_row.get("rate") or 0)
+    if abs(current_rate - previous_rate) > 0.000001:
+        return current_rate, False
+
+    if _numeric_row_field_changed(row, previous_row, "custom_pu_ttc"):
+        pu_ttc = flt(row.get("custom_pu_ttc") or 0)
+        tax_multiplier = 1 + (_quotation_total_tax_rate(doc) / 100.0)
+        if pu_ttc > 0 and tax_multiplier > 0:
+            return max(pu_ttc / tax_multiplier, 0), False
+
+    if _numeric_row_field_changed(row, previous_row, "source_discount_amount"):
+        discount_amount = max(flt(row.get("source_discount_amount") or 0), 0)
+        return max(gross_rate - discount_amount, 0), False
+
+    discount_changed = _numeric_row_field_changed(row, previous_row, "source_discount_percent")
+    gross_rate_changed = _numeric_row_field_changed(row, previous_row, "source_gross_sell_rate")
+    if discount_changed or gross_rate_changed:
+        discount = max(flt(row.get("source_discount_percent") or 0), 0)
+        return max(gross_rate * (1 - (discount / 100.0)), 0), gross_rate_changed
+
+    return current_rate, False
+
+
+def _numeric_row_field_changed(row, previous_row, fieldname: str) -> bool:
+    return abs(flt(row.get(fieldname) or 0) - flt(previous_row.get(fieldname) or 0)) > 0.000001
+
+
+def _quotation_total_tax_rate(doc) -> float:
+    return sum(
+        flt(row.get("rate") or 0)
+        for row in (doc.get("taxes") or [])
+        if (row.get("charge_type") or "") != "Actual"
+    )
 
 
 def populate_quotation_stock_snapshot(doc, method=None) -> None:

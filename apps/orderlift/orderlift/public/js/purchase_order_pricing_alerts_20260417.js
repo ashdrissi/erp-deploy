@@ -185,7 +185,16 @@ function setupPackagingGrid(frm) {
 }
 
 
+function canMutatePackagingSnapshot(frm) {
+    return Number(frm?.doc?.docstatus || 0) === 0;
+}
+
+
 function refreshAllPackagingRows(frm, options = {}) {
+    if (!canMutatePackagingSnapshot(frm)) {
+        return;
+    }
+
     (frm.doc.items || []).forEach((row) => {
         if (!(row.item_code || "").trim()) {
             return;
@@ -200,7 +209,7 @@ function refreshAllPackagingRows(frm, options = {}) {
 
 
 function schedulePurchaseOrderPackagingRefresh(frm, cdt, cdn, options = {}) {
-    if (!cdn) {
+    if (!canMutatePackagingSnapshot(frm) || !cdn) {
         return;
     }
 
@@ -215,6 +224,10 @@ function schedulePurchaseOrderPackagingRefresh(frm, cdt, cdn, options = {}) {
 
 
 async function refreshPurchaseOrderPackagingRow(frm, cdt, cdn, options = {}) {
+    if (!canMutatePackagingSnapshot(frm)) {
+        return;
+    }
+
     const row = locals?.[cdt]?.[cdn];
     if (!row) {
         return;
@@ -244,7 +257,7 @@ async function refreshPurchaseOrderPackagingRow(frm, cdt, cdn, options = {}) {
             },
         });
 
-        if (frm.__poPackagingRequestIds[cdn] !== requestId) {
+        if (!canMutatePackagingSnapshot(frm) || frm.__poPackagingRequestIds[cdn] !== requestId) {
             return;
         }
 
@@ -259,6 +272,10 @@ async function refreshPurchaseOrderPackagingRow(frm, cdt, cdn, options = {}) {
 
 
 function applyPurchaseOrderPackagingResolution(frm, row, resolution, options = {}) {
+    if (!canMutatePackagingSnapshot(frm)) {
+        return;
+    }
+
     const resolvedProfileName = resolution.resolved_profile_name || "";
     const explicitSelection = options.userSelected && !!(row.custom_packaging_profile || "").trim();
     const source = explicitSelection ? "selected" : (resolution.resolved_source || "item_fallback");

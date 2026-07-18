@@ -86,6 +86,9 @@ ALL_FIELDS = {
     "source_discount_amount",
     "source_discounted_sell_rate",
     "source_margin_percent",
+    "source_target_margin_percent",
+    "source_base_buy_rate",
+    "source_landed_cost",
     "source_margin_basis",
     "source_commission_rate",
     "source_commission_amount",
@@ -127,7 +130,23 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
         self.assertEqual(row["source_selling_price_list"], "Sell A")
         self.assertEqual(row["source_price_list_sell_rate"], 95)
         self.assertEqual(row["source_discount_percent"], 10)
+        self.assertEqual(row["source_target_margin_percent"], 25)
+        self.assertEqual(row["source_landed_cost"], 75)
         self.assertEqual(row["amount"], 270)
+
+    def test_pricing_override_recalculates_actual_margin_from_frozen_quote_cost(self):
+        sales_order_pricing_hooks.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        quote = self._quotation(docstatus=1)
+        so = self._sales_order(rate=81, qty=3)
+        sales_order_pricing_hooks.frappe.get_doc = lambda doctype, name: quote
+
+        sales_order_pricing_hooks.copy_quotation_pricing_snapshot(so)
+
+        row = so["items"][0]
+        self.assertEqual(row["rate"], 81)
+        self.assertEqual(row["source_target_margin_percent"], 25)
+        self.assertEqual(row["source_landed_cost"], 75)
+        self.assertAlmostEqual(row["source_margin_percent"], 10)
 
     def test_normal_user_cannot_save_direct_sales_order(self):
         so = DocStub(docstatus=0, items=[DocStub(item_code="ITEM-001", qty=1, rate=90, idx=1)])
@@ -148,7 +167,7 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
         so = self._sales_order(qty=6)
         sales_order_pricing_hooks.frappe.get_doc = lambda doctype, name: quote
 
-        with self.assertRaisesRegex(ValueError, "quantity cannot exceed"):
+        with self.assertRaisesRegex(ValueError, "requests 6.*Quotation allows 5"):
             sales_order_pricing_hooks.validate_sales_order_source_lock(so)
 
     def test_pricing_override_can_save_direct_sales_order(self):
@@ -157,6 +176,15 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
 
         sales_order_pricing_hooks.validate_sales_order_source_lock(so)
         sales_order_pricing_hooks.validate_sales_order_item_discount_caps(so)
+
+    def test_pricing_override_cannot_silently_exceed_a_linked_quotation_quantity(self):
+        sales_order_pricing_hooks.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        quote = self._quotation(docstatus=1, qty=5)
+        so = self._sales_order(qty=6)
+        sales_order_pricing_hooks.frappe.get_doc = lambda doctype, name: quote
+
+        with self.assertRaisesRegex(ValueError, "requests 6.*Quotation allows 5"):
+            sales_order_pricing_hooks.validate_sales_order_source_lock(so)
 
     def test_pricing_override_does_not_overwrite_manual_rate(self):
         sales_order_pricing_hooks.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
@@ -200,6 +228,9 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
             source_discount_amount=10,
             source_discounted_sell_rate=90,
             source_margin_percent=20,
+            source_target_margin_percent=25,
+            source_base_buy_rate=60,
+            source_landed_cost=75,
             source_margin_basis="Base Price",
         )
         return DocStub(

@@ -50,7 +50,6 @@ from orderlift.orderlift_crm.company_business_type import (
 SCOPED_DOCTYPES: dict[str, dict] = {
     # Core ERPNext masters — custom_company added via fixture.
     "Customer": {"company_field": "custom_company", "bt_field": None, "segments_field": "custom_crm_segments"},
-    "Supplier": {"company_field": "custom_company", "bt_field": None, "segments_field": None},
     "Price List": {"company_field": "custom_company", "bt_field": None, "segments_field": None},
     # Native company field.
     "Prospect": {"company_field": "company", "bt_field": None, "segments_field": "custom_crm_segments"},

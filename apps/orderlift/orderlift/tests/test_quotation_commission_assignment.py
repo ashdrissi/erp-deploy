@@ -23,14 +23,26 @@ class Row(dict):
             return
         self[key] = value
 
+    def precision(self, fieldname):
+        return 2
+
 
 class Quotation(dict):
-    def __init__(self, *, owner="sales@example.com", is_new=True, before_sales_person="", **values):
+    def __init__(
+        self,
+        *,
+        owner="sales@example.com",
+        is_new=True,
+        before_sales_person="",
+        before_items=None,
+        **values,
+    ):
         super().__init__(values)
         self.owner = owner
         self.name = values.get("name") or ("new-quotation" if is_new else "QTN-001")
         self._is_new = is_new
         self._before_sales_person = before_sales_person
+        self._before_items = before_items or []
         self.meta = types.SimpleNamespace(get_field=lambda fieldname: True)
 
     def __getattr__(self, key):
@@ -48,7 +60,10 @@ class Quotation(dict):
     def get_doc_before_save(self):
         if self._is_new:
             return None
-        return types.SimpleNamespace(commission_sales_person=self._before_sales_person)
+        return {
+            "commission_sales_person": self._before_sales_person,
+            "items": self._before_items,
+        }
 
 
 class DbStub:
@@ -233,6 +248,59 @@ class TestQuotationCommissionAssignment(unittest.TestCase):
         self.hooks.apply_quotation_party_defaults(quotation)
 
         self.assertEqual(quotation.custom_customer_tax_id, "ICE-001122334455667")
+
+    def test_server_applies_inline_pu_ht_change_to_authoritative_rate(self):
+        before = Row(
+            name="ROW-1",
+            qty=33,
+            source_gross_sell_rate=53.37,
+            source_discount_percent=0,
+            source_discount_amount=0,
+            source_discounted_sell_rate=53.37,
+            custom_pu_ttc=64.04,
+            rate=53.37,
+            amount=1761.21,
+        )
+        current = Row(**before)
+        current.source_gross_sell_rate = 2
+        quotation = self.quotation(
+            is_new=False,
+            before_items=[before],
+            items=[current],
+        )
+
+        self.hooks.sync_quotation_item_price_input_fields(quotation)
+
+        self.assertEqual(current.rate, 2)
+        self.assertEqual(current.source_discounted_sell_rate, 2)
+        self.assertEqual(current.amount, 66)
+
+    def test_server_applies_inline_pu_ttc_change_to_authoritative_rate(self):
+        before = Row(
+            name="ROW-1",
+            qty=33,
+            source_gross_sell_rate=53.37,
+            source_discount_percent=0,
+            source_discount_amount=0,
+            source_discounted_sell_rate=53.37,
+            custom_pu_ttc=64.04,
+            rate=53.37,
+            amount=1761.21,
+        )
+        current = Row(**before)
+        current.custom_pu_ttc = 3
+        quotation = self.quotation(
+            is_new=False,
+            before_items=[before],
+            items=[current],
+            taxes=[Row(charge_type="On Net Total", rate=20)],
+        )
+
+        self.hooks.sync_quotation_item_price_input_fields(quotation)
+
+        self.assertEqual(current.rate, 2.5)
+        self.assertEqual(current.source_discounted_sell_rate, 2.5)
+        self.assertEqual(current.amount, 82.5)
 
 
 if __name__ == "__main__":

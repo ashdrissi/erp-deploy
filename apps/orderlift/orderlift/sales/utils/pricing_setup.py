@@ -472,11 +472,22 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
-                    "fieldname": "source_margin_percent",
-                    "label": "Source Margin Percent",
+                    "fieldname": "source_target_margin_percent",
+                    "label": "Target Policy Margin %",
                     "fieldtype": "Percent",
                     "insert_after": "source_pricing_policy",
                     "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_margin_percent",
+                    "label": "Actual Margin %",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_target_margin_percent",
+                    "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "source_margin_basis",
@@ -484,12 +495,32 @@ def after_migrate():
                     "fieldtype": "Data",
                     "insert_after": "source_margin_percent",
                     "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_base_buy_rate",
+                    "label": "Base Buy Rate",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_margin_basis",
+                    "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_landed_cost",
+                    "label": "Loaded Cost",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_base_buy_rate",
+                    "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "source_scenario_rule",
                     "label": "Source Scenario Rule",
                     "fieldtype": "Data",
-                    "insert_after": "source_margin_basis",
+                    "insert_after": "source_landed_cost",
                     "read_only": 1,
                 },
                 {
@@ -571,11 +602,22 @@ def after_migrate():
                     "read_only": 1,
                 },
                 {
-                    "fieldname": "source_margin_percent",
-                    "label": "Source Margin Percent",
+                    "fieldname": "source_target_margin_percent",
+                    "label": "Target Policy Margin %",
                     "fieldtype": "Percent",
                     "insert_after": "source_pricing_policy",
                     "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_margin_percent",
+                    "label": "Actual Margin %",
+                    "fieldtype": "Percent",
+                    "insert_after": "source_target_margin_percent",
+                    "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "source_margin_basis",
@@ -583,12 +625,32 @@ def after_migrate():
                     "fieldtype": "Data",
                     "insert_after": "source_margin_percent",
                     "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_base_buy_rate",
+                    "label": "Base Buy Rate",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_margin_basis",
+                    "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
+                },
+                {
+                    "fieldname": "source_landed_cost",
+                    "label": "Loaded Cost",
+                    "fieldtype": "Currency",
+                    "insert_after": "source_base_buy_rate",
+                    "read_only": 1,
+                    "permlevel": 2,
+                    "print_hide": 1,
                 },
                 {
                     "fieldname": "source_scenario_rule",
                     "label": "Source Scenario Rule",
                     "fieldtype": "Data",
-                    "insert_after": "source_margin_basis",
+                    "insert_after": "source_landed_cost",
                     "read_only": 1,
                 },
                 {
@@ -705,6 +767,7 @@ def after_migrate():
     ensure_quotation_discount_snapshot_fields()
     ensure_quotation_pricing_layout()
     ensure_sales_order_pricing_layout()
+    ensure_margin_snapshot_permissions()
     ensure_all_ttc_item_layouts()
     ensure_print_format_company_field_visible()
     ensure_default_pricing_tiers()
@@ -1437,8 +1500,11 @@ def ensure_quotation_pricing_layout():
         ("source_max_discount_percent", "Max Discount %"),
         ("source_discount_amount", "Remise HT"),
         ("source_discounted_sell_rate", "PU HT net"),
-        ("source_margin_percent", "Margin %"),
+        ("source_target_margin_percent", "Target Policy Margin %"),
+        ("source_margin_percent", "Actual Margin %"),
         ("source_margin_basis", "Margin Basis"),
+        ("source_base_buy_rate", "Base Buy Rate"),
+        ("source_landed_cost", "Loaded Cost"),
         ("source_commission_rate", "Commission %"),
         ("source_commission_amount", "Commission Amount"),
         ("custom_applied_taxes", "Applied Taxes"),
@@ -1465,6 +1531,8 @@ def ensure_quotation_pricing_layout():
         "source_gross_sell_rate",
         "source_discount_amount",
         "source_discounted_sell_rate",
+        "source_base_buy_rate",
+        "source_landed_cost",
         "custom_applied_taxes",
         "custom_pu_ttc",
         "custom_pt_ttc",
@@ -1483,6 +1551,9 @@ def ensure_sales_order_pricing_layout():
         _upsert_property_setter("Sales Order", "selected_selling_price_lists", "read_only", "1", "Check")
 
     sales_order_item_hidden_fields = [
+        "rate_with_margin",
+        "margin_type",
+        "margin_rate_or_amount",
         "source_pricing_sheet_line",
         "source_pricing_scenario",
         "source_pricing_override",
@@ -1506,7 +1577,10 @@ def ensure_sales_order_pricing_layout():
         ("source_gross_sell_rate", "PU HT"),
         ("source_discount_percent", "Remise %"),
         ("source_margin_basis", "Margin Basis"),
-        ("source_margin_percent", "Margin %"),
+        ("source_target_margin_percent", "Target Policy Margin %"),
+        ("source_margin_percent", "Actual Margin %"),
+        ("source_base_buy_rate", "Base Buy Rate"),
+        ("source_landed_cost", "Loaded Cost"),
         ("source_max_discount_percent", "Max Discount %"),
         ("source_discount_amount", "Remise HT"),
         ("source_discounted_sell_rate", "PU HT net"),
@@ -1530,6 +1604,8 @@ def ensure_sales_order_pricing_layout():
         "source_gross_sell_rate",
         "source_discount_amount",
         "source_discounted_sell_rate",
+        "source_base_buy_rate",
+        "source_landed_cost",
         "custom_applied_taxes",
         "custom_pu_ttc",
         "custom_pt_ttc",
@@ -1539,6 +1615,29 @@ def ensure_sales_order_pricing_layout():
             _upsert_property_setter("Sales Order Item", fieldname, "precision", "2", "Data")
     if frappe.get_meta("Sales Order Item").get_field("amount"):
         _upsert_property_setter("Sales Order Item", "amount", "label", "PT HT net", "Data")
+
+
+def ensure_margin_snapshot_permissions():
+    """Expose permlevel-2 profitability snapshots only to pricing administrators."""
+    privileged_roles = ("Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "System Manager")
+    for doctype in ("Quotation", "Sales Order"):
+        for role in privileged_roles:
+            if not frappe.db.exists("Role", role):
+                continue
+            filters = {"parent": doctype, "role": role, "permlevel": 2}
+            existing = frappe.db.exists("Custom DocPerm", filters)
+            permission = frappe.get_doc("Custom DocPerm", existing) if existing else frappe.new_doc("Custom DocPerm")
+            permission.parent = doctype
+            permission.parenttype = "DocType"
+            permission.parentfield = "permissions"
+            permission.role = role
+            permission.permlevel = 2
+            permission.read = 1
+            permission.write = 0
+            if existing:
+                permission.save(ignore_permissions=True)
+            else:
+                permission.insert(ignore_permissions=True)
 
 
 _TTC_ITEM_DOCTYPES = [

@@ -172,7 +172,7 @@ MENU_SECTIONS = [
         "roles": FINANCE_ROLES,
         "links": [
             {"key": "finance.sale_financial_dashboard", "label": "Sale Financial Dashboard", "link_type": "Page", "link_to": "sale-financial-dashboard"},
-            {"key": "finance.sales_payment_summary", "label": "Sales Payment Summary", "link_type": "Report", "link_to": "Sales Payment Summary"},
+            {"key": "finance.sales_payment_follow_up", "label": "Sales Payment Follow Up", "link_type": "Report", "link_to": "Sales Payment Follow Up"},
             {"key": "finance.sales_invoices", "label": "Sales Invoices", "link_type": "DocType", "link_to": "Sales Invoice"},
             {"key": "finance.purchase_invoices", "label": "Purchase Invoices", "link_type": "DocType", "link_to": "Purchase Invoice"},
             {"key": "finance.payments", "label": "Payments", "link_type": "DocType", "link_to": "Payment Entry"},

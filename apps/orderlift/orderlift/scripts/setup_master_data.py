@@ -293,9 +293,18 @@ def _apply_vat_template(doc, company: str, account: str):
 
 def _get_or_create_tax_account(company, summary, dry_run=0):
     company_name = company["name"]
+    account_name = "VAT 20%"
+    full_name = f"{account_name} - {company['abbr']}"
+    if _exists("Account", full_name):
+        return full_name
     existing = frappe.get_all(
         "Account",
-        filters={"company": company_name, "account_type": "Tax", "is_group": 0},
+        filters={
+            "company": company_name,
+            "account_type": "Tax",
+            "account_name": account_name,
+            "is_group": 0,
+        },
         fields=["name"],
         limit_page_length=1,
     ) if _exists("DocType", "Account") else []
@@ -304,10 +313,6 @@ def _get_or_create_tax_account(company, summary, dry_run=0):
     parent = _tax_parent_account(company_name)
     if not parent:
         return ""
-    account_name = "VAT 20%"
-    full_name = f"{account_name} - {company['abbr']}"
-    if _exists("Account", full_name):
-        return full_name
     if dry_run:
         summary["created"].append(f"Account {full_name}")
         return full_name

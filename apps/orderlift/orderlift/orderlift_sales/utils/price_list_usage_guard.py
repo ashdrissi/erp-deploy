@@ -44,8 +44,7 @@ def validate_quotation_price_list(doc, method=None):
 def reprice_quotation_items_from_selected_price_lists(doc) -> None:
     if not doc or int(_flt(getattr(doc, "docstatus", 0))) != 0:
         return
-    if can_override_quotation_pricing():
-        return
+    pricing_override = can_override_quotation_pricing()
 
     price_lists = _quotation_price_lists(doc)
     if not price_lists:
@@ -73,13 +72,15 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
         source_list = (row.get("source_selling_price_list") or "").strip()
 
         if selected_price:
-            if current_rate + 0.000001 < _price_floor(selected_price):
+            if not pricing_override and current_rate + 0.000001 < _price_floor(selected_price):
                 _apply_price_to_quotation_row(row, selected_price)
             continue
 
         if not source_list and any(current_rate + 0.000001 >= _price_floor(price) for price in prices):
             continue
 
+        if pricing_override:
+            continue
         _apply_price_to_quotation_row(row, prices[0])
 
     for row in item_rows:
@@ -96,6 +97,44 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
                         break
             continue
         _stamp_margin_on_quotation_row(row, selected_price)
+
+
+def sync_sales_order_margin_snapshots(doc, method=None) -> None:
+    """Keep transaction profitability separate from ERPNext's native uplift fields.
+
+    Quotation-sourced rows retain their frozen cost and target snapshots while
+    their actual margin follows the final Sales Order rate. Standalone privileged
+    orders are stamped from their selected selling Item Price.
+    """
+    if not doc or int(_flt(getattr(doc, "docstatus", 0))) == 2:
+        return
+
+    item_rows = list(doc.get("items") or [])
+    unresolved = []
+    for row in item_rows:
+        if _flt(row.get("source_landed_cost")) > 0:
+            _recalculate_margin_from_snapshot(row)
+        elif (row.get("item_code") or "").strip() and not _is_manual_charge_item(row.get("item_code")):
+            unresolved.append(row)
+
+    if not unresolved:
+        return
+
+    price_lists = _transaction_price_lists(doc, fieldname="selling_price_list")
+    if not price_lists:
+        return
+    item_codes = sorted({(row.get("item_code") or "").strip() for row in unresolved})
+    price_map = _get_transaction_item_price_map(item_codes, price_lists, kind="selling")
+    for row in unresolved:
+        prices = price_map.get((row.get("item_code") or "").strip()) or []
+        selected_price = _selected_row_price(row, prices)
+        if not selected_price:
+            selected_price = next(
+                (price for price in prices if (price.get("custom_pricing_builder") or "").strip()),
+                None,
+            )
+        if selected_price:
+            _stamp_margin_on_quotation_row(row, selected_price)
 
 
 def validate_sales_order_price_list(doc, method=None):
@@ -381,11 +420,26 @@ def _stamp_margin_on_quotation_row(row, item_price: dict) -> None:
     customs = _flt(item_price.get("custom_builder_customs_amount"))
     margin_basis = (item_price.get("custom_builder_margin_basis") or "").strip() or "Base Price"
     landed_cost = buy_price + expenses + customs
-    rate = _flt(row.get("rate"))
-    margin_amount = rate - landed_cost
-    margin_pct = _compute_margin_pct(margin_amount, margin_basis, buy_price, landed_cost)
-    _set_row_value(row, "source_margin_percent", margin_pct)
+    _set_row_value(row, "source_target_margin_percent", _flt(item_price.get("custom_target_margin_percent")))
+    _set_row_value(row, "source_base_buy_rate", buy_price)
+    _set_row_value(row, "source_landed_cost", landed_cost)
     _set_row_value(row, "source_margin_basis", margin_basis)
+    _set_row_value(row, "source_pricing_policy", (item_price.get("custom_benchmark_policy") or "").strip())
+    _recalculate_margin_from_snapshot(row)
+
+
+def _recalculate_margin_from_snapshot(row) -> None:
+    landed_cost = _flt(row.get("source_landed_cost"))
+    if landed_cost <= 0:
+        return
+    rate = _flt(row.get("rate"))
+    margin_pct = _compute_margin_pct(
+        rate - landed_cost,
+        row.get("source_margin_basis"),
+        _flt(row.get("source_base_buy_rate")),
+        landed_cost,
+    )
+    _set_row_value(row, "source_margin_percent", margin_pct)
 
 
 def _compute_margin_pct(margin_amount, margin_basis, base_unit, landed_cost):

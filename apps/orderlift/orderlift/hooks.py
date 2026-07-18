@@ -153,6 +153,7 @@ doc_events = {
             "orderlift.orderlift_crm.status_workflow.ensure_primary_status",
             "orderlift.company_scope.apply_company_scope",
             "orderlift.orderlift_sales.sales_order_pricing_hooks.copy_quotation_pricing_snapshot",
+            "orderlift.orderlift_sales.utils.price_list_usage_guard.sync_sales_order_margin_snapshots",
             "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_source_lock",
             "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_pricing_locked_to_quotation",
             "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_item_discount_caps",
@@ -285,9 +286,6 @@ doc_events = {
         "before_save": "orderlift.sales.utils.customer_tier.sync_customer_tier_mode",
         "validate": "orderlift.company_scope.apply_company_scope",
     },
-    "Supplier": {
-        "validate": "orderlift.company_scope.apply_company_scope",
-    },
     "Price List": {
         "before_insert": [
             "orderlift.orderlift_sales.utils.price_list_scope.validate_price_list_unique_name_context",
@@ -342,6 +340,7 @@ doc_events = {
     "Project": {
         # Recalculate QC status + enforce completion guard (SIG module)
         "before_save": [
+            "orderlift.orderlift_crm.project_responsibility.ensure_project_responsibility",
             "orderlift.orderlift_crm.classification.sync_project_crm_classification",
             "orderlift.orderlift_crm.status_workflow.ensure_primary_status",
             "orderlift.orderlift_sig.utils.project_qc.on_project_save",
@@ -384,9 +383,14 @@ doctype_js = {
     "Portal Quote Request": "public/js/portal_quote_request.js",
     "Item Price": "public/js/item_price_uom_default_20260506a.js",
     "Price List": "public/js/price_list_import_20260602c.js",
-     "Quotation": "public/js/quotation_form_simplify_20260707f.js?v=20260715b",
+    "Quotation": [
+        "public/js/quotation_form_simplify_20260707f.js?v=20260717b",
+        "public/js/payment_schedule_sync_20260717a.js",
+    ],
     "Sales Order": [
         "public/js/sales_order_logistics_20260425d.js",
+        "public/js/sales_order_pricing_visibility_20260717a.js",
+        "public/js/payment_schedule_sync_20260717a.js",
         "public/js/generic_ttc_field_sync_20260629a.js",
     ],
     "Stock Entry": "public/js/stock_entry_rate_guard_20260706a.js",
@@ -402,6 +406,7 @@ doctype_js = {
     "Project": "public/js/project_sig_20260429c.js",
     "Sales Invoice": [
         "public/js/finance_account_guard_20260501a.js",
+        "public/js/payment_schedule_sync_20260717a.js",
         "public/js/generic_ttc_field_sync_20260629a.js",
     ],
     "Purchase Invoice": [
@@ -418,6 +423,7 @@ doctype_list_js = {
     "Portal Quote Request": "public/js/portal_quote_request_list.js",
     "Quotation": "public/js/quotation_list_20260706a.js",
     "Opportunity": "public/js/opportunity_list_20260702b.js",
+    "Sales Order": "public/js/sales_order_list_20260717a.js",
 }
 
 extend_doctype_class = {
@@ -508,7 +514,6 @@ has_permission = {
     "SAV Ticket": "orderlift.company_access.has_company_permission",
     "Forecast Load Plan": "orderlift.company_access.has_company_permission",
     "Customer": "orderlift.company_access.has_company_permission",
-    "Supplier": "orderlift.company_access.has_company_permission",
     "Price List": "orderlift.company_access.has_company_permission",
     "Item Price": "orderlift.company_access.has_item_price_permission",
     "Prospect": "orderlift.company_access.has_company_permission",
@@ -590,7 +595,6 @@ permission_query_conditions = {
     "SAV Ticket": "orderlift.company_access.sav_ticket_query",
     "Forecast Load Plan": "orderlift.company_access.forecast_load_plan_query",
     "Customer": "orderlift.company_access.customer_query",
-    "Supplier": "orderlift.company_access.supplier_query",
     "Price List": "orderlift.company_access.price_list_query",
     "Item Price": "orderlift.company_access.item_price_query",
     "Prospect": "orderlift.company_access.prospect_query",

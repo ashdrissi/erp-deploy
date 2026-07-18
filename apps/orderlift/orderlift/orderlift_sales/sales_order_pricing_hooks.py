@@ -28,8 +28,11 @@ SOURCE_ITEM_FIELDS = (
     "source_max_discount_percent",
     "source_discount_amount",
     "source_discounted_sell_rate",
+    "source_target_margin_percent",
     "source_margin_percent",
     "source_margin_basis",
+    "source_base_buy_rate",
+    "source_landed_cost",
     "source_commission_rate",
     "source_commission_amount",
 )
@@ -61,10 +64,11 @@ def copy_quotation_pricing_snapshot(doc, method=None) -> None:
         _copy_row_snapshot(row, source_row, overwrite=not override)
         if not override:
             _restore_row_pricing_from_source(row, source_row)
+        _refresh_actual_margin(row)
 
 
 def validate_sales_order_source_lock(doc, method=None) -> None:
-    if not doc or can_override_quotation_pricing():
+    if not doc:
         return
 
     item_rows = _items(doc)
@@ -72,10 +76,33 @@ def validate_sales_order_source_lock(doc, method=None) -> None:
         return
 
     source_context = _source_context(doc)
+    override = can_override_quotation_pricing()
     for row in item_rows:
         source_quotation = _row_source_quotation(row)
         source_detail = _row_source_detail(row)
         idx = _get(row, "idx") or "-"
+        source_row = source_context.source_row_for(row)
+
+        # A pricing manager may create an independent Sales Order, but linking a
+        # row to a Quotation must never silently exceed that quotation snapshot.
+        # Running this before the override return also replaces ERPNext's
+        # rhetorical "Are you making another Sales Order?" limit message with an
+        # actionable explanation.
+        if source_row and flt(_get(row, "qty")) > flt(_get(source_row, "qty")) + 0.000001:
+            frappe.throw(
+                _(
+                    "Sales Order row {0} requests {1} of {2}, but the linked Quotation allows {3}. "
+                    "Reduce the quantity, update and resubmit the Quotation, or create an independent Sales Order row without a Quotation link for an approved additional sale."
+                ).format(
+                    idx,
+                    _format_quantity(_get(row, "qty")),
+                    _get(row, "item_code") or _get(row, "item_name") or "item",
+                    _format_quantity(_get(source_row, "qty")),
+                )
+            )
+
+        if override:
+            continue
         if not source_quotation or not source_detail:
             frappe.throw(
                 _("Sales Orders must be created from a submitted Quotation. Row {0} is missing its source Quotation.").format(idx)
@@ -85,13 +112,10 @@ def validate_sales_order_source_lock(doc, method=None) -> None:
             frappe.throw(_("Source Quotation {0} on row {1} was not found.").format(source_quotation, idx))
         if int(flt(_get(quote, "docstatus"))) != 1:
             frappe.throw(_("Source Quotation {0} on row {1} must be submitted before creating a Sales Order.").format(source_quotation, idx))
-        source_row = source_context.source_row_for(row)
         if not source_row:
             frappe.throw(_("Source Quotation Item {0} on row {1} was not found.").format(source_detail, idx))
         if (_get(row, "item_code") or "").strip() != (_get(source_row, "item_code") or "").strip():
             frappe.throw(_("Sales Order row {0} item must match the source Quotation item.").format(idx))
-        if flt(_get(row, "qty")) > flt(_get(source_row, "qty")) + 0.000001:
-            frappe.throw(_("Sales Order row {0} quantity cannot exceed the submitted Quotation quantity.").format(idx))
 
 
 def validate_sales_order_pricing_locked_to_quotation(doc, method=None) -> None:
@@ -215,6 +239,23 @@ def _restore_row_pricing_from_source(row, source_row) -> None:
     _set_if_field(row, "net_amount", amount)
 
 
+def _refresh_actual_margin(row) -> None:
+    landed_cost = flt(_get(row, "source_landed_cost"))
+    if landed_cost <= 0 or not _has_field(row, "source_margin_percent"):
+        return
+    base_buy = flt(_get(row, "source_base_buy_rate"))
+    rate = flt(_get(row, "rate"))
+    basis = (_get(row, "source_margin_basis") or "Base Price").strip() or "Base Price"
+    if basis == "Base Price":
+        denominator = base_buy
+    elif basis == "Sale Price":
+        denominator = rate
+    else:
+        denominator = landed_cost
+    margin_percent = ((rate - landed_cost) / denominator * 100.0) if denominator > 0 else 0.0
+    _set(row, "source_margin_percent", margin_percent)
+
+
 def _copy_field(target, source, fieldname: str, *, overwrite: bool) -> None:
     if not _has_field(target, fieldname) or not _has_field(source, fieldname):
         return
@@ -305,3 +346,7 @@ def _as_dict(row) -> dict:
 
 def _format_rate(value: float) -> str:
     return f"{flt(value):.2f}".rstrip("0").rstrip(".")
+
+
+def _format_quantity(value: float) -> str:
+    return f"{flt(value):.6f}".rstrip("0").rstrip(".")

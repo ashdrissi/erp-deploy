@@ -122,6 +122,17 @@ class TestPrintPaymentTerms(unittest.TestCase):
             self.assertNotIn("50 % à la livraison totale du matériel", html)
             self.assertNotIn("10% Mise en marche", html)
 
+    def test_payment_schedule_amount_sync_is_loaded_on_commercial_documents(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        js = (APP_ROOT / "public" / "js" / "payment_schedule_sync_20260717a.js").read_text()
+
+        self.assertGreaterEqual(hooks.count("public/js/payment_schedule_sync_20260717a.js"), 3)
+        self.assertIn('frappe.ui.form.on("Payment Schedule"', js)
+        self.assertIn("invoice_portion(frm, cdt, cdn)", js)
+        self.assertIn("payment_amount", js)
+        self.assertIn("rounded_total", js)
+        self.assertIn("Recalculate Payment Schedule", js)
+
 
 if __name__ == "__main__":
     unittest.main()

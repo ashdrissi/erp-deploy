@@ -1,0 +1,18 @@
+{
+ "add_total_row": 1,
+ "columns": [],
+ "disable_prepared_report": 0,
+ "doctype": "Report",
+ "is_standard": "Yes",
+ "module": "Orderlift Sales",
+ "name": "Sales Payment Follow Up",
+ "prepared_report": 0,
+ "ref_doctype": "Sales Invoice",
+ "report_name": "Sales Payment Follow Up",
+ "report_type": "Script Report",
+ "roles": [
+  {"role": "Orderlift Admin"},
+  {"role": "Finance User"},
+  {"role": "System Manager"}
+ ]
+}

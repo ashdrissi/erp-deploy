@@ -49,17 +49,13 @@
         { fieldname: "custom_pt_ttc", columns: 1, sticky: 0 },
     ];
 
-    const PRICE_OVERRIDE_ROLES = new Set(["Administrator", "System Manager", "Orderlift Admin", "Orderlift Business Admin"]);
     const MARGIN_VIEW_ROLES = new Set(["Administrator", "System Manager", "Orderlift Admin", "Orderlift Business Admin", "Pricing Manager"]);
     const MANUAL_PU_TTC_BY_ROW = new Map();
     const PRICE_SOURCE_BY_ROW = new Map();
 
     function canOverrideQuotationPricing() {
-        const roles = frappe.user_roles || [];
-        if (!roles.length && frappe.boot && frappe.boot.user && Array.isArray(frappe.boot.user.roles)) {
-            return frappe.boot.user.roles.some(function (role) { return PRICE_OVERRIDE_ROLES.has(role); });
-        }
-        return roles.some(function (role) { return PRICE_OVERRIDE_ROLES.has(role); });
+        const capabilities = frappe.boot && frappe.boot.orderlift_capabilities;
+        return Boolean(capabilities && capabilities.quotation_override);
     }
 
     function canViewQuotationMargins() {
@@ -576,7 +572,13 @@
                 if (!fieldname || !validFieldnames.has(fieldname)) return false;
                 if (INTERNAL_ITEM_PRICE_FIELDS.includes(fieldname)) return false;
                 if (
-                    (fieldname === "source_margin_percent" || fieldname === "source_margin_basis")
+                    [
+                        "source_target_margin_percent",
+                        "source_margin_percent",
+                        "source_margin_basis",
+                        "source_base_buy_rate",
+                        "source_landed_cost",
+                    ].includes(fieldname)
                     && !canViewQuotationMargins()
                 ) return false;
                 return true;
@@ -593,16 +595,22 @@
     function quotationItemGridColumns() {
         const columns = QUOTATION_ITEM_GRID_COLUMNS.map((column) => Object.assign({}, column));
         if (canViewQuotationMargins()) {
+            columns.push({ fieldname: "source_target_margin_percent", columns: 1, sticky: 0 });
             columns.push({ fieldname: "source_margin_percent", columns: 1, sticky: 0 });
             columns.push({ fieldname: "source_margin_basis", columns: 1, sticky: 0 });
+            columns.push({ fieldname: "source_base_buy_rate", columns: 1, sticky: 0 });
+            columns.push({ fieldname: "source_landed_cost", columns: 1, sticky: 0 });
         }
         return columns;
     }
 
     function applyQuotationMarginVisibility(grid) {
         [
+            ["source_target_margin_percent", "Target Policy Margin %"],
             ["source_margin_basis", "Margin Basis"],
-            ["source_margin_percent", "Margin %"],
+            ["source_margin_percent", "Actual Margin %"],
+            ["source_base_buy_rate", "Base Buy Rate"],
+            ["source_landed_cost", "Loaded Cost"],
         ].forEach(([fieldname, label]) => {
             if (!grid.get_field || !grid.get_field(fieldname)) return;
             const visible = canViewQuotationMargins();

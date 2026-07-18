@@ -738,10 +738,10 @@ def _project_cards(search=None, company=None, owner=None, status=None, business_
     filters = {}
     if company and company != "All":
         filters["company"] = company
-    if owner and owner != "All" and _has_field("Project", "project_owner"):
-        filters["project_owner"] = owner
+    if owner and owner != "All" and _has_field("Project", "custom_project_owner"):
+        filters["custom_project_owner"] = owner
     fields = ["name", "project_name", "customer", "company", "status"]
-    for fieldname in ["project_owner", "custom_project_status", "custom_qc_status", "custom_crm_business_type", "custom_crm_segment", "custom_source_opportunity"]:
+    for fieldname in ["custom_project_owner", "custom_project_status", "custom_qc_status", "custom_crm_business_type", "custom_crm_segment", "custom_source_opportunity"]:
         if _has_field("Project", fieldname):
             fields.append(fieldname)
     rows = frappe.get_list("Project", filters=filters, fields=fields, order_by="modified desc", limit_page_length=200)
@@ -776,7 +776,7 @@ def _project_card(row, statuses: list[dict]) -> dict:
         "subtitle": row.get("customer") or "",
         "amount": 0,
         "company": row.get("company") or "",
-        "owner": row.get("project_owner") or "",
+        "owner": row.get("custom_project_owner") or row.get("owner") or "",
         "assigned_user": assignment.get("user") or "",
         "assigned_user_label": assignment.get("label") or "",
         "assignment_source": assignment.get("source") or "",

@@ -105,6 +105,7 @@ HIDDEN_DOCTYPES = frozenset([
 def extend_bootinfo(bootinfo):
     """Replace ERPNext sidebar subtitle with the user's current company."""
     user = frappe.session.user
+    _apply_orderlift_capabilities_to_bootinfo(bootinfo)
     sidebar_title = _sidebar_company_title(user)
     for app in bootinfo.get("app_data", []):
         if app.get("app_title") in {"ERPNext", "Orderlift"}:
@@ -126,6 +127,25 @@ def extend_bootinfo(bootinfo):
     if RESTRICTED_ROLE in roles and not roles.intersection(BYPASS_ROLES):
         bootinfo.is_restricted_shell_user = 1
         _strip_system_doctypes_from_boot(bootinfo)
+
+
+def _apply_orderlift_capabilities_to_bootinfo(bootinfo) -> None:
+    """Expose server-authoritative capability decisions to Desk scripts."""
+    can_override = False
+    if frappe.session.user not in ("Guest", None):
+        try:
+            can_override = bool(_can_override_quotation_pricing())
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Orderlift boot capability resolution failed")
+    bootinfo["orderlift_capabilities"] = {
+        "quotation_override": can_override,
+    }
+
+
+def _can_override_quotation_pricing() -> bool:
+    from orderlift.orderlift_sales.utils.price_list_scope import can_override_quotation_pricing
+
+    return bool(can_override_quotation_pricing())
 
 
 def _sidebar_company_title(user: str | None) -> str:

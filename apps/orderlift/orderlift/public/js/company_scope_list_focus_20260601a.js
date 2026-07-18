@@ -12,7 +12,6 @@
     // doctype -> company fieldname
     const FIELD = {
         Customer: "custom_company",
-        Supplier: "custom_company",
         "Price List": "custom_company",
         Prospect: "company",
         Lead: "company",

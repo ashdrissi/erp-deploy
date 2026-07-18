@@ -6,6 +6,13 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestQuotationFormSimplify(unittest.TestCase):
+    def test_quotation_override_uses_server_boot_capability(self):
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
+
+        self.assertIn("frappe.boot.orderlift_capabilities", script)
+        self.assertIn("quotation_override", script)
+        self.assertNotIn("PRICE_OVERRIDE_ROLES", script)
+
     def test_draft_quotation_has_deterministic_ttc_recalculation_action(self):
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
 
@@ -27,8 +34,31 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
         self.assertNotIn('"source_margin_percent"', hidden_block)
         self.assertNotIn('"source_margin_basis"', hidden_block)
-        self.assertIn('("source_margin_percent", "Margin %")', visible_block)
+        self.assertIn('("source_margin_percent", "Actual Margin %")', visible_block)
+        self.assertIn('("source_target_margin_percent", "Target Policy Margin %")', visible_block)
         self.assertIn('("source_margin_basis", "Margin Basis")', visible_block)
+
+    def test_transaction_margin_fields_are_privileged_and_native_uplift_is_hidden(self):
+        pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
+
+        for doctype in ["Quotation Item", "Sales Order Item"]:
+            self.assertIn(f'"{doctype}": [', pricing_setup)
+        for fieldname in [
+            "source_target_margin_percent",
+            "source_margin_percent",
+            "source_margin_basis",
+            "source_base_buy_rate",
+            "source_landed_cost",
+        ]:
+            self.assertIn(f'"fieldname": "{fieldname}"', pricing_setup)
+            self.assertIn('"permlevel": 2', pricing_setup)
+
+        sales_order_layout = pricing_setup.split("def ensure_sales_order_pricing_layout():", 1)[1]
+        for fieldname in ["rate_with_margin", "margin_type", "margin_rate_or_amount"]:
+            self.assertIn(f'"{fieldname}"', sales_order_layout.split("sales_order_item_hidden_fields = [", 1)[1].split("]", 1)[0])
+
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        self.assertIn("sales_order_pricing_visibility_20260717a.js", hooks)
 
     def test_quotation_item_grid_preserves_user_configured_columns(self):
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
@@ -37,7 +67,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "configuredQuotationItemGridColumns",
             'frappe.get_user_settings(frm.doctype, "GridView")',
             "savedColumns",
-            'fieldname === "source_margin_percent"',
+            '"source_target_margin_percent"',
         ]:
             self.assertIn(token, script)
         self.assertNotIn("gridViewSettings.GridView[grid.doctype] =", script)
@@ -75,7 +105,8 @@ class TestQuotationFormSimplify(unittest.TestCase):
         hooks = (APP_ROOT / "hooks.py").read_text()
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js").read_text()
 
-        self.assertIn('"Quotation": "public/js/quotation_form_simplify_20260707f.js', hooks)
+        self.assertIn('"Quotation": [', hooks)
+        self.assertIn('"public/js/quotation_form_simplify_20260707f.js', hooks)
         for fieldname in [
             "additional_discount_section",
             "apply_discount_on",
@@ -365,7 +396,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('"Discount capped at {0}% for {1}."', script)
         self.assertIn('"Discount amount capped at {0} for {1}."', script)
         self.assertIn('"Net price raised to minimum {0} for {1}."', script)
-        self.assertIn("PRICE_OVERRIDE_ROLES", script)
+        self.assertIn("frappe.boot.orderlift_capabilities", script)
         self.assertIn('if (!isAdmin && discount > maxDiscount)', script)
         self.assertIn('if ("discount_percentage" in row) row.discount_percentage = discount', script)
         self.assertNotIn('frappe.model.set_value(row.doctype, row.name, "discount_percentage", discount)', script)
@@ -755,6 +786,17 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "custom_pt_ttc",
         ]:
             self.assertIn(token, js)
+
+    def test_submitted_purchase_order_packaging_snapshot_is_never_refreshed_client_side(self):
+        js = (APP_ROOT / "public" / "js" / "purchase_order_pricing_alerts_20260417.js").read_text()
+
+        self.assertIn("function canMutatePackagingSnapshot(frm)", js)
+        self.assertGreaterEqual(
+            js.count("canMutatePackagingSnapshot(frm)"),
+            6,
+            msg="Refresh, scheduling, async resolution, and apply paths must all reject submitted POs.",
+        )
+        self.assertIn("Number(frm?.doc?.docstatus || 0) === 0", js)
 
 
 if __name__ == "__main__":

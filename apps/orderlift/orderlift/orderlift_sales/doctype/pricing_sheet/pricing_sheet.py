@@ -2762,11 +2762,26 @@ class PricingSheet(Document):
             if not cint(row.show_in_detail):
                 continue
 
+            final_transaction_rate = flt(row.discounted_sell_unit_price or row.final_sell_unit_price)
+            base_buy_rate = flt(getattr(row, "buy_price", 0) or 0)
+            landed_cost = flt(getattr(row, "landed_cost", 0) or 0)
+            if landed_cost <= 0:
+                landed_cost = base_buy_rate + flt(getattr(row, "expense_unit_price", 0) or 0) + flt(
+                    getattr(row, "customs_unit_amount", 0) or 0
+                )
+            margin_basis = (getattr(row, "margin_basis", "") or "Base Price").strip() or "Base Price"
+            actual_margin_percent = compute_margin_percent_for_basis(
+                final_transaction_rate - landed_cost,
+                margin_basis,
+                base_buy_rate,
+                landed_cost,
+            )
+
             item_data = {
                 "item_code": row.item,
                 "qty": flt(row.qty),
             }
-            item_data.update(self._quotation_item_price_values(flt(row.discounted_sell_unit_price or row.final_sell_unit_price), flt(row.qty), quotation))
+            item_data.update(self._quotation_item_price_values(final_transaction_rate, flt(row.qty), quotation))
             if frappe.db.has_column("Quotation Item", "source_pricing_sheet_line"):
                 item_data["source_pricing_sheet_line"] = row.name
             if frappe.db.has_column("Quotation Item", "source_pricing_scenario"):
@@ -2777,8 +2792,16 @@ class PricingSheet(Document):
                 )
             if frappe.db.has_column("Quotation Item", "source_pricing_policy"):
                 item_data["source_pricing_policy"] = self.applied_benchmark_policy or self.benchmark_policy or ""
-            if frappe.db.has_column("Quotation Item", "source_margin_percent") and (self.resolved_mode != "Static" or (getattr(row, "pricing_builder", "") or "").strip()):
-                item_data["source_margin_percent"] = flt(row.margin_pct)
+            if frappe.db.has_column("Quotation Item", "source_target_margin_percent"):
+                item_data["source_target_margin_percent"] = flt(getattr(row, "target_margin_percent", 0) or 0)
+            if frappe.db.has_column("Quotation Item", "source_margin_percent"):
+                item_data["source_margin_percent"] = flt(actual_margin_percent)
+            if frappe.db.has_column("Quotation Item", "source_margin_basis"):
+                item_data["source_margin_basis"] = margin_basis
+            if frappe.db.has_column("Quotation Item", "source_base_buy_rate"):
+                item_data["source_base_buy_rate"] = base_buy_rate
+            if frappe.db.has_column("Quotation Item", "source_landed_cost"):
+                item_data["source_landed_cost"] = landed_cost
             if frappe.db.has_column("Quotation Item", "source_scenario_rule"):
                 item_data["source_scenario_rule"] = row.resolved_scenario_rule or ""
             if frappe.db.has_column("Quotation Item", "source_margin_rule"):

@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from pathlib import Path
 
 
 deleted_docs = []
@@ -48,6 +49,18 @@ class TestLogisticsSetup(unittest.TestCase):
                 ("Custom Field", "Delivery Trip-custom_container_load_plan", True),
             ],
         )
+
+    def test_purchase_order_grid_hides_internal_packaging_ids_and_shows_readable_snapshot(self):
+        source = (Path(__file__).resolve().parents[1] / "logistics" / "setup.py").read_text()
+        section = source.split('"Purchase Order Item": [', 1)[1].split('"Purchase Receipt": [', 1)[0]
+
+        profile = section.split('"fieldname": "custom_packaging_profile"', 1)[1].split("},", 1)[0]
+        source_field = section.split('"fieldname": "custom_packaging_profile_source"', 1)[1].split("},", 1)[0]
+        self.assertIn('"in_list_view": 0', profile)
+        self.assertIn('"in_list_view": 0', source_field)
+        for fieldname in ("custom_packaging_type", "custom_packaging_uom", "custom_units_per_package", "custom_package_count"):
+            field = section.split(f'"fieldname": "{fieldname}"', 1)[1].split("},", 1)[0]
+            self.assertIn('"in_list_view": 1', field)
 
 
 if __name__ == "__main__":

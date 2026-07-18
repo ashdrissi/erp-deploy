@@ -597,6 +597,7 @@ class TestPriceListUsageGuard(unittest.TestCase):
                     "custom_builder_expense_amount": 10,
                     "custom_builder_customs_amount": 5,
                     "custom_builder_margin_basis": "Loaded Cost",
+                    "custom_target_margin_percent": 25,
                 },
             ]
         )
@@ -610,6 +611,71 @@ class TestPriceListUsageGuard(unittest.TestCase):
         row = doc["items"][0]
         self.assertEqual(row["source_margin_basis"], "Loaded Cost")
         self.assertAlmostEqual(row["source_margin_percent"], 20)
+        self.assertEqual(row["source_target_margin_percent"], 25)
+        self.assertEqual(row["source_base_buy_rate"], 100)
+        self.assertEqual(row["source_landed_cost"], 115)
+
+    def test_pricing_admin_direct_quotation_gets_margin_snapshot_without_rate_override(self):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        price_list_usage_guard.frappe.db = DbStub(
+            [
+                {
+                    "item_code": "ITEM-001",
+                    "price_list": "Sell A",
+                    "price_list_rate": 138,
+                    "custom_policy_max_discount_percent": 0,
+                    "custom_pricing_builder": "PBU-01",
+                    "custom_last_builder_buy_rate": 100,
+                    "custom_builder_expense_amount": 10,
+                    "custom_builder_customs_amount": 5,
+                    "custom_builder_margin_basis": "Loaded Cost",
+                    "custom_target_margin_percent": 20,
+                },
+            ]
+        )
+        doc = DocStub(
+            selected_selling_price_lists=[{"price_list": "Sell A", "is_active": 1, "sequence": 10}],
+            items=[{"item_code": "ITEM-001", "rate": 126.5, "qty": 1, "idx": 1}],
+        )
+
+        price_list_usage_guard.reprice_quotation_items_from_selected_price_lists(doc)
+
+        row = doc["items"][0]
+        self.assertEqual(row["rate"], 126.5)
+        self.assertEqual(row["source_target_margin_percent"], 20)
+        self.assertEqual(row["source_landed_cost"], 115)
+        self.assertAlmostEqual(row["source_margin_percent"], 10)
+
+    def test_standalone_sales_order_gets_transaction_margin_snapshot(self):
+        price_list_usage_guard.frappe.db = DbStub(
+            [
+                {
+                    "item_code": "ITEM-001",
+                    "price_list": "Sell A",
+                    "price_list_rate": 138,
+                    "custom_policy_max_discount_percent": 0,
+                    "custom_pricing_builder": "PBU-01",
+                    "custom_last_builder_buy_rate": 100,
+                    "custom_builder_expense_amount": 10,
+                    "custom_builder_customs_amount": 5,
+                    "custom_builder_margin_basis": "Loaded Cost",
+                    "custom_target_margin_percent": 20,
+                },
+            ]
+        )
+        doc = DocStub(
+            selling_price_list="Sell A",
+            selected_selling_price_lists=[],
+            items=[{"item_code": "ITEM-001", "rate": 126.5, "qty": 1, "idx": 1}],
+        )
+        doc.doctype = "Sales Order"
+
+        price_list_usage_guard.sync_sales_order_margin_snapshots(doc)
+
+        row = doc["items"][0]
+        self.assertEqual(row["source_target_margin_percent"], 20)
+        self.assertEqual(row["source_landed_cost"], 115)
+        self.assertAlmostEqual(row["source_margin_percent"], 10)
 
     def test_builder_stamped_quotation_item_margin_negative_below_cost(self):
         price_list_usage_guard.frappe.db = DbStub(

@@ -293,7 +293,7 @@
     function createProject() {
         const routeOptions = {};
         if (STATE.company !== "All") routeOptions.company = STATE.company;
-        if (STATE.owner !== "All") routeOptions.project_owner = STATE.owner;
+        if (STATE.owner !== "All") routeOptions.custom_project_owner = STATE.owner;
         routeOptions.custom_crm_business_type = STATE.business_type !== "All" ? STATE.business_type : "Installation";
         if (STATE.segment !== "All") routeOptions.custom_crm_segment = STATE.segment;
         frappe.route_options = routeOptions;

@@ -49,7 +49,6 @@ COMPANY_SCOPED_DOCTYPES = [
     "Forecast Load Plan",
     # Company-owned masters / operational records (see orderlift.company_scope).
     "Customer",
-    "Supplier",
     "Price List",
     "Prospect",
     "Lead",
@@ -198,10 +197,6 @@ def pricing_sheet_query(user: str | None = None) -> str | None:
 
 def customer_query(user: str | None = None) -> str | None:
     return _company_query("Customer", user=user)
-
-
-def supplier_query(user: str | None = None) -> str | None:
-    return _company_query("Supplier", user=user)
 
 
 def price_list_query(user: str | None = None) -> str | None:
@@ -887,7 +882,7 @@ def _doctype_exists(doctype: str) -> bool:
 
 
 def _project_user_clause(project_ref: str, user: str) -> str:
-    checks = _owner_assignment_checks("Project", project_ref, user, extra_owner_fields=("project_owner",))
+    checks = _owner_assignment_checks("Project", project_ref, user, extra_owner_fields=("custom_project_owner",))
     if _has_company_field("Project", "custom_source_opportunity"):
         opp = "_project_opp"
         checks.append(

@@ -8,6 +8,7 @@ from pathlib import Path
 frappe_stub = types.ModuleType("frappe")
 frappe_stub.session = types.SimpleNamespace(user="demo@example.com")
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
+frappe_stub._ = lambda message, *args, **kwargs: message
 sys.modules["frappe"] = frappe_stub
 
 utils_stub = types.ModuleType("frappe.utils")
@@ -30,11 +31,22 @@ BUSINESS_DOCTYPES = sorted(company_scope.SCOPED_DOCTYPES)
 class TestCompanyScopeRegistry(unittest.TestCase):
     def test_company_field_for_known_and_unknown(self):
         self.assertEqual(company_scope.company_field_for("Customer"), "custom_company")
-        self.assertEqual(company_scope.company_field_for("Supplier"), "custom_company")
+        self.assertEqual(company_scope.company_field_for("Supplier"), "company")
         self.assertEqual(company_scope.company_field_for("Quotation"), "company")
         self.assertEqual(company_scope.company_field_for("Project"), "company")
         # Unknown doctypes fall back to the native company field.
         self.assertEqual(company_scope.company_field_for("Item"), "company")
+
+    def test_supplier_is_a_shared_party_master_not_a_company_owned_record(self):
+        self.assertNotIn("Supplier", company_scope.SCOPED_DOCTYPES)
+        self.assertNotIn("Supplier", company_access.COMPANY_SCOPED_DOCTYPES)
+        self.assertNotIn('"Supplier": "orderlift.company_access.has_company_permission"', HOOKS)
+        self.assertNotIn('"Supplier": "orderlift.company_access.supplier_query"', HOOKS)
+
+        form_js = (APP_ROOT / "orderlift" / "public" / "js" / "company_scope_form_20260607a.js").read_text()
+        list_js = (APP_ROOT / "orderlift" / "public" / "js" / "company_scope_list_focus_20260601a.js").read_text()
+        self.assertNotIn('Supplier: { company: "custom_company"', form_js)
+        self.assertNotIn('Supplier: "custom_company"', list_js)
 
     def test_registry_uses_supported_company_fields(self):
         for doctype, config in company_scope.SCOPED_DOCTYPES.items():

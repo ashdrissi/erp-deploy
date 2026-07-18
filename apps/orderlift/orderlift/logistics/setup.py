@@ -370,7 +370,7 @@ def after_migrate():
                     "fieldtype": "Link",
                     "options": "Item Packaging Profile",
                     "insert_after": "item_code",
-                    "in_list_view": 1,
+                    "in_list_view": 0,
                     "description": "Selected packaging format for purchasing and import. Defaults to item default profile.",
                 },
                 {
@@ -380,7 +380,7 @@ def after_migrate():
                     "options": "\nselected\ndefault\nitem_fallback",
                     "insert_after": "custom_packaging_profile",
                     "read_only": 1,
-                    "in_list_view": 1,
+                    "in_list_view": 0,
                     "description": "How the packaging was resolved for this row.",
                 },
                 {
@@ -389,6 +389,7 @@ def after_migrate():
                     "fieldtype": "Data",
                     "insert_after": "custom_packaging_uom",
                     "read_only": 1,
+                    "in_list_view": 1,
                 },
                 {
                     "fieldname": "custom_packaging_uom",
@@ -396,6 +397,7 @@ def after_migrate():
                     "fieldtype": "Data",
                     "insert_after": "custom_packaging_profile_source",
                     "read_only": 1,
+                    "in_list_view": 1,
                     "fetch_from": "custom_packaging_profile.uom",
                 },
                 {
@@ -404,6 +406,7 @@ def after_migrate():
                     "fieldtype": "Float",
                     "insert_after": "custom_packaging_uom",
                     "read_only": 1,
+                    "in_list_view": 1,
                     "fetch_from": "custom_packaging_profile.units_per_package",
                     "default": "1",
                 },

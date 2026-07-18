@@ -19,10 +19,28 @@ sys.modules["werkzeug"] = werkzeug_stub
 sys.modules["werkzeug.wrappers"] = werkzeug_wrappers_stub
 
 
+from orderlift import boot as boot_module
 from orderlift.boot import _strip_demo_navbar_items
 
 
 class TestBootHelpers(unittest.TestCase):
+    def test_boot_exposes_authoritative_quotation_override_capability(self):
+        original = boot_module._can_override_quotation_pricing
+        original_user = frappe_stub.session.user
+        bootinfo = {}
+        try:
+            frappe_stub.session.user = "admin@example.com"
+            boot_module._can_override_quotation_pricing = lambda: True
+            boot_module._apply_orderlift_capabilities_to_bootinfo(bootinfo)
+        finally:
+            boot_module._can_override_quotation_pricing = original
+            frappe_stub.session.user = original_user
+
+        self.assertEqual(
+            bootinfo["orderlift_capabilities"],
+            {"quotation_override": True},
+        )
+
     def test_strip_demo_navbar_items_removes_delete_demo_data(self):
         bootinfo = {
             "navbar_settings": {
