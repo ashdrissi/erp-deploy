@@ -337,6 +337,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("def get_transaction_stock_snapshot", item_tools)
         self.assertIn("stock_warehouse_condition(\"w.name\", params)", item_tools)
         self.assertIn("Orderlift Transaction Warehouse Stock", stock_table)
+        self.assertIn('"ignore_user_permissions": 1', stock_table)
         for token in [
             "get_transaction_stock_snapshot",
             "company: frm.doc.company",
