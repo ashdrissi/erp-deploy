@@ -10,6 +10,7 @@ ALL_USERS_ROLE = "All"
 BUSINESS_ROLES = [
     "Orderlift Admin",
     "Sales User",
+    "Sales Manager",
     "Pricing Manager",
     "Logistics User",
     "Finance User",
@@ -19,10 +20,12 @@ BUSINESS_ROLES = [
 
 ADMIN_ROLES = ["Orderlift Admin", "Administrator", "System Manager", "Developer"]
 ACCESS_MANAGER_ROLES = ["Orderlift Admin", "System Manager"]
-SALES_ROLES = ["Orderlift Admin", "Sales User", "Pricing Manager"]
+SALES_ROLES = ["Orderlift Admin", "Sales User", "Sales Manager", "Pricing Manager"]
 PRICING_MANAGER_ROLES = ["Orderlift Admin", "Pricing Manager"]
-FINANCE_ROLES = ["Orderlift Admin", "Finance User"]
-LOGISTICS_ROLES = ["Orderlift Admin", "Logistics User"]
+FINANCE_CORE_ROLES = ["Orderlift Admin", "Finance User", "Finance Admin"]
+FINANCE_ROLES = FINANCE_CORE_ROLES + ["Payment Validator"]
+LOGISTICS_ROLES = ["Orderlift Admin", "Logistics User", "Logistics Manager"]
+PURCHASING_ROLES = ["Orderlift Admin", "Purchase User", "Purchase Manager"]
 PROJECT_ROLES = ["Orderlift Admin", "Installation User", "Sales User"]
 SAV_ROLES = ["Orderlift Admin", "Service User", SAV_TECHNICIAN_ROLE]
 SIG_ROLES = ["Orderlift Admin", "Installation User"]
@@ -151,13 +154,13 @@ MENU_SECTIONS = [
         "key": "items_price_lists",
         "label": "Items & Price Lists",
         "icon": "box",
-        "roles": SALES_ROLES + LOGISTICS_ROLES,
+        "roles": SALES_ROLES + LOGISTICS_ROLES + PURCHASING_ROLES,
         "links": [
             {"key": "items.item", "label": "Item", "link_type": "DocType", "link_to": "Item"},
             {"key": "items.item_category", "label": "Item Category", "link_type": "DocType", "link_to": "Item Category"},
             {"key": "items.item_group", "label": "Item Group", "link_type": "DocType", "link_to": "Item Group"},
             {"key": "items.product_bundle", "label": "Product Bundle", "link_type": "DocType", "link_to": "Product Bundle"},
-            {"key": "items.dimensioning_sets", "label": "Dimensioning Sets", "link_type": "Page", "link_to": "dimensioning-set-manager"},
+            {"key": "items.dimensioning_sets", "label": "Dimensioning Sets", "link_type": "Page", "link_to": "dimensioning-set-manager", "roles": ADMIN_ROLES},
             {"key": "items.item_price", "label": "Item Price", "link_type": "DocType", "link_to": "Item Price"},
             {"key": "items.price_list", "label": "Price List", "link_type": "DocType", "link_to": "Price List"},
             {"key": "items.catalogue_prix_articles", "label": "Catalogue Prix Articles", "link_type": "Page", "link_to": "catalogue-prix-articles", "roles": SALES_ROLES},
@@ -171,10 +174,10 @@ MENU_SECTIONS = [
         "icon": "chart-no-axes-combined",
         "roles": FINANCE_ROLES,
         "links": [
-            {"key": "finance.sale_financial_dashboard", "label": "Sale Financial Dashboard", "link_type": "Page", "link_to": "sale-financial-dashboard"},
-            {"key": "finance.sales_payment_follow_up", "label": "Sales Payment Follow Up", "link_type": "Report", "link_to": "Sales Payment Follow Up"},
-            {"key": "finance.sales_invoices", "label": "Sales Invoices", "link_type": "DocType", "link_to": "Sales Invoice"},
-            {"key": "finance.purchase_invoices", "label": "Purchase Invoices", "link_type": "DocType", "link_to": "Purchase Invoice"},
+            {"key": "finance.sale_financial_dashboard", "label": "Sale Financial Dashboard", "link_type": "Page", "link_to": "sale-financial-dashboard", "roles": FINANCE_CORE_ROLES},
+            {"key": "finance.sales_payment_follow_up", "label": "Sales Payment Follow Up", "link_type": "Report", "link_to": "Sales Payment Follow Up", "roles": FINANCE_CORE_ROLES},
+            {"key": "finance.sales_invoices", "label": "Sales Invoices", "link_type": "DocType", "link_to": "Sales Invoice", "roles": FINANCE_CORE_ROLES},
+            {"key": "finance.purchase_invoices", "label": "Purchase Invoices", "link_type": "DocType", "link_to": "Purchase Invoice", "roles": FINANCE_CORE_ROLES},
             {"key": "finance.payments", "label": "Payments", "link_type": "DocType", "link_to": "Payment Entry"},
         ],
     },
@@ -182,7 +185,7 @@ MENU_SECTIONS = [
         "key": "purchasing",
         "label": "Purchasing",
         "icon": "shopping-basket",
-        "roles": LOGISTICS_ROLES,
+        "roles": PURCHASING_ROLES,
         "links": [
             {"key": "purchasing.suppliers", "label": "Supplier List", "link_type": "DocType", "link_to": "Supplier"},
             {"key": "purchasing.material_request", "label": "Material Request", "link_type": "DocType", "link_to": "Material Request"},

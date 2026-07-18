@@ -14,6 +14,7 @@ FUNCTIONAL_STARTUP_ROLES = [
     COMMERCIAL_AGENT_PARTNER_ROLE,
     COMMERCIAL_AGENT_COORDINATOR_ROLE,
     COMMERCIAL_AGENT_POINT_OF_SALE_ROLE,
+    "Purchase User",
     "Purchase Manager",
     "Stock Manager",
     "Project Manager",

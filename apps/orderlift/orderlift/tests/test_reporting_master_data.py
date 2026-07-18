@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+import json
 from pathlib import Path
 
 
@@ -65,6 +66,9 @@ class TestReportingMasterData(unittest.TestCase):
         report = root / "orderlift_sales" / "report" / "sales_payment_follow_up"
         source = (report / "sales_payment_follow_up.py").read_text()
         client = (report / "sales_payment_follow_up.js").read_text()
+        report_definition = json.loads(
+            (report / "sales_payment_follow_up.json").read_text()
+        )
 
         for token in [
             "sales_orders",
@@ -77,6 +81,15 @@ class TestReportingMasterData(unittest.TestCase):
             self.assertIn(token, source)
         self.assertIn("outstanding_only", client)
         self.assertNotIn('filters={"disabled": 0}', source)
+        self.assertEqual(
+            {row["role"] for row in report_definition["roles"]},
+            {
+                "Finance User",
+                "Finance Admin",
+                "Orderlift Admin",
+                "System Manager",
+            },
+        )
 
     def test_target_companies_and_currencies_match_orderlift_operating_model(self):
         by_name = {row["name"]: row for row in setup_master_data.TARGET_COMPANIES}

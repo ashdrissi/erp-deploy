@@ -31,6 +31,23 @@ READ_ONLY = {"read": 1, "report": 1, "print": 1, "email": 1}
 READ_SELECT = {"read": 1, "select": 1}
 READ_WRITE_CREATE = {"read": 1, "write": 1, "create": 1, "report": 1, "print": 1, "email": 1}
 READ_WRITE = {"read": 1, "write": 1, "report": 1, "print": 1, "email": 1}
+TRANSACTION_USER = {
+    "read": 1,
+    "select": 1,
+    "write": 1,
+    "create": 1,
+    "submit": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+}
+TRANSACTION_MANAGER = {
+    **TRANSACTION_USER,
+    "delete": 1,
+    "cancel": 1,
+    "amend": 1,
+}
 FULL_NON_DELETE = {"read": 1, "write": 1, "create": 1, "report": 1, "export": 1, "import": 1, "print": 1, "email": 1}
 STOCK_OPERATIONAL = {
     "read": 1,
@@ -63,7 +80,7 @@ COMMERCIAL_AGENT_PERMISSIONS = {
     "Item": READ_ONLY,
     "Opportunity": READ_WRITE_CREATE,
     "Pricing Sheet": READ_WRITE_CREATE,
-    "Quotation": READ_WRITE_CREATE,
+    "Quotation": TRANSACTION_USER,
     "Price List": READ_SELECT,
     "Sales Commission": READ_ONLY,
     "Customer": READ_ONLY,
@@ -74,8 +91,8 @@ COMMERCIAL_AGENT_PERMISSIONS = {
 SALES_MANAGER_PERMISSIONS = {
     "Opportunity": READ_WRITE_CREATE,
     "Pricing Sheet": READ_WRITE_CREATE,
-    "Quotation": READ_WRITE_CREATE,
-    "Sales Order": READ_WRITE_CREATE,
+    "Quotation": TRANSACTION_MANAGER,
+    "Sales Order": TRANSACTION_MANAGER,
     "Sales Commission": READ_WRITE,
     "Customer": READ_WRITE_CREATE,
     "Prospect": READ_WRITE_CREATE,
@@ -102,7 +119,7 @@ SALES_USER_PERMISSIONS = {
     "Communication": READ_ONLY,
     "Appointment": READ_ONLY,
     "Opportunity": READ_WRITE_CREATE,
-    "Quotation": READ_ONLY,
+    "Quotation": TRANSACTION_USER,
     "Sales Order": READ_ONLY,
     "Project": READ_ONLY,
     "Contract": READ_ONLY,
@@ -141,16 +158,56 @@ PRICING_MANAGER_PERMISSIONS = {
 }
 
 FINANCE_USER_PERMISSIONS = {
-    "Sales Invoice": READ_WRITE_CREATE,
-    "Purchase Invoice": READ_WRITE_CREATE,
-    "Payment Entry": READ_WRITE_CREATE,
+    "Sales Invoice": TRANSACTION_USER,
+    "Purchase Invoice": TRANSACTION_USER,
+    "Payment Entry": TRANSACTION_USER,
     "Payment Request": READ_ONLY,
     "Payment Terms Template": READ_ONLY,
     "Payment Schedule": READ_ONLY,
+    "Mode of Payment": READ_ONLY,
+    "Bank Account": READ_ONLY,
+    "Buying Settings": READ_ONLY,
     "Sales Order": READ_ONLY,
     "Purchase Order": READ_ONLY,
+    "Purchase Receipt": READ_ONLY,
     "Customer": READ_ONLY,
     "Supplier": READ_ONLY,
+    "Supplier Group": READ_ONLY,
+}
+
+FINANCE_ADMIN_PERMISSIONS = {
+    **FINANCE_USER_PERMISSIONS,
+    "Sales Invoice": TRANSACTION_MANAGER,
+    "Purchase Invoice": TRANSACTION_MANAGER,
+    "Payment Entry": TRANSACTION_MANAGER,
+    "Sales Commission": READ_WRITE,
+}
+
+PURCHASE_USER_PERMISSIONS = {
+    "Supplier": READ_WRITE_CREATE,
+    "Material Request": TRANSACTION_USER,
+    "Request for Quotation": TRANSACTION_USER,
+    "Supplier Quotation": TRANSACTION_USER,
+    "Purchase Order": TRANSACTION_USER,
+    "Purchase Receipt": READ_ONLY,
+    "Supplier Group": READ_ONLY,
+    "Item": READ_ONLY,
+    "Item Group": READ_ONLY,
+    "UOM": READ_ONLY,
+    "Warehouse": READ_ONLY,
+    "Price List": READ_ONLY,
+    "Item Price": READ_ONLY,
+    "Buying Settings": READ_ONLY,
+}
+
+PURCHASE_MANAGER_PERMISSIONS = {
+    **PURCHASE_USER_PERMISSIONS,
+    "Supplier": READ_WRITE_CREATE,
+    "Supplier Group": READ_WRITE_CREATE,
+    "Material Request": TRANSACTION_MANAGER,
+    "Request for Quotation": TRANSACTION_MANAGER,
+    "Supplier Quotation": TRANSACTION_MANAGER,
+    "Purchase Order": TRANSACTION_MANAGER,
 }
 
 INSTALLATION_USER_PERMISSIONS = {
@@ -245,15 +302,15 @@ DOCTYPE_PERMISSIONS = {
         "Purchase Receipt": STOCK_OPERATIONAL,
         "Stock Entry": STOCK_OPERATIONAL,
         "Material Request": STOCK_OPERATIONAL,
-        "Request for Quotation": STOCK_OPERATIONAL,
-        "Purchase Order": STOCK_OPERATIONAL,
+        "Purchase Order": READ_ONLY,
         "Pick List": STOCK_OPERATIONAL,
         "Quality Inspection": STOCK_OPERATIONAL,
         "Warehouse": STOCK_READ_ONLY,
         "Bin": STOCK_READ_ONLY,
         "Stock Ledger Entry": STOCK_READ_ONLY,
         "Stock Settings": STOCK_SETTINGS_ACCESS,
-        "Supplier": READ_WRITE_CREATE,
+        "Supplier": READ_ONLY,
+        "Supplier Group": READ_ONLY,
         "Item": READ_ONLY,
         "Quality Inspection Template": READ_WRITE_CREATE,
         "Stock Entry Type": STOCK_ENTRY_TYPE_ACCESS,
@@ -262,19 +319,19 @@ DOCTYPE_PERMISSIONS = {
     "Logistics User": {
         **ITEM_CATALOG_READ_PERMISSIONS,
         "Forecast Load Plan": READ_WRITE_CREATE,
-        "Delivery Note": STOCK_OPERATIONAL,
-        "Purchase Receipt": STOCK_OPERATIONAL,
-        "Stock Entry": STOCK_OPERATIONAL,
-        "Material Request": STOCK_OPERATIONAL,
-        "Request for Quotation": STOCK_OPERATIONAL,
-        "Purchase Order": STOCK_OPERATIONAL,
-        "Pick List": STOCK_OPERATIONAL,
-        "Quality Inspection": STOCK_OPERATIONAL,
+        "Delivery Note": TRANSACTION_USER,
+        "Purchase Receipt": TRANSACTION_USER,
+        "Stock Entry": TRANSACTION_USER,
+        "Material Request": TRANSACTION_USER,
+        "Purchase Order": READ_ONLY,
+        "Pick List": TRANSACTION_USER,
+        "Quality Inspection": TRANSACTION_USER,
         "Warehouse": STOCK_READ_ONLY,
         "Bin": STOCK_READ_ONLY,
         "Stock Ledger Entry": STOCK_READ_ONLY,
         "Stock Settings": STOCK_SETTINGS_ACCESS,
-        "Supplier": READ_WRITE_CREATE,
+        "Supplier": READ_ONLY,
+        "Supplier Group": READ_ONLY,
         "Quality Inspection Template": READ_WRITE_CREATE,
         "Stock Entry Type": STOCK_ENTRY_TYPE_ACCESS,
         "Container Profile": READ_WRITE_CREATE,
@@ -300,16 +357,7 @@ DOCTYPE_PERMISSIONS = {
         "Dimensioning Set": READ_WRITE_CREATE,
         "QC Checklist Template": READ_WRITE_CREATE,
     },
-    "Finance Admin": {
-        "Payment Entry": READ_WRITE_CREATE,
-        "Sales Invoice": READ_WRITE_CREATE,
-        "Purchase Invoice": READ_WRITE_CREATE,
-        "Sales Order": READ_ONLY,
-        "Purchase Order": READ_ONLY,
-        "Sales Commission": READ_WRITE,
-        "Customer": READ_ONLY,
-        "Supplier": READ_ONLY,
-    },
+    "Finance Admin": FINANCE_ADMIN_PERMISSIONS,
     "HR Training Manager": {
         "Training Program": READ_WRITE_CREATE,
         "Training Level": READ_WRITE_CREATE,
@@ -326,13 +374,16 @@ DOCTYPE_PERMISSIONS = {
         "Employee": READ_ONLY,
     },
     "Sales User": SALES_USER_PERMISSIONS,
+    "Sales Manager": SALES_MANAGER_PERMISSIONS,
+    "Purchase User": PURCHASE_USER_PERMISSIONS,
+    "Purchase Manager": PURCHASE_MANAGER_PERMISSIONS,
     "Pricing Manager": PRICING_MANAGER_PERMISSIONS,
     "Finance User": FINANCE_USER_PERMISSIONS,
     "Installation User": INSTALLATION_USER_PERMISSIONS,
     "Service User": SERVICE_USER_PERMISSIONS,
     SAV_TECHNICIAN_ROLE: SAV_TECHNICIAN_PERMISSIONS,
     QUOTATION_CREATOR_ROLE: {
-        "Quotation": READ_WRITE_CREATE,
+        "Quotation": TRANSACTION_USER,
         "Price List": READ_SELECT,
     },
     OPPORTUNITY_ALL_ACCESS_ROLE: {
@@ -354,7 +405,7 @@ DOCTYPE_PERMISSIONS = {
         "Partner Campaign Target": READ_WRITE_CREATE,
     },
     PAYMENT_VALIDATOR_ROLE: {
-        "Payment Entry": READ_WRITE,
+        "Payment Entry": {**READ_WRITE, "submit": 1},
         "Sales Invoice": READ_ONLY,
     },
     STOCK_QUANTITY_VIEWER_ROLE: {
@@ -365,6 +416,64 @@ DOCTYPE_PERMISSIONS = {
 STALE_DOCTYPE_PERMISSIONS = {
     "Sales Distribution Manager": ["Partner Campaign", "Partner Campaign Target"],
     "Sales Installation Manager": ["Partner Campaign", "Partner Campaign Target"],
+    "Logistics Manager": ["Request for Quotation"],
+    "Logistics User": ["Request for Quotation"],
+}
+
+STALE_MENU_ROLE_ASSIGNMENTS = {
+    "Logistics Manager": [
+        "purchasing.suppliers",
+        "purchasing.material_request",
+        "purchasing.rfq",
+        "purchasing.purchase_order",
+        "purchasing.purchase_receipt",
+        "purchasing.delivery_note",
+        "purchasing.pick_list",
+    ],
+    "Logistics User": [
+        "purchasing.suppliers",
+        "purchasing.material_request",
+        "purchasing.rfq",
+        "purchasing.purchase_order",
+        "purchasing.purchase_receipt",
+        "purchasing.delivery_note",
+        "purchasing.pick_list",
+    ],
+}
+
+WORKFLOW_PERMISSION_SCOPE = {
+    "Logistics Manager": {
+        "Purchase Order",
+        "Supplier",
+        "Supplier Group",
+        "Request for Quotation",
+    },
+    "Logistics User": {
+        "Delivery Note",
+        "Purchase Receipt",
+        "Stock Entry",
+        "Material Request",
+        "Purchase Order",
+        "Pick List",
+        "Quality Inspection",
+        "Supplier",
+        "Supplier Group",
+        "Request for Quotation",
+    },
+    "Finance Admin": set(FINANCE_ADMIN_PERMISSIONS),
+    "Finance User": set(FINANCE_USER_PERMISSIONS),
+    PAYMENT_VALIDATOR_ROLE: {"Payment Entry", "Sales Invoice"},
+    "Sales User": {"Quotation"},
+    "Sales Manager": {"Quotation", "Sales Order", "Sales Commission"},
+    "Sales Distribution Manager": {"Quotation", "Sales Order", "Sales Commission"},
+    "Sales Installation Manager": {"Quotation", "Sales Order", "Sales Commission"},
+    COMMERCIAL_AGENT_ROLE: {"Quotation"},
+    COMMERCIAL_AGENT_PARTNER_ROLE: {"Quotation"},
+    COMMERCIAL_AGENT_COORDINATOR_ROLE: {"Quotation"},
+    COMMERCIAL_AGENT_POINT_OF_SALE_ROLE: {"Quotation"},
+    QUOTATION_CREATOR_ROLE: {"Quotation"},
+    "Purchase User": set(PURCHASE_USER_PERMISSIONS),
+    "Purchase Manager": set(PURCHASE_MANAGER_PERMISSIONS),
 }
 
 MENU_ROLE_MAP = {
@@ -376,7 +485,7 @@ MENU_ROLE_MAP = {
         "sales.sales_order_pipeline",
         "sales.project_pipeline",
         "finance.sale_financial_dashboard",
-        "finance.sales_payment_summary",
+        "finance.sales_payment_follow_up",
         "items.catalogue_prix_articles",
     ],
     "Sales Distribution Manager": [
@@ -448,6 +557,15 @@ MENU_ROLE_MAP = {
         "items.item",
         "items.item_price",
     ],
+    "Purchase User": [
+        "purchasing.suppliers",
+        "purchasing.material_request",
+        "purchasing.rfq",
+        "purchasing.purchase_order",
+        "purchasing.purchase_receipt",
+        "items.item",
+        "items.item_price",
+    ],
     "Stock Manager": [
         "stock.dashboard",
         "stock.balance",
@@ -511,13 +629,6 @@ MENU_ROLE_MAP = {
         "stock.warehouse_report",
         "stock.quality_inspection",
         "stock.qi_templates",
-        "purchasing.suppliers",
-        "purchasing.material_request",
-        "purchasing.rfq",
-        "purchasing.purchase_order",
-        "purchasing.purchase_receipt",
-        "purchasing.delivery_note",
-        "purchasing.pick_list",
     ],
     "BET Technical User": [
         "items.item",
@@ -528,12 +639,20 @@ MENU_ROLE_MAP = {
     ],
     "Finance Admin": [
         "finance.sale_financial_dashboard",
-        "finance.sales_payment_summary",
+        "finance.sales_payment_follow_up",
         "finance.sales_invoices",
         "finance.purchase_invoices",
         "finance.payments",
         "sales.commission_dashboard",
     ],
+    "Finance User": [
+        "finance.sale_financial_dashboard",
+        "finance.sales_payment_follow_up",
+        "finance.sales_invoices",
+        "finance.purchase_invoices",
+        "finance.payments",
+    ],
+    PAYMENT_VALIDATOR_ROLE: ["finance.payments"],
     "HR Training Manager": [
         "hr.dashboard",
         "training.cycle_dashboard",
@@ -558,26 +677,40 @@ def run(
     assign_existing_sales_users: int = 0,
     overwrite_existing_docperms: int = 0,
     remove_stale_docperms: int = 0,
+    dry_run: int = 0,
+    workflow_scope: int = 0,
 ) -> dict:
     frappe.only_for("System Manager")
     overwrite_existing_docperms = cint(overwrite_existing_docperms)
     remove_stale_docperms = cint(remove_stale_docperms)
+    workflow_scope = cint(workflow_scope)
+    if cint(dry_run):
+        return {
+            "dry_run": True,
+            "workflow_scope": bool(workflow_scope),
+            "permission_diff": _permission_diff(workflow_scope=workflow_scope),
+        }
     results = {
         "roles": [],
         "custom_docperms": [],
         "removed_custom_docperms": [],
+        "removed_menu_roles": [],
         "menu_rules": [],
         "page_roles": [],
         "assigned_roles": [],
     }
 
     for role_name in STARTUP_ROLES:
+        if workflow_scope and role_name not in WORKFLOW_PERMISSION_SCOPE:
+            continue
         _ensure_role(role_name, results)
 
     for role_name, doctype_permissions in DOCTYPE_PERMISSIONS.items():
         if not frappe.db.exists("Role", role_name):
             continue
         for doctype, flags in doctype_permissions.items():
+            if workflow_scope and not _pair_is_in_workflow_scope(role_name, doctype):
+                continue
             if frappe.db.exists("DocType", doctype):
                 _ensure_custom_docperm(
                     doctype,
@@ -588,10 +721,19 @@ def run(
                 )
 
     if remove_stale_docperms:
-        _remove_stale_custom_docperms(results)
+        _remove_stale_custom_docperms(
+            results,
+            workflow_scope=workflow_scope,
+        )
 
-    _ensure_menu_roles(results)
-    _ensure_stock_settings_user_permission_exempt_fields(results)
+    _ensure_menu_roles(
+        results,
+        roles=set(WORKFLOW_PERMISSION_SCOPE) if workflow_scope else None,
+    )
+    if remove_stale_docperms:
+        _remove_stale_menu_role_assignments(results)
+    if not workflow_scope:
+        _ensure_stock_settings_user_permission_exempt_fields(results)
 
     if cint(assign_existing_sales_users):
         _assign_role_to_sales_users(QUOTATION_CREATOR_ROLE, results)
@@ -599,6 +741,14 @@ def run(
     frappe.clear_cache()
     frappe.db.commit()
     return results
+
+
+def after_migrate() -> dict:
+    is_configured_site = frappe.db.exists(
+        "Custom DocPerm",
+        {"parent": "Quotation", "role": "Sales User", "permlevel": 0},
+    )
+    return run(workflow_scope=1 if is_configured_site else 0)
 
 
 def _ensure_role(role_name: str, results: dict) -> None:
@@ -642,9 +792,15 @@ def _ensure_custom_docperm(doctype: str, role: str, values: dict, results: dict,
     results["custom_docperms"].append({"doctype": doctype, "role": role, "action": action})
 
 
-def _remove_stale_custom_docperms(results: dict) -> None:
+def _remove_stale_custom_docperms(
+    results: dict,
+    *,
+    workflow_scope: int = 0,
+) -> None:
     for role, doctypes in STALE_DOCTYPE_PERMISSIONS.items():
         for doctype in doctypes:
+            if workflow_scope and not _pair_is_in_workflow_scope(role, doctype):
+                continue
             filters = {"parent": doctype, "role": role, "permlevel": 0}
             doc_name = frappe.db.exists("Custom DocPerm", filters)
             if not doc_name:
@@ -653,9 +809,110 @@ def _remove_stale_custom_docperms(results: dict) -> None:
             results["removed_custom_docperms"].append({"doctype": doctype, "role": role, "name": doc_name})
 
 
-def _ensure_menu_roles(results: dict) -> None:
+def _remove_stale_menu_role_assignments(results: dict) -> None:
+    for role, menu_keys in STALE_MENU_ROLE_ASSIGNMENTS.items():
+        for menu_key in menu_keys:
+            name = frappe.db.exists("Orderlift Menu Access Rule", menu_key) or frappe.db.exists(
+                "Orderlift Menu Access Rule",
+                {"menu_key": menu_key},
+            )
+            if not name:
+                continue
+            current = frappe.db.get_value(
+                "Orderlift Menu Access Rule",
+                name,
+                "allowed_roles_json",
+            ) or "[]"
+            roles = _clean_list(current)
+            if role not in roles:
+                continue
+            roles = [item for item in roles if item != role]
+            frappe.db.set_value(
+                "Orderlift Menu Access Rule",
+                name,
+                "allowed_roles_json",
+                json.dumps(roles),
+            )
+            results["removed_menu_roles"].append(
+                {"menu_key": menu_key, "role": role}
+            )
+
+
+def _permission_diff(*, workflow_scope: int = 0) -> list[dict]:
+    permission_fields = tuple(_with_default_flags({}))
+    diff = []
+    for role, doctype_permissions in DOCTYPE_PERMISSIONS.items():
+        for doctype, flags in doctype_permissions.items():
+            if workflow_scope and not _pair_is_in_workflow_scope(role, doctype):
+                continue
+            if not frappe.db.exists("DocType", doctype):
+                continue
+            filters = {"parent": doctype, "role": role, "permlevel": 0}
+            existing = frappe.db.exists("Custom DocPerm", filters)
+            desired = _with_default_flags(flags)
+            if not existing:
+                diff.append(
+                    {
+                        "action": "create",
+                        "doctype": doctype,
+                        "role": role,
+                        "desired": desired,
+                    }
+                )
+                continue
+            current = frappe.db.get_value(
+                "Custom DocPerm",
+                existing,
+                list(permission_fields),
+                as_dict=True,
+            ) or {}
+            changed = {
+                fieldname: {
+                    "from": cint(current.get(fieldname)),
+                    "to": cint(desired.get(fieldname)),
+                }
+                for fieldname in permission_fields
+                if cint(current.get(fieldname)) != cint(desired.get(fieldname))
+            }
+            if changed:
+                diff.append(
+                    {
+                        "action": "update",
+                        "doctype": doctype,
+                        "role": role,
+                        "name": existing,
+                        "changes": changed,
+                    }
+                )
+    for role, doctypes in STALE_DOCTYPE_PERMISSIONS.items():
+        for doctype in doctypes:
+            if workflow_scope and not _pair_is_in_workflow_scope(role, doctype):
+                continue
+            existing = frappe.db.exists(
+                "Custom DocPerm",
+                {"parent": doctype, "role": role, "permlevel": 0},
+            )
+            if existing:
+                diff.append(
+                    {
+                        "action": "remove",
+                        "doctype": doctype,
+                        "role": role,
+                        "name": existing,
+                    }
+                )
+    return diff
+
+
+def _pair_is_in_workflow_scope(role: str, doctype: str) -> bool:
+    return doctype in WORKFLOW_PERMISSION_SCOPE.get(role, set())
+
+
+def _ensure_menu_roles(results: dict, roles: set[str] | None = None) -> None:
     sync_menu_access_rules()
     for role, menu_keys in MENU_ROLE_MAP.items():
+        if roles is not None and role not in roles:
+            continue
         for menu_key in menu_keys:
             name = frappe.db.exists("Orderlift Menu Access Rule", menu_key) or frappe.db.exists(
                 "Orderlift Menu Access Rule",

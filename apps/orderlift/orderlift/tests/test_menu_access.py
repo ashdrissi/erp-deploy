@@ -18,7 +18,12 @@ sys.modules["frappe.utils"] = utils_stub
 
 from orderlift import company_access, menu_access, menu_registry
 from orderlift.scripts import setup_startup_roles
-from orderlift.startup_roles import OPPORTUNITY_ASSIGNER_ROLE, OPPORTUNITY_ALL_ACCESS_ROLE, STARTUP_ROLES
+from orderlift.startup_roles import (
+    OPPORTUNITY_ALL_ACCESS_ROLE,
+    OPPORTUNITY_ASSIGNER_ROLE,
+    PAYMENT_VALIDATOR_ROLE,
+    STARTUP_ROLES,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -94,6 +99,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
             "Sales User",
             "Pricing Manager",
             "Logistics User",
+            "Purchase User",
             "Finance User",
             "Installation User",
             "Service User",
@@ -227,6 +233,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
 
         self.assertEqual(permissions["Quotation"]["create"], 1)
         self.assertEqual(permissions["Quotation"]["write"], 1)
+        self.assertEqual(permissions["Quotation"]["submit"], 1)
         self.assertEqual(permissions["Price List"]["read"], 1)
         self.assertEqual(permissions["Price List"]["select"], 1)
 
@@ -245,14 +252,20 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(permissions["Purchase Receipt"]["submit"], 1)
         self.assertEqual(permissions["Stock Entry Type"]["read"], 1)
 
-    def test_logistics_user_has_full_operational_stock_permissions(self):
+    def test_logistics_user_has_operational_stock_and_read_only_purchase_order(self):
         permissions = setup_startup_roles.DOCTYPE_PERMISSIONS["Logistics User"]
 
-        for doctype in ["Stock Entry", "Delivery Note", "Purchase Receipt", "Pick List", "Material Request", "Purchase Order"]:
+        for doctype in ["Stock Entry", "Delivery Note", "Purchase Receipt", "Pick List", "Material Request"]:
             self.assertEqual(permissions[doctype]["read"], 1)
             self.assertEqual(permissions[doctype]["create"], 1)
             self.assertEqual(permissions[doctype]["submit"], 1)
-            self.assertEqual(permissions[doctype]["cancel"], 1)
+            self.assertEqual(permissions[doctype].get("cancel", 0), 0)
+        self.assertEqual(permissions["Purchase Order"]["read"], 1)
+        self.assertEqual(permissions["Purchase Order"].get("create", 0), 0)
+        self.assertNotIn("Request for Quotation", permissions)
+        self.assertEqual(permissions["Supplier"]["read"], 1)
+        self.assertEqual(permissions["Supplier"].get("write", 0), 0)
+        self.assertEqual(permissions["Supplier Group"]["read"], 1)
         self.assertEqual(permissions["Stock Settings"]["write"], 1)
         self.assertEqual(permissions["Bin"]["read"], 1)
         self.assertEqual(permissions["Stock Ledger Entry"]["report"], 1)
@@ -266,12 +279,87 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(role_permissions["Pricing Manager"]["Quotation"]["read"], 1)
         self.assertEqual(role_permissions["Pricing Manager"]["Agent Pricing Rules"]["create"], 1)
         self.assertEqual(role_permissions["Finance User"]["Payment Entry"]["create"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Payment Entry"]["submit"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Sales Invoice"]["submit"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Purchase Invoice"]["submit"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Buying Settings"]["read"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Supplier Group"]["read"], 1)
+        self.assertEqual(role_permissions["Finance User"]["Bank Account"]["read"], 1)
+        self.assertEqual(role_permissions["Finance Admin"]["Payment Entry"]["cancel"], 1)
+        self.assertEqual(
+            role_permissions[PAYMENT_VALIDATOR_ROLE]["Payment Entry"]["submit"],
+            1,
+        )
         self.assertEqual(role_permissions["Installation User"]["Project"]["create"], 1)
         self.assertEqual(role_permissions["Installation User"]["QC Checklist Template"]["create"], 1)
         self.assertEqual(role_permissions["Service User"]["SAV Ticket"]["create"], 1)
         self.assertEqual(role_permissions["SAV Technician"]["SAV Ticket"]["create"], 1)
         self.assertEqual(role_permissions["Sales User"]["Portal Quote Request"]["read"], 1)
         self.assertEqual(role_permissions["Sales User"]["Item Price"]["read"], 1)
+        self.assertEqual(role_permissions["Sales User"]["Quotation"]["submit"], 1)
+        self.assertEqual(role_permissions["Sales Manager"]["Sales Order"]["cancel"], 1)
+
+    def test_native_purchase_roles_own_procurement_workflow(self):
+        purchase_user = setup_startup_roles.DOCTYPE_PERMISSIONS["Purchase User"]
+        purchase_manager = setup_startup_roles.DOCTYPE_PERMISSIONS["Purchase Manager"]
+
+        for doctype in [
+            "Material Request",
+            "Request for Quotation",
+            "Supplier Quotation",
+            "Purchase Order",
+        ]:
+            self.assertEqual(purchase_user[doctype]["create"], 1)
+            self.assertEqual(purchase_user[doctype]["submit"], 1)
+            self.assertEqual(purchase_user[doctype].get("cancel", 0), 0)
+            self.assertEqual(purchase_manager[doctype]["cancel"], 1)
+            self.assertEqual(purchase_manager[doctype]["amend"], 1)
+        self.assertEqual(purchase_user["Purchase Receipt"]["read"], 1)
+        self.assertEqual(purchase_user["Purchase Receipt"].get("submit", 0), 0)
+        self.assertEqual(purchase_user["Buying Settings"]["read"], 1)
+        self.assertEqual(purchase_manager["Supplier Group"]["write"], 1)
+
+    def test_purchasing_and_finance_menu_roles_match_workflow_owners(self):
+        purchasing = next(
+            section
+            for section in menu_registry.get_menu_sections()
+            if section["key"] == "purchasing"
+        )
+        finance_report = menu_registry.menu_item_by_key(
+            "finance.sales_payment_follow_up"
+        )
+
+        self.assertIn("Purchase User", purchasing["roles"])
+        self.assertIn("Purchase Manager", purchasing["roles"])
+        self.assertNotIn("Logistics User", purchasing["roles"])
+        self.assertIn("Finance User", finance_report["roles"])
+        self.assertIn("Finance Admin", finance_report["roles"])
+        self.assertNotIn("Payment Validator", finance_report["roles"])
+        self.assertEqual(
+            menu_registry.menu_item_by_key("items.dimensioning_sets")["roles"],
+            menu_registry.ADMIN_ROLES,
+        )
+
+    def test_permission_setup_exposes_a_non_mutating_dry_run(self):
+        source = (
+            APP_ROOT / "orderlift" / "scripts" / "setup_startup_roles.py"
+        ).read_text()
+        hooks_source = (APP_ROOT / "orderlift" / "hooks.py").read_text()
+
+        self.assertIn("dry_run: int = 0", source)
+        self.assertIn(
+            '"permission_diff": _permission_diff(workflow_scope=workflow_scope)',
+            source,
+        )
+        self.assertIn("workflow_scope: int = 0", source)
+        self.assertIn("_remove_stale_menu_role_assignments(results)", source)
+        self.assertIn("def after_migrate() -> dict:", source)
+        self.assertIn('"parent": "Quotation", "role": "Sales User", "permlevel": 0', source)
+        self.assertIn("run(workflow_scope=1 if is_configured_site else 0)", source)
+        self.assertIn(
+            '"orderlift.scripts.setup_startup_roles.after_migrate"',
+            hooks_source,
+        )
 
     def test_stock_settings_link_fields_ignore_user_permissions(self):
         self.assertIn("default_warehouse", setup_startup_roles.STOCK_SETTINGS_USER_PERMISSION_EXEMPT_FIELDS)
@@ -320,6 +408,22 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertIn("projects.project_pipeline", setup_startup_roles.MENU_ROLE_MAP["Sales Installation Manager"])
         self.assertIn("logistics.pipeline", setup_startup_roles.MENU_ROLE_MAP["Logistics Manager"])
         self.assertIn("finance.payments", setup_startup_roles.MENU_ROLE_MAP["Finance Admin"])
+        self.assertIn(
+            "finance.sales_payment_follow_up",
+            setup_startup_roles.MENU_ROLE_MAP["Finance Admin"],
+        )
+        self.assertNotIn(
+            "finance.sales_payment_summary",
+            setup_startup_roles.MENU_ROLE_MAP["Finance Admin"],
+        )
+        self.assertIn(
+            "purchasing.purchase_order",
+            setup_startup_roles.MENU_ROLE_MAP["Purchase User"],
+        )
+        self.assertNotIn(
+            "purchasing.purchase_order",
+            setup_startup_roles.MENU_ROLE_MAP["Logistics User"],
+        )
 
     def test_administration_menu_includes_orderlift_admin_and_superadmins(self):
         status_control = menu_registry.menu_item_by_key("administration.status_control")
@@ -533,12 +637,17 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(json.loads(updates["my_work.todo"]["denied_roles_json"]), ["Orderlift Admin"])
         self.assertNotIn("allowed_roles_json", updates["my_work.todo"])
 
-    def test_legacy_default_roles_are_pruned_from_existing_menu_rules(self):
+    def test_managed_sales_manager_is_preserved_when_legacy_roles_are_pruned(self):
         roles = ["Sales Manager", "Sales User", "Custom Escalation Role", "System Manager"]
 
         self.assertEqual(
             menu_access._prune_legacy_default_roles(roles),
-            ["Sales User", "Custom Escalation Role", "System Manager"],
+            [
+                "Sales Manager",
+                "Sales User",
+                "Custom Escalation Role",
+                "System Manager",
+            ],
         )
 
     def test_central_sidebar_removes_native_pricing_sheet_link(self):

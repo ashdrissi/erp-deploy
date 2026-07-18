@@ -43,6 +43,19 @@ or a custom guard in `orderlift.orderlift_guards`. Doctypes with custom hooks:
 
 **Who manages it:** ACC Roles tab (view/edit custom roles), ACC Permissions Matrix (DocPerm).
 
+**Operational transaction ownership:**
+
+| Workflow area | Owner roles | Main responsibility |
+|---------------|-------------|---------------------|
+| Sales | Sales User, Sales Manager, Sales Distribution Manager, Sales Installation Manager, Commercial Agent roles, Quotation Creator | Create and submit quotations; managers can cancel/amend quotations and sales orders. |
+| Purchasing | Purchase User, Purchase Manager | Create and submit Material Requests, RFQs, Supplier Quotations, and Purchase Orders. Purchase Managers can cancel/amend. |
+| Logistics | Logistics User, Logistics Manager | Receive, deliver, pick, inspect, and move stock. Purchase Orders and suppliers are read-only for traceability. |
+| Finance | Finance User, Finance Admin, Payment Validator | Create and submit invoices/payments. Finance Admin can cancel/amend finance transactions and manage commission payment state. |
+
+The production migration hook uses a scoped role update on already-configured sites so
+workflow permission fixes do not create unrelated legacy role rows during normal
+`bench migrate`. A full startup seed is still available for fresh sites.
+
 ---
 
 ## Layer 2 — Company Scope
