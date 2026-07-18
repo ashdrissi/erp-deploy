@@ -212,6 +212,14 @@ class TestDimensioning(unittest.TestCase):
         self.assertIn('frappe.set_route("dimensioning-set-builder", displayName, setName)', manager)
         self.assertIn('frappe.set_route("dimensioning-set-builder", frm.doc.set_name || frm.doc.name, frm.doc.name)', form)
 
+    def test_dimensioning_builder_save_uses_write_permission_for_existing_sets(self):
+        source = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.py").read_text()
+
+        self.assertIn('if name and frappe.db.exists("Dimensioning Set", name):', source)
+        self.assertIn('doc.check_permission("write")', source)
+        self.assertIn('frappe.has_permission("Dimensioning Set", "create", throw=True)', source)
+        self.assertLess(source.index('doc.check_permission("write")'), source.index('doc.set_name ='))
+
     def test_condition_rules_json_parameter_comparison(self):
         rule = {
             "condition_mode": "based",

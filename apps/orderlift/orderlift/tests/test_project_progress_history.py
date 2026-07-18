@@ -20,9 +20,11 @@ class TestProjectProgressHistory(unittest.TestCase):
         self.assertIn("custom_progress_details", project_update_fields)
 
         script = (APP_ROOT / "public" / "js" / "project_sig.js").read_text()
+        wrapper = (APP_ROOT / "public" / "js" / "project_sig_20260429c.js").read_text()
         self.assertIn('"custom_progress"', script)
         self.assertIn('"custom_progress_details"', script)
         self.assertNotIn('"progress", "progress_details"', script)
+        self.assertIn("project_sig.js?v=20260718a", wrapper)
 
 
 if __name__ == "__main__":

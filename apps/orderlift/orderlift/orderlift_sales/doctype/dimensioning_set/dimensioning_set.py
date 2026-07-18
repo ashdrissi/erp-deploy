@@ -373,12 +373,13 @@ def get_dimensioning_manager_data():
 
 @frappe.whitelist()
 def save_dimensioning_builder_payload(payload):
-    frappe.has_permission("Dimensioning Set", "create", throw=True)
     payload = _parse_payload(payload)
     name = (payload.get("name") or "").strip()
     if name and frappe.db.exists("Dimensioning Set", name):
         doc = frappe.get_doc("Dimensioning Set", name)
+        doc.check_permission("write")
     else:
+        frappe.has_permission("Dimensioning Set", "create", throw=True)
         doc = frappe.new_doc("Dimensioning Set")
 
     doc.set_name = (payload.get("set_name") or payload.get("name") or _("New Dimensioning Set")).strip()
