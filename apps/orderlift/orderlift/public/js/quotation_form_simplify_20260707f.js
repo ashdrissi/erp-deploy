@@ -171,28 +171,28 @@
             if (isManualChargeRow(row)) applyManualChargeRate(frm, row, Number(row.price_list_rate || row.rate || 0));
             scheduleItemTTCFieldsSync(frm);
         },
-        source_gross_sell_rate(frm) {
+        async source_gross_sell_rate(frm) {
             const row = frappe.get_doc(arguments[1], arguments[2]);
-            if (isManualChargeRow(row)) applyManualChargeRate(frm, row, Number(row.source_gross_sell_rate || row.rate || 0));
+            if (isManualChargeRow(row)) await applyManualChargeRate(frm, row, Number(row.source_gross_sell_rate || row.rate || 0));
             else {
                 rememberPriceSource(row, "pu_ht");
-                applyGrossPriceOverride(frm, row);
+                await applyGrossPriceOverride(frm, row);
             }
             scheduleItemTTCFieldsSync(frm);
         },
         source_selling_price_list(frm) {
             scheduleItemTTCFieldsSync(frm);
         },
-        source_discount_percent(frm, cdt, cdn) {
+        async source_discount_percent(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
             rememberPriceSource(frappe.get_doc(cdt, cdn), "discount_percent");
-            applyPricingDiscount(frm, frappe.get_doc(cdt, cdn));
+            await applyPricingDiscount(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
         },
-        source_discount_amount(frm, cdt, cdn) {
+        async source_discount_amount(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
             rememberPriceSource(frappe.get_doc(cdt, cdn), "discount_amount");
-            applyDiscountAmount(frm, frappe.get_doc(cdt, cdn));
+            await applyDiscountAmount(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
         },
         qty(frm, cdt, cdn) {
@@ -202,36 +202,36 @@
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
-        rate(frm, cdt, cdn) {
+        async rate(frm, cdt, cdn) {
             const row = frappe.get_doc(cdt, cdn);
             if (isManualChargeRow(row)) {
-                applyManualChargeRate(frm, row, Number(row.rate || 0));
+                await applyManualChargeRate(frm, row, Number(row.rate || 0));
                 return;
             }
             syncGrossRateIfNeeded(row);
             syncItemTTCFields(frm);
         },
-        source_discounted_sell_rate(frm, cdt, cdn) {
+        async source_discounted_sell_rate(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
             const row = frappe.get_doc(cdt, cdn);
             rememberPriceSource(row, "pu_ht_net");
             if (isManualChargeRow(row)) {
-                applyManualChargeRate(frm, row, Number(row.source_discounted_sell_rate || 0));
+                await applyManualChargeRate(frm, row, Number(row.source_discounted_sell_rate || 0));
                 return;
             }
-            applyNetPriceFromOverride(frm, row);
+            await applyNetPriceFromOverride(frm, row);
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
-        custom_pu_ttc(frm, cdt, cdn) {
+        async custom_pu_ttc(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
             const row = frappe.get_doc(cdt, cdn);
             rememberPriceSource(row, "pu_ttc");
             if (isManualChargeRow(row)) {
-                applyManualChargeRate(frm, row, netRateFromTTC(Number(row.custom_pu_ttc || 0), quotationTotalTaxRate(frm)));
+                await applyManualChargeRate(frm, row, netRateFromTTC(Number(row.custom_pu_ttc || 0), quotationTotalTaxRate(frm)));
                 return;
             }
-            applyTTCPriceFromOverride(frm, row);
+            await applyTTCPriceFromOverride(frm, row);
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
@@ -1173,7 +1173,7 @@
         return Boolean(grid && grid.get_field && grid.get_field("custom_current_company_stock_qty"));
     }
 
-    function applyPricingDiscount(frm, row, options = {}) {
+    async function applyPricingDiscount(frm, row, options = {}) {
         if (!frm || !row) return;
         const gross = Number(row.source_gross_sell_rate || row.price_list_rate || row.rate || 0);
         if (!gross) return;
@@ -1191,25 +1191,26 @@
                 });
             }
         }
-        applyResolvedNetRate(frm, row, gross * (1 - discount / 100), { silent: true });
+        await applyResolvedNetRate(frm, row, gross * (1 - discount / 100), { silent: true });
     }
 
-    function applyGrossPriceOverride(frm, row) {
+    async function applyGrossPriceOverride(frm, row) {
         if (!frm || !row) return;
         let gross = Number(row.source_gross_sell_rate || 0);
         if (!Number.isFinite(gross) || gross < 0) gross = 0;
         gross = roundCurrency(gross);
         beginQuotationPriceMutation(frm);
         try {
-            frappe.model.set_value(row.doctype, row.name, "source_gross_sell_rate", gross);
-            if ("price_list_rate" in row) frappe.model.set_value(row.doctype, row.name, "price_list_rate", gross);
+            const updates = [frappe.model.set_value(row.doctype, row.name, "source_gross_sell_rate", gross)];
+            if ("price_list_rate" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "price_list_rate", gross));
+            await Promise.all(updates);
         } finally {
             endQuotationPriceMutation(frm);
         }
-        applyPricingDiscount(frm, row, { silent: true });
+        await applyPricingDiscount(frm, row, { silent: true });
     }
 
-    function applyDiscountAmount(frm, row) {
+    async function applyDiscountAmount(frm, row) {
         if (!frm || !row) return;
         const gross = Number(row.source_gross_sell_rate || row.price_list_rate || row.rate || 0);
         if (!gross) return;
@@ -1226,28 +1227,28 @@
                 indicator: "orange",
             });
         }
-        applyResolvedNetRate(frm, row, gross - discountAmount, { silent: true });
+        await applyResolvedNetRate(frm, row, gross - discountAmount, { silent: true });
     }
 
-    function applyNetPriceFromOverride(frm, row) {
+    async function applyNetPriceFromOverride(frm, row) {
         if (!frm || !row) return;
         const netRate = Number(row.source_discounted_sell_rate || 0);
         if (!netRate || netRate < 0) return;
-        applyResolvedNetRate(frm, row, netRate);
+        await applyResolvedNetRate(frm, row, netRate);
     }
 
-    function applyTTCPriceFromOverride(frm, row) {
+    async function applyTTCPriceFromOverride(frm, row) {
         if (!frm || !row) return;
         const targetTTC = roundCurrency(row.custom_pu_ttc || 0);
         if (!targetTTC || targetTTC < 0) return;
-        applyResolvedNetRate(frm, row, netRateFromTTC(targetTTC, quotationTotalTaxRate(frm)), { manualPuTtc: targetTTC });
+        await applyResolvedNetRate(frm, row, netRateFromTTC(targetTTC, quotationTotalTaxRate(frm)), { manualPuTtc: targetTTC });
     }
 
     function isManualChargeRow(row) {
         return Boolean(row && MANUAL_CHARGE_ITEM_CODES.has(String(row.item_code || "").trim()));
     }
 
-    function applyManualChargeRate(frm, row, requestedRate) {
+    async function applyManualChargeRate(frm, row, requestedRate) {
         if (!frm || !row) return;
         let rate = Number(requestedRate || 0);
         if (!Number.isFinite(rate) || rate < 0) rate = 0;
@@ -1260,18 +1261,21 @@
         const appliedTaxes = roundCurrency(ptTtc - amount);
         beginQuotationPriceMutation(frm);
         try {
-            frappe.model.set_value(row.doctype, row.name, "price_list_rate", rate);
-            frappe.model.set_value(row.doctype, row.name, "rate", rate);
-            frappe.model.set_value(row.doctype, row.name, "amount", amount);
-            if ("source_price_list_sell_rate" in row) frappe.model.set_value(row.doctype, row.name, "source_price_list_sell_rate", rate);
-            if ("source_gross_sell_rate" in row) frappe.model.set_value(row.doctype, row.name, "source_gross_sell_rate", rate);
-            if ("source_discount_percent" in row) frappe.model.set_value(row.doctype, row.name, "source_discount_percent", 0);
-            if ("source_max_discount_percent" in row) frappe.model.set_value(row.doctype, row.name, "source_max_discount_percent", 100);
-            if ("source_discount_amount" in row) frappe.model.set_value(row.doctype, row.name, "source_discount_amount", 0);
-            if ("source_discounted_sell_rate" in row) frappe.model.set_value(row.doctype, row.name, "source_discounted_sell_rate", rate);
-            if ("custom_applied_taxes" in row) frappe.model.set_value(row.doctype, row.name, "custom_applied_taxes", appliedTaxes);
-            if ("custom_pu_ttc" in row) frappe.model.set_value(row.doctype, row.name, "custom_pu_ttc", puTtc);
-            if ("custom_pt_ttc" in row) frappe.model.set_value(row.doctype, row.name, "custom_pt_ttc", ptTtc);
+            const updates = [
+                frappe.model.set_value(row.doctype, row.name, "price_list_rate", rate),
+                frappe.model.set_value(row.doctype, row.name, "rate", rate),
+                frappe.model.set_value(row.doctype, row.name, "amount", amount),
+            ];
+            if ("source_price_list_sell_rate" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_price_list_sell_rate", rate));
+            if ("source_gross_sell_rate" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_gross_sell_rate", rate));
+            if ("source_discount_percent" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_discount_percent", 0));
+            if ("source_max_discount_percent" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_max_discount_percent", 100));
+            if ("source_discount_amount" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_discount_amount", 0));
+            if ("source_discounted_sell_rate" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_discounted_sell_rate", rate));
+            if ("custom_applied_taxes" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "custom_applied_taxes", appliedTaxes));
+            if ("custom_pu_ttc" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "custom_pu_ttc", puTtc));
+            if ("custom_pt_ttc" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "custom_pt_ttc", ptTtc));
+            await Promise.all(updates);
         } finally {
             endQuotationPriceMutation(frm);
         }
@@ -1279,7 +1283,7 @@
         frm.dirty();
     }
 
-    function applyResolvedNetRate(frm, row, requestedNetRate, options = {}) {
+    async function applyResolvedNetRate(frm, row, requestedNetRate, options = {}) {
         if (!frm || !row) return;
         const gross = Number(row.source_gross_sell_rate || row.price_list_rate || row.rate || requestedNetRate || 0);
         if (!gross) return;
@@ -1318,17 +1322,20 @@
             if ("custom_pu_ttc" in row) row.custom_pu_ttc = puTtc;
             if ("custom_pt_ttc" in row) row.custom_pt_ttc = ptTtc;
             if ("discount_percentage" in row) row.discount_percentage = discount;
-            frappe.model.set_value(row.doctype, row.name, "source_discount_percent", discount);
-            frappe.model.set_value(row.doctype, row.name, "rate", netRate);
-            frappe.model.set_value(row.doctype, row.name, "amount", amount);
-            if ("source_discount_amount" in row) frappe.model.set_value(row.doctype, row.name, "source_discount_amount", roundCurrency(Math.max(gross - netRate, 0)));
-            if ("source_discounted_sell_rate" in row) frappe.model.set_value(row.doctype, row.name, "source_discounted_sell_rate", netRate);
-            if ("custom_applied_taxes" in row) frappe.model.set_value(row.doctype, row.name, "custom_applied_taxes", appliedTaxes);
-            if ("custom_pu_ttc" in row) frappe.model.set_value(row.doctype, row.name, "custom_pu_ttc", puTtc);
-            if ("custom_pt_ttc" in row) frappe.model.set_value(row.doctype, row.name, "custom_pt_ttc", ptTtc);
+            const updates = [
+                frappe.model.set_value(row.doctype, row.name, "source_discount_percent", discount),
+                frappe.model.set_value(row.doctype, row.name, "rate", netRate),
+                frappe.model.set_value(row.doctype, row.name, "amount", amount),
+            ];
+            if ("source_discount_amount" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_discount_amount", roundCurrency(Math.max(gross - netRate, 0))));
+            if ("source_discounted_sell_rate" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "source_discounted_sell_rate", netRate));
+            if ("custom_applied_taxes" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "custom_applied_taxes", appliedTaxes));
+            if ("custom_pu_ttc" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "custom_pu_ttc", puTtc));
+            if ("custom_pt_ttc" in row) updates.push(frappe.model.set_value(row.doctype, row.name, "custom_pt_ttc", ptTtc));
             if (fieldExists(row.doctype, "source_commission_amount")) {
-                frappe.model.set_value(row.doctype, row.name, "source_commission_amount", commissionFor(gross, qty, discount, configuredMaxDiscount, row.source_commission_rate, netRate));
+                updates.push(frappe.model.set_value(row.doctype, row.name, "source_commission_amount", commissionFor(gross, qty, discount, configuredMaxDiscount, row.source_commission_rate, netRate)));
             }
+            await Promise.all(updates);
         } finally {
             endQuotationPriceMutation(frm);
         }

@@ -169,18 +169,18 @@
         source_selling_price_list(frm) {
             scheduleItemTTCFieldsSync(frm);
         },
-        source_discount_percent(frm, cdt, cdn) {
+        async source_discount_percent(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
-            applyPricingDiscount(frm, frappe.get_doc(cdt, cdn));
+            await applyPricingDiscount(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
         },
-        source_discount_amount(frm, cdt, cdn) {
+        async source_discount_amount(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
-            applyDiscountAmount(frm, frappe.get_doc(cdt, cdn));
+            await applyDiscountAmount(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
         },
-        qty(frm, cdt, cdn) {
-            applyPricingDiscount(frm, frappe.get_doc(cdt, cdn), { silent: true });
+        async qty(frm, cdt, cdn) {
+            await applyPricingDiscount(frm, frappe.get_doc(cdt, cdn), { silent: true });
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
@@ -188,15 +188,15 @@
             syncGrossRateIfNeeded(frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
         },
-        source_discounted_sell_rate(frm, cdt, cdn) {
+        async source_discounted_sell_rate(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
-            applyNetPriceFromOverride(frm, frappe.get_doc(cdt, cdn));
+            await applyNetPriceFromOverride(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
-        custom_pu_ttc(frm, cdt, cdn) {
+        async custom_pu_ttc(frm, cdt, cdn) {
             if (frm.__orderlift_applying_quotation_price) return;
-            applyTTCPriceFromOverride(frm, frappe.get_doc(cdt, cdn));
+            await applyTTCPriceFromOverride(frm, frappe.get_doc(cdt, cdn));
             syncItemTTCFields(frm);
             scheduleItemTTCFieldsSync(frm);
         },
@@ -857,7 +857,7 @@
         return Boolean(grid && grid.get_field && grid.get_field("custom_current_company_stock_qty"));
     }
 
-    function applyPricingDiscount(frm, row, options = {}) {
+    async function applyPricingDiscount(frm, row, options = {}) {
         if (!frm || !row) return;
         const gross = Number(row.source_gross_sell_rate || row.price_list_rate || row.rate || 0);
         if (!gross) return;
@@ -875,10 +875,10 @@
                 });
             }
         }
-        applyResolvedNetRate(frm, row, gross * (1 - discount / 100), { silent: true });
+        await applyResolvedNetRate(frm, row, gross * (1 - discount / 100), { silent: true });
     }
 
-    function applyDiscountAmount(frm, row) {
+    async function applyDiscountAmount(frm, row) {
         if (!frm || !row) return;
         const gross = Number(row.source_gross_sell_rate || row.price_list_rate || row.rate || 0);
         if (!gross) return;
@@ -895,24 +895,24 @@
                 indicator: "orange",
             });
         }
-        applyResolvedNetRate(frm, row, gross - discountAmount, { silent: true });
+        await applyResolvedNetRate(frm, row, gross - discountAmount, { silent: true });
     }
 
-    function applyNetPriceFromOverride(frm, row) {
+    async function applyNetPriceFromOverride(frm, row) {
         if (!frm || !row) return;
         const netRate = Number(row.source_discounted_sell_rate || 0);
         if (!netRate || netRate < 0) return;
-        applyResolvedNetRate(frm, row, netRate);
+        await applyResolvedNetRate(frm, row, netRate);
     }
 
-    function applyTTCPriceFromOverride(frm, row) {
+    async function applyTTCPriceFromOverride(frm, row) {
         if (!frm || !row) return;
         const targetTTC = Number(row.custom_pu_ttc || 0);
         if (!targetTTC || targetTTC < 0) return;
-        applyResolvedNetRate(frm, row, netRateFromTTC(targetTTC, quotationTotalTaxRate(frm)));
+        await applyResolvedNetRate(frm, row, netRateFromTTC(targetTTC, quotationTotalTaxRate(frm)));
     }
 
-    function applyResolvedNetRate(frm, row, requestedNetRate, options = {}) {
+    async function applyResolvedNetRate(frm, row, requestedNetRate, options = {}) {
         if (!frm || !row) return;
         const gross = Number(row.source_gross_sell_rate || row.price_list_rate || 0);
         if (!gross) return;
@@ -937,15 +937,22 @@
         discount = Math.max(0, discount);
         beginQuotationPriceMutation(frm);
         try {
-            frappe.model.set_value(row.doctype, row.name, "source_discount_percent", discount);
-            frappe.model.set_value(row.doctype, row.name, "discount_percentage", discount);
-            frappe.model.set_value(row.doctype, row.name, "rate", netRate);
-            frappe.model.set_value(row.doctype, row.name, "amount", netRate * qty);
-            if ("source_discount_amount" in row) frappe.model.set_value(row.doctype, row.name, "source_discount_amount", Math.max(gross - netRate, 0));
-            if ("source_discounted_sell_rate" in row) frappe.model.set_value(row.doctype, row.name, "source_discounted_sell_rate", netRate);
-            if (fieldExists(row.doctype, "source_commission_amount")) {
-                frappe.model.set_value(row.doctype, row.name, "source_commission_amount", commissionFor(gross, qty, discount, configuredMaxDiscount, row.source_commission_rate));
+            const updates = [
+                frappe.model.set_value(row.doctype, row.name, "source_discount_percent", discount),
+                frappe.model.set_value(row.doctype, row.name, "discount_percentage", discount),
+                frappe.model.set_value(row.doctype, row.name, "rate", netRate),
+                frappe.model.set_value(row.doctype, row.name, "amount", netRate * qty),
+            ];
+            if ("source_discount_amount" in row) {
+                updates.push(frappe.model.set_value(row.doctype, row.name, "source_discount_amount", Math.max(gross - netRate, 0)));
             }
+            if ("source_discounted_sell_rate" in row) {
+                updates.push(frappe.model.set_value(row.doctype, row.name, "source_discounted_sell_rate", netRate));
+            }
+            if (fieldExists(row.doctype, "source_commission_amount")) {
+                updates.push(frappe.model.set_value(row.doctype, row.name, "source_commission_amount", commissionFor(gross, qty, discount, configuredMaxDiscount, row.source_commission_rate)));
+            }
+            await Promise.all(updates);
         } finally {
             endQuotationPriceMutation(frm);
         }
