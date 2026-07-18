@@ -79,15 +79,24 @@ class SalesCommission(Document):
         if not self._can_manage_payouts():
             frappe.throw(_("Only commission managers can mark commissions as paid"), frappe.PermissionError)
         if self.sales_order:
-            from orderlift.sales.utils.commission_calculator import sales_order_commission_eligibility
+            from orderlift.sales.utils.commission_calculator import (
+                sales_order_commission_eligibility,
+            )
 
             if not sales_order_commission_eligibility(self.sales_order)["eligible"]:
                 frappe.throw(_("The Sales Order is not completely invoiced and paid."))
 
-        self.status = "Paid"
-        self.payment_date = payment_date or frappe.utils.today()
-        self.payment_reference = payment_reference or ""
-        self.save(ignore_permissions=True)
+        from orderlift.sales.utils.commission_calculator import (
+            transition_commission_lifecycle,
+        )
+
+        transition_commission_lifecycle(
+            self.name,
+            "Paid",
+            payment_date=payment_date or frappe.utils.today(),
+            payment_reference=payment_reference or "",
+            reason="Payout confirmed by an authorized commission manager.",
+        )
         frappe.msgprint(
             _("Commission {0} marked as paid").format(self.name),
             indicator="green",

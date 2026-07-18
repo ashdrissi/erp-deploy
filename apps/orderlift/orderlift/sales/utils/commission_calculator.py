@@ -13,6 +13,13 @@ from frappe.utils import flt
 from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
+_ALLOWED_LIFECYCLE_TRANSITIONS = {
+    ("Approved", "To Pay"),
+    ("To Pay", "Approved"),
+    ("To Pay", "Paid"),
+}
+
+
 def create_sales_order_commissions(doc, method=None):
     """Create or refresh Sales Commission records from a submitted Sales Order."""
     buckets = _build_sales_order_snapshot_commissions(doc)
@@ -27,7 +34,9 @@ def create_sales_order_commissions(doc, method=None):
         )
         if existing_name:
             commission = frappe.get_doc("Sales Commission", existing_name)
-            if commission.status == "Paid":
+            if commission.docstatus == 1:
+                # A submitted commission is an immutable commercial snapshot.
+                # Replayed Sales Order hooks must not attempt a general save.
                 continue
             commission.company = payload["company"]
             commission.customer = payload["customer"]
@@ -39,8 +48,7 @@ def create_sales_order_commissions(doc, method=None):
             commission.sales_invoice = ""
             commission.flags.orderlift_commission_snapshot_update = True
             commission.save(ignore_permissions=True)
-            if commission.docstatus == 0:
-                commission.submit()
+            commission.submit()
             continue
 
         commission = frappe.get_doc(payload)
@@ -50,54 +58,62 @@ def create_sales_order_commissions(doc, method=None):
 
 def sync_commissions_from_invoice(doc, method=None):
     """Approve commissions only when linked Sales Order invoices are fully paid."""
-    seen_orders = {
-        item.sales_order
-        for item in (doc.items or [])
-        if getattr(item, "sales_order", None)
-    }
-    for sales_order_name in seen_orders:
-        _sync_sales_order_commissions(sales_order_name)
+    try:
+        seen_orders = {
+            item.sales_order
+            for item in (doc.items or [])
+            if getattr(item, "sales_order", None)
+        }
+        _sync_sales_orders_safely(seen_orders, source_doc=doc)
+    except Exception:
+        _log_commission_sync_failure(doc)
 
 
 def sync_commissions_from_payment_entry(doc, method=None):
     """Re-evaluate commissions when customer payments are submitted or cancelled."""
-    invoice_names = _payment_entry_sales_invoices(doc)
-    if not invoice_names:
-        return
+    try:
+        invoice_names = _payment_entry_sales_invoices(doc)
+        if not invoice_names:
+            return
 
-    sales_orders = frappe.get_all(
-        "Sales Invoice Item",
-        filters={"parent": ["in", invoice_names], "sales_order": ["!=", ""]},
-        pluck="sales_order",
-    )
-    for sales_order_name in dict.fromkeys(name for name in sales_orders if name):
-        _sync_sales_order_commissions(sales_order_name)
+        sales_orders = frappe.get_all(
+            "Sales Invoice Item",
+            filters={"parent": ["in", invoice_names], "sales_order": ["!=", ""]},
+            pluck="sales_order",
+        )
+        _sync_sales_orders_safely(sales_orders, source_doc=doc)
+    except Exception:
+        _log_commission_sync_failure(doc)
 
 
 def reconcile_open_commissions():
     """Safety-net reconciliation for payment/reposting paths that bypass document hooks."""
-    sales_orders = frappe.get_all(
-        "Sales Commission",
-        filters={
-            "docstatus": 1,
-            "status": ["in", ["Approved", "To Pay"]],
-            "sales_order": ["!=", ""],
-        },
-        pluck="sales_order",
-    )
-    for sales_order_name in dict.fromkeys(name for name in sales_orders if name):
-        _sync_sales_order_commissions(sales_order_name)
+    try:
+        sales_orders = frappe.get_all(
+            "Sales Commission",
+            filters={
+                "docstatus": 1,
+                "status": ["in", ["Approved", "To Pay"]],
+                "sales_order": ["!=", ""],
+            },
+            pluck="sales_order",
+        )
+        _sync_sales_orders_safely(sales_orders, source_doc=None)
+    except Exception:
+        _log_commission_sync_failure(None)
 
 
 def cancel_commissions(doc, method=None):
     """Re-evaluate linked commissions when an invoice is cancelled."""
-    seen_orders = {
-        item.sales_order
-        for item in (doc.items or [])
-        if getattr(item, "sales_order", None)
-    }
-    for sales_order_name in seen_orders:
-        _sync_sales_order_commissions(sales_order_name)
+    try:
+        seen_orders = {
+            item.sales_order
+            for item in (doc.items or [])
+            if getattr(item, "sales_order", None)
+        }
+        _sync_sales_orders_safely(seen_orders, source_doc=doc)
+    except Exception:
+        _log_commission_sync_failure(doc)
 
 
 def cancel_sales_order_commissions(doc, method=None):
@@ -283,6 +299,111 @@ def _sync_sales_order_commissions(sales_order_name):
     _update_commission_status(sales_order_name, status="Approved", sales_invoice="")
 
 
+def _sync_sales_orders_safely(sales_orders, source_doc=None):
+    """Sync each order independently so commission repair never blocks accounting."""
+    for sales_order_name in dict.fromkeys(name for name in sales_orders if name):
+        try:
+            _sync_sales_order_commissions(sales_order_name)
+        except Exception:
+            _log_commission_sync_failure(source_doc, sales_order_name)
+
+
+def _log_commission_sync_failure(source_doc=None, sales_order_name=""):
+    source_doctype = getattr(source_doc, "doctype", None) or "Scheduled Reconciliation"
+    source_name = getattr(source_doc, "name", None) or ""
+    source_label = " ".join(part for part in (source_doctype, source_name) if part)
+    order_label = f" / Sales Order {sales_order_name}" if sales_order_name else ""
+    get_traceback = getattr(frappe, "get_traceback", None)
+    message = get_traceback() if callable(get_traceback) else "Commission synchronization failed."
+    log_error = getattr(frappe, "log_error", None)
+    if callable(log_error):
+        log_error(
+            title=f"Commission sync failed: {source_label}{order_label}",
+            message=message,
+        )
+
+
+def transition_commission_lifecycle(
+    commission_name,
+    status,
+    *,
+    sales_invoice=None,
+    payment_date=None,
+    payment_reference=None,
+    reason="",
+):
+    """Persist only controlled lifecycle fields on a submitted commission.
+
+    Ordinary ``save()`` is intentionally not used because Frappe correctly blocks
+    general edits to submitted documents. Calculation and ownership fields are
+    never accepted by this helper.
+    """
+    # Lock the current row for the request transaction so an automatic payment
+    # reconciliation cannot race with an authorized payout.
+    frappe.db.get_value(
+        "Sales Commission",
+        commission_name,
+        "name",
+        for_update=True,
+    )
+    commission = frappe.get_doc("Sales Commission", commission_name)
+    if getattr(commission, "docstatus", None) != 1:
+        raise ValueError("Commission must be submitted before its lifecycle can change.")
+
+    current_status = getattr(commission, "status", None) or "Approved"
+    if current_status == "Paid":
+        if status != "Paid":
+            raise ValueError("A paid Sales Commission cannot be reverted.")
+        return False
+    if current_status != status and (current_status, status) not in _ALLOWED_LIFECYCLE_TRANSITIONS:
+        raise ValueError(
+            f"Sales Commission cannot transition from {current_status} to {status}."
+        )
+
+    updates = {"status": status}
+    if status == "Approved":
+        updates["sales_invoice"] = ""
+    elif status == "To Pay":
+        if not sales_invoice:
+            raise ValueError("A paid Sales Invoice is required before commission payout.")
+        updates["sales_invoice"] = sales_invoice
+    elif status == "Paid":
+        if not payment_date:
+            raise ValueError("Payment date is required when marking commission as paid.")
+        updates["payment_date"] = payment_date
+        updates["payment_reference"] = payment_reference or ""
+
+    changed = {
+        fieldname: value
+        for fieldname, value in updates.items()
+        if getattr(commission, fieldname, None) != value
+    }
+    if not changed:
+        return False
+
+    frappe.db.set_value(
+        "Sales Commission",
+        commission.name,
+        changed,
+        update_modified=True,
+    )
+    for fieldname, value in changed.items():
+        setattr(commission, fieldname, value)
+
+    add_comment = getattr(commission, "add_comment", None)
+    if callable(add_comment):
+        transition = (
+            f"Commission lifecycle changed from {current_status} to {status}."
+        )
+        if reason:
+            transition = f"{transition} {reason}"
+        try:
+            add_comment("Info", transition)
+        except Exception:
+            _log_commission_sync_failure(commission)
+    return True
+
+
 def _update_commission_status(sales_order_name, status, sales_invoice):
     commissions = frappe.get_all(
         "Sales Commission",
@@ -290,7 +411,9 @@ def _update_commission_status(sales_order_name, status, sales_invoice):
         pluck="name",
     )
     for name in commissions:
-        commission = frappe.get_doc("Sales Commission", name)
-        commission.status = status
-        commission.sales_invoice = sales_invoice or ""
-        commission.save(ignore_permissions=True)
+        transition_commission_lifecycle(
+            name,
+            status,
+            sales_invoice=sales_invoice or "",
+            reason=f"Reconciled from Sales Order {sales_order_name}.",
+        )
