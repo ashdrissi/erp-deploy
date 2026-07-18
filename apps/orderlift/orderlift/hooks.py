@@ -469,6 +469,7 @@ after_migrate = [
     "orderlift.orderlift_hr.setup.after_migrate",
     "orderlift.scripts.setup_french_translations.after_migrate",
     "orderlift.scripts.setup_turkish_print_translations.after_migrate",
+    "orderlift.scripts.setup_payment_terms.after_migrate",
     "orderlift.scripts.setup_startup_roles.after_migrate",
     "orderlift.scripts.setup_internal_notifications.after_migrate",
     "orderlift.scripts.setup_main_dashboard_sidebar.run",

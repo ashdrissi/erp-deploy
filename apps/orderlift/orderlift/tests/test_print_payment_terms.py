@@ -133,6 +133,15 @@ class TestPrintPaymentTerms(unittest.TestCase):
         self.assertIn("rounded_total", js)
         self.assertIn("Recalculate Payment Schedule", js)
 
+    def test_standard_payment_terms_template_avoids_duplicate_due_dates(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        setup = (APP_ROOT / "scripts" / "setup_payment_terms.py").read_text()
+
+        self.assertIn("orderlift.scripts.setup_payment_terms.after_migrate", hooks)
+        self.assertIn('STANDARD_TEMPLATE = "50% à la commande / 50% à la livraison"', setup)
+        self.assertIn('"payment_term": "À la livraison"', setup)
+        self.assertIn('"credit_days": 30', setup)
+
 
 if __name__ == "__main__":
     unittest.main()
