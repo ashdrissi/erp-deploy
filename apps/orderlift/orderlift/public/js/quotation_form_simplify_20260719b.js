@@ -1257,7 +1257,7 @@
         const amount = roundCurrency(rate * qty);
         const totalTaxRate = quotationTotalTaxRate(frm);
         const puTtc = roundCurrency(rate * (1 + totalTaxRate / 100));
-        const ptTtc = roundCurrency(puTtc * qty);
+        const ptTtc = roundCurrency(amount * (1 + totalTaxRate / 100));
         const appliedTaxes = roundCurrency(ptTtc - amount);
         beginQuotationPriceMutation(frm);
         try {
@@ -1307,7 +1307,7 @@
         const amount = roundCurrency(netRate * qty);
         const totalTaxRate = quotationTotalTaxRate(frm);
         const puTtc = roundCurrency(options.manualPuTtc || (netRate * (1 + totalTaxRate / 100)));
-        const ptTtc = roundCurrency(puTtc * qty);
+        const ptTtc = roundCurrency(amount * (1 + totalTaxRate / 100));
         const appliedTaxes = roundCurrency(ptTtc - amount);
         let discount = gross > 0 ? (1 - netRate / gross) * 100 : 0;
         discount = Math.max(0, discount);
@@ -1443,7 +1443,10 @@
                 if (manualPuTtc && Math.abs(netRateFromTTC(manualPuTtc, totalTaxRate) - rate) < 0.02) {
                     puTtc = roundCurrency(manualPuTtc);
                 }
-                var ptTtc = roundCurrency(puTtc * qty);
+                // ERPNext taxes the line net amount, while PU TTC is only a
+                // rounded display value. Multiplying that rounded unit value by
+                // quantity can drift from the document grand total.
+                var ptTtc = roundCurrency(amount * (1 + totalTaxRate / 100));
                 var taxAmount = roundCurrency(ptTtc - amount);
                 // Only write when the value actually changes, so re-running this on
                 // every refresh (incl. after save) does not perpetually re-dirty the

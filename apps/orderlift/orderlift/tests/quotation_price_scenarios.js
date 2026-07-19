@@ -281,6 +281,24 @@ async function runDraftTTCRecalculateScenario() {
     assertClose("manual TTC action -> PT TTC", row.custom_pt_ttc, 240);
 }
 
+function runLineTotalRoundingScenario() {
+    const row = makeRow();
+    row.qty = 100;
+    row.rate = 60.83;
+    row.amount = 6083;
+    row.source_discounted_sell_rate = 60.83;
+    row.custom_applied_taxes = 1216.6;
+    row.custom_pu_ttc = 73;
+    row.custom_pt_ttc = 7299.6;
+
+    const frm = makeFrm(row);
+    childHandlers.qty(frm, "Quotation Item", row.name);
+
+    assertClose("rounded unit TTC stays display-friendly", row.custom_pu_ttc, 73);
+    assertClose("PT TTC follows ERPNext line amount plus tax", row.custom_pt_ttc, 7299.6);
+    assertClose("applied tax follows ERPNext line amount", row.custom_applied_taxes, 1216.6);
+}
+
 function runGridScenario() {
     const frm = makeGridFrm();
     formHandlers.refresh(frm);
@@ -316,6 +334,7 @@ function runConfiguredMarginScenario() {
 
 async function main() {
     const finalRow = await runPricingScenarios();
+    runLineTotalRoundingScenario();
     runGridScenario();
     runConfiguredMarginScenario();
     await runDraftTTCRecalculateScenario();

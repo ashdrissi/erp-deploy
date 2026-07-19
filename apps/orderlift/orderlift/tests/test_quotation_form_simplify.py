@@ -8,21 +8,21 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 class TestQuotationFormSimplify(unittest.TestCase):
     def test_quotation_hook_uses_versioned_local_file_without_query_string(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        script = APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js"
+        script = APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js"
 
-        self.assertIn('"public/js/quotation_form_simplify_20260719a.js"', hooks)
-        self.assertNotIn("quotation_form_simplify_20260719a.js?", hooks)
+        self.assertIn('"public/js/quotation_form_simplify_20260719b.js"', hooks)
+        self.assertNotIn("quotation_form_simplify_20260719b.js?", hooks)
         self.assertTrue(script.is_file())
 
     def test_quotation_override_uses_server_boot_capability(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         self.assertIn("frappe.boot.orderlift_capabilities", script)
         self.assertIn("quotation_override", script)
         self.assertNotIn("PRICE_OVERRIDE_ROLES", script)
 
     def test_draft_quotation_has_deterministic_ttc_recalculation_action(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         for token in [
             "addRecalculateTTCGridButton",
@@ -69,7 +69,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("sales_order_pricing_visibility_20260717a.js", hooks)
 
     def test_quotation_item_grid_preserves_user_configured_columns(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         for token in [
             "configuredQuotationItemGridColumns",
@@ -81,7 +81,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertNotIn("gridViewSettings.GridView[grid.doctype] =", script)
 
     def test_quotation_item_grid_keeps_last_data_field_full_width(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         for token in [
             "--orderlift-grid-cell-width",
@@ -93,7 +93,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertNotIn('canViewQuotationMargins() ? "2100px" : "1820px"', script)
 
     def test_quotation_item_grid_uses_one_aligned_horizontal_scroll_layout(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         for token in [
             ".orderlift-inline-items-grid .form-grid-container.column-limit-reached",
@@ -111,10 +111,10 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
     def test_quotation_form_simplifier_is_wired_and_hides_only_discount_fields(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         self.assertIn('"Quotation": [', hooks)
-        self.assertIn('"public/js/quotation_form_simplify_20260719a.js', hooks)
+        self.assertIn('"public/js/quotation_form_simplify_20260719b.js', hooks)
         for fieldname in [
             "additional_discount_section",
             "apply_discount_on",
@@ -139,7 +139,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertIn(token, script)
 
     def test_quotation_form_has_bulk_quantity_action_for_selected_items(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         for token in [
             "Bulk Quantity",
@@ -285,7 +285,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
         quotation_hooks = (APP_ROOT / "orderlift_sales" / "quotation_hooks.py").read_text()
         price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
-        quotation_script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        quotation_script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         self.assertIn('"fieldname": "commission_sales_person"', pricing_setup)
         self.assertIn("resolve_quotation_commission_context", quotation_hooks)
@@ -330,7 +330,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
     def test_quotation_and_pricing_sheet_stock_snapshot_wiring(self):
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
-        quotation_js = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        quotation_js = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
         pricing_sheet_js = (APP_ROOT / "public" / "js" / "pricing_sheet_form_20260501_110.js").read_text()
         item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
         stock_table = (APP_ROOT / "orderlift_sales" / "doctype" / "orderlift_transaction_warehouse_stock" / "orderlift_transaction_warehouse_stock.json").read_text()
@@ -373,7 +373,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertNotIn("frm.doc.custom_warehouse_stock_snapshot = (rows || []).map(", pricing_sheet_js)
 
     def test_direct_quotation_discount_editing_is_wired(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
         item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
         price_queries = (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text()
@@ -399,7 +399,8 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("rememberManualPuTtc", script)
         self.assertIn("manualPuTtc", script)
         self.assertIn('var amount = roundCurrency(rate * qty)', script)
-        self.assertIn('var ptTtc = roundCurrency(puTtc * qty)', script)
+        self.assertIn('var ptTtc = roundCurrency(amount * (1 + totalTaxRate / 100))', script)
+        self.assertNotIn('ptTtc = roundCurrency(puTtc * qty)', script)
         self.assertIn('var taxAmount = roundCurrency(ptTtc - amount)', script)
         self.assertIn('beginQuotationPriceMutation(frm)', script)
         self.assertIn('endQuotationPriceMutation(frm)', script)
@@ -540,7 +541,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn("return role_capability_decision(", price_scope)
 
     def test_quotation_new_pricing_sheet_opens_builder(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         self.assertIn("addPricingSheetActionButtons", script)
         self.assertIn("openPricingSheetBuilderFromQuotation", script)
@@ -633,7 +634,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertIn(token, script)
 
     def test_quotation_form_has_no_custom_print_or_pdf_shortcut_buttons(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         self.assertNotIn("download_pdf", script)
         self.assertNotIn("trigger_print", script)
@@ -737,7 +738,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertLess(tax_id_position, address_position)
 
     def test_draft_quotation_refreshes_customer_ice_from_customer_master(self):
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         for token in [
             "syncCustomerTaxId(frm)",
@@ -751,7 +752,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
 
     def test_bulk_quantity_is_doctype_scoped_without_global_interval(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719b.js").read_text()
 
         self.assertNotIn("quotation_bulk_quantity_20260602a.js", hooks)
         for token in [
