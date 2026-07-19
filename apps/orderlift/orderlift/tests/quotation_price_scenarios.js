@@ -135,14 +135,14 @@ function makeFrm(row) {
     };
 }
 
-function runPricingScenarios() {
+async function runPricingScenarios() {
     const row = makeRow();
     const frm = makeFrm(row);
     const cdt = "Quotation Item";
     const cdn = row.name;
 
     row.source_gross_sell_rate = 200;
-    childHandlers.source_gross_sell_rate(frm, cdt, cdn);
+    await childHandlers.source_gross_sell_rate(frm, cdt, cdn);
     assertClose("PU HT edit -> price_list_rate", row.price_list_rate, 200);
     assertClose("PU HT edit -> PU HT net", row.source_discounted_sell_rate, 200);
     assertClose("PU HT edit -> PT HT net", row.amount, 400);
@@ -150,7 +150,7 @@ function runPricingScenarios() {
     assertClose("PU HT edit -> PT TTC net", row.custom_pt_ttc, 480);
 
     row.source_discount_percent = 5;
-    childHandlers.source_discount_percent(frm, cdt, cdn);
+    await childHandlers.source_discount_percent(frm, cdt, cdn);
     assertClose("Remise % -> Remise HT", row.source_discount_amount, 10);
     assertClose("Remise % -> PU HT net", row.source_discounted_sell_rate, 190);
     assertClose("Remise % -> PT HT net", row.amount, 380);
@@ -158,7 +158,7 @@ function runPricingScenarios() {
     assertClose("Remise % -> PT TTC net", row.custom_pt_ttc, 456);
 
     row.source_discount_amount = 50;
-    childHandlers.source_discount_amount(frm, cdt, cdn);
+    await childHandlers.source_discount_amount(frm, cdt, cdn);
     assertClose("Remise HT -> Remise %", row.source_discount_percent, 25);
     assertClose("Remise HT -> PU HT net", row.source_discounted_sell_rate, 150);
     assertClose("Remise HT -> PT HT net", row.amount, 300);
@@ -166,7 +166,7 @@ function runPricingScenarios() {
     assertClose("Remise HT -> PT TTC net", row.custom_pt_ttc, 360);
 
     row.custom_pu_ttc = 210;
-    childHandlers.custom_pu_ttc(frm, cdt, cdn);
+    await childHandlers.custom_pu_ttc(frm, cdt, cdn);
     assertClose("PU TTC net -> PU HT net", row.source_discounted_sell_rate, 175);
     assertClose("PU TTC net -> Remise HT", row.source_discount_amount, 25);
     assertClose("PU TTC net -> Remise %", row.source_discount_percent, 12.5);
@@ -315,7 +315,7 @@ function runConfiguredMarginScenario() {
 }
 
 async function main() {
-    const finalRow = runPricingScenarios();
+    const finalRow = await runPricingScenarios();
     runGridScenario();
     runConfiguredMarginScenario();
     await runDraftTTCRecalculateScenario();

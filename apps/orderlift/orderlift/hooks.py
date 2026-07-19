@@ -384,7 +384,7 @@ doctype_js = {
     "Item Price": "public/js/item_price_uom_default_20260506a.js",
     "Price List": "public/js/price_list_import_20260602c.js",
     "Quotation": [
-        "public/js/quotation_form_simplify_20260707f.js?v=20260718a",
+        "public/js/quotation_form_simplify_20260719a.js",
         "public/js/payment_schedule_sync_20260717a.js",
     ],
     "Sales Order": [

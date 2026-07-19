@@ -13,7 +13,7 @@ class TestQuotationClientPriceScenarios(unittest.TestCase):
             self.skipTest("node is required for client-side Quotation scenario tests")
 
         scenario_runner = APP_ROOT / "tests" / "quotation_price_scenarios.js"
-        quotation_script = APP_ROOT / "public" / "js" / "quotation_form_simplify_20260707f.js"
+        quotation_script = APP_ROOT / "public" / "js" / "quotation_form_simplify_20260719a.js"
         result = subprocess.run(
             ["node", str(scenario_runner), str(quotation_script)],
             check=False,
