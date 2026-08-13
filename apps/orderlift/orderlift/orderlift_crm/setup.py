@@ -91,8 +91,11 @@ def after_migrate():
     _ensure_user_crm_visibility_fields()
     _ensure_company_pipeline_quick_action_fields()
     _ensure_project_documents_tab()
+    _ensure_sales_order_documents_tab()
     _sync_custom_fields()
+    _backfill_party_general_communication()
     _setup_crm_layout_overrides()
+    _setup_party_layout_overrides()
     _setup_todo_priority_options()
     _retire_customer_group_ui()
     _migrate_portal_policies_to_crm()
@@ -103,11 +106,6 @@ def after_migrate():
     _seed_partner_segments()
     _seed_target_statuses()
     _seed_installation_stages()
-    _seed_opportunity_stages()
-    _deactivate_legacy_sales_stages()
-    _seed_project_statuses()
-    _seed_sales_order_statuses()
-    _seed_logistics_pipeline_statuses()
     _migrate_party_crm_segments()
     _migrate_opportunity_crm_classification()
     _migrate_campaign_crm_classification()
@@ -151,6 +149,28 @@ def _ensure_project_documents_tab():
                     "label": "Documents",
                     "fieldtype": "Tab Break",
                     "insert_after": anchor,
+                },
+                {
+                    "fieldname": "custom_documents_html",
+                    "label": "Linked Documents",
+                    "fieldtype": "HTML",
+                    "insert_after": "custom_documents_tab",
+                },
+            ]
+        },
+        update=True,
+    )
+
+
+def _ensure_sales_order_documents_tab():
+    create_custom_fields(
+        {
+            "Sales Order": [
+                {
+                    "fieldname": "custom_documents_tab",
+                    "label": "Documents",
+                    "fieldtype": "Tab Break",
+                    "insert_after": "party_account_currency",
                 },
                 {
                     "fieldname": "custom_documents_html",
@@ -272,8 +292,23 @@ def _setup_crm_layout_overrides():
         _upsert_property_setter("Opportunity", "title", "hidden", "0", "Check")
         _upsert_property_setter("Opportunity", "title", "insert_after", "customer_name", "Data")
     if _doctype_has_field("Opportunity", "organization_details_section"):
+        _upsert_property_setter("Opportunity", "organization_details_section", "label", "Company Snapshot", "Data")
         _upsert_property_setter("Opportunity", "organization_details_section", "collapsible", "1", "Check")
         _upsert_property_setter("Opportunity", "organization_details_section", "collapsible_depends_on", "eval:0", "Code")
+    for fieldname in (
+        "no_of_employees",
+        "annual_revenue",
+        "customer_group",
+        "market_segment",
+        "city",
+        "state",
+        "country",
+    ):
+        if _doctype_has_field("Opportunity", fieldname):
+            _upsert_property_setter("Opportunity", fieldname, "hidden", "1", "Check")
+    for fieldname in ("industry", "website", "territory"):
+        if _doctype_has_field("Opportunity", fieldname):
+            _upsert_property_setter("Opportunity", fieldname, "read_only", "1", "Check")
     if _doctype_has_field("Opportunity", "probability"):
         _upsert_property_setter("Opportunity", "probability", "hidden", "1", "Check")
     if _doctype_has_field("Opportunity", "section_break_14"):
@@ -289,6 +324,212 @@ def _setup_crm_layout_overrides():
     _upsert_property_setter("Project", "customer_details", "collapsible", "0", "Check")
     if _doctype_has_field("Project", "custom_crm_segment"):
         _upsert_property_setter("Project", "customer_details", "insert_after", "custom_crm_segment", "Data")
+
+
+def _setup_party_layout_overrides():
+    hidden_fields = {
+        "Lead": [
+            "company", "salutation", "first_name", "middle_name", "last_name", "job_title", "gender", "lead_owner", "customer", "type", "request_type", "no_of_employees", "annual_revenue",
+            "market_segment", "fax", "phone_ext", "qualification_tab", "qualification_status", "qualified_by",
+            "qualified_on", "utm_analytics_section", "utm_source", "utm_medium", "utm_campaign", "utm_content",
+            "blog_subscriber", "contact_info_tab", "email_id", "mobile_no", "whatsapp_no", "phone", "address_section", "address_html", "contact_html", "tier_last_calculated_on", "tier_source",
+        ],
+        "Prospect": [
+            "company", "customer_group", "no_of_employees", "annual_revenue", "market_segment", "prospect_owner",
+            "fax", "address_and_contact_section", "contacts_tab", "address_html", "contact_html", "leads_section", "leads", "opportunities_tab", "opportunities",
+            "tier_last_calculated_on", "tier_source",
+        ],
+        "Customer": [
+            "customer_group", "defaults_tab", "default_currency", "default_bank_account", "default_price_list",
+            "contact_and_address_tab", "address_contacts", "address_html", "contact_html", "primary_address_and_contact_detail", "customer_primary_address",
+            "primary_address", "customer_primary_contact", "mobile_no", "email_id", "accounting_tab",
+            "default_receivable_accounts", "accounts", "credit_limit_section", "payment_terms", "credit_limits",
+            "loyalty_points_tab", "loyalty_program", "loyalty_program_tier", "sales_team_tab", "account_manager",
+            "sales_team", "sales_team_section", "default_sales_partner", "default_commission_rate", "settings_tab",
+            "so_required", "dn_required", "is_frozen", "supplier_numbers_section", "supplier_numbers",
+            "market_segment", "tax_tab", "tax_category", "tax_withholding_category", "tax_withholding_group", "tier_last_calculated_on", "tier_source",
+        ],
+    }
+    for doctype, fields in hidden_fields.items():
+        for fieldname in fields:
+            if _doctype_has_field(doctype, fieldname):
+                _upsert_property_setter(doctype, fieldname, "hidden", "1", "Check")
+
+    visible_fields = {
+        "Lead": ["company_name", "status", "website", "industry", "territory"],
+        "Prospect": ["company_name", "website", "industry", "territory"],
+        "Customer": ["customer_name", "customer_type", "website", "industry", "territory"],
+    }
+    for doctype, fields in visible_fields.items():
+        for fieldname in fields:
+            if _doctype_has_field(doctype, fieldname):
+                _upsert_property_setter(doctype, fieldname, "hidden", "0", "Check")
+
+    label_overrides = {
+        "Lead": {"organization_section": "Party Details", "company_name": "Party Name"},
+        "Prospect": {"overview_tab": "Details", "company_name": "Party Name"},
+        "Customer": {"basic_info": "Party Details", "customer_name": "Party Name"},
+    }
+    for doctype, fields in label_overrides.items():
+        for fieldname, label in fields.items():
+            if _doctype_has_field(doctype, fieldname):
+                _upsert_property_setter(doctype, fieldname, "label", label, "Data")
+
+    if _doctype_has_field("Customer", "tax_id"):
+        _upsert_property_setter("Customer", "tax_id", "label", "ICE / Tax ID", "Data")
+        _upsert_property_setter("Customer", "tax_id", "insert_after", "custom_company", "Data")
+    for doctype in ("Lead", "Prospect", "Customer"):
+        if _doctype_has_field(doctype, "custom_company"):
+            _upsert_property_setter(doctype, "custom_company", "read_only", "1", "Check")
+        _ensure_party_field_order(doctype)
+
+
+def _ensure_party_field_order(doctype: str) -> None:
+    priority = {
+        "Lead": [
+            "organization_section",
+            "company_name",
+            "status",
+            "custom_company",
+            "custom_tax_id",
+            "custom_company_communication_section",
+            "custom_general_email",
+            "custom_general_mobile",
+            "custom_general_phone",
+            "custom_general_whatsapp",
+            "website",
+            "industry",
+            "territory",
+            "custom_crm_classification_section",
+            "custom_crm_segments",
+            "enable_dynamic_segmentation",
+            "tier",
+            "manual_tier",
+            "custom_internal_company_access",
+            "custom_party_workspace_section",
+            "custom_party_workspace_html",
+            "activities_tab",
+            "open_activities_html",
+            "all_activities_section",
+            "all_activities_html",
+            "notes_tab",
+            "notes_html",
+            "notes",
+            "dashboard_tab",
+        ],
+        "Prospect": [
+            "overview_tab",
+            "company_name",
+            "custom_company",
+            "custom_tax_id",
+            "custom_company_communication_section",
+            "custom_general_email",
+            "custom_general_mobile",
+            "custom_general_phone",
+            "custom_general_whatsapp",
+            "website",
+            "industry",
+            "territory",
+            "custom_crm_classification_section",
+            "custom_crm_segments",
+            "enable_dynamic_segmentation",
+            "tier",
+            "manual_tier",
+            "custom_internal_company_access",
+            "custom_party_workspace_section",
+            "custom_party_workspace_html",
+            "activities_tab",
+            "open_activities_html",
+            "all_activities_section",
+            "all_activities_html",
+            "notes_section",
+            "notes_html",
+            "notes",
+        ],
+        "Customer": [
+            "basic_info",
+            "customer_name",
+            "customer_type",
+            "custom_company",
+            "tax_id",
+            "custom_company_communication_section",
+            "custom_general_email",
+            "custom_general_mobile",
+            "custom_general_phone",
+            "custom_general_whatsapp",
+            "website",
+            "industry",
+            "territory",
+            "enable_dynamic_segmentation",
+            "tier",
+            "manual_tier",
+            "custom_crm_classification_section",
+            "custom_crm_segments",
+            "custom_internal_company_access",
+            "custom_party_workspace_section",
+            "custom_party_workspace_html",
+            "connections_tab",
+        ],
+    }.get(doctype, [])
+    if not priority:
+        return
+    fieldnames = [df.fieldname for df in frappe.get_meta(doctype).fields if df.fieldname]
+    ordered = [fieldname for fieldname in priority if fieldname in fieldnames]
+    ordered.extend(fieldname for fieldname in fieldnames if fieldname not in ordered)
+    _upsert_doctype_property_setter(doctype, "field_order", json.dumps(ordered), "Text")
+
+
+def _upsert_doctype_property_setter(doctype: str, property_name: str, value, property_type: str):
+    existing = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": doctype, "doctype_or_field": "DocType", "property": property_name},
+        "name",
+    )
+    setter = frappe.get_doc("Property Setter", existing) if existing else frappe.new_doc("Property Setter")
+    setter.doc_type = doctype
+    setter.doctype_or_field = "DocType"
+    setter.property = property_name
+    setter.property_type = property_type
+    setter.value = value
+    if existing:
+        setter.save(ignore_permissions=True)
+    else:
+        setter.insert(ignore_permissions=True)
+
+
+def _backfill_party_general_communication() -> None:
+    mappings = {
+        "Lead": {
+            "custom_general_email": "email_id",
+            "custom_general_mobile": "mobile_no",
+            "custom_general_phone": "phone",
+            "custom_general_whatsapp": "whatsapp_no",
+        },
+        "Customer": {
+            "custom_general_email": "email_id",
+            "custom_general_mobile": "mobile_no",
+        },
+    }
+    for doctype, fields in mappings.items():
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        meta = frappe.get_meta(doctype)
+        target_fields = [field for field in fields if meta.get_field(field)]
+        source_fields = [field for field in fields.values() if meta.get_field(field)]
+        if not target_fields or not source_fields:
+            continue
+        names = frappe.get_all(doctype, pluck="name", limit_page_length=0)
+        for name in names:
+            doc = frappe.get_doc(doctype, name)
+            updates = {}
+            for target, source in fields.items():
+                if not meta.get_field(target) or not meta.get_field(source):
+                    continue
+                if doc.get(target) or not doc.get(source):
+                    continue
+                updates[target] = doc.get(source)
+            if updates:
+                frappe.db.set_value(doctype, name, updates, update_modified=False)
 
 
 def _backfill_crm_classification():

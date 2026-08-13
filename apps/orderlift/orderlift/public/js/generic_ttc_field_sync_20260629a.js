@@ -1,6 +1,7 @@
 frappe.ui.form.on("Sales Order", {
     refresh: function (frm) {
         syncDocTTCFields(frm);
+        applySalesPrecisionDisplay(frm);
     },
     taxes_and_charges: function (frm) {
         if (frm.is_new() || !frm.doc.__unsaved) {
@@ -21,6 +22,7 @@ frappe.ui.form.on("Sales Order Item", {
 frappe.ui.form.on("Delivery Note", {
     refresh: function (frm) {
         syncDocTTCFields(frm);
+        applySalesPrecisionDisplay(frm);
     },
     taxes_and_charges: function (frm) {
         if (frm.is_new() || !frm.doc.__unsaved) {
@@ -41,6 +43,7 @@ frappe.ui.form.on("Delivery Note Item", {
 frappe.ui.form.on("Sales Invoice", {
     refresh: function (frm) {
         syncDocTTCFields(frm);
+        applySalesPrecisionDisplay(frm);
     },
     taxes_and_charges: function (frm) {
         if (frm.is_new() || !frm.doc.__unsaved) {
@@ -150,13 +153,9 @@ function syncDocTTCFields(frm) {
             var rate = Number(row.rate || 0);
             var qty = Number(row.qty || 1) || 1;
             var amount = rate * qty;
-            var taxAmount = roundTTC(amount * totalTaxRate / 100);
-            var puTtc = roundTTC(rate * (1 + totalTaxRate / 100));
-            var ptTtc = roundTTC(amount * (1 + totalTaxRate / 100));
-            // Round + only write when actually changed. This handler runs on
-            // refresh (which fires after every save); writing unrounded floats
-            // (e.g. 11.856000000000002) never matched the stored value, so the
-            // form re-dirtied after every save (endless "Not Saved").
+            var taxAmount = amount * totalTaxRate / 100;
+            var puTtc = rate * (1 + totalTaxRate / 100);
+            var ptTtc = amount * (1 + totalTaxRate / 100);
             setTTCFieldIfChanged(row, "custom_applied_taxes", taxAmount);
             setTTCFieldIfChanged(row, "custom_pu_ttc", puTtc);
             setTTCFieldIfChanged(row, "custom_pt_ttc", ptTtc);
@@ -166,14 +165,43 @@ function syncDocTTCFields(frm) {
     }
 }
 
-function roundTTC(value) {
-    return Math.round((Number(value) || 0) * 100) / 100;
-}
-
 function setTTCFieldIfChanged(row, field, value) {
     if (!(field in row)) return;
-    if (Math.abs(Number(row[field] || 0) - Number(value || 0)) < 0.005) return;
+    if (Math.abs(Number(row[field] || 0) - Number(value || 0)) < 1e-9) return;
     frappe.model.set_value(row.doctype, row.name, field, value);
+}
+
+function applySalesPrecisionDisplay(frm) {
+    if (!frm || !["Sales Order", "Delivery Note", "Sales Invoice"].includes(frm.doctype)) return;
+    var grid = frm.fields_dict && frm.fields_dict.items && frm.fields_dict.items.grid;
+    if (!grid || !grid.get_field) return;
+    [
+        ["rate", "PU HT"],
+        ["amount", "PT HT"],
+        ["custom_applied_taxes", "Taxes"],
+        ["custom_pu_ttc", "PU TTC"],
+        ["custom_pt_ttc", "PT TTC"],
+    ].forEach(function (entry) {
+        var fieldname = entry[0];
+        var field = grid.get_field(fieldname);
+        if (!field) return;
+        grid.update_docfield_property(fieldname, "label", __(entry[1]));
+        grid.update_docfield_property(fieldname, "precision", "9");
+        field.formatter = function (value) {
+            if (frappe.format) {
+                return frappe.format(Number(value || 0), { fieldtype: "Currency", precision: 2 });
+            }
+            return Number(value || 0).toFixed(2);
+        };
+    });
+    ["qty", "stock_qty", "conversion_factor"].forEach(function (fieldname) {
+        var field = grid.get_field(fieldname);
+        if (!field) return;
+        field.formatter = function (value) {
+            return Number(value || 0).toFixed(2);
+        };
+    });
+    grid.refresh();
 }
 
 function docTotalTaxRate(frm) {

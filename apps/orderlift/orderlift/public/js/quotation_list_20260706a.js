@@ -1,6 +1,10 @@
 (function () {
     const existingSettings = frappe.listview_settings["Quotation"] || {};
     const existingOnload = existingSettings.onload;
+    const OPPORTUNITY_COLUMNS = [
+        { fieldname: "custom_opportunity_title", label: "Opportunity Title" },
+        { fieldname: "custom_opportunity_owner", label: "Opportunity Owner" },
+    ];
 
     function isReportView(listview) {
         const route = (frappe.get_route && frappe.get_route()) || [];
@@ -30,6 +34,7 @@
         listview.columns = (listview.columns || []).filter((column) => {
             return !(column.type === "Field" && column.df && column.df.fieldname === "name");
         });
+        ensureQuotationOpportunityColumns(listview);
     }
 
     function configuredListColumns(listview) {
@@ -48,6 +53,11 @@
                 return;
             }
             columns.push(fieldColumn(fieldname, field.label));
+        });
+        OPPORTUNITY_COLUMNS.forEach((field) => {
+            if (!columns.some((column) => column.df && column.df.fieldname === field.fieldname)) {
+                columns.push(fieldColumn(field.fieldname, field.label));
+            }
         });
         return columns;
     }
@@ -81,6 +91,38 @@
             message: __("Removed child-table columns from Quotation Report View to keep one row per quotation."),
             indicator: "blue",
         });
+        setTimeout(() => listview.refresh?.(), 0);
+    }
+
+    function ensureQuotationOpportunityColumns(listview) {
+        if (!listview || isReportView(listview)) return;
+        const columns = listview.columns || [];
+        OPPORTUNITY_COLUMNS.forEach((field) => {
+            if (!columns.some((column) => column.df && column.df.fieldname === field.fieldname)) {
+                columns.push(fieldColumn(field.fieldname, field.label));
+            }
+        });
+        listview.columns = columns;
+    }
+
+    function ensureQuotationReportOpportunityFields(listview) {
+        if (!listview || !isReportView(listview) || listview.__orderlift_report_opportunity_fields_added) return;
+        const fields = configuredListFields(listview);
+        const nextFields = fields.length ? fields.slice() : [];
+        let changed = false;
+        OPPORTUNITY_COLUMNS.forEach((field) => {
+            if (!nextFields.some((row) => row.fieldname === field.fieldname && String(row.doctype || row.parent || "Quotation") === "Quotation")) {
+                nextFields.push({ doctype: "Quotation", fieldname: field.fieldname, label: field.label });
+                changed = true;
+            }
+        });
+        if (!changed) return;
+        listview.__orderlift_report_opportunity_fields_added = true;
+        listview.list_view_settings = listview.list_view_settings || {};
+        listview.list_view_settings.fields = JSON.stringify(nextFields);
+        if (frappe.model?.user_settings?.Quotation?.ReportView) {
+            frappe.model.user_settings.Quotation.ReportView.Quotation = nextFields;
+        }
         setTimeout(() => listview.refresh?.(), 0);
     }
 
@@ -127,10 +169,12 @@
     }
 
     frappe.listview_settings["Quotation"] = Object.assign({}, existingSettings, {
+        add_fields: Array.from(new Set([...(existingSettings.add_fields || []), "opportunity", "custom_opportunity_title", "custom_opportunity_owner"])),
         onload(listview) {
             if (typeof existingOnload === "function") existingOnload(listview);
             if (isReportView(listview)) {
                 sanitizeQuotationReportFields(listview);
+                ensureQuotationReportOpportunityFields(listview);
                 return;
             }
             patchQuotationColumnSetup(listview);

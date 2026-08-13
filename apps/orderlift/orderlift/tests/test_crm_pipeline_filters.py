@@ -273,6 +273,37 @@ class TestCrmPipelineFilters(unittest.TestCase):
             pipeline._sales_order_related_docs = original_sales_order_related_docs
             pipeline.frappe.db = original_db
 
+    def test_sales_order_title_prefers_source_opportunity_before_project(self):
+        original_sales_order_source_opportunity = pipeline._sales_order_source_opportunity
+        original_has_field = pipeline._has_field
+        original_db = pipeline.frappe.db
+        try:
+            pipeline._sales_order_source_opportunity = lambda sales_order: "OPP-1"
+            pipeline._has_field = lambda doctype, fieldname: False
+            calls = []
+
+            def get_value(doctype, name, fields, as_dict=False):
+                calls.append((doctype, name, fields))
+                if doctype == "Opportunity":
+                    return {"title": "Villa Lift", "customer_name": "Customer A", "party_name": "CUST-A"}
+                if doctype == "Project":
+                    return "Project Name"
+                return None
+
+            pipeline.frappe.db = types.SimpleNamespace(
+                exists=lambda doctype, name=None: doctype == "Opportunity" and name == "OPP-1",
+                get_value=get_value,
+            )
+
+            title = pipeline._sales_order_title(_Row(name="SO-1", project="PROJ-1", custom_installation_project=""))
+
+            self.assertEqual(title, "Villa Lift")
+            self.assertNotIn(("Project", "PROJ-1", "project_name"), calls)
+        finally:
+            pipeline._sales_order_source_opportunity = original_sales_order_source_opportunity
+            pipeline._has_field = original_has_field
+            pipeline.frappe.db = original_db
+
     def test_source_opportunity_queries_do_not_reference_prevdoc_doctype(self):
         calls = []
         original_db = pipeline.frappe.db

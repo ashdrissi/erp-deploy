@@ -249,7 +249,7 @@
                         </div>
 
                         <div class="bpb-card bpb-controls bpb-pct-controls">
-                            <label><span>${__("Fixed % adjustment")}</span><input data-field="applyPct" type="number" step="0.01" value="${escapeAttr(STATE.applyPct)}" /></label>
+                            <label><span>${__("Fixed % adjustment")}</span><input data-field="applyPct" type="number" step="any" value="${escapeAttr(STATE.applyPct)}" /></label>
                             <label><span>${__("Apply to")}</span><select data-field="applyPctScope"><option value="selected" ${STATE.applyPctScope === "selected" ? "selected" : ""}>${__("Selected rows")}</option><option value="all" ${STATE.applyPctScope === "all" ? "selected" : ""}>${__("All rows")}</option></select></label>
                             <button class="bpb-btn bpb-btn-primary" data-action="apply-fixed-pct">${__("Apply fixed %")}</button>
                         </div>
@@ -358,7 +358,7 @@
                 <label><span>${__("Rule name")}</span><input class="bpb-input" data-new-formula="name" value="${escapeAttr(STATE.newFormula.name)}" placeholder="${__("Rule name")}" /></label>
                 <label class="bpb-formula-source-picker"><span>${__("Source item")}</span>${renderFormulaSourceDropdown()}</label>
                 <label class="bpb-formula-target-picker"><span>${__("Target articles")}</span>${renderFormulaTargetDropdown()}</label>
-                <label><span>${__("Default %")}</span><input class="bpb-input" data-new-formula="pct" type="number" step="0.01" value="${escapeAttr(STATE.newFormula.pct)}" /></label>
+                <label><span>${__("Default %")}</span><input class="bpb-input" data-new-formula="pct" type="number" step="any" value="${escapeAttr(STATE.newFormula.pct)}" /></label>
                 <label class="bpb-radio"><input type="checkbox" data-new-formula="checked" ${STATE.newFormula.checked ? "checked" : ""} /> ${__("Active")}</label>
                 <button class="bpb-btn bpb-btn-primary" data-action="create-formula">${STATE.editingFormulaName ? __("Update rule") : __("Create formula")}</button>
                 ${STATE.editingFormulaName ? `<button class="bpb-btn bpb-btn-ghost" data-action="cancel-formula-edit">${__("Cancel edit")}</button>` : ""}
@@ -429,7 +429,7 @@
                 <input type="checkbox" data-formula-target-check="${escapeAttr(item.code)}" ${normalizeNewFormulaTargets().includes(item.code) ? "checked" : ""} />
                 <span><strong>${escapeHtml(item.code)}</strong><small>${escapeHtml(item.name)} · ${escapeHtml(item.category)} · ${escapeHtml(item.itemGroup)}</small></span>
                 <em>${escapeHtml(item.brand)}</em>
-                ${normalizeNewFormulaTargets().includes(item.code) ? `<input class="bpb-target-pct" data-formula-target-pct="${escapeAttr(item.code)}" type="number" step="0.01" value="${escapeAttr(getFormulaTargetPct(item.code))}" aria-label="${__("Target percentage")}" />` : ""}
+                ${normalizeNewFormulaTargets().includes(item.code) ? `<input class="bpb-target-pct" data-formula-target-pct="${escapeAttr(item.code)}" type="number" step="any" value="${escapeAttr(getFormulaTargetPct(item.code))}" aria-label="${__("Target percentage")}" />` : ""}
             </label>
         `).join("") || `<div class="bpb-empty">${__("No target article found")}</div>`;
     }
@@ -443,7 +443,7 @@
                     <td><strong>${escapeHtml(row.code)}</strong><small>${escapeHtml(row.name)} · ${escapeHtml(row.uom)}</small></td>
                     <td>${escapeHtml(row.brand || "-")}</td>
                     <td class="bpb-num">${formatMoney(row.listPrice)}</td>
-                    <td><input class="bpb-price-input" data-manual-price="${escapeAttr(row.code)}" type="number" step="0.01" value="${escapeAttr(getManualPrice(row.code))}" placeholder="${escapeAttr(formatMoney(row.listPrice))}" ${row.formulaLabel ? "disabled" : ""} /></td>
+                    <td><input class="bpb-price-input" data-manual-price="${escapeAttr(row.code)}" type="number" step="any" value="${escapeAttr(getManualPrice(row.code))}" placeholder="${escapeAttr(formatMoney(row.listPrice))}" ${row.formulaLabel ? "disabled" : ""} /></td>
                     <td>${row.formulaLabel ? `<span class="bpb-formula-chip">${escapeHtml(row.formulaLabel)}</span>` : `<span class="bpb-muted">${__("None")}</span>`}</td>
                     <td><strong class="bpb-num">${formatMoney(row.finalPrice)}</strong><small class="${row.delta >= 0 ? "bpb-up" : "bpb-down"}">${formatMoney(row.delta)}</small></td>
                     <td><button class="bpb-icon-btn" data-remove-code="${escapeAttr(row.code)}" aria-label="${__("Remove item")}">×</button></td>
@@ -988,10 +988,6 @@
     function formatSignedPct(value) {
         const number = Number(value || 0);
         return `${number >= 0 ? "+" : ""}${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
-    }
-
-    function roundMoney(value) {
-        return Math.round(Number(value || 0) * 100) / 100;
     }
 
     function escapeHtml(value) {

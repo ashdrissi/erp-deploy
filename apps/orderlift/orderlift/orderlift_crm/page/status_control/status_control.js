@@ -44,6 +44,8 @@
             args: { document_type: STATE.documentType, company: STATE.company },
         });
         STATE.data = res.message || { statuses: [], legacy_statuses: [], colors: [], todo_priorities: [], users: [], predefined_checks: [] };
+        const hasActiveDefault = (STATE.data.statuses || []).some((status) => status.is_active && status.is_default);
+        STATE.draft.is_default = hasActiveDefault ? 0 : 1;
         STATE.company = STATE.data.selected_company || STATE.company || "";
         STATE.quickActionsDraft = [...(STATE.data.selected_quick_actions || [])];
         render(page);
@@ -120,7 +122,7 @@
         page.main.find("#osc-company").on("change", function () {
             STATE.company = String($(this).val() || "");
             STATE.draft = defaultDraft(STATE.documentType);
-            setCurrentCompany(page, STATE.company);
+            load(page);
         });
         page.main.find("[data-document-type]").on("click", function () {
             STATE.documentType = $(this).data("document-type");
@@ -283,19 +285,6 @@
             freeze: true,
         });
         frappe.show_alert({ message: __("Quick actions saved"), indicator: "green" });
-        load(page);
-    }
-
-    async function setCurrentCompany(page, company) {
-        if (!company) {
-            load(page);
-            return;
-        }
-        await frappe.call({
-            method: "orderlift.menu_access.set_current_company",
-            args: { company },
-            freeze: true,
-        });
         load(page);
     }
 

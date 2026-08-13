@@ -2,36 +2,31 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from orderlift.startup_roles import CAMPAIGN_MANAGER_ROLE, SAV_TECHNICIAN_ROLE, STARTUP_ROLES
+from orderlift.startup_roles import CANONICAL_BUSINESS_ROLES
 
 
 ALL_USERS_ROLE = "All"
 
-BUSINESS_ROLES = [
-    "Orderlift Admin",
-    "Sales User",
-    "Sales Manager",
-    "Pricing Manager",
-    "Logistics User",
-    "Finance User",
-    "Installation User",
-    "Service User",
-] + STARTUP_ROLES
+BUSINESS_ROLES = list(CANONICAL_BUSINESS_ROLES)
 
-ADMIN_ROLES = ["Orderlift Admin", "Administrator", "System Manager", "Developer"]
+ADMIN_ROLES = ["Orderlift Admin", "System Manager"]
 ACCESS_MANAGER_ROLES = ["Orderlift Admin", "System Manager"]
-SALES_ROLES = ["Orderlift Admin", "Sales User", "Sales Manager", "Pricing Manager"]
-PRICING_MANAGER_ROLES = ["Orderlift Admin", "Pricing Manager"]
+SALES_ROLES = ["Orderlift Admin", "Sales User", "Sales Manager"]
+PRICING_CONFIGURATION_ROLES = ["Orderlift Admin", "Pricing Configuration", "System Manager"]
 FINANCE_CORE_ROLES = ["Orderlift Admin", "Finance User", "Finance Admin"]
-FINANCE_ROLES = FINANCE_CORE_ROLES + ["Payment Validator"]
-LOGISTICS_ROLES = ["Orderlift Admin", "Logistics User", "Logistics Manager"]
+FINANCE_ROLES = FINANCE_CORE_ROLES
+LOGISTICS_ROLES = ["Orderlift Admin", "Logistics User"]
 PURCHASING_ROLES = ["Orderlift Admin", "Purchase User", "Purchase Manager"]
+STOCK_ROLES = ["Orderlift Admin", "Stock User", "Stock Manager"]
+STOCK_MANAGER_ROLES = ["Orderlift Admin", "Stock Manager"]
+STOCK_RATE_REVIEW_ROLES = ["Orderlift Admin", "System Manager", "Pricing Configuration", "Stock Manager"]
+BUYING_PRICE_REVIEW_ROLES = ["Orderlift Admin", "System Manager", "Purchase Manager"]
 PROJECT_ROLES = ["Orderlift Admin", "Installation User", "Sales User"]
-SAV_ROLES = ["Orderlift Admin", "Service User", SAV_TECHNICIAN_ROLE]
+SAV_ROLES = ["Orderlift Admin", "Service User"]
 SIG_ROLES = ["Orderlift Admin", "Installation User"]
 HR_ROLES = ["Orderlift Admin"]
-B2B_ROLES = ["Orderlift Admin", "Sales User", "Pricing Manager"]
-CAMPAIGN_ROLES = ["Orderlift Admin", CAMPAIGN_MANAGER_ROLE]
+B2B_ROLES = ["Orderlift Admin", "Sales User", "Sales Manager"]
+CAMPAIGN_ROLES = ["Orderlift Admin", "Sales User", "Sales Manager"]
 
 
 HOME_LINK = {
@@ -123,21 +118,28 @@ MENU_SECTIONS = [
             {"key": "sales.sales_order", "label": "Sales Orders", "link_type": "DocType", "link_to": "Sales Order"},
             {"key": "sales.commission_dashboard", "label": "Commissions Dashboard", "link_type": "Page", "link_to": "commission-dashboard"},
             {"key": "sales.commissions", "label": "Commissions", "link_type": "DocType", "link_to": "Sales Commission"},
-            {"key": "sales.pricing_simulator", "label": "Pricing Simulator", "link_type": "Page", "link_to": "pricing-simulator"},
         ],
     },
     {
         "key": "policies_configs",
         "label": "Policies & Configs",
         "icon": "shield",
-        "roles": PRICING_MANAGER_ROLES,
+        "roles": PRICING_CONFIGURATION_ROLES,
         "links": [
             {"key": "policies.customs_policy", "label": "Customs Policy", "link_type": "DocType", "link_to": "Pricing Customs Policy"},
             {"key": "policies.expenses_policy", "label": "Expenses Policy", "link_type": "DocType", "link_to": "Pricing Scenario"},
             {"key": "policies.margin_benchmark", "label": "Margin & Benchmark Policy", "link_type": "DocType", "link_to": "Pricing Benchmark Policy"},
             {"key": "policies.customer_segmentation", "label": "Customer Segmentation Engine", "link_type": "Page", "link_to": "customer-segmentation-workspace"},
             {"key": "policies.pricing_tiers", "label": "Pricing Tiers", "link_type": "DocType", "link_to": "Pricing Tier"},
-            {"key": "policies.agent_rules", "label": "Agent Rules", "link_type": "DocType", "link_to": "Agent Pricing Rules"},
+            {"key": "policies.agent_rules", "label": "Sales Agent Rules", "link_type": "DocType", "link_to": "Agent Pricing Rules"},
+            {
+                "key": "policies.purchase_agent_rules",
+                "label": "Purchase Agent Rules",
+                "link_type": "DocType",
+                "link_to": "Purchase Agent Rules",
+                "roles": [ALL_USERS_ROLE],
+                "required_capability": "purchase_agent_rules_management",
+            },
         ],
     },
     {
@@ -154,18 +156,18 @@ MENU_SECTIONS = [
         "key": "items_price_lists",
         "label": "Items & Price Lists",
         "icon": "box",
-        "roles": SALES_ROLES + LOGISTICS_ROLES + PURCHASING_ROLES,
+        "roles": SALES_ROLES + LOGISTICS_ROLES + PURCHASING_ROLES + STOCK_ROLES + PRICING_CONFIGURATION_ROLES,
         "links": [
             {"key": "items.item", "label": "Item", "link_type": "DocType", "link_to": "Item"},
             {"key": "items.item_category", "label": "Item Category", "link_type": "DocType", "link_to": "Item Category"},
             {"key": "items.item_group", "label": "Item Group", "link_type": "DocType", "link_to": "Item Group"},
             {"key": "items.product_bundle", "label": "Product Bundle", "link_type": "DocType", "link_to": "Product Bundle"},
-            {"key": "items.dimensioning_sets", "label": "Dimensioning Sets", "link_type": "Page", "link_to": "dimensioning-set-manager", "roles": ADMIN_ROLES},
-            {"key": "items.item_price", "label": "Item Price", "link_type": "DocType", "link_to": "Item Price"},
-            {"key": "items.price_list", "label": "Price List", "link_type": "DocType", "link_to": "Price List"},
+            {"key": "items.dimensioning_sets", "label": "Dimensioning Sets", "link_type": "Page", "link_to": "dimensioning-set-manager", "roles": PRICING_CONFIGURATION_ROLES},
+            {"key": "items.item_price", "label": "Item Price", "link_type": "DocType", "link_to": "Item Price", "roles": PRICING_CONFIGURATION_ROLES},
+            {"key": "items.price_list", "label": "Price List", "link_type": "DocType", "link_to": "Price List", "roles": PRICING_CONFIGURATION_ROLES},
             {"key": "items.catalogue_prix_articles", "label": "Catalogue Prix Articles", "link_type": "Page", "link_to": "catalogue-prix-articles", "roles": SALES_ROLES},
-            {"key": "items.buying_price_builder", "label": "Buying Price Builder", "link_type": "Page", "link_to": "buying-price-builder", "roles": PRICING_MANAGER_ROLES + LOGISTICS_ROLES},
-            {"key": "items.static_pricing_builder", "label": "Selling Price Builder", "link_type": "Page", "link_to": "pricing-builder-manager", "roles": PRICING_MANAGER_ROLES},
+            {"key": "items.buying_price_builder", "label": "Buying Price Builder", "link_type": "Page", "link_to": "buying-price-builder", "roles": PRICING_CONFIGURATION_ROLES},
+            {"key": "items.static_pricing_builder", "label": "Selling Price Builder", "link_type": "Page", "link_to": "pricing-builder-manager", "roles": PRICING_CONFIGURATION_ROLES},
         ],
     },
     {
@@ -185,12 +187,13 @@ MENU_SECTIONS = [
         "key": "purchasing",
         "label": "Purchasing",
         "icon": "shopping-basket",
-        "roles": PURCHASING_ROLES,
+        "roles": PURCHASING_ROLES + PRICING_CONFIGURATION_ROLES,
         "links": [
             {"key": "purchasing.suppliers", "label": "Supplier List", "link_type": "DocType", "link_to": "Supplier"},
             {"key": "purchasing.material_request", "label": "Material Request", "link_type": "DocType", "link_to": "Material Request"},
             {"key": "purchasing.rfq", "label": "Request for Quotation", "link_type": "DocType", "link_to": "Request for Quotation"},
             {"key": "purchasing.purchase_order", "label": "Purchase Order", "link_type": "DocType", "link_to": "Purchase Order"},
+            {"key": "purchasing.buying_price_review", "label": "Buying Price Review", "link_type": "Page", "link_to": "buying-price-review", "roles": BUYING_PRICE_REVIEW_ROLES},
             {"key": "purchasing.purchase_receipt", "label": "Purchase Receipt", "link_type": "DocType", "link_to": "Purchase Receipt"},
             {"key": "purchasing.delivery_note", "label": "Delivery Note", "link_type": "DocType", "link_to": "Delivery Note"},
             {"key": "purchasing.pick_list", "label": "Pick List", "link_type": "DocType", "link_to": "Pick List"},
@@ -251,21 +254,30 @@ MENU_SECTIONS = [
         "key": "warehouse_stock",
         "label": "Warehouse & Stock",
         "icon": "package",
-        "roles": LOGISTICS_ROLES,
+        "roles": LOGISTICS_ROLES + STOCK_ROLES,
         "links": [
             {"key": "stock.dashboard", "label": "Stock Dashboard", "link_type": "Page", "link_to": "stock-dashboard"},
+            {"key": "stock.demand_plan", "label": "Stock Demand Plans", "link_type": "DocType", "link_to": "Stock Demand Plan", "roles": STOCK_ROLES + LOGISTICS_ROLES},
+            {"key": "stock.planning_settings", "label": "Stock Planning Settings", "link_type": "Page", "link_to": "stock-planning-settings-control", "roles": STOCK_MANAGER_ROLES},
             {"key": "stock.stock_entry", "label": "Stock Entry", "link_type": "DocType", "link_to": "Stock Entry"},
             {"key": "stock.delivery_note", "label": "Delivery Note", "link_type": "DocType", "link_to": "Delivery Note"},
             {"key": "stock.purchase_receipt", "label": "Purchase Receipt", "link_type": "DocType", "link_to": "Purchase Receipt"},
+            {
+                "key": "stock.rate_review",
+                "label": "Stock Rate Review",
+                "link_type": "Page",
+                "link_to": "stock-rate-review",
+                "roles": STOCK_RATE_REVIEW_ROLES,
+            },
             {"key": "stock.pick_list", "label": "Pick List", "link_type": "DocType", "link_to": "Pick List"},
             {"key": "stock.warehouse_tree", "label": "Warehouse Tree", "link_type": "DocType", "link_to": "Warehouse"},
             {"key": "stock.bins", "label": "Bins", "link_type": "DocType", "link_to": "Bin"},
-            {"key": "stock.stock_settings", "label": "Stock Settings", "link_type": "DocType", "link_to": "Stock Settings"},
+            {"key": "stock.stock_settings", "label": "Stock Settings", "link_type": "DocType", "link_to": "Stock Settings", "roles": STOCK_MANAGER_ROLES},
             {"key": "stock.warehouse_report", "label": "Warehouse Report", "link_type": "Report", "link_to": "Warehouse Wise Stock Balance"},
             {"key": "stock.balance", "label": "Stock Balance", "link_type": "Report", "link_to": "Stock Balance"},
             {"key": "stock.ledger", "label": "Stock Ledger", "link_type": "Report", "link_to": "Stock Ledger"},
             {"key": "stock.quality_inspection", "label": "Quality Inspection", "link_type": "DocType", "link_to": "Quality Inspection"},
-            {"key": "stock.qi_templates", "label": "QI Templates", "link_type": "DocType", "link_to": "Quality Inspection Template"},
+            {"key": "stock.qi_templates", "label": "QI Templates", "link_type": "DocType", "link_to": "Quality Inspection Template", "roles": STOCK_MANAGER_ROLES},
         ],
     },
     {
@@ -274,8 +286,8 @@ MENU_SECTIONS = [
         "icon": "truck",
         "roles": LOGISTICS_ROLES,
         "links": [
-            {"key": "logistics.pipeline", "label": "Logistics Pipeline", "link_type": "Page", "link_to": "logistics-pipeline"},
-            {"key": "logistics.container_planning", "label": "Container Planning", "link_type": "Page", "link_to": "logistics-dashboard"},
+            {"key": "logistics.pipeline", "label": "Logistics Pipeline", "link_type": "Page", "link_to": "logistics-pipeline", "roles": LOGISTICS_ROLES},
+            {"key": "logistics.container_planning", "label": "Container Planning", "link_type": "Page", "link_to": "logistics-dashboard", "roles": LOGISTICS_ROLES},
             {"key": "logistics.container_profiles", "label": "Container Profiles", "link_type": "DocType", "link_to": "Container Profile"},
         ],
     },
@@ -403,6 +415,7 @@ def _normalize_item(link: dict, *, section: str | None, section_key: str | None,
         "roles": roles,
         "company_scoped": bool(link.get("company_scoped", True)),
         "required_doctypes": list(link.get("required_doctypes") or []),
+        "required_capability": link.get("required_capability") or "",
         "strict_roles": bool(link.get("strict_roles")),
     }
 

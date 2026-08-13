@@ -4,6 +4,7 @@ import unittest
 
 
 frappe_stub = types.ModuleType("frappe")
+frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.session = types.SimpleNamespace(user="Guest")
 frappe_stub.get_roles = lambda user=None: []
 sys.modules["frappe"] = frappe_stub
@@ -26,19 +27,39 @@ from orderlift.boot import _strip_demo_navbar_items
 class TestBootHelpers(unittest.TestCase):
     def test_boot_exposes_authoritative_quotation_override_capability(self):
         original = boot_module._can_override_quotation_pricing
+        original_stock_rates = boot_module._can_manage_stock_rates
+        original_capability = boot_module._user_has_capability
         original_user = frappe_stub.session.user
         bootinfo = {}
         try:
             frappe_stub.session.user = "admin@example.com"
             boot_module._can_override_quotation_pricing = lambda: True
+            boot_module._can_manage_stock_rates = lambda: False
+            boot_module._user_has_capability = lambda capability: capability in {
+                "privileged_pricing",
+                "commission_assignment_management",
+            }
             boot_module._apply_orderlift_capabilities_to_bootinfo(bootinfo)
         finally:
             boot_module._can_override_quotation_pricing = original
+            boot_module._can_manage_stock_rates = original_stock_rates
+            boot_module._user_has_capability = original_capability
             frappe_stub.session.user = original_user
 
         self.assertEqual(
             bootinfo["orderlift_capabilities"],
-            {"quotation_override": True},
+            {
+                "quotation_override": True,
+                "stock_rate_access": False,
+                "stock_rate_review": False,
+                "privileged_pricing": True,
+                "commission_assignment_management": True,
+                "commission_payout_management": False,
+                "pipeline_assignment_management": False,
+                "opportunity_pipeline_assignment": False,
+                "project_pipeline_assignment": False,
+                "sales_order_pipeline_assignment": False,
+            },
         )
 
     def test_strip_demo_navbar_items_removes_delete_demo_data(self):

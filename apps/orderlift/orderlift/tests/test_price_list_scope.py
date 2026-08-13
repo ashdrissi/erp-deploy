@@ -7,6 +7,7 @@ frappe_stub = types.ModuleType("frappe")
 frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(ValueError(message))
 frappe_stub.session = types.SimpleNamespace(user="test@example.com")
+frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 sys.modules["frappe"] = frappe_stub
 
 utils_stub = types.ModuleType("frappe.utils")
@@ -58,14 +59,17 @@ class TestPriceListScope(unittest.TestCase):
         self.original_get_all = getattr(price_list_scope.frappe, "get_all", None)
         self.original_throw = getattr(price_list_scope.frappe, "throw", None)
         self.original_resolve_current_company = price_list_scope.resolve_current_company
+        self.original_require_reference_use = price_list_scope.require_reference_use
         price_list_scope.frappe.db = DbStub()
         price_list_scope.frappe.get_all = get_all
         price_list_scope.frappe.throw = frappe_stub.throw
         price_list_scope.resolve_current_company = lambda user=None: "Orderlift"
+        price_list_scope.require_reference_use = lambda doctype, name, **kwargs: name
 
     def tearDown(self):
         price_list_scope.frappe.db = self.original_db
         price_list_scope.resolve_current_company = self.original_resolve_current_company
+        price_list_scope.require_reference_use = self.original_require_reference_use
         if self.original_get_all:
             price_list_scope.frappe.get_all = self.original_get_all
         else:

@@ -13,8 +13,7 @@
     "roles": [
         {"role": "Orderlift Admin"},
         {"role": "System Manager"},
-        {"role": "Sales Manager"},
-        {"role": "Pricing Manager"}
+        {"role": "Pricing Configuration"}
     ],
     "script": null,
     "standard": "Yes",

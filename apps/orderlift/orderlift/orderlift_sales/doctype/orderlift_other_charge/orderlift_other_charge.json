@@ -1,0 +1,78 @@
+{
+  "actions": [],
+  "allow_import": 1,
+  "autoname": "field:charge_name",
+  "creation": "2026-07-22 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": [
+    "charge_name",
+    "disabled",
+    "description",
+    "default_uom",
+    "default_rate",
+    "item_code"
+  ],
+  "fields": [
+    {
+      "fieldname": "charge_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Charge Name",
+      "reqd": 1,
+      "search_index": 1,
+      "unique": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "disabled",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Disabled"
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "in_list_view": 1,
+      "label": "Description"
+    },
+    {
+      "fieldname": "default_uom",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Default UOM",
+      "options": "UOM"
+    },
+    {
+      "fieldname": "default_rate",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Default Unit Amount HT"
+    },
+    {
+      "default": "OTHER-CHARGES",
+      "fieldname": "item_code",
+      "fieldtype": "Link",
+      "label": "Item",
+      "options": "Item"
+    }
+  ],
+  "links": [],
+  "modified": "2026-07-22 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Sales",
+  "name": "Orderlift Other Charge",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Pricing Configuration", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Sales Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Sales User", "read": 1, "report": 1, "print": 1, "email": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "charge_name"
+}

@@ -1,7 +1,8 @@
 {% set co = get_company_info(doc.company) %}
 {% set co_addr = get_company_address(doc.company) %}
 {% set company_logo = frappe.db.get_value('Company', doc.company, 'company_logo') or '/files/logo.png' %}
-{% set items = doc.items %}
+{% set ol_commercial = get_commercial_print_context(doc, orderlift_force_without_details if orderlift_force_without_details is defined else false) %}
+{% set items = ol_commercial['items'] %}
 {% set total_items = items | length %}
 {% set ol_price_mode = orderlift_price_display_mode if orderlift_price_display_mode is defined else 'HT' %}
 {% set ol_print_ttc = ol_price_mode in ('TTC', 'PRIX_UNITAIRE') %}
@@ -14,6 +15,7 @@
 {% set is_sales_order = doc.doctype == 'Sales Order' %}
 {% set is_delivery_note = doc.doctype == 'Delivery Note' %}
 {% set is_sales_invoice = doc.doctype == 'Sales Invoice' %}
+{% set ol_hide_price_columns_bool = is_delivery_note %}
 {% set payment_terms = get_print_payment_terms(doc) %}
 {% set trade_terms = get_print_trade_terms(doc) %}
 
@@ -488,8 +490,10 @@ table.ol-items td {
       <th class="tl">{{ _("Description") }}</th>
       <th class="tc" style="width: 35px;">U</th>
       <th class="tc" style="width: 45px;">{{ _("Qty") }}</th>
-      <th class="tr" style="width: 105px;">{{ _("Unit Price") if ol_simple_ttc else _("Unit Price Incl. Tax") if ol_print_ttc else _("Unit Price Excl. Tax") }}</th>
-      <th class="tr" style="width: 105px;">{{ _("Total") if ol_simple_ttc else _("Amount Incl. Tax") if ol_print_ttc else _("Amount Excl. Tax") }}</th>
+      {%- if not ol_hide_price_columns_bool %}
+      <th class="tr" style="width: 95px;">{{ _("PU") if ol_simple_ttc else (_("PU TTC") if ol_print_ttc else _("PU HT")) }}</th>
+      <th class="tr" style="width: 105px;">{{ _("PT") if ol_simple_ttc else (_("PT TTC") if ol_print_ttc else _("PT HT")) }}</th>
+      {%- endif %}
     </tr>
   </thead>
   <tbody>
@@ -497,8 +501,10 @@ table.ol-items td {
     {%- set item_ = frappe.get_doc('Item', item.item_code) if frappe.db.exists('Item', item.item_code) else None %}
     {%- set item_image = item_.image if item_ else '' %}
     {%- set item_ttc = ol_ttc.rows_by_name.get(item.name) or ol_ttc.rows_by_idx.get((item.idx or loop.index) ~ '') or {} %}
-    {%- set display_unit = item_ttc.get('unit') if ol_print_ttc else item.rate %}
-    {%- set display_total = item_ttc.get('total') if ol_print_ttc else item.amount %}
+    {%- set unit_ht = item_ttc.get('unit_ht') or item.rate %}
+    {%- set unit_ttc = item.custom_pu_ttc if item.get('custom_is_commercial_summary') else (item_ttc.get('unit') or unit_ht) %}
+    {%- set display_unit = unit_ttc if ol_print_ttc else unit_ht %}
+    {%- set display_total = (item_ttc.get('total') or item.custom_pt_ttc or item.amount) if ol_print_ttc else (item_ttc.get('total_ht') or item.amount) %}
     <tr>
       <td class="tc">{{ start_idx + loop.index }}</td>
       <td class="ol-item-code">{{ item.item_code }}</td>
@@ -519,8 +525,10 @@ table.ol-items td {
       </td>
       <td class="tc" style="font-weight: 500;">{{ item.uom or item.stock_uom }}</td>
       <td class="tc" style="font-weight: 600;">{{ item.qty | int if item.qty == (item.qty | int) else item.qty }}</td>
+      {%- if not ol_hide_price_columns_bool %}
       <td class="tr">{{ format_currency_fr(display_unit, doc.currency) }}</td>
       <td class="tr" style="font-weight: 700;">{{ format_currency_fr(display_total, doc.currency) }}</td>
+      {%- endif %}
     </tr>
     {%- endfor %}
   </tbody>
@@ -528,6 +536,7 @@ table.ol-items td {
 {% endmacro %}
 
 {% macro render_totals_and_signatures() %}
+{%- if not ol_hide_price_columns_bool %}
 <div class="ol-totals-container">
   <table class="ol-totals-table">
     {%- if ol_simple_ttc %}
@@ -591,6 +600,7 @@ table.ol-items td {
 <div class="ol-payment-terms">
   {{ _("Payment Terms") }} : {{ payment_terms | join(' / ') }}
 </div>
+{%- endif -%}
 {%- endif -%}
 
 {%- if doc.terms -%}

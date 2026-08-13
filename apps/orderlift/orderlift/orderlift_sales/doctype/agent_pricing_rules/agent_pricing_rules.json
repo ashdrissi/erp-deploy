@@ -9,8 +9,11 @@
         "section_profile",
         "sales_person",
         "commission_rate",
+        "commission_enabled",
         "column_break_profile",
         "pricing_mode",
+        "section_payment_terms",
+        "allowed_payment_terms",
         "section_dynamic",
         "dynamic_help_html",
         "dynamic_pricing_configs",
@@ -59,6 +62,14 @@
             "description": "Agent commission is calculated from the discount amount using this rate."
         },
         {
+            "fieldname": "commission_enabled",
+            "fieldtype": "Check",
+            "label": "Eligible for Commission",
+            "default": "1",
+            "in_list_view": 1,
+            "description": "If disabled, this Sales Person cannot be added to an Orderlift Sales Team or receive commission."
+        },
+        {
             "fieldname": "column_break_profile",
             "fieldtype": "Column Break"
         },
@@ -71,6 +82,18 @@
             "reqd": 1,
             "in_list_view": 1,
             "description": "Static = pick from published lists. Dynamic = engine runs the pipeline calculation."
+        },
+        {
+            "fieldname": "section_payment_terms",
+            "fieldtype": "Section Break",
+            "label": "Allowed Payment Terms"
+        },
+        {
+            "description": "Sales users can choose only active templates listed here. Mark one active row as the default.",
+            "fieldname": "allowed_payment_terms",
+            "fieldtype": "Table",
+            "label": "Allowed Payment Terms Templates",
+            "options": "Agent Allowed Payment Terms"
         },
         {
             "fieldname": "section_dynamic",

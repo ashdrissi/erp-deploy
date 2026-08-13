@@ -8,6 +8,7 @@ frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(ValueError(message))
 frappe_stub.session = types.SimpleNamespace(user="sales@example.com")
 frappe_stub.get_roles = lambda user=None: ["Sales User"]
+frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 sys.modules["frappe"] = frappe_stub
 
 utils_stub = types.ModuleType("frappe.utils")
@@ -18,6 +19,7 @@ sys.modules["frappe.utils"] = utils_stub
 
 from orderlift.orderlift_sales.utils import price_list_usage_guard
 import orderlift.orderlift_sales.utils.price_list_scope as price_list_scope_mod
+from orderlift import role_capabilities
 
 
 class MetaStub:
@@ -90,10 +92,18 @@ class TestPriceListUsageGuard(unittest.TestCase):
         self.original_get_roles = price_list_usage_guard.frappe.get_roles
         self.original_user = price_list_usage_guard.frappe.session.user
         self.original_price_scope_frappe = price_list_scope_mod.frappe
+        self.original_guard_capability_decision = price_list_usage_guard.role_capability_decision
+        self.original_scope_capability_decision = price_list_scope_mod.role_capability_decision
         price_list_usage_guard.frappe.db = DbStub()
         price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
         price_list_usage_guard.frappe.session.user = "sales@example.com"
         price_list_scope_mod.frappe = price_list_usage_guard.frappe
+        capability_decision = lambda capability, legacy_allowed, **kwargs: any(
+            capability in role_capabilities.DEFAULT_ROLE_CAPABILITIES.get(role, [])
+            for role in kwargs.get("roles", set())
+        ) or "System Manager" in kwargs.get("roles", set())
+        price_list_usage_guard.role_capability_decision = capability_decision
+        price_list_scope_mod.role_capability_decision = capability_decision
         price_list_usage_guard.validate_visible_price_list = (
             lambda price_list, kind=None, required=False, company=None: price_list
         )
@@ -112,6 +122,8 @@ class TestPriceListUsageGuard(unittest.TestCase):
         price_list_usage_guard.frappe.get_roles = self.original_get_roles
         price_list_usage_guard.frappe.session.user = self.original_user
         price_list_scope_mod.frappe = self.original_price_scope_frappe
+        price_list_usage_guard.role_capability_decision = self.original_guard_capability_decision
+        price_list_scope_mod.role_capability_decision = self.original_scope_capability_decision
 
     def test_quotation_items_require_allowed_selling_price_list(self):
         doc = DocStub(
@@ -123,7 +135,7 @@ class TestPriceListUsageGuard(unittest.TestCase):
             price_list_usage_guard.validate_quotation_price_list(doc)
 
     def test_privileged_business_role_still_needs_sales_pricing_source(self):
-        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Pricing Manager"]
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Pricing Configuration"]
         doc = DocStub(
             selected_selling_price_lists=[],
             items=[{"item_code": "ITEM-001", "rate": 100}],
@@ -146,7 +158,7 @@ class TestPriceListUsageGuard(unittest.TestCase):
         doc = DocStub(
             source_pricing_sheet="PS-001",
             selected_selling_price_lists=[],
-            items=[{"item_code": "ITEM-001", "rate": 100, "source_gross_sell_rate": 100}],
+            items=[{"item_code": "ITEM-001", "rate": 100, "source_price_list_sell_rate": 100}],
         )
 
         price_list_usage_guard.validate_quotation_price_list(doc)
@@ -167,7 +179,7 @@ class TestPriceListUsageGuard(unittest.TestCase):
             items=[{"item_code": "ITEM-001", "rate": 80, "idx": 1}],
         )
 
-        with self.assertRaisesRegex(ValueError, "below the allowed net rate"):
+        with self.assertRaisesRegex(ValueError, "below the allowed rate"):
             price_list_usage_guard.validate_quotation_price_list(doc)
 
     def test_orderlift_admin_can_go_below_selected_list_discount_floor(self):
@@ -330,10 +342,11 @@ class TestPriceListUsageGuard(unittest.TestCase):
 
         row = doc["items"][0]
         self.assertEqual(row["source_selling_price_list"], "Sell Min")
-        self.assertAlmostEqual(row["source_price_list_sell_rate"], 15033.213)
+        self.assertAlmostEqual(row["source_price_list_sell_rate"], 15033.213, places=9)
         self.assertEqual(row["source_discount_percent"], 0)
-        self.assertAlmostEqual(row["rate"], 15033.213)
-        self.assertAlmostEqual(row["source_discounted_sell_rate"], 15033.213)
+        self.assertEqual(row["source_discount_amount"], 0)
+        self.assertAlmostEqual(row["rate"], 15033.213, places=9)
+        self.assertAlmostEqual(row["amount"], 15033.213, places=9)
         price_list_usage_guard.validate_quotation_price_list(doc)
 
     def test_server_keeps_valid_lower_list_row_without_stale_source(self):
@@ -365,7 +378,8 @@ class TestPriceListUsageGuard(unittest.TestCase):
 
         row = doc["items"][0]
         self.assertEqual(row["rate"], 100)
-        self.assertNotIn("source_selling_price_list", row)
+        self.assertEqual(row["source_selling_price_list"], "Sell Low")
+        self.assertEqual(row["source_price_list_sell_rate"], 100)
 
     def test_admin_override_bypasses_selling_price_list_requirement(self):
         price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
@@ -684,6 +698,32 @@ class TestPriceListUsageGuard(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hidden price list"):
             price_list_usage_guard.validate_sales_invoice_price_list(doc)
 
+    def test_text_only_sales_invoice_skips_price_list_scope_guard(self):
+        price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
+            (_ for _ in ()).throw(ValueError("hidden price list"))
+        )
+        doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Hidden Approved Sell",
+            items=[
+                {
+                    "item_code": "",
+                    "item_name": "Advance 30%",
+                    "description": "Advance 30% for Sales Order SO-001",
+                    "qty": 1,
+                    "rate": 36000,
+                }
+            ],
+        )
+        doc.doctype = "Sales Invoice"
+
+        result = price_list_usage_guard.validate_sales_invoice_price_list(doc)
+
+        self.assertFalse(result.trusted)
+
     def test_mapped_sales_invoice_party_mismatch_cannot_inherit_hidden_list(self):
         price_list_usage_guard.validate_visible_price_list = lambda *args, **kwargs: (
             (_ for _ in ()).throw(ValueError("hidden price list"))
@@ -949,8 +989,8 @@ class TestPriceListUsageGuard(unittest.TestCase):
                     "rate": 90,
                     "prevdoc_doctype": "Quotation",
                     "prevdoc_docname": "QTN-001",
-                    "prevdoc_detail_docname": "QTN-ITEM-1",
-                    "source_gross_sell_rate": 100,
+                    "quotation_item": "QTN-ITEM-1",
+                    "source_price_list_sell_rate": 100,
                 }
             ],
         )

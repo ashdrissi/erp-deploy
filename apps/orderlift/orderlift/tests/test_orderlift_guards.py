@@ -243,7 +243,8 @@ class TestOrderliftGuards(unittest.TestCase):
 
     def test_company_access_normalize_guarded(self):
         source = (APP_ROOT / "orderlift" / "company_access.py").read_text()
-        self.assertIn("frappe.only_for([\"System Manager\", \"Orderlift Admin\"])", source)
+        self.assertIn('frappe.only_for("System Manager")', source)
+        self.assertNotIn('frappe.only_for(["System Manager", "Orderlift Admin"])', source)
 
     def test_grant_full_business_access_has_legacy_confirmation(self):
         source = (APP_ROOT / "orderlift" / "scripts" / "grant_full_business_access.py").read_text()

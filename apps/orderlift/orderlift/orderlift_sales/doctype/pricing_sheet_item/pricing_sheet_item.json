@@ -24,8 +24,9 @@
   "buy_price",
   "buy_price_missing",
   "buy_price_message",
-  "display_group",
-   "show_in_detail",
+   "display_group",
+    "show_in_detail",
+    "presentation_role",
    "base_amount",
    "expense_unit_price",
     "expense_total",
@@ -33,18 +34,15 @@
      "margin_unit_amount",
      "margin_total_amount",
      "total_margin_unit_amount",
-     "total_margin_total_amount",
-     "projected_unit_price",
-  "projected_total_price",
-   "manual_sell_unit_price",
-   "is_manual_override",
-   "final_sell_unit_price",
-   "final_sell_total",
-   "max_discount_percent_allowed",
-   "discount_percent",
-   "discount_amount",
-   "discounted_sell_unit_price",
-   "discounted_sell_total",
+      "total_margin_total_amount",
+      "projected_unit_price",
+   "projected_total_price",
+    "sell_unit_price",
+    "is_manual_override",
+    "sell_total",
+    "max_discount_percent_allowed",
+    "discount_percent",
+    "discount_amount_per_unit",
    "commission_rate",
     "commission_amount",
      "margin_pct",
@@ -208,8 +206,9 @@
   {
    "fieldname": "buy_price",
    "fieldtype": "Currency",
-    "label": "Base PU HT",
-    "default": "0",
+     "label": "Base PU HT",
+     "precision": "9",
+     "default": "0",
     "in_list_view": 1,
     "non_negative": 1
   },
@@ -239,75 +238,96 @@
    "in_list_view": 1
   },
   {
+   "fieldname": "presentation_role",
+   "fieldtype": "Select",
+   "label": "Presentation Role",
+   "options": "Include in commercial summary\nPrint separately",
+   "default": "Include in commercial summary",
+   "in_list_view": 1
+  },
+  {
    "fieldname": "base_amount",
    "fieldtype": "Currency",
-    "label": "Base PT HT",
-    "read_only": 1,
+     "label": "Base PT HT",
+     "precision": "9",
+     "read_only": 1,
     "in_list_view": 1
   },
   {
    "fieldname": "expense_unit_price",
    "fieldtype": "Currency",
-     "label": "Charges PU HT",
-   "read_only": 1,
+      "label": "Charges PU HT",
+    "precision": "9",
+    "read_only": 1,
    "in_list_view": 1
   },
   {
    "fieldname": "expense_total",
    "fieldtype": "Currency",
-     "label": "Charges PT HT",
-     "read_only": 1,
+      "label": "Charges PT HT",
+      "precision": "9",
+      "read_only": 1,
      "in_list_view": 1
    },
   {
    "fieldname": "customs_unit_amount",
    "fieldtype": "Currency",
-   "label": "Customs Unit",
-   "read_only": 1
+    "label": "Customs Unit",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "margin_unit_amount",
    "fieldtype": "Currency",
-   "label": "Margin Unit",
-   "read_only": 1
+    "label": "Margin Unit",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "margin_total_amount",
    "fieldtype": "Currency",
-   "label": "Margin Total",
-   "read_only": 1
+    "label": "Margin Total",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "total_margin_unit_amount",
    "fieldtype": "Currency",
-   "label": "Total Margin Unit",
-   "read_only": 1
+    "label": "Total Margin Unit",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "total_margin_total_amount",
    "fieldtype": "Currency",
-   "label": "Total Margin Total",
-   "read_only": 1
+    "label": "Total Margin Total",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "projected_unit_price",
    "fieldtype": "Currency",
-    "label": "Cout PU HT",
-    "read_only": 1,
+     "label": "Cout PU HT",
+     "precision": "9",
+     "read_only": 1,
     "in_list_view": 1
    },
   {
    "fieldname": "projected_total_price",
    "fieldtype": "Currency",
-     "label": "Cout PT HT",
-     "read_only": 1,
+      "label": "Cout PT HT",
+      "precision": "9",
+      "read_only": 1,
      "in_list_view": 1
    },
-  {
-   "fieldname": "manual_sell_unit_price",
-   "fieldtype": "Currency",
-   "label": "Manual Unit Override"
-  },
+   {
+    "fieldname": "sell_unit_price",
+    "fieldtype": "Currency",
+    "label": "PU HT",
+    "in_list_view": 1,
+    "non_negative": 1,
+    "precision": "9"
+   },
   {
    "fieldname": "is_manual_override",
    "fieldtype": "Check",
@@ -315,22 +335,17 @@
    "read_only": 1
   },
   {
-   "fieldname": "final_sell_unit_price",
-   "fieldtype": "Currency",
-      "label": "PU HT",
-     "read_only": 1,
-     "in_list_view": 1
-   },
-  {
    "fieldname": "margin_pct",
    "fieldtype": "Percent",
    "label": "Margin Pct",
+   "precision": "9",
    "read_only": 1
   },
   {
    "fieldname": "total_margin_pct",
    "fieldtype": "Percent",
    "label": "Total Margin Pct",
+   "precision": "9",
    "read_only": 1
   },
   {
@@ -343,12 +358,14 @@
    "fieldname": "target_margin_percent",
    "fieldtype": "Percent",
    "label": "Target Margin %",
+   "precision": "9",
    "read_only": 1
   },
   {
    "fieldname": "builder_margin_percent",
    "fieldtype": "Percent",
    "label": "Builder Margin %",
+   "precision": "9",
    "read_only": 1
   },
   {
@@ -390,52 +407,60 @@
     "read_only": 1
    },
    {
-    "fieldname": "customs_value_per_kg",
-    "fieldtype": "Currency",
-    "label": "Customs Value Per Kg",
-    "read_only": 1
+     "fieldname": "customs_value_per_kg",
+     "fieldtype": "Currency",
+     "label": "Customs Value Per Kg",
+     "precision": "9",
+     "read_only": 1
    },
    {
-    "fieldname": "customs_base_value",
-    "fieldtype": "Currency",
-    "label": "Customs Value",
-    "read_only": 1
+     "fieldname": "customs_base_value",
+     "fieldtype": "Currency",
+     "label": "Customs Value",
+     "precision": "9",
+     "read_only": 1
    },
    {
     "fieldname": "customs_total_percent",
     "fieldtype": "Percent",
     "label": "Customs Total Percent",
+    "precision": "9",
     "read_only": 1
    },
    {
-    "fieldname": "customs_rate_per_kg",
-    "fieldtype": "Currency",
-   "label": "Customs Rate Per Kg",
-   "read_only": 1
+     "fieldname": "customs_rate_per_kg",
+     "fieldtype": "Currency",
+    "label": "Customs Rate Per Kg",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "customs_rate_percent",
    "fieldtype": "Percent",
    "label": "Customs Rate Percent",
+   "precision": "9",
    "read_only": 1
   },
   {
    "fieldname": "customs_by_kg",
    "fieldtype": "Currency",
-   "label": "Customs By Kg",
-   "read_only": 1
+    "label": "Customs By Kg",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "customs_by_percent",
    "fieldtype": "Currency",
-   "label": "Customs By Percent",
-   "read_only": 1
+    "label": "Customs By Percent",
+    "precision": "9",
+    "read_only": 1
   },
    {
-    "fieldname": "customs_applied",
-    "fieldtype": "Currency",
-     "label": "Customs Total",
-     "read_only": 1
+     "fieldname": "customs_applied",
+     "fieldtype": "Currency",
+      "label": "Customs Total",
+      "precision": "9",
+      "read_only": 1
    },
    {
     "fieldname": "packaging_profile_source",
@@ -477,8 +502,9 @@
   {
    "fieldname": "transport_allocated",
    "fieldtype": "Currency",
-   "label": "Transport Allocated",
-   "read_only": 1
+    "label": "Transport Allocated",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "price_floor_violation",
@@ -487,78 +513,73 @@
    "read_only": 1,
    "in_list_view": 1
   },
-  {
-   "fieldname": "final_sell_total",
-   "fieldtype": "Currency",
-      "label": "PT HT",
-      "read_only": 1,
-      "in_list_view": 1
-    },
+   {
+    "fieldname": "sell_total",
+    "fieldtype": "Currency",
+    "label": "PT HT",
+    "precision": "9",
+    "read_only": 1,
+    "in_list_view": 1
+   },
    {
     "fieldname": "max_discount_percent_allowed",
     "fieldtype": "Percent",
     "label": "Max Discount %",
+    "precision": "9",
     "read_only": 1,
     "in_list_view": 1
    },
    {
     "fieldname": "discount_percent",
     "fieldtype": "Percent",
-     "label": "Remise %",
+    "label": "Remise %",
+    "precision": "9",
     "default": "0",
     "in_list_view": 1
    },
-   {
-    "fieldname": "discount_amount",
-    "fieldtype": "Currency",
-    "label": "Remise HT",
-    "read_only": 1,
-    "in_list_view": 1
-   },
-   {
-    "fieldname": "discounted_sell_unit_price",
-    "fieldtype": "Currency",
-    "label": "PU HT net",
-    "read_only": 1,
-    "in_list_view": 1
-   },
-   {
-    "fieldname": "discounted_sell_total",
-    "fieldtype": "Currency",
-    "label": "PT HT net",
-    "read_only": 1,
-    "in_list_view": 1
-   },
+    {
+     "fieldname": "discount_amount_per_unit",
+     "fieldtype": "Currency",
+     "label": "Remise PU HT",
+     "in_list_view": 1,
+     "non_negative": 1,
+     "precision": "9"
+    },
    {
     "fieldname": "commission_rate",
     "fieldtype": "Percent",
     "label": "Commission %",
+    "precision": "9",
     "read_only": 1,
     "in_list_view": 1
    },
    {
-    "fieldname": "commission_amount",
+     "fieldname": "commission_amount",
+     "fieldtype": "Currency",
+     "label": "Commission Amount",
+     "precision": "9",
+     "read_only": 1,
+    "in_list_view": 1
+   },
+   {
+     "fieldname": "benchmark_price",
     "fieldtype": "Currency",
-    "label": "Commission Amount",
-    "read_only": 1,
-    "in_list_view": 1
-   },
-   {
-    "fieldname": "benchmark_price",
-   "fieldtype": "Currency",
-   "label": "Benchmark Price",
-   "read_only": 1
+    "label": "Benchmark Price",
+    "precision": "9",
+    "read_only": 1
   },
   {
-   "fieldname": "benchmark_delta_abs",
-   "fieldtype": "Currency",
-   "label": "Benchmark Delta Abs",
-   "read_only": 1
+    "fieldname": "benchmark_delta_abs",
+    "fieldtype": "Currency",
+    "label": "Benchmark Delta Abs",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "benchmark_delta_pct",
    "fieldtype": "Percent",
    "label": "Benchmark Delta Pct",
+   "precision": "9",
    "read_only": 1
   },
   {
@@ -576,10 +597,11 @@
    "read_only": 1
   },
   {
-   "fieldname": "benchmark_reference",
-   "fieldtype": "Currency",
-   "label": "Benchmark Reference",
-   "read_only": 1,
+    "fieldname": "benchmark_reference",
+    "fieldtype": "Currency",
+    "label": "Benchmark Reference",
+    "precision": "9",
+    "read_only": 1,
    "description": "Computed benchmark value (median/avg of sources)"
   },
   {
@@ -616,30 +638,34 @@
    "in_list_view": 1
   },
   {
-   "fieldname": "tier_modifier_amount",
-   "fieldtype": "Currency",
-    "label": "Tier Modifier Unit",
-    "read_only": 1,
+    "fieldname": "tier_modifier_amount",
+    "fieldtype": "Currency",
+     "label": "Tier Modifier Unit",
+     "precision": "9",
+     "read_only": 1,
     "description": "Dynamic adjustment applied based on customer tier"
   },
   {
-   "fieldname": "tier_modifier_total",
-   "fieldtype": "Currency",
-   "label": "Tier Modifier Total",
-   "read_only": 1
+    "fieldname": "tier_modifier_total",
+    "fieldtype": "Currency",
+    "label": "Tier Modifier Total",
+    "precision": "9",
+    "read_only": 1
   },
   {
-   "fieldname": "zone_modifier_amount",
-   "fieldtype": "Currency",
-    "label": "Territory Modifier Unit",
-    "read_only": 1,
+    "fieldname": "zone_modifier_amount",
+    "fieldtype": "Currency",
+     "label": "Territory Modifier Unit",
+     "precision": "9",
+     "read_only": 1,
     "description": "Dynamic adjustment applied based on territory/zone"
   },
   {
-   "fieldname": "zone_modifier_total",
-   "fieldtype": "Currency",
-   "label": "Territory Modifier Total",
-   "read_only": 1
+    "fieldname": "zone_modifier_total",
+    "fieldtype": "Currency",
+    "label": "Territory Modifier Total",
+    "precision": "9",
+    "read_only": 1
   },
   {
    "fieldname": "pricing_breakdown_json",
@@ -655,10 +681,11 @@
    "read_only": 1
   },
    {
-    "fieldname": "static_list_price",
-    "fieldtype": "Currency",
-     "label": "PU List HT",
-    "read_only": 1,
+     "fieldname": "static_list_price",
+     "fieldtype": "Currency",
+      "label": "PU List HT",
+     "precision": "9",
+     "read_only": 1,
     "in_list_view": 0,
     "description": "Price fetched from the selling price list in Static mode"
    },

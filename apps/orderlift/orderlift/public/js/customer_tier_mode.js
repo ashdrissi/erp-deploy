@@ -253,7 +253,7 @@ function addPortalActions(frm) {
 }
 
 function canManagePricingRules() {
-    const adminRoles = ["Administrator", "System Manager", "Developer", "Orderlift Admin"];
+    const adminRoles = ["Administrator", "System Manager", "Orderlift Admin"];
     return adminRoles.some((role) => frappe.user && frappe.user.has_role && frappe.user.has_role(role));
 }
 

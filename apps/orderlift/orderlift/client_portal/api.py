@@ -111,6 +111,10 @@ def submit_quote_request(payload: str) -> dict:
         request.business_type = ctx.business_type
     if request.meta.get_field("crm_segment"):
         request.crm_segment = ctx.crm_segment
+    if request.meta.get_field("custom_company"):
+        request.custom_company = (ctx.get("company") or "").strip()
+        if not request.custom_company:
+            frappe.throw(_("No company is configured for your portal access."), frappe.PermissionError)
     request.contact = ctx.contact
     request.portal_user = ctx.user
     request.currency = policy.currency or frappe.db.get_value("Price List", policy.portal_price_list, "currency") or frappe.defaults.get_global_default("currency")
@@ -331,7 +335,19 @@ def download_request_quotation_pdf(name: str):
         frappe.throw(_("You are not allowed to download this quotation."), frappe.PermissionError)
     if not request.linked_quotation:
         frappe.throw(_("No quotation has been created for this request yet."))
-    return download_pdf("Quotation", request.linked_quotation, None)
+    return download_pdf("Quotation", request.linked_quotation, _preferred_quotation_print_format(request.linked_quotation))
+
+
+def _preferred_quotation_print_format(quotation: str) -> str | None:
+    company = frappe.db.get_value("Quotation", quotation, "company") or ""
+    filters = {"doc_type": "Quotation", "disabled": 0}
+    if frappe.db.has_column("Print Format", "custom_company") and company:
+        filters["custom_company"] = company
+    return frappe.db.get_value(
+        "Print Format",
+        {**filters, "name": ["like", "Orderlift Quotation PU HT%"]},
+        "name",
+    ) or frappe.db.get_value("Print Format", {"doc_type": "Quotation", "name": ["like", "Orderlift Quotation PU HT%"], "disabled": 0}, "name")
 
 
 @frappe.whitelist()

@@ -8,6 +8,7 @@ from orderlift.orderlift_crm.company_business_type import (
     get_single_company_business_type,
     is_business_type_allowed_for_company,
 )
+from orderlift.orderlift_crm.party_propagation import apply_party_context_to_opportunity, resolve_party_context
 
 DRAFT_TITLE = "Draft Opportunity"
 DRAFT_PARTY_TYPE = "Prospect"
@@ -21,11 +22,23 @@ def assign_opportunity_name(doc, method=None) -> None:
     if doc.get("name") and _name_has_business_abbreviation(doc.name):
         return
     doc.name = _next_opportunity_name(business_type)
+    abbreviation = (doc.get("custom_deal_abbreviation") or "").strip()
+    if abbreviation:
+        from orderlift.orderlift_crm.deal_abbreviation import normalize_deal_abbreviation
+
+        doc.name = f"{doc.name}~{normalize_deal_abbreviation(abbreviation)}"
 
 
 def apply_opportunity_defaults(doc, method=None) -> None:
     if not doc.get("opportunity_owner"):
         doc.opportunity_owner = frappe.session.user
+    party_type = (doc.get("opportunity_from") or "").strip()
+    party_name = (doc.get("party_name") or "").strip()
+    if party_type in {"Lead", "Prospect", "Customer"} and party_name:
+        apply_party_context_to_opportunity(
+            doc,
+            resolve_party_context(party_type, party_name, source_doc=doc),
+        )
     if doc.meta.get_field("custom_crm_business_type") and not doc.get("custom_crm_business_type"):
         doc.custom_crm_business_type = get_single_company_business_type(doc.get("company"))
     if doc.get("custom_crm_business_type") and not is_business_type_allowed_for_company(
@@ -88,7 +101,7 @@ def _next_opportunity_name(business_type: str) -> str:
     )
     max_suffix = 0
     for name in rows:
-        suffix = (name or "").rsplit("-", 1)[-1]
+        suffix = (name or "").rsplit("-", 1)[-1].split("~", 1)[0]
         if suffix.isdigit():
             max_suffix = max(max_suffix, int(suffix))
     return f"{prefix}{max_suffix + 1:05d}"

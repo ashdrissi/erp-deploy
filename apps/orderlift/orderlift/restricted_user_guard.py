@@ -13,6 +13,7 @@ import frappe
 from werkzeug.wrappers import Response
 
 from orderlift.menu_access import user_can_access_page
+from orderlift.retired_pages import RETIRED_PAGE_NAMES, RETIRED_PAGE_REDIRECTS
 
 
 # The role that triggers all restrictions
@@ -22,9 +23,16 @@ LEGACY_CRM_ROUTE_REDIRECTS = {
     "/desk/installation-pipeline": "/desk/opportunity-pipeline",
     "/app/installation-pipeline": "/desk/opportunity-pipeline",
 }
+RETIRED_PAGE_SLUGS = RETIRED_PAGE_NAMES
 
 # Roles that bypass all restrictions (superadmins)
-BYPASS_ROLES = frozenset(["System Manager", "Administrator", "Developer"])
+BYPASS_ROLES = frozenset(["System Manager", "Administrator"])
+PERMISSION_CONTROLLED_SYSTEM_DOCTYPES = frozenset()
+PERMISSION_CONTROLLED_SYSTEM_SLUGS = {}
+PERMISSION_FIELDS = frozenset([
+    "select", "read", "write", "create", "delete", "submit", "cancel", "amend",
+    "report", "import", "export", "print", "email", "share",
+])
 
 
 def _is_restricted(user: str | None = None) -> bool:
@@ -86,11 +94,36 @@ def redirect_legacy_crm_page_routes() -> None:
     _set_redirect(location)
 
 
-def block_if_restricted(user: str | None = None) -> bool:
+def block_if_restricted(doc=None, ptype: str | None = None, user: str | None = None, permission_type: str | None = None) -> bool:
     """has_permission handler — return False to deny, True to allow."""
+    if isinstance(doc, str) and not user and not ptype and not permission_type:
+        user = doc
+        doc = None
+    user = user or frappe.session.user
+    doctype = getattr(doc, "doctype", None)
     if _is_restricted(user):
         return False
     return True
+
+
+def _system_doctype_explicitly_allowed(doctype: str | None, user: str | None = None, ptype: str | None = None) -> bool:
+    if doctype not in PERMISSION_CONTROLLED_SYSTEM_DOCTYPES:
+        return False
+    return _role_has_docperm(doctype, user or frappe.session.user, ptype or "read")
+
+
+def _role_has_docperm(doctype: str, user: str, ptype: str) -> bool:
+    fieldname = (ptype or "read").lower()
+    if fieldname not in PERMISSION_FIELDS:
+        fieldname = "read"
+    roles = set(frappe.get_roles(user))
+    if not roles:
+        return False
+    filters = {"parent": doctype, "role": ["in", list(roles)], fieldname: 1}
+    for perm_doctype in ("Custom DocPerm", "DocPerm"):
+        if frappe.db.exists(perm_doctype, filters):
+            return True
+    return False
 
 
 def redirect_on_login(login_manager):
@@ -181,15 +214,15 @@ def guard_restricted_routes() -> None:
     )
 
     if slug in blocked_slugs:
+        allowed_doctype = PERMISSION_CONTROLLED_SYSTEM_SLUGS.get(slug)
+        if allowed_doctype and _system_doctype_explicitly_allowed(allowed_doctype, user, "read"):
+            return
         _do_redirect()
 
 
 def guard_orderlift_menu_routes() -> None:
     """Block direct access to custom Desk pages hidden by menu access rules."""
     user = frappe.session.user
-    if user in ("Administrator", "Guest"):
-        return
-
     request = getattr(frappe.local, "request", None)
     if not request:
         return
@@ -202,6 +235,11 @@ def guard_orderlift_menu_routes() -> None:
         slug = path[5:].split("/")[0].lower()
     elif path.startswith("/desk/"):
         slug = path[6:].split("/")[0].lower()
+    if slug in RETIRED_PAGE_SLUGS:
+        _set_redirect(RETIRED_PAGE_REDIRECTS.get(slug, TARGET_URL))
+        return
+    if user in ("Administrator", "Guest"):
+        return
     if not slug or slug == "home-page":
         return
 
@@ -209,6 +247,10 @@ def guard_orderlift_menu_routes() -> None:
         allowed = user_can_access_page(slug, user=user)
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Orderlift menu route guard failed")
+        if frappe.db.exists("Page", slug):
+            module = frappe.db.get_value("Page", slug, "module") or ""
+            if module.startswith("Orderlift"):
+                _do_redirect()
         return
     if not allowed:
         _do_redirect()

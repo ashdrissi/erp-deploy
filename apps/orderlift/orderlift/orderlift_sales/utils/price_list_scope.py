@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from orderlift.reference_access import require_reference_use
+
 from orderlift.menu_access import resolve_current_company
 from orderlift.role_capabilities import (
     CAPABILITY_PRIVILEGED_PRICING,
@@ -11,20 +13,9 @@ from orderlift.role_capabilities import (
 )
 
 
-# Role sets for Item-form price visibility (tunable). Privileged users see every
-# active-company price list; sales agents are limited to their allocated selling
-# lists; buying (cost) prices are gated behind purchasing access.
-PRIVILEGED_PRICE_ROLES = {
-    "Orderlift Admin",
-    "Orderlift Business Admin",
-    "Pricing Manager",
-    "Sales Manager",
-    "Purchase Manager",
-    "System Manager",
-}
-SALES_AGENT_ROLES = {"Sales User", "Orderlift Commercial"}
-PURCHASING_ROLES = {"Purchase User", "Purchase Manager", "Purchasing User", "Stock Manager"}
-
+# Privileged users see every active-company price list; sales agents are limited
+# to their allocated selling lists. Buying (cost) prices require purchasing access
+# and an explicit Purchase Agent Rules allowance unless privileged pricing applies.
 QUOTATION_PRICE_OVERRIDE_ROLES = {
     "Orderlift Admin",
     "Orderlift Business Admin",
@@ -105,6 +96,13 @@ def validate_price_list_scope(price_list_name, kind=None, required=False, compan
         if required:
             frappe.throw(_("Price List is required."))
         return ""
+
+    require_reference_use(
+        "Price List",
+        price_list_name,
+        filters={"enabled": 1},
+        label="Price List",
+    )
 
     fields = ["name"]
     if _has_column("Price List", PRICE_LIST_TYPE_FIELD):
@@ -311,10 +309,9 @@ def get_visible_price_lists(kind=None, company=None, user=None):
 
     company_lists = set(get_price_list_names(kind, company=company))
     roles = set(frappe.get_roles(user) or [])
-    privileged_allowed = user == "Administrator" or bool(roles & PRIVILEGED_PRICE_ROLES)
     if role_capability_decision(
         CAPABILITY_PRIVILEGED_PRICING,
-        privileged_allowed,
+        False,
         user=user,
         roles=roles,
         context="get_visible_price_lists",
@@ -326,18 +323,15 @@ def get_visible_price_lists(kind=None, company=None, user=None):
     if kind == "benchmark":
         return sorted(company_lists & _agent_benchmark_lists(sales_person))
     if kind == "buying":
-        purchasing_allowed = bool(roles & PURCHASING_ROLES)
         if not role_capability_decision(
             CAPABILITY_PURCHASING_ACCESS,
-            purchasing_allowed,
+            False,
             user=user,
             roles=roles,
             context="get_visible_price_lists.buying",
         ):
             return []
-        buying_alloc = _agent_buying_lists(sales_person)
-        if buying_alloc is not None:
-            return sorted(company_lists & buying_alloc)
+        return sorted(company_lists & get_purchase_agent_buying_price_lists(user=user, company=company))
     return sorted(company_lists)
 
 
@@ -369,32 +363,37 @@ def get_item_price_access(kind, company=None):
     if user == "Administrator":
         return _access(True, False, company_lists, "admin")
     roles = set(frappe.get_roles(user) or [])
+    if role_capability_decision(
+        CAPABILITY_PRIVILEGED_PRICING,
+        False,
+        user=user,
+        roles=roles,
+        context="get_item_price_access",
+    ):
+        return _access(True, False, company_lists, "privileged_pricing")
 
     # Buying = supplier cost: only users with purchasing access may see it.
-    purchasing_allowed = bool(roles & PURCHASING_ROLES)
     if kind == "buying" and not role_capability_decision(
         CAPABILITY_PURCHASING_ACCESS,
-        purchasing_allowed,
+        False,
         user=user,
         roles=roles,
         context="get_item_price_access.buying",
     ):
         return _access(False, False, set(), "no_purchasing_access")
 
-    sales_person = _user_sales_person(user)
-
     if kind == "selling":
+        sales_person = _user_sales_person(user)
         return _access(True, True, company_lists & _agent_selling_lists(sales_person), "agent_selling")
 
     if kind == "benchmark":
+        sales_person = _user_sales_person(user)
         return _access(True, True, company_lists & _agent_benchmark_lists(sales_person), "agent_benchmark")
 
-    # kind == "buying" and user has purchasing access: narrow to a dynamic agent
-    # allocation when one exists; otherwise a normal purchaser sees all lists.
-    buying_alloc = _agent_buying_lists(sales_person)
-    if buying_alloc is not None:
-        return _access(True, True, company_lists & buying_alloc, "agent_buying")
-    return _access(True, False, company_lists, "buying")
+    allowed_buying_lists = company_lists & get_purchase_agent_buying_price_lists(user=user, company=company)
+    if not allowed_buying_lists:
+        return _access(False, True, set(), "no_purchase_agent_rule")
+    return _access(True, True, allowed_buying_lists, "purchase_agent_rule")
 
 
 def _access(permitted, restricted, price_lists, reason):
@@ -421,20 +420,30 @@ def _agent_selling_lists(sales_person):
     return {pl for pl in (context.get("selling_price_lists") or []) if pl}
 
 
-def _agent_buying_lists(sales_person):
-    """Set of dynamically-allocated buying lists, or None when the user has no
-    dynamic allocation (treated as unrestricted)."""
-    if not sales_person:
-        return None
-    from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules import (
-        DYNAMIC_MODE,
-        build_dynamic_context,
-    )
+def get_purchase_agent_buying_price_lists(user=None, company=None):
+    """Return explicitly allowed active Buying Price Lists for a user and company."""
+    user = user or frappe.session.user
+    company = (company or current_company() or "").strip()
+    if not user or not company or not frappe.db.exists("DocType", "Purchase Agent Rules"):
+        return set()
 
-    context = build_dynamic_context(sales_person=sales_person)
-    if (context.get("pricing_mode") or "") != DYNAMIC_MODE:
-        return None
-    return {pl for pl in (context.get("allowed_buying_price_lists") or []) if pl}
+    rule_names = frappe.db.get_all(
+        "Purchase Agent Rules",
+        filters={"purchase_user": user, "company": company, "enabled": 1},
+        pluck="name",
+    )
+    if not rule_names:
+        return set()
+
+    return {
+        (row.get("buying_price_list") or "").strip()
+        for row in frappe.db.get_all(
+            "Purchase Agent Allowed Buying Price List",
+            filters={"parent": ["in", rule_names], "parenttype": "Purchase Agent Rules", "is_active": 1},
+            fields=["buying_price_list"],
+        )
+        if (row.get("buying_price_list") or "").strip()
+    }
 
 
 def _agent_benchmark_lists(sales_person):

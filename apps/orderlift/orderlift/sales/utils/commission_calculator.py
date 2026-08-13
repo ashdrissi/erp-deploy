@@ -7,9 +7,12 @@ Sales Invoices are fully paid, and become Paid only after payout.
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe.utils import flt
 
+from orderlift.orderlift_sales.utils.sales_team import commission_rate, primary_sales_person, team_rows
 from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
@@ -44,6 +47,13 @@ def create_sales_order_commissions(doc, method=None):
             commission.commission_rate = payload["commission_rate"]
             commission.base_amount = payload["base_amount"]
             commission.commission_amount = payload["commission_amount"]
+            for fieldname in (
+                "custom_contribution_percent",
+                "custom_primary_commission_rate",
+                "custom_sales_team_snapshot",
+            ):
+                if commission.meta.get_field(fieldname):
+                    commission.set(fieldname, payload.get(fieldname))
             commission.status = "Approved"
             commission.sales_invoice = ""
             commission.flags.orderlift_commission_snapshot_update = True
@@ -52,6 +62,7 @@ def create_sales_order_commissions(doc, method=None):
             continue
 
         commission = frappe.get_doc(payload)
+        commission.flags.orderlift_commission_snapshot_update = True
         commission.insert(ignore_permissions=True)
         commission.submit()
 
@@ -128,6 +139,9 @@ def cancel_sales_order_commissions(doc, method=None):
 
 
 def _build_sales_order_snapshot_commissions(sales_order):
+    if _has_sales_team(sales_order):
+        return _build_team_snapshot_commissions(sales_order)
+
     results = {}
 
     for item in sales_order.items or []:
@@ -142,16 +156,9 @@ def _build_sales_order_snapshot_commissions(sales_order):
         quotation_qty = flt(qitem.get("qty") or 0)
         denominator = quotation_qty or order_qty or 1.0
         factor = order_qty / denominator if denominator else 0
-        commission_amount = flt(source.get("source_commission_amount") or 0)
-        if commission_amount <= 0:
-            recalculated = _calculate_snapshot_commission(source, denominator)
-            commission_amount = flt(recalculated.get("commission_amount") or 0)
-        prorated_commission = commission_amount * factor
-        prorated_discount = _line_discount_amount(
-            source.get("source_gross_sell_rate"),
-            source.get("source_discounted_sell_rate"),
-            order_qty,
-        )
+        calculated = _calculate_snapshot_commission(source, denominator)
+        prorated_commission = flt(calculated.get("commission_amount") or 0) * factor
+        prorated_base = flt(calculated.get("base_amount") or 0) * factor
 
         if not salesperson or not prorated_commission:
             continue
@@ -174,10 +181,72 @@ def _build_sales_order_snapshot_commissions(sales_order):
                 "status": "Approved",
             },
         )
-        bucket["base_amount"] += prorated_discount
+        bucket["base_amount"] += prorated_base
         bucket["commission_amount"] += prorated_commission
 
     return list(results.values())
+
+
+def _build_team_snapshot_commissions(sales_order):
+    """Split the primary salesperson's commission pool across the team."""
+    team = team_rows(sales_order)
+    primary = primary_sales_person(team)
+    if not primary or not team:
+        return []
+
+    primary_rate = commission_rate(primary)
+    pool_base = 0.0
+    pool_amount = 0.0
+    for item in sales_order.items or []:
+        quotation_item_name = getattr(item, "quotation_item", None) or getattr(item, "prevdoc_detail_docname", None)
+        qitem = _quotation_item_commission_snapshot(quotation_item_name) if quotation_item_name else {}
+        source = qitem or _row_snapshot(item)
+        order_qty = flt(getattr(item, "qty", 0) or 0)
+        quotation_qty = flt(qitem.get("qty") or 0)
+        denominator = quotation_qty or order_qty or 1.0
+        factor = order_qty / denominator if denominator else 0
+        source = dict(source)
+        source["source_commission_rate"] = primary_rate
+        calculated = _calculate_snapshot_commission(source, denominator)
+        pool_amount += flt(calculated.get("commission_amount") or 0) * factor
+        pool_base += flt(calculated.get("base_amount") or 0) * factor
+
+    if not pool_amount:
+        return []
+
+    snapshot = json.dumps(team, sort_keys=True)
+    results = []
+    for member in team:
+        percentage = flt(member.get("allocated_percentage") or 0)
+        amount = pool_amount * percentage / 100
+        if not amount:
+            continue
+        results.append(
+            {
+                "doctype": "Sales Commission",
+                "salesperson": member["sales_person"],
+                "sales_order": sales_order.name,
+                "sales_invoice": "",
+                "project": sales_order.project,
+                "customer": sales_order.customer,
+                "company": sales_order.company,
+                "currency": getattr(sales_order, "currency", None) or "",
+                "commission_rate": primary_rate,
+                "base_amount": pool_base * percentage / 100,
+                "commission_amount": amount,
+                "status": "Approved",
+                "custom_contribution_percent": percentage,
+                "custom_primary_commission_rate": primary_rate,
+                "custom_sales_team_snapshot": snapshot,
+            }
+        )
+    return results
+
+
+def _has_sales_team(sales_order) -> bool:
+    getter = getattr(sales_order, "get", None)
+    rows = getter("custom_sales_team") if callable(getter) else getattr(sales_order, "custom_sales_team", None)
+    return bool(rows)
 
 
 def _quotation_item_commission_snapshot(quotation_item_name):
@@ -187,10 +256,9 @@ def _quotation_item_commission_snapshot(quotation_item_name):
         [
             "source_sales_person",
             "source_commission_rate",
-            "source_commission_amount",
-            "source_discount_amount",
-            "source_gross_sell_rate",
-            "source_discounted_sell_rate",
+            "source_price_list_sell_rate",
+            "price_list_rate",
+            "rate",
             "source_max_discount_percent",
             "qty",
         ],
@@ -209,17 +277,16 @@ def _row_snapshot(item):
     return {
         "source_sales_person": value("source_sales_person", ""),
         "source_commission_rate": value("source_commission_rate"),
-        "source_commission_amount": value("source_commission_amount"),
-        "source_discount_amount": value("source_discount_amount"),
-        "source_gross_sell_rate": value("source_gross_sell_rate") or value("price_list_rate"),
-        "source_discounted_sell_rate": value("source_discounted_sell_rate") or value("rate"),
+        "source_price_list_sell_rate": value("source_price_list_sell_rate"),
+        "price_list_rate": value("price_list_rate"),
+        "rate": value("rate"),
         "source_max_discount_percent": value("source_max_discount_percent"),
     }
 
 
 def _calculate_snapshot_commission(source, qty):
-    price_list_unit = flt(source.get("source_gross_sell_rate") or 0)
-    actual_unit = flt(source.get("source_discounted_sell_rate") or 0)
+    price_list_unit = flt(source.get("source_price_list_sell_rate") or source.get("price_list_rate") or 0)
+    actual_unit = flt(source.get("rate") or 0)
     if price_list_unit <= 0 or actual_unit <= 0:
         return {}
     try:
@@ -235,12 +302,8 @@ def _calculate_snapshot_commission(source, qty):
         return {}
     return {
         "commission_amount": commission.get("commission_amount") or 0,
-        "discount_amount": _line_discount_amount(price_list_unit, actual_unit, qty),
+        "base_amount": commission.get("commission_base_amount") or 0,
     }
-
-
-def _line_discount_amount(gross_unit_price, actual_unit_price, qty):
-    return max(flt(gross_unit_price) - flt(actual_unit_price), 0) * flt(qty)
 
 
 def _payment_entry_sales_invoices(payment_entry):

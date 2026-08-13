@@ -140,7 +140,7 @@ function _load_so_status_names() {
     if (ORDERLIFT_SO_STATUS_NAMES) return Promise.resolve(ORDERLIFT_SO_STATUS_NAMES);
     if (!ORDERLIFT_SO_STATUS_NAMES_PROMISE) {
         ORDERLIFT_SO_STATUS_NAMES_PROMISE = frappe.call({
-            method: "orderlift.orderlift_crm.api.status_control.get_status_control_data",
+            method: "orderlift.orderlift_crm.status_workflow.get_status_reference_data",
             args: { document_type: "Sales Order" },
         }).then((res) => {
             ORDERLIFT_SO_STATUS_NAMES = new Set(

@@ -17,7 +17,7 @@ def calculate_preview_rows(item_rows, manual_prices=None, formula_rules=None, fi
         if code in manual_prices:
             chosen = _to_float(manual_prices.get(code))
         elif _fixed_percent_applies(code, fixed_percent, fixed_targets):
-            chosen = round_money(list_price * (1 + fixed_pct / 100))
+            chosen = list_price * (1 + fixed_pct / 100)
         else:
             chosen = list_price
         rows.append(
@@ -31,8 +31,8 @@ def calculate_preview_rows(item_rows, manual_prices=None, formula_rules=None, fi
                 "uom": item.get("uom") or item.get("stock_uom") or "",
                 "list_price": list_price,
                 "chosen_price": chosen,
-                "final_price": round_money(chosen),
-                "delta": round_money(chosen - list_price),
+                "final_price": chosen,
+                "delta": chosen - list_price,
                 "formula_rule": "",
                 "formula_source": "",
             }
@@ -51,9 +51,9 @@ def calculate_preview_rows(item_rows, manual_prices=None, formula_rules=None, fi
             if not target_row or target_code == source["item_code"]:
                 continue
             pct = _to_float(target.get("pct"))
-            final_price = round_money(source["final_price"] * (1 + pct / 100))
+            final_price = source["final_price"] * (1 + pct / 100)
             target_row["final_price"] = final_price
-            target_row["delta"] = round_money(final_price - target_row["list_price"])
+            target_row["delta"] = final_price - target_row["list_price"]
             target_row["formula_rule"] = rule.get("name") or "Formula rule"
             target_row["formula_source"] = source["item_code"]
             target_row["formula_percent"] = pct
@@ -96,10 +96,6 @@ def normalize_formula_targets(targets, default_pct=0):
         pct = _to_float(get("pct", get("adjustment_percent", default_pct)))
         out.append({"code": code, "pct": pct})
     return out
-
-
-def round_money(value):
-    return round(_to_float(value), 2)
 
 
 def _fixed_percent_targets(fixed_percent):

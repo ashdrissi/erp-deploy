@@ -7,7 +7,7 @@ from frappe import _
 from frappe.utils import nowdate
 
 from orderlift.role_capabilities import CAPABILITY_PRIVILEGED_PRICING, role_capability_decision
-from orderlift.orderlift_sales.utils.price_list_scope import PRIVILEGED_PRICE_ROLES, can_override_quotation_pricing, validate_visible_price_list
+from orderlift.orderlift_sales.utils.price_list_scope import can_override_quotation_pricing, validate_visible_price_list
 
 
 ITEM_PRICE_MAX_DISCOUNT_FIELDS = (
@@ -81,12 +81,22 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
         current_rate = _flt(row.get("rate"))
         source_list = (row.get("source_selling_price_list") or "").strip()
 
-        if selected_price:
-            if not pricing_override and current_rate + 0.000001 < _price_floor(selected_price):
-                _apply_price_to_quotation_row(row, selected_price)
-            continue
+        if not selected_price and not source_list:
+            selected_price = next(
+                (
+                    price
+                    for price in prices
+                    if current_rate + _rate_tolerance(row) >= _price_floor(price)
+                ),
+                None,
+            )
+        if not selected_price and pricing_override:
+            selected_price = prices[0]
 
-        if not source_list and any(current_rate + 0.000001 >= _price_floor(price) for price in prices):
+        if selected_price:
+            _stamp_price_reference_on_quotation_row(row, selected_price)
+            if not pricing_override and current_rate + _rate_tolerance(row) < _price_floor(selected_price):
+                _apply_price_to_quotation_row(row, selected_price)
             continue
 
         if pricing_override:
@@ -159,6 +169,8 @@ def validate_sales_invoice_price_list(doc, method=None):
     source_result = _trusted_sales_source(doc)
     if source_result.trusted:
         return source_result
+    if not _transaction_item_rows(doc):
+        return source_result
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
     if not can_override_quotation_pricing():
         _validate_transaction_items_priced(doc, fieldname="selling_price_list", kind="selling")
@@ -168,6 +180,8 @@ def validate_sales_invoice_price_list(doc, method=None):
 def validate_delivery_note_price_list(doc, method=None):
     source_result = _trusted_sales_source(doc)
     if source_result.trusted:
+        return source_result
+    if not _transaction_item_rows(doc):
         return source_result
     _validate_doc_price_list(doc, fieldname="selling_price_list", kind="selling")
     if not can_override_quotation_pricing():
@@ -254,7 +268,7 @@ def _transaction_item_rows(doc) -> list[dict]:
                 "rate": row.get("rate"),
                 "idx": row.get("idx"),
                 "source_selling_price_list": row.get("source_selling_price_list"),
-                "source_gross_sell_rate": row.get("source_gross_sell_rate"),
+                "source_price_list_sell_rate": row.get("source_price_list_sell_rate"),
             }
         )
     return out
@@ -267,7 +281,7 @@ def _is_manual_charge_item(item_code: str | None) -> bool:
 def _has_policy_pricing_source(doc, item_rows: list[dict]) -> bool:
     if not (doc.get("source_pricing_sheet") or "").strip():
         return False
-    return bool(item_rows) and all(_flt(row.get("source_gross_sell_rate")) > 0 for row in item_rows)
+    return bool(item_rows) and all(_flt(row.get("source_price_list_sell_rate")) > 0 for row in item_rows)
 
 
 def _has_quotation_pricing_source(doc) -> bool:
@@ -282,10 +296,10 @@ def _has_quotation_pricing_source(doc) -> bool:
             continue
         source_doctype = (row.get("prevdoc_doctype") or "").strip()
         source_docname = (row.get("prevdoc_docname") or "").strip()
-        source_detail = (row.get("prevdoc_detail_docname") or "").strip()
+        source_detail = (row.get("quotation_item") or row.get("prevdoc_detail_docname") or "").strip()
         if source_doctype and source_doctype != "Quotation":
             return False
-        if not source_docname or not source_detail or _flt(row.get("source_gross_sell_rate")) <= 0:
+        if not source_docname or not source_detail or _flt(row.get("source_price_list_sell_rate")) <= 0:
             return False
     return True
 
@@ -463,7 +477,7 @@ def _parent_context_mismatch(
     source_conversion = _flt(_value(source_doc, "conversion_rate"))
     if target_conversion <= 0 or source_conversion <= 0:
         return "conversion rate is missing."
-    if not _numbers_match(target_conversion, source_conversion, tolerance=0.000000001):
+    if not _numbers_match(target_conversion, source_conversion, tolerance=1e-9):
         return "conversion rate does not match."
     return ""
 
@@ -483,7 +497,7 @@ def _row_context_mismatch(target_row, source_row) -> str:
     source_conversion = _flt(_value(source_row, "conversion_factor"))
     if target_conversion <= 0 or source_conversion <= 0:
         return "UOM conversion factor is missing."
-    if not _numbers_match(target_conversion, source_conversion, tolerance=0.000000001):
+    if not _numbers_match(target_conversion, source_conversion, tolerance=1e-9):
         return "UOM conversion factor does not match."
 
     if not _numbers_match(
@@ -504,8 +518,8 @@ def _rate_tolerance(*rows) -> float:
                 precisions.append(int(precision("rate")))
             except (TypeError, ValueError):
                 pass
-    precision = max(precisions or [6])
-    return 0.5 * (10 ** (-precision))
+    precision = max(precisions or [9])
+    return min(1e-9, 10 ** (-precision))
 
 
 def _numbers_match(left: float, right: float, *, tolerance: float) -> bool:
@@ -593,7 +607,7 @@ def _apply_price_to_quotation_row(row, price: dict) -> None:
         discount = 0.0
     if discount > max_discount:
         discount = max_discount
-    qty = _flt(row.get("qty") or 1) or 1
+    qty = _flt(row.get("qty"))
     net_rate = gross_rate * (1 - (discount / 100.0))
 
     values = {
@@ -603,15 +617,24 @@ def _apply_price_to_quotation_row(row, price: dict) -> None:
         "discount_percentage": discount,
         "source_selling_price_list": price.get("price_list") or "",
         "source_price_list_sell_rate": gross_rate,
-        "source_gross_sell_rate": gross_rate,
         "source_max_discount_percent": max_discount,
         "source_discount_percent": discount,
         "source_discount_amount": gross_rate - net_rate,
-        "source_discounted_sell_rate": net_rate,
     }
     for fieldname, value in values.items():
         _set_row_value(row, fieldname, value)
     _stamp_margin_on_quotation_row(row, price)
+
+
+def _stamp_price_reference_on_quotation_row(row, price: dict) -> None:
+    values = {
+        "price_list_rate": _flt(price.get("price_list_rate")),
+        "source_selling_price_list": price.get("price_list") or "",
+        "source_price_list_sell_rate": _flt(price.get("price_list_rate")),
+        "source_max_discount_percent": _item_price_max_discount_percent(price),
+    }
+    for fieldname, value in values.items():
+        _set_row_value(row, fieldname, value)
 
 
 def _set_row_value(row, fieldname: str, value) -> None:
@@ -697,7 +720,7 @@ def _validate_selling_item_rates(item_rows: list[dict], price_map: dict[str, lis
         if selected_price:
             _throw_if_below_price_floor(row, current_rate, selected_price)
             continue
-        if any(current_rate + 0.000001 >= _price_floor(price) for price in prices):
+        if any(current_rate + _rate_tolerance(row) >= _price_floor(price) for price in prices):
             continue
         best_price = min(prices, key=_price_floor)
         _throw_if_below_price_floor(row, current_rate, best_price)
@@ -712,10 +735,10 @@ def _selected_row_price(row: dict, prices: list[dict]) -> dict | None:
 
 def _throw_if_below_price_floor(row: dict, current_rate: float, price: dict) -> None:
     minimum_rate = _price_floor(price)
-    if current_rate + 0.000001 >= minimum_rate:
+    if current_rate + _rate_tolerance(row) >= minimum_rate:
         return
     frappe.throw(
-        _("Rate for {0} on row {1} is below the allowed net rate {2} from Selling Price List {3}.").format(
+        _("Rate for {0} on row {1} is below the allowed rate {2} from Selling Price List {3}.").format(
             row["item_code"],
             row.get("idx") or "-",
             _format_money(minimum_rate),
@@ -797,9 +820,12 @@ def _can_bypass_item_price_restriction(kind: str | None = None) -> bool:
     if (kind or "").strip().lower() == "selling":
         return False
     roles = set(frappe.get_roles(user) or [])
+    # Capabilities are authoritative; the legacy role-set argument is ignored by
+    # role_capability_decision (see role_capabilities.py). Pass False rather than reference
+    # the removed PRIVILEGED_PRICE_ROLES constant.
     return role_capability_decision(
         CAPABILITY_PRIVILEGED_PRICING,
-        bool(roles & PRIVILEGED_PRICE_ROLES),
+        False,
         user=user,
         roles=roles,
         context="can_bypass_item_price_restriction",

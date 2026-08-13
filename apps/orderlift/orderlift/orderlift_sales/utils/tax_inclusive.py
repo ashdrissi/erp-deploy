@@ -87,6 +87,24 @@ def apply_quotation_sales_tax_template(doc) -> None:
     _calculate_taxes_and_totals(doc)
 
 
+def apply_purchase_order_tax_template(doc, method=None) -> None:
+    """Apply the explicitly chosen purchase template before TTC snapshots."""
+    if not doc or not _doc_has_field(doc, "taxes_and_charges"):
+        return
+    company = (doc.get("company") or "").strip()
+    selected_template = (doc.get("taxes_and_charges") or "").strip()
+    if not selected_template:
+        _clear_tax_rows(doc)
+        _calculate_taxes_and_totals(doc)
+        return
+    _validate_purchase_tax_template_company(selected_template, company)
+    copied_rows = _copy_purchase_tax_template_rows(doc, selected_template)
+    if not copied_rows:
+        _calculate_taxes_and_totals(doc)
+        return
+    _calculate_taxes_and_totals(doc)
+
+
 def quote_item_inclusive_totals(doc) -> list[dict]:
     return _quote_item_inclusive_totals(doc)
 
@@ -103,8 +121,8 @@ def sync_pricing_sheet_item_tax_inclusive_fields(pricing_sheet) -> None:
     )
     if not quote or not getattr(quote, "items", None):
         for row in rows:
-            pu_ht = flt(row.get("discounted_sell_unit_price") or row.get("final_sell_unit_price") or 0)
-            pt_ht = flt(row.get("discounted_sell_total") or (pu_ht * flt(row.get("qty") or 1)) or 0)
+            pu_ht = flt(row.get("sell_unit_price") or 0)
+            pt_ht = flt(row.get("sell_total") or (pu_ht * flt(row.get("qty") or 1)) or 0)
             _set_sheet_row_ttc(row, 0, pu_ht, pt_ht)
         return
 
@@ -152,6 +170,37 @@ def company_default_sales_tax_rate(company: str) -> float:
     return sales_tax_template_total_rate(company_default_sales_taxes_template(company))
 
 
+def company_default_purchase_taxes_template(company: str) -> str:
+    company = (company or "").strip()
+    if not company or not frappe.db.exists("DocType", "Purchase Taxes and Charges Template"):
+        return ""
+    configured = ""
+    if frappe.db.has_column("Company", "custom_default_purchase_taxes_template"):
+        configured = (
+            frappe.db.get_value("Company", company, "custom_default_purchase_taxes_template") or ""
+        ).strip()
+    if configured and _purchase_tax_template_valid_for_company(configured, company):
+        return configured
+    rows = frappe.get_all(
+        "Purchase Taxes and Charges Template",
+        filters={"company": company, "disabled": 0},
+        fields=["name", "is_default"],
+        order_by="is_default desc, modified desc, name asc",
+        limit_page_length=1,
+    )
+    return rows[0].name if rows else ""
+
+
+@frappe.whitelist()
+def get_company_default_purchase_taxes_template(company: str) -> str:
+    from orderlift.menu_access import user_can_access_company
+
+    company = (company or "").strip()
+    if company and not user_can_access_company(company):
+        frappe.throw(_("You do not have access to company {0}.").format(company), frappe.PermissionError)
+    return company_default_purchase_taxes_template(company)
+
+
 def sales_tax_template_total_rate(template_name: str) -> float:
     template_name = (template_name or "").strip()
     if not template_name or not frappe.db.exists("Sales Taxes and Charges Template", template_name):
@@ -174,6 +223,19 @@ def sales_tax_template_total_rate(template_name: str) -> float:
 def _sales_tax_template_valid_for_company(template_name: str, company: str) -> bool:
     values = frappe.db.get_value(
         "Sales Taxes and Charges Template",
+        template_name,
+        ["company", "disabled"],
+        as_dict=True,
+    )
+    if not values:
+        return False
+    template_company = (values.get("company") or "").strip()
+    return not flt(values.get("disabled") or 0) and (not template_company or template_company == company)
+
+
+def _purchase_tax_template_valid_for_company(template_name: str, company: str) -> bool:
+    values = frappe.db.get_value(
+        "Purchase Taxes and Charges Template",
         template_name,
         ["company", "disabled"],
         as_dict=True,
@@ -217,7 +279,7 @@ def _build_pricing_sheet_preview_quotation(pricing_sheet, rows, taxes_and_charge
 
     for row in rows:
         qty = flt(row.get("qty") or 0) or 1
-        rate = flt(row.get("discounted_sell_unit_price") or row.get("final_sell_unit_price") or 0)
+        rate = flt(row.get("sell_unit_price") or 0)
         quote.append(
             "items",
             {
@@ -292,6 +354,28 @@ def _copy_sales_tax_template_rows(doc, template_name: str) -> int:
     return len(source_rows)
 
 
+def _copy_purchase_tax_template_rows(doc, template_name: str) -> int:
+    template = frappe.get_doc("Purchase Taxes and Charges Template", template_name)
+    source_rows = list(template.get("taxes") or [])
+    _clear_tax_rows(doc)
+    excluded = {
+        "doctype",
+        "name",
+        "owner",
+        "creation",
+        "modified",
+        "modified_by",
+        "parent",
+        "parentfield",
+        "parenttype",
+        "docstatus",
+        "idx",
+    }
+    for source in source_rows:
+        doc.append("taxes", {key: value for key, value in source.as_dict().items() if key not in excluded})
+    return len(source_rows)
+
+
 def _doc_has_field(doc, fieldname: str) -> bool:
     meta = getattr(doc, "meta", None)
     getter = getattr(meta, "get_field", None)
@@ -314,6 +398,22 @@ def _validate_sales_tax_template_company(template_name: str, company: str) -> No
         frappe.throw(_("Sales Taxes Template {0} is disabled.").format(template_name))
     if company and template_company and template_company != company:
         frappe.throw(_("Sales Taxes Template {0} does not belong to company {1}.").format(template_name, company))
+
+
+def _validate_purchase_tax_template_company(template_name: str, company: str) -> None:
+    values = frappe.db.get_value(
+        "Purchase Taxes and Charges Template",
+        template_name,
+        ["company", "disabled"],
+        as_dict=True,
+    )
+    if not values:
+        frappe.throw(_("Purchase Taxes Template {0} does not exist.").format(template_name))
+    template_company = (values.get("company") or "").strip()
+    if flt(values.get("disabled") or 0):
+        frappe.throw(_("Purchase Taxes Template {0} is disabled.").format(template_name))
+    if company and template_company and template_company != company:
+        frappe.throw(_("Purchase Taxes Template {0} does not belong to company {1}.").format(template_name, company))
 
 
 def _quote_item_inclusive_totals(doc) -> list[dict]:
@@ -352,8 +452,9 @@ def _quote_item_inclusive_totals(doc) -> list[dict]:
                     row_tax = 0.0
                 tax_by_row_name[row.name] = flt(row_tax)
     else:
+        template_tax_rate = _fallback_template_tax_rate(doc)
         for row in items:
-            tax_by_row_name[row.name] = _fallback_row_tax(row)
+            tax_by_row_name[row.name] = _fallback_row_tax(row, template_tax_rate)
 
     totals = []
     for row in items:
@@ -379,12 +480,23 @@ def _detail_tax_amount(value) -> float:
     return flt(value)
 
 
-def _fallback_row_tax(row) -> float:
+def _fallback_row_tax(row, template_tax_rate: float = 0.0) -> float:
     item_tax_rate = _loads(getattr(row, "item_tax_rate", None))
-    if not item_tax_rate:
-        return 0.0
     total_rate = sum(flt(rate) for rate in item_tax_rate.values()) if isinstance(item_tax_rate, dict) else 0.0
+    if not total_rate:
+        total_rate = template_tax_rate
     return flt(row.net_amount or row.amount) * total_rate / 100.0 if total_rate else 0.0
+
+
+def _fallback_template_tax_rate(doc) -> float:
+    total_rate = 0.0
+    for tax in doc.get("taxes") or []:
+        total_rate += flt(getattr(tax, "rate", 0))
+    if total_rate:
+        return total_rate
+    net_total = flt(getattr(doc, "net_total", None) or getattr(doc, "total", None))
+    total_tax = flt(getattr(doc, "total_taxes_and_charges", None))
+    return (total_tax / net_total * 100.0) if net_total and total_tax else 0.0
 
 
 def _loads(value):

@@ -17,6 +17,7 @@ STATIC_MODE  = "Pick from Published Selling Price List"
 class AgentPricingRules(Document):
     def validate(self):
         self._validate_price_list_scopes()
+        self._validate_payment_terms()
         if self.pricing_mode != DYNAMIC_MODE:
             return
 
@@ -26,6 +27,21 @@ class AgentPricingRules(Document):
             frappe.throw(_("Add at least one active Dynamic Configuration row for Dynamic mode."))
 
         self._validate_dynamic_rows(rows)
+
+    def _validate_payment_terms(self):
+        seen = set()
+        defaults = 0
+        for row in self.get("allowed_payment_terms") or []:
+            template = (row.get("payment_terms_template") or "").strip()
+            if not template:
+                continue
+            if template in seen:
+                frappe.throw(_("Duplicate Payment Terms Template {0} is not allowed.").format(template))
+            seen.add(template)
+            if cint(row.get("is_active", 1)) and cint(row.get("is_default")):
+                defaults += 1
+        if defaults > 1:
+            frappe.throw(_("Only one active Payment Terms Template can be marked as Default."))
 
     def _normalize_dynamic_rows(self):
         for row in self.dynamic_pricing_configs or []:

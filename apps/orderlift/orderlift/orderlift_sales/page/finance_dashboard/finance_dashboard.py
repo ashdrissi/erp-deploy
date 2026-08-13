@@ -6,9 +6,12 @@ import frappe
 from frappe import _
 from frappe.utils import flt, get_first_day, nowdate
 
+from orderlift.retired_pages import deny_retired_page
+
 
 @frappe.whitelist()
 def get_dashboard_data():
+    deny_retired_page("finance-dashboard")
     frappe.has_permission("Sales Invoice", "report", throw=True)  # Finance scope gate
     return {
         "kpis": _get_kpis(),

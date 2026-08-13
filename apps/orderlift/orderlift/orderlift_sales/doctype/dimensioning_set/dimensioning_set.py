@@ -3,6 +3,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
 
+from orderlift.reference_access import get_reference_doc_for_use
 from orderlift.sales.utils.dimensioning import (
     coerce_dimensioning_value,
     evaluate_formula,
@@ -46,7 +47,22 @@ ITEM_FILTER_OPERATORS = {"==", "!=", "contains", ">", ">=", "<", "<="}
 class DimensioningSet(Document):
     def validate(self):
         self._validate_fields()
+        self._normalize_rule_group_titles()
         self._validate_rules()
+
+    def _normalize_rule_group_titles(self):
+        grouped = {}
+        for row in self.item_rules or []:
+            key = (row.rule_group or "").strip() or f"GROUP-{cint(row.idx or 0):03d}"
+            grouped.setdefault(key, []).append(row)
+        for key, rows in grouped.items():
+            titles = {(getattr(row, "rule_group_title", None) or "").strip() for row in rows}
+            titles.discard("")
+            if len(titles) > 1:
+                frappe.throw(_("Rule group {0} has conflicting titles: {1}").format(key, ", ".join(sorted(titles))))
+            title = next(iter(titles), "") or _default_rule_group_title(rows[0], key)
+            for row in rows:
+                row.rule_group_title = title
 
     def _validate_fields(self):
         seen = set()
@@ -103,6 +119,10 @@ class DimensioningSet(Document):
                 frappe.throw(_("Row {0}: {1}").format(row.idx, str(exc)))
 
     def serialize_config(self):
+        try:
+            preview_test_values = frappe.parse_json(self.preview_test_values_json or "{}") or {}
+        except Exception:
+            preview_test_values = {}
         return {
             "name": self.name,
             "set_name": self.set_name or self.name,
@@ -111,6 +131,7 @@ class DimensioningSet(Document):
             "fields": self.serialize_questions(),
             "derived_fields": self.serialize_derived_fields(),
             "rule_groups": self.serialize_rule_groups(),
+            "preview_test_values": preview_test_values,
         }
 
     def serialize_questions(self):
@@ -155,6 +176,7 @@ class DimensioningSet(Document):
             if group_key not in by_group:
                 group = {
                     "rule_group": group_key,
+                    "rule_group_title": getattr(row, "rule_group_title", None) or "",
                     "sequence": cint(row.sequence or 0),
                     "is_active": 1 if cint(row.is_active) else 0,
                     "condition_mode": row.condition_mode or "always",
@@ -173,6 +195,7 @@ class DimensioningSet(Document):
                     "sequence": cint(row.sequence or 0),
                     "is_active": 1 if cint(row.is_active) else 0,
                     "rule_label": row.rule_label or row.item,
+                    "rule_group_title": getattr(row, "rule_group_title", None) or "",
                     "item_selection_mode": _item_selection_mode(row),
                     "item": row.item,
                     "item_filters_json": _item_filters_json(row),
@@ -245,10 +268,11 @@ class DimensioningSet(Document):
                     formula_context[row_key] = 0
                 frappe.throw(_("Dimensioning rule {0}: {1}").format(rule.rule_label or rule.idx, str(exc)))
 
-            resolved_item, resolution_warning = self._resolve_rule_item(rule, formula_context)
+            resolved_item, resolution_warning, resolution = self._resolve_rule_item(rule, formula_context)
             preview.append(
                 {
                     "rule_label": rule.rule_label or resolved_item or rule.item,
+                    "rule_group_title": getattr(rule, "rule_group_title", None) or rule.rule_group or "",
                     "item": resolved_item,
                     "qty": qty,
                     "rule_group": rule.rule_group or "",
@@ -256,6 +280,7 @@ class DimensioningSet(Document):
                     "show_in_detail": 1 if cint(rule.show_in_detail) else 0,
                     "item_selection_mode": _item_selection_mode(rule),
                     "resolution_warning": resolution_warning,
+                    "resolution": resolution,
                     "missing_item": 1 if resolution_warning or not resolved_item else 0,
                 }
             )
@@ -264,7 +289,14 @@ class DimensioningSet(Document):
 
     def _resolve_rule_item(self, rule, formula_context):
         if _item_selection_mode(rule) == "fixed":
-            return (rule.item or "").strip(), ""
+            item = (rule.item or "").strip()
+            return item, "", {
+                "status": "unique" if item else "none",
+                "candidate_count": 1 if item else 0,
+                "candidate_items": [item] if item else [],
+                "resolved_filters": [],
+                "missing_filter_values": [],
+            }
         return _resolve_filtered_item(rule, formula_context)
 
     def _add_item_preview_details(self, preview):
@@ -273,7 +305,7 @@ class DimensioningSet(Document):
             return
         item_details = {
             row.name: row
-            for row in frappe.get_all(
+            for row in frappe.get_list(
                 "Item",
                 filters={"name": ["in", item_codes]},
                 fields=["name", "item_name", "item_group", "stock_uom", "description"],
@@ -324,13 +356,24 @@ class DimensioningSet(Document):
         return field_types
 
 
+def _get_dimensioning_set_for_use(set_name):
+    return get_reference_doc_for_use(
+        "Dimensioning Set",
+        set_name,
+        filters={"is_active": 1},
+        label="Dimensioning Set",
+    )
+
+
 @frappe.whitelist()
 def get_dimensioning_set_payload(set_name):
     if not set_name:
         return {"set": None}
-    frappe.has_permission("Dimensioning Set", "read", throw=True)
-    doc = frappe.get_doc("Dimensioning Set", set_name)
-    return {"set": doc.serialize_config()}
+    doc = _get_dimensioning_set_for_use(set_name)
+    return {
+        "set": doc.serialize_config(),
+        "can_configure": frappe.has_permission("Dimensioning Set", "write", doc=doc),
+    }
 
 
 @frappe.whitelist()
@@ -385,6 +428,8 @@ def save_dimensioning_builder_payload(payload):
     doc.set_name = (payload.get("set_name") or payload.get("name") or _("New Dimensioning Set")).strip()
     doc.description = payload.get("description") or ""
     doc.is_active = 1 if cint(payload.get("is_active", 1)) else 0
+    if hasattr(doc, "preview_test_values_json"):
+        doc.preview_test_values_json = frappe.as_json(payload.get("preview_test_values") or {})
     doc.set("input_fields", [])
     if hasattr(doc, "derived_fields"):
         doc.set("derived_fields", [])
@@ -400,6 +445,9 @@ def save_dimensioning_builder_payload(payload):
         group_key = (group.get("rule_group") or f"GROUP-{group_idx:03d}").strip()
         for article_idx, article in enumerate(group.get("articles") or [], start=1):
             doc.append("item_rules", _article_rule_row(group, article, group_key, group_idx, article_idx))
+
+    if cint(doc.is_active):
+        _validate_active_builder_resolution(doc, payload.get("preview_test_values") or {})
 
     doc.save()
     return {"set": doc.serialize_config(), "name": doc.name}
@@ -447,17 +495,41 @@ def preview_dimensioning_builder_payload(set_name=None, payload=None, input_valu
 
 
 @frappe.whitelist()
-def preview_dimensioning_set(set_name, input_values_json=None):
-    frappe.has_permission("Dimensioning Set", "read", throw=True)
+def preview_dimensioning_set(set_name, input_values_json=None, multiplier=1):
+    from orderlift.orderlift_sales.utils.commercial_presentation import normalize_dimensioning_multiplier
+
     if not set_name:
         return {"items": [], "values": {}}
-    doc = frappe.get_doc("Dimensioning Set", set_name)
+    doc = _get_dimensioning_set_for_use(set_name)
     values = doc.coerce_input_values(input_values_json=input_values_json)
+    set_multiplier = normalize_dimensioning_multiplier(multiplier)
+    items = doc.preview_generated_items(values)
+    for item in items:
+        item["qty"] = flt(item.get("qty")) * set_multiplier
     return {
         "set": doc.serialize_config(),
         "values": values,
-        "items": doc.preview_generated_items(values),
+        "multiplier": set_multiplier,
+        "items": items,
     }
+
+
+def _validate_active_builder_resolution(doc, input_values):
+    values = doc.coerce_input_values(input_values_json=input_values)
+    unresolved = [
+        row
+        for row in doc.preview_generated_items(values)
+        if row.get("item_selection_mode") == "filtered"
+        and (row.get("resolution") or {}).get("status") != "unique"
+    ]
+    if not unresolved:
+        return
+    messages = [row.get("resolution_warning") or row.get("rule_label") or _("Unresolved filtered article") for row in unresolved]
+    frappe.throw(
+        _("Active Dimensioning Sets require one Item match for every generated filtered article:<br>{0}").format(
+            "<br>".join(f"- {message}" for message in messages)
+        )
+    )
 
 
 def _parse_payload(payload):
@@ -498,6 +570,7 @@ def _article_rule_row(group, article, group_key, group_idx, article_idx):
         "sequence": sequence,
         "is_active": 1 if cint(article.get("is_active", group.get("is_active", 1))) else 0,
         "rule_group": group_key,
+        "rule_group_title": group.get("rule_group_title") or article.get("rule_group_title") or "",
         "condition_mode": group.get("condition_mode") or "always",
         "question_key": group.get("question_key") or "",
         "operator": group.get("operator") or "==",
@@ -580,6 +653,7 @@ def _payload_rule_groups(payload):
         if group_key not in by_group:
             group = {
                 "rule_group": group_key,
+                "rule_group_title": rule.get("rule_group_title") or "",
                 "sequence": rule.get("sequence") or idx * 10,
                 "is_active": rule.get("is_active", 1),
                 "condition_mode": rule.get("condition_mode") or "always",
@@ -618,6 +692,8 @@ def _doc_from_payload(payload):
     doc.set_name = payload.get("set_name") or payload.get("name") or "Preview"
     doc.description = payload.get("description") or ""
     doc.is_active = 1
+    if hasattr(doc, "preview_test_values_json"):
+        doc.preview_test_values_json = frappe.as_json(payload.get("preview_test_values") or {})
     for idx, field in enumerate(payload.get("fields") or payload.get("questions") or [], start=1):
         doc.append("input_fields", _question_row(field, idx))
     if hasattr(doc, "derived_fields"):
@@ -687,11 +763,30 @@ def _validate_item_filters(row, allowed_formula_names):
 
 def _resolve_filtered_item(rule, formula_context):
     try:
-        resolved_filters = _resolved_item_filters(rule, formula_context)
+        resolved_filters, missing_filter_values = _resolved_item_filters(rule, formula_context)
     except ValueError as exc:
-        return "", str(exc)
+        return "", str(exc), {
+            "status": "invalid_filter",
+            "candidate_count": 0,
+            "candidate_items": [],
+            "resolved_filters": [],
+            "missing_filter_values": [],
+        }
+    label = _rule_resolution_label(rule)
+    diagnostic = {
+        "status": "not_evaluated",
+        "candidate_count": 0,
+        "candidate_items": [],
+        "resolved_filters": resolved_filters,
+        "missing_filter_values": missing_filter_values,
+    }
+    if missing_filter_values:
+        diagnostic["status"] = "missing_value"
+        missing_labels = ", ".join(row["label"] for row in missing_filter_values)
+        return "", _("{0} has missing filter values: {1}.").format(label, missing_labels), diagnostic
     if not resolved_filters:
-        return "", _("No item filters are configured.")
+        diagnostic["status"] = "invalid_filter"
+        return "", _("No item filters are configured for {0}.").format(label), diagnostic
 
     item_filters = [["Item", "disabled", "=", 0]]
     post_filters = []
@@ -700,34 +795,44 @@ def _resolve_filtered_item(rule, formula_context):
         source = filter_row["source"]
         if source == "item_field" and _can_filter_in_db(filter_row):
             item_filters.append(_db_filter_condition(filter_row))
+            if _contains_localized_decimal(filter_row):
+                post_filters.append(filter_row)
         elif source == "item_field":
             post_filters.append(filter_row)
         else:
             spec_filters.append(filter_row)
 
-    candidates = frappe.get_all(
+    candidates = frappe.get_list(
         "Item",
         filters=item_filters,
-            fields=_item_candidate_fields(),
+        fields=_item_candidate_fields(),
         order_by="name asc",
-        limit_page_length=200,
+        limit_page_length=1001,
     )
     if post_filters:
         candidates = [row for row in candidates if all(_matches_filter(row.get(f["field"]), f) for f in post_filters)]
     if spec_filters and candidates:
         candidates = _filter_items_by_specifications(candidates, spec_filters)
 
+    diagnostic["candidate_count"] = len(candidates)
+    diagnostic["candidate_items"] = [
+        {"item_code": row.name, "item_name": row.item_name or ""}
+        for row in candidates[:10]
+    ]
     if len(candidates) == 1:
-        return candidates[0].name, ""
-    label = getattr(rule, "rule_label", None) or getattr(rule, "item", None) or _("Filtered item")
+        diagnostic["status"] = "unique"
+        return candidates[0].name, "", diagnostic
     if not candidates:
-        return "", _("No Item matched filters for {0}.").format(label)
+        diagnostic["status"] = "none"
+        return "", _("No Item matched filters for {0}.").format(label), diagnostic
+    diagnostic["status"] = "multiple"
     sample = ", ".join(row.name for row in candidates[:5])
-    return "", _("Filters for {0} matched multiple Items: {1}.").format(label, sample)
+    return "", _("Filters for {0} matched multiple Items: {1}.").format(label, sample), diagnostic
 
 
 def _resolved_item_filters(rule, formula_context):
     resolved = []
+    missing = []
     for idx, filter_row in enumerate(_parse_item_filters(rule), start=1):
         source = (filter_row.get("source") or "item_field").strip()
         operator = (filter_row.get("operator") or "==").strip()
@@ -737,6 +842,13 @@ def _resolved_item_filters(rule, formula_context):
             raise ValueError(f"Item filter {idx}: unsupported operator '{operator}'.")
         value = _resolve_item_filter_value(filter_row, formula_context, idx)
         if value in (None, ""):
+            missing.append(
+                {
+                    "index": idx,
+                    "label": _item_filter_value_label(filter_row, idx),
+                    "value_source": (filter_row.get("value_source") or "manual").strip(),
+                }
+            )
             continue
         field = _normalize_item_filter_field(filter_row.get("field"))
         if source == "item_field" and not field:
@@ -751,9 +863,35 @@ def _resolved_item_filters(rule, formula_context):
                 "attribute": attribute,
                 "operator": operator,
                 "value": value,
+                "label": attribute if source == "specification" else field,
             }
         )
-    return resolved
+    return resolved, missing
+
+
+def _rule_resolution_label(rule):
+    title = (getattr(rule, "rule_group_title", None) or "").strip()
+    article = (getattr(rule, "rule_label", None) or getattr(rule, "item", None) or _("Filtered item")).strip()
+    return f"{title} / {article}" if title and title != article else article
+
+
+def _default_rule_group_title(row, key):
+    label = (getattr(row, "rule_label", None) or "").strip()
+    if label and not label.lower().startswith("new "):
+        return label
+    display_group = (getattr(row, "display_group", None) or "").strip()
+    if display_group and display_group.lower() not in {"ungrouped", "workbook", "dimensionnement"}:
+        return display_group
+    return _("Rule {0}").format(key)
+
+
+def _item_filter_value_label(filter_row, idx):
+    source = (filter_row.get("value_source") or "manual").strip()
+    if source == "question":
+        return (filter_row.get("question_key") or filter_row.get("value") or f"filter {idx}").strip()
+    if source == "formula":
+        return (filter_row.get("formula") or f"filter {idx}").strip()
+    return (filter_row.get("attribute") or filter_row.get("field") or f"filter {idx}").strip()
 
 
 def _resolve_item_filter_value(filter_row, formula_context, idx):
@@ -814,8 +952,17 @@ def _db_filter_condition(filter_row):
         operator = "="
     elif operator == "contains":
         operator = "like"
+        if _contains_localized_decimal(filter_row):
+            value = str(value).replace(".", "_").replace(",", "_")
         value = f"%{value}%"
     return ["Item", filter_row["field"], operator, value]
+
+
+def _contains_localized_decimal(filter_row):
+    if filter_row.get("operator") != "contains":
+        return False
+    value = str(filter_row.get("value") or "").strip().replace(",", ".")
+    return value.count(".") == 1 and value.lstrip("+-").replace(".", "", 1).isdigit()
 
 
 def _filter_items_by_specifications(candidates, spec_filters):
@@ -860,7 +1007,7 @@ def _matches_filter(actual, filter_row):
         left = str(actual or "").strip().lower()
         right = str(expected or "").strip().lower()
     if operator == "contains":
-        return str(right) in str(left)
+        return str(right).replace(",", ".") in str(left).replace(",", ".")
     if operator == "==":
         return left == right
     if operator == "!=":
@@ -890,6 +1037,9 @@ def _as_number(value):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def dimensioning_item_query(doctype, txt, searchfield, start, page_len, filters):
+    frappe.has_permission("Item", "read", throw=True)
+    from frappe.desk.reportview import get_match_cond
+
     txt_like = f"%{txt}%"
     return frappe.db.sql(
         """
@@ -902,11 +1052,12 @@ def dimensioning_item_query(doctype, txt, searchfield, start, page_len, filters)
         WHERE ifnull(i.disabled, 0) = 0
           AND ifnull(i.is_stock_item, 0) = 1
           AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s OR i.description LIKE %(txt)s)
+          {match_conditions}
         ORDER BY
             CASE WHEN i.name LIKE %(starts_with)s THEN 0 ELSE 1 END,
             i.name ASC
         LIMIT %(start)s, %(page_len)s
-        """,
+        """.format(match_conditions=get_match_cond("Item")),
         {
             "txt": txt_like,
             "starts_with": f"{txt}%",

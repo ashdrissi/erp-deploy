@@ -14,6 +14,7 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
 from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import get_latest_item_prices
 from orderlift.orderlift_sales.utils.tax_inclusive import build_catalogue_ttc_price_map, company_default_sales_taxes_template
 from orderlift.orderlift_sales.utils.price_list_scope import current_company, get_price_lists, get_visible_price_lists, validate_price_list_scope
+from orderlift.role_capabilities import CAPABILITY_PRIVILEGED_PRICING, user_has_capability
 from orderlift.startup_roles import RESTRICTED_COMMERCIAL_ROLES, STOCK_QUANTITY_VIEWER_ROLE
 from orderlift.warehouse_access import stock_warehouse_condition
 
@@ -46,7 +47,6 @@ PDF_IMAGE_HEADERS = {"User-Agent": "Mozilla/5.0"}
 PDF_IMAGE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 PDF_IMAGE_NEGATIVE_CACHE_TTL_SECONDS = 60 * 60
 PDF_IMAGE_CACHE_MISS = "__orderlift_pdf_image_miss__"
-PRIVILEGED_CATALOGUE_ROLES = {"Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
 RESTRICTED_AGENT_ROLES = RESTRICTED_COMMERCIAL_ROLES
 
 
@@ -400,7 +400,11 @@ def _is_restricted_agent_user():
     if not user or user == "Administrator":
         return False
     roles = set(frappe.get_roles(user) or [])
-    return bool(roles & RESTRICTED_AGENT_ROLES) and not bool(roles & PRIVILEGED_CATALOGUE_ROLES)
+    return bool(roles & RESTRICTED_AGENT_ROLES) and not user_has_capability(
+        CAPABILITY_PRIVILEGED_PRICING,
+        user=user,
+        roles=roles,
+    )
 
 
 def _hide_stock_qty_for_current_user():

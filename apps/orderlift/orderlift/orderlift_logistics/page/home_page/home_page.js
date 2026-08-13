@@ -56,7 +56,7 @@ const IC = {
 
 // ── Gateway definitions ───────────────────────────────────────────────────────
 const GATEWAYS = [
-    { icon: "pricing", label: __("Pricing Admin"), desc: __("Policies · Scenarios · Simulator"), url: "pricing-dashboard", menuKey: "sales.pricing_dashboard", accessKey: "pricing_admin" },
+    { icon: "pricing", label: __("Pricing Admin"), desc: __("Policies · Scenarios · Builders"), url: "pricing-dashboard", menuKey: "sales.pricing_dashboard", accessKey: "pricing_admin" },
     { icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory · Transfers · Alerts"), url: "stock-dashboard", menuKey: "stock.dashboard", accessKey: "stock" },
     { icon: "logistics", label: __("Container Planning"), desc: __("Forecasts · Planners · Routes"), url: "logistics-dashboard", menuKey: "logistics.container_planning", accessKey: "logistics" },
     { icon: "crm", label: __("CRM"), desc: __("Customers · Pipeline · Leads"), url: "crm-dashboard", menuKey: "crm.crm_dashboard", accessKey: "crm" },
@@ -131,7 +131,6 @@ const QUICK_ACCESS_GROUPS = [
             { label: __("Pricing Sheets"), url: "pricing-sheet-manager", menuKey: "sales.pricing_sheets" },
             { label: __("Pricing Sheet Builder"), url: "pricing-sheet-builder", menuKey: "sales.pricing_sheets" },
             { label: __("Pricing Dashboard"), url: "pricing-dashboard", menuKey: "sales.pricing_dashboard" },
-            { label: __("Pricing Simulator"), url: "pricing-simulator", menuKey: "sales.pricing_simulator" },
             { label: __("Dimensioning Sets"), url: "dimensioning-set-manager", menuKey: "items.dimensioning_sets" },
             { label: __("Sale Financial Dashboard"), url: "sale-financial-dashboard", menuKey: "finance.sale_financial_dashboard" },
         ],

@@ -83,6 +83,9 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
             has_column=lambda *args, **kwargs: False,
         )
         pricing_sheet.frappe = frappe_stub
+        pricing_sheet.user_has_capability = lambda capability, user=None, roles=None: bool(
+            {"Orderlift Admin", "System Manager", "Pricing Configuration"}.intersection(roles or set())
+        )
 
     def tearDown(self):
         frappe_stub.roles_map.clear()
@@ -119,8 +122,8 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
 
         self.assertFalse(sheet._is_restricted_agent_user())
 
-    def test_pricing_manager_with_sales_user_is_not_restricted(self):
-        frappe_stub.roles_map["sales@example.com"] = ["Sales User", "Pricing Manager"]
+    def test_pricing_configuration_with_sales_user_is_not_restricted(self):
+        frappe_stub.roles_map["sales@example.com"] = ["Sales User", "Pricing Configuration"]
         sheet = pricing_sheet.PricingSheet()
 
         self.assertFalse(sheet._is_restricted_agent_user())
@@ -458,7 +461,14 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
         }
         pricing_sheet.get_pricing_currency = lambda: "USD"
         try:
-            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=2, buy_price=100, manual_sell_unit_price=0)
+            row = types.SimpleNamespace(
+                idx=1,
+                item="ITEM-001",
+                qty=2,
+                buy_price=100,
+                sell_unit_price=150,
+                sell_total=300,
+            )
             sheet = pricing_sheet.PricingSheet()
             sheet.lines = [row]
             sheet.selected_price_list = "Retail Agent"
@@ -499,7 +509,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
         }
         pricing_sheet.get_pricing_currency = lambda: "USD"
         try:
-            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, manual_sell_unit_price=0, discount_percent=0)
+            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, sell_unit_price="", discount_percent=0)
             sheet = pricing_sheet.PricingSheet()
             sheet.lines = [row]
             sheet.selected_price_list = "Retail Agent"
@@ -543,7 +553,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
         }
         pricing_sheet.get_pricing_currency = lambda: "USD"
         try:
-            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, manual_sell_unit_price=140, discount_percent=0)
+            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, sell_unit_price=140, discount_percent=0)
             sheet = pricing_sheet.PricingSheet()
             sheet.lines = [row]
             sheet.selected_price_list = "Retail Agent"
@@ -554,7 +564,8 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
 
             sheet._recalculate_static({"selling_price_lists": ["Retail Agent"]}, 0)
 
-            self.assertEqual(row.final_sell_unit_price, 140)
+            self.assertEqual(row.sell_unit_price, 140)
+            self.assertEqual(row.sell_total, 140)
             self.assertEqual(row.margin_unit_amount, 25)
             self.assertEqual(row.margin_pct, 25)
             self.assertEqual(row.builder_margin_percent, 25)
@@ -582,7 +593,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
         }
         pricing_sheet.get_pricing_currency = lambda: "USD"
         try:
-            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, manual_sell_unit_price=110, discount_percent=0)
+            row = types.SimpleNamespace(idx=1, item="ITEM-001", qty=1, sell_unit_price=110, discount_percent=0)
             sheet = pricing_sheet.PricingSheet()
             sheet.lines = [row]
             sheet.selected_price_list = "Retail Agent"
@@ -613,7 +624,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
                 item="ITEM-001",
                 qty=2,
                 buy_price=80,
-                manual_sell_unit_price=0,
+                sell_unit_price="",
                 discount_percent=0,
             )
             sheet = pricing_sheet.PricingSheet()
@@ -634,7 +645,8 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
 
             sheet._recalculate_static({"selling_price_lists": ["Retail Agent"]}, 0)
 
-            self.assertEqual(row.final_sell_unit_price, 115)
+            self.assertEqual(row.sell_unit_price, 115)
+            self.assertEqual(row.sell_total, 230)
             self.assertEqual(row.tier_modifier_amount, 10)
             self.assertEqual(row.tier_modifier_total, 20)
             self.assertEqual(row.zone_modifier_amount, 5)
@@ -665,7 +677,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
                 item="ITEM-001",
                 qty=1,
                 buy_price=80,
-                manual_sell_unit_price=0,
+                sell_unit_price="",
                 discount_percent=6,
             )
             sheet = pricing_sheet.PricingSheet()
@@ -702,7 +714,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
                 item="ITEM-001",
                 qty=1,
                 buy_price=80,
-                manual_sell_unit_price=0,
+                sell_unit_price="",
                 discount_percent=4,
             )
             sheet = pricing_sheet.PricingSheet()
@@ -735,7 +747,7 @@ class TestPricingSheetAgentRestrictions(unittest.TestCase):
                 item="ITEM-001",
                 qty=1,
                 buy_price=0,
-                manual_sell_unit_price=0,
+                sell_unit_price="",
                 discount_percent=4,
             )
             sheet = pricing_sheet.PricingSheet()

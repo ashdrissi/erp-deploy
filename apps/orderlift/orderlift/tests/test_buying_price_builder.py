@@ -28,8 +28,8 @@ class TestBuyingPriceBuilder(unittest.TestCase):
             ],
         )
         by_code = {row["item_code"]: row for row in rows}
-        self.assertEqual(by_code["TGT-10"]["final_price"], 110)
-        self.assertEqual(by_code["TGT-25"]["final_price"], 125)
+        self.assertAlmostEqual(by_code["TGT-10"]["final_price"], 110, places=9)
+        self.assertAlmostEqual(by_code["TGT-25"]["final_price"], 125, places=9)
         self.assertEqual(by_code["TGT-10"]["formula_rule"], "Variant rule")
 
     def test_fixed_percent_can_apply_to_selected_rows_only(self):
@@ -41,8 +41,8 @@ class TestBuyingPriceBuilder(unittest.TestCase):
             fixed_percent={"scope": "selected", "item_codes": ["B"], "pct": 10},
         )
         by_code = {row["item_code"]: row for row in rows}
-        self.assertEqual(by_code["A"]["final_price"], 100)
-        self.assertEqual(by_code["B"]["final_price"], 220)
+        self.assertAlmostEqual(by_code["A"]["final_price"], 100, places=9)
+        self.assertAlmostEqual(by_code["B"]["final_price"], 220, places=9)
 
     def test_manual_price_overrides_fixed_percent(self):
         rows = calculate_preview_rows(
@@ -50,14 +50,15 @@ class TestBuyingPriceBuilder(unittest.TestCase):
             manual_prices={"A": 130},
             fixed_percent={"scope": "all", "pct": 10},
         )
-        self.assertEqual(rows[0]["final_price"], 130)
+        self.assertAlmostEqual(rows[0]["final_price"], 130, places=9)
 
     def test_normalize_formula_rules_accepts_legacy_single_target(self):
         rules = normalize_formula_rules([
             {"label": "Legacy", "source": "A", "target": "B", "pct": 7, "checked": 1}
         ])
         self.assertEqual(rules[0]["name"], "Legacy")
-        self.assertEqual(rules[0]["targets"], [{"code": "B", "pct": 7.0}])
+        self.assertEqual(rules[0]["targets"][0]["code"], "B")
+        self.assertAlmostEqual(rules[0]["targets"][0]["pct"], 7.0, places=9)
 
     def test_builder_page_can_select_all_available_price_lists(self):
         app_root = Path(__file__).resolve().parents[2]

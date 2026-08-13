@@ -8,6 +8,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from orderlift.role_capabilities import CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT, user_has_capability
+
 
 class SalesCommission(Document):
     def validate(self):
@@ -105,13 +107,4 @@ class SalesCommission(Document):
 
     @staticmethod
     def _can_manage_payouts():
-        if frappe.session.user == "Administrator":
-            return True
-        manager_roles = {
-            "Orderlift Admin",
-            "Sales Manager",
-            "Orderlift Accountant",
-            "System Manager",
-            "Commission Manager",
-        }
-        return bool(manager_roles.intersection(set(frappe.get_roles(frappe.session.user) or [])))
+        return user_has_capability(CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT)

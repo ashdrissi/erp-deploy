@@ -7,7 +7,7 @@
 - Business reporting should use Company, Project, Sales Order, CRM Business Type, and CRM Segment instead of a large chart of accounts.
 
 ## Access Rule
-- Superadmin roles: `Administrator`, `System Manager`, `Developer`.
+- Superadmin identities: built-in `Administrator` and the `System Manager` role.
 - Superadmins can create/edit `Account` and `Cost Center` records and backend finance fields.
 - Business users, including `Orderlift Admin`, cannot create/edit backend accounts or Cost Centers.
 
@@ -39,9 +39,22 @@ Do not create accounts per project, sales order, business type, CRM segment, cus
 - Sales Invoice defaults `debit_to` and item income/expense accounts from Company setup.
 - Purchase Invoice defaults `credit_to` and item expense accounts from Company setup.
 - Payment Entry defaults customer receive payments to receivable + bank/cash, and supplier pay payments to bank/cash + payable.
+- Payment Entry preserves a valid same-company party account selected from the source document. The selected Mode of Payment account remains authoritative for the bank/cash side.
 - Sales Order, Sales Invoice, Purchase Invoice, and Payment Entry rows default Cost Center from Company setup.
 - For non-superadmins, account and Cost Center fields are hidden/read-only in the form and protected server-side after save.
-- For non-superadmins, any same-company account or Cost Center manually supplied through API/import is reset to the Company default during validation.
+- For non-superadmins, backend account and Cost Center values supplied through API/import are normalized during validation. Payment Entry party accounts are retained when they are valid for the selected Company and source document.
+
+## Wire Transfer
+- `Wire Transfer` is an enabled Bank Mode of Payment with one company-specific default account: `Sortie - OL`, `Sortie - OMD`, `Sortie - OMI`, and `Sortie - OTR`.
+- Those ledgers are also the Company default bank accounts. `Sortie - OTR` and Orderlift Turkey use TRY.
+- Payment Entry resolves the Mode of Payment company row before falling back to Company bank/cash defaults.
+
+## Source-Currency Payments
+- Creating a Payment Entry from a Sales Invoice, Purchase Invoice, Sales Order, or Purchase Order carries the source document currency into the payment.
+- Users enter `Payment Amount in Source Currency` and may edit `Source to Company Exchange Rate`. The rate means one unit of source currency expressed in Company currency.
+- `Converted Amount in Company Currency`, native paid/received amounts, and reference allocations are recalculated before validation and stored in the currencies required by the selected ledgers.
+- Partial payments are supported. Same-currency payments always use an exchange rate of `1`.
+- All references on one source-currency Payment Entry must use the same currency. Deductions are not supported in this mode and must be recorded separately.
 
 ## Missing Setup
 If required Company accounts or Cost Center are missing, finance document validation blocks submission with:

@@ -89,6 +89,7 @@ function ruleRow(rule_label, item, display_group, qty_formula, condition_formula
     return {
         sequence: 10,
         is_active: true,
+        rule_group_title: "",
         rule_label,
         item_selection_mode: "fixed",
         item,
@@ -136,6 +137,7 @@ function newBlankDimensioningSet() {
         fields: [],
         derived_fields: [],
         item_rules: [],
+        preview_test_values: {},
     };
 }
 
@@ -489,8 +491,8 @@ function renderRulesSection(set) {
 
 function renderArticleRuleGroup(group, groupIndex, set) {
     const conditionMode = group.condition_state.mode || "always";
-    const hasFormula = group.rules.some(({ rule }) => rule.uses_advanced_formula);
     const conditionLabel = describeConditionGroup(group, set);
+    const ruleTitle = group.title || `${__("Rule")} ${groupIndex + 1}`;
     const articles = group.rules.map(({ rule, index }, articleIndex) => renderArticleRuleRow(rule, index, articleIndex, set)).join("");
     const articlePreview = renderRuleGroupArticlePreview(group, set);
     const isOpen = !!ODS_STATE.openRuleGroups[groupIndex];
@@ -500,12 +502,12 @@ function renderArticleRuleGroup(group, groupIndex, set) {
                 <div class="ods-article-number">${groupIndex + 1}</div>
                 <div>
                     <span class="ods-hierarchy-kicker">${__("Rule")} ${groupIndex + 1}</span>
-                    <h3>${hasFormula ? __("Workbook formulas") : conditionMode === "always" ? __("Always included") : conditionMode === "formula" ? __("Based on formula") : __("Based on answers")}</h3>
-                    <p>${frappe.utils.escape_html(hasFormula ? __("Each article uses its imported quantity formula.") : conditionLabel)}</p>
+                    <h3>${frappe.utils.escape_html(ruleTitle)}</h3>
+                    <p>${frappe.utils.escape_html(conditionLabel)}</p>
                     ${articlePreview}
                 </div>
                 <div class="ods-article-status">
-                    <span class="ods-badge ${hasFormula || conditionMode !== "always" ? "warn" : ""}">${hasFormula ? __("Formula") : conditionMode === "always" ? __("Always") : conditionMode === "formula" ? __("Formula") : __("Conditional")}</span>
+                    <span class="ods-badge ${conditionMode !== "always" ? "warn" : ""}">${conditionMode === "always" ? __("Always") : conditionMode === "formula" ? __("Formula") : __("Conditional")}</span>
                     <span class="ods-badge ok-soft">${group.rules.length} ${__("article(s)")}</span>
                 </div>
                 <div class="ods-rule-group-actions">
@@ -515,9 +517,14 @@ function renderArticleRuleGroup(group, groupIndex, set) {
                 <span class="ods-rule-toggle-indicator">${isOpen ? __("Collapse") : __("Expand")}</span>
             </div>
             ${isOpen ? `<div class="ods-rule-group-body">
+                <label class="ods-field ods-rule-title-field">
+                    <span>${__("Rule title")}</span>
+                    <input data-rule-group-title="${groupIndex}" value="${frappe.utils.escape_html(group.title || "")}" placeholder="${frappe.utils.escape_html(__("Example: Automatic landing doors"))}">
+                    <small>${__("Use a short business title so validation messages identify this rule clearly.")}</small>
+                </label>
                 <div class="ods-hierarchy-block when">
                     <div class="ods-hierarchy-label">${__("WHEN")}</div>
-                    ${hasFormula ? renderWorkbookFormulaCondition(group) : renderRuleConditionControls(group, groupIndex, set)}
+                    ${renderRuleConditionControls(group, groupIndex, set)}
                 </div>
                 <div class="ods-hierarchy-block then">
                     <div class="ods-group-articles-head">
@@ -549,21 +556,6 @@ function renderArticlePicker(groupIndex) {
     return `
         <div class="ods-article-picker">
             <button class="btn btn-xs btn-primary" type="button" data-open-item-picker="${groupIndex}">${__("Choose Item")}</button>
-        </div>
-    `;
-}
-
-function renderWorkbookFormulaCondition(group) {
-    const examples = group.rules.slice(0, 2).map(({ rule }) => `
-        <code>${frappe.utils.escape_html((rule.qty_formula || "0").trim())}</code>
-    `).join("");
-    return `
-        <div class="ods-rule-condition-card ods-formula-rule-note">
-            <div class="ods-condition-summary">
-                <span>${__("Imported workbook logic")}</span>
-                <strong>${__("The Excel formula decides whether each article is added and in what quantity.")}</strong>
-            </div>
-            <div class="ods-rule-group-preview">${examples}</div>
         </div>
     `;
 }
@@ -607,8 +599,8 @@ function renderRuleConditionControls(group, groupIndex, set) {
 
 function renderConditionFormulaBuilder(state, groupIndex, set) {
     const builder = normalizeConditionFormulaBuilder(state, set);
-    const rows = builder.rows.map((row, rowIndex) => renderConditionFormulaBuilderRow(row, groupIndex, rowIndex, set)).join("");
-    const warning = builder.custom ? `<div class="ods-formula-builder-warning">${__("Advanced custom formula: visual rows may not represent the raw formula exactly.")}</div>` : "";
+    const rows = builder.custom ? "" : builder.rows.map((row, rowIndex) => renderConditionFormulaBuilderRow(row, groupIndex, rowIndex, set)).join("");
+    const warning = builder.custom ? `<div class="ods-formula-builder-warning" role="alert"><strong>${__("Custom formula protected")}</strong><span>${__("This valid formula cannot be represented exactly by the visual builder. The advanced formula remains authoritative.")}</span><button class="btn btn-xs btn-default" type="button" data-replace-custom-condition="${groupIndex}">${__("Replace with Visual Builder")}</button></div>` : "";
     return `
         <div class="ods-formula-builder wide">
             <div class="ods-filter-editor-head">
@@ -616,9 +608,9 @@ function renderConditionFormulaBuilder(state, groupIndex, set) {
                     <strong>${__("Condition Formula Builder")}</strong>
                     <span>${__("Build rows like: nbr_etage >= 4 AND hauteur_cabine > 2")}</span>
                 </div>
-                <button class="btn btn-xs btn-default" type="button" data-add-condition-builder-row="${groupIndex}">${__("Add Condition")}</button>
+                ${builder.custom ? `<span class="ods-badge warn">${__("Custom")}</span>` : `<button class="btn btn-xs btn-default" type="button" data-add-condition-builder-row="${groupIndex}">${__("Add Condition")}</button>`}
             </div>
-            <div class="ods-formula-builder-list">${rows}</div>
+            ${builder.custom ? "" : `<div class="ods-formula-builder-list">${rows}</div>`}
             ${warning}
             <details class="ods-advanced-inline">
                 <summary>${__("Advanced formula")}</summary>
@@ -788,7 +780,7 @@ function getArticleRuleGroups(set) {
         const key = (rule.rule_group || "").trim() || condition || "__always__";
         if (!groupIndexes.has(key)) {
             groupIndexes.set(key, groups.length);
-            groups.push({ key, condition, condition_state: extractConditionState(rule), rules: [] });
+            groups.push({ key, title: rule.rule_group_title || "", condition, condition_state: extractConditionState(rule), rules: [] });
         }
         groups[groupIndexes.get(key)].rules.push({ rule, index });
     });
@@ -814,9 +806,8 @@ function ensureStructuredRule(rule, set) {
     normalizeRuleItemFilters(rule);
     normalizeRuleFormulaBuilders(rule, set);
     if (rule.uses_advanced_formula) {
-        rule.condition_mode = rule.condition_mode || "always";
-        rule.quantity_mode = rule.quantity_mode || "fixed";
-        rule.fixed_qty = rule.fixed_qty || "1";
+        if (!["fixed", "question", "formula"].includes(rule.quantity_mode)) rule.quantity_mode = "fixed";
+        rule.qty_formula = compileQuantityFormula(rule, set);
         return;
     }
     if (!rule.condition_mode) {
@@ -1003,6 +994,16 @@ function updateRuleGroupCondition(groupIndex, changes) {
     });
 }
 
+function updateRuleGroupTitle(groupIndex, value) {
+    const set = getActiveSet();
+    const group = getArticleRuleGroups(set)[groupIndex];
+    if (!group) return;
+    const title = String(value || "").trim();
+    group.rules.forEach(({ index }) => {
+        if (set.item_rules[index]) set.item_rules[index].rule_group_title = title;
+    });
+}
+
 function updateRuleQuantity(ruleIndex, changes) {
     const set = getActiveSet();
     const rule = set.item_rules[ruleIndex];
@@ -1089,11 +1090,29 @@ function updateQuantityFormulaRaw(ruleIndex, value) {
     const rule = set.item_rules[ruleIndex];
     if (!rule) return;
     keepArticleSettingsOpen(ruleIndex);
-    const builder = normalizeQuantityFormulaBuilder(rule, set);
-    builder.custom = true;
+    const rawFormula = normalizeUserFormulaInput(value);
+    const builder = quantityFormulaBuilderFromRaw(rawFormula, set) || normalizeQuantityFormulaBuilder(rule, set);
+    builder.custom = !quantityFormulaBuilderFromRaw(rawFormula, set);
     rule.quantity_mode = "formula";
-    rule.qty_formula = normalizeUserFormulaInput(value);
+    rule.qty_formula = rawFormula;
     rule.qty_formula_builder_json = JSON.stringify(builder);
+}
+
+function replaceCustomQuantityFormula(page, ruleIndex) {
+    frappe.confirm(
+        __("Replace this custom quantity formula with a new visual formula? The current raw formula will be replaced."),
+        () => {
+            const set = getActiveSet();
+            const rule = set.item_rules[ruleIndex];
+            if (!rule) return;
+            const builder = defaultQuantityFormulaBuilder(set);
+            rule.quantity_mode = "formula";
+            rule.qty_formula_builder_json = JSON.stringify(builder);
+            rule.qty_formula = compileQuantityFormulaBuilder(builder);
+            ODS_STATE.lastPreview = null;
+            renderDimensioningBuilder(page);
+        }
+    );
 }
 
 function updateConditionFormulaBuilder(groupIndex, rowIndex, field, value) {
@@ -1186,15 +1205,30 @@ function updateConditionFormulaRaw(groupIndex, value) {
     const set = getActiveSet();
     const group = getArticleRuleGroups(set)[groupIndex];
     if (!group?.rules?.length) return;
-    const builder = normalizeConditionFormulaBuilder(group.rules[0].rule, set);
-    builder.custom = true;
+    const rawFormula = normalizeUserFormulaInput(value);
+    const builder = conditionFormulaBuilderFromRaw(rawFormula, set) || normalizeConditionFormulaBuilder(group.rules[0].rule, set);
+    builder.custom = !conditionFormulaBuilderFromRaw(rawFormula, set);
     group.rules.forEach(({ index }) => {
         const rule = set.item_rules[index];
         if (!rule) return;
         rule.condition_mode = "formula";
-        rule.condition_formula = normalizeUserFormulaInput(value);
+        rule.condition_formula = rawFormula;
         rule.condition_formula_builder_json = JSON.stringify(builder);
     });
+}
+
+function replaceCustomConditionFormula(page, groupIndex) {
+    frappe.confirm(
+        __("Replace this custom condition formula with a new visual formula? The current raw formula will be replaced."),
+        () => {
+            const set = getActiveSet();
+            const group = getArticleRuleGroups(set)[groupIndex];
+            if (!group) return;
+            applyConditionFormulaBuilderToGroup(group, defaultConditionFormulaBuilder(set), set);
+            ODS_STATE.lastPreview = null;
+            renderDimensioningBuilder(page);
+        }
+    );
 }
 
 function applyConditionFormulaBuilderToGroup(group, builder, set) {
@@ -1250,6 +1284,7 @@ function renderArticleRuleRow(rule, index, articleIndex, set) {
                     ${inlineInput("rule", index, "display_group", __("Quote section"), rule.display_group)}
                     ${inlineInput("rule", index, "sequence", __("Sort order"), rule.sequence || 10, "number")}
                     ${selectionMode === "filtered" ? renderItemFilterEditor(rule, index, set) : ""}
+                    ${selectionMode === "filtered" ? `<button class="btn btn-xs btn-default" type="button" data-test-rule-filters="${index}">${__("Test Filters")}</button>` : ""}
                     ${rule.uses_advanced_formula ? `
                         <label class="ods-field wide">
                             <span>${__("Condition formula")}</span>
@@ -1414,8 +1449,8 @@ function renderQuantityInlineControl(rule, index, quantityMode, set) {
 
 function renderQuantityFormulaBuilder(rule, ruleIndex, set) {
     const builder = normalizeQuantityFormulaBuilder(rule, set);
-    const rows = builder.rows.map((row, rowIndex) => renderQuantityFormulaBuilderRow(row, ruleIndex, rowIndex, set)).join("");
-    const warning = builder.custom ? `<div class="ods-formula-builder-warning">${__("Advanced custom formula: visual rows may not represent the raw formula exactly.")}</div>` : "";
+    const rows = builder.custom ? "" : builder.rows.map((row, rowIndex) => renderQuantityFormulaBuilderRow(row, ruleIndex, rowIndex, set)).join("");
+    const warning = builder.custom ? `<div class="ods-formula-builder-warning" role="alert"><strong>${__("Custom formula protected")}</strong><span>${__("This formula cannot be represented exactly by the visual builder. The advanced formula remains authoritative.")}</span><button class="btn btn-xs btn-default" type="button" data-replace-custom-quantity="${ruleIndex}">${__("Replace with Visual Builder")}</button></div>` : "";
     return `
         <div class="ods-formula-builder ods-qty-formula-builder">
             <div class="ods-filter-editor-head">
@@ -1423,9 +1458,9 @@ function renderQuantityFormulaBuilder(rule, ruleIndex, set) {
                     <strong>${__("Formula Builder")}</strong>
                     <span>${__("Build rows like: hauteur_cabine * 2 + nbr_etage * 4, then multiply by 1.05")}</span>
                 </div>
-                <button class="btn btn-xs btn-default" type="button" data-add-qty-builder-row="${ruleIndex}">${__("Add Part")}</button>
+                ${builder.custom ? `<span class="ods-badge warn">${__("Custom")}</span>` : `<button class="btn btn-xs btn-default" type="button" data-add-qty-builder-row="${ruleIndex}">${__("Add Part")}</button>`}
             </div>
-            <div class="ods-formula-builder-list">${rows}</div>
+            ${builder.custom ? "" : `<div class="ods-formula-builder-list">${rows}</div>
             <div class="ods-formula-builder-options">
                 <label class="ods-compact-field ods-final-multiplier-field">
                     <span>${__("Then multiply total by")}</span>
@@ -1435,7 +1470,7 @@ function renderQuantityFormulaBuilder(rule, ruleIndex, set) {
                     <input type="checkbox" data-qty-builder-result-integer="${ruleIndex}" ${builder.result_as_integer ? "checked" : ""}>
                     <span>${__("Integer result")}</span>
                 </label>
-            </div>
+            </div>`}
             <div class="ods-condition-summary">
                 <span>${__("Compiled quantity formula")}</span>
                 <strong>${frappe.utils.escape_html(rule.qty_formula || compileQuantityFormulaBuilder(builder))}</strong>
@@ -1568,7 +1603,7 @@ function defaultConditionFormulaBuilder(set) {
 
 function normalizeQuantityFormulaBuilder(rule, set) {
     const hadBuilder = !!String(rule.qty_formula_builder_json || "").trim();
-    const builder = parseFormulaBuilderJson(rule.qty_formula_builder_json, defaultQuantityFormulaBuilder(set));
+    let builder = parseFormulaBuilderJson(rule.qty_formula_builder_json, defaultQuantityFormulaBuilder(set));
     builder.rows = (builder.rows || []).map((row) => ({
         join: ["+", "-"].includes(row.join) ? row.join : "+",
         parameter: row.parameter || getQuestionKeys(set)[0] || "value",
@@ -1581,14 +1616,18 @@ function normalizeQuantityFormulaBuilder(rule, set) {
     if (!builder.rows.length) builder.rows = defaultQuantityFormulaBuilder(set).rows;
     builder.final_multiplier = normalizeFormulaNumber(builder.final_multiplier || "");
     builder.result_as_integer = !!builder.result_as_integer;
-    builder.custom = !!builder.custom || (!hadBuilder && !!String(rule.qty_formula || "").trim());
+    const rawFormula = normalizeUserFormulaInput(rule.qty_formula || "");
+    const parsedRaw = quantityFormulaBuilderFromRaw(rawFormula, set);
+    const builderMatchesRaw = hadBuilder && !builder.custom && formulasEquivalent(compileQuantityFormulaBuilder(builder), rawFormula);
+    if (rawFormula && parsedRaw && !builderMatchesRaw) builder = parsedRaw;
+    builder.custom = !!rawFormula && !parsedRaw && !builderMatchesRaw;
     rule.qty_formula_builder_json = JSON.stringify(builder);
     return builder;
 }
 
 function normalizeConditionFormulaBuilder(row, set) {
     const hadBuilder = !!String(row.condition_formula_builder_json || "").trim();
-    const builder = parseFormulaBuilderJson(row.condition_formula_builder_json, defaultConditionFormulaBuilder(set));
+    let builder = parseFormulaBuilderJson(row.condition_formula_builder_json, defaultConditionFormulaBuilder(set));
     builder.rows = (builder.rows || []).map((entry) => ({
         join: ODS_FORMULA_JOINS.includes(entry.join) ? entry.join : "and",
         parameter: entry.parameter || getQuestionKeys(set)[0] || "value",
@@ -1598,7 +1637,11 @@ function normalizeConditionFormulaBuilder(row, set) {
         value_parameter: entry.value_parameter || getQuestionKeys(set)[0] || "value",
     }));
     if (!builder.rows.length) builder.rows = defaultConditionFormulaBuilder(set).rows;
-    builder.custom = !!builder.custom || (!hadBuilder && !!String(row.condition_formula || "").trim());
+    const rawFormula = normalizeUserFormulaInput(row.condition_formula || "");
+    const parsedRaw = conditionFormulaBuilderFromRaw(rawFormula, set);
+    const builderMatchesRaw = hadBuilder && !builder.custom && formulasEquivalent(compileConditionFormulaBuilder(builder), rawFormula);
+    if (rawFormula && parsedRaw && !builderMatchesRaw) builder = parsedRaw;
+    builder.custom = !!rawFormula && !parsedRaw && !builderMatchesRaw;
     row.condition_formula_builder_json = JSON.stringify(builder);
     return builder;
 }
@@ -1674,6 +1717,202 @@ function parseFormulaBuilderJson(raw, fallback) {
         return JSON.parse(JSON.stringify(fallback));
     }
     return JSON.parse(JSON.stringify(fallback));
+}
+
+function conditionFormulaFromRulesJson(raw) {
+    try {
+        const parsed = typeof raw === "string" ? JSON.parse(raw || "") : raw;
+        if (!parsed || !Array.isArray(parsed.rows)) return "";
+        return compileStructuredConditionBuilder(parsed);
+    } catch (error) {
+        return "";
+    }
+}
+
+function conditionFormulaBuilderFromRaw(rawFormula, set) {
+    const expression = stripOuterFormulaParentheses(normalizeUserFormulaInput(rawFormula || ""));
+    if (!expression) return null;
+    const parts = splitBooleanFormula(expression);
+    if (!parts) return null;
+    const rows = [];
+    for (let index = 0; index < parts.clauses.length; index += 1) {
+        const clause = stripOuterFormulaParentheses(parts.clauses[index]);
+        const contains = clause.match(/^contains\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*(.+)\)$/);
+        const comparison = clause.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+        const match = contains || comparison;
+        if (!match || !getContextField(set, match[1])) return null;
+        const literal = parseFormulaBuilderOperand(contains ? match[2] : match[3], set);
+        if (!literal) return null;
+        rows.push({
+            join: index ? parts.joins[index - 1] || "and" : "and",
+            parameter: match[1],
+            operator: contains ? "contains" : match[2],
+            value_source: literal.value_source,
+            value: literal.value,
+            value_parameter: literal.value_parameter,
+        });
+    }
+    return { rows, custom: false };
+}
+
+function quantityFormulaBuilderFromRaw(rawFormula, set) {
+    let expression = normalizeUserFormulaInput(rawFormula || "").trim();
+    if (!expression) return null;
+    let resultAsInteger = false;
+    if (expression.startsWith("int(") && expression.endsWith(")") && hasBalancedOuterCall(expression, "int")) {
+        resultAsInteger = true;
+        expression = expression.slice(4, -1).trim();
+    }
+    let finalMultiplier = "";
+    const multiplierMatch = expression.match(/^\((.*)\)\s*\*\s*(-?\d+(?:\.\d+)?)$/);
+    if (multiplierMatch && hasBalancedParentheses(multiplierMatch[1])) {
+        expression = multiplierMatch[1].trim();
+        finalMultiplier = multiplierMatch[2];
+    }
+    const parts = splitQuantityFormula(expression);
+    if (!parts) return null;
+    const rows = [];
+    for (let index = 0; index < parts.terms.length; index += 1) {
+        let term = parts.terms[index].trim();
+        let wrapInt = false;
+        const intMatch = term.match(/^int\(([A-Za-z_][A-Za-z0-9_]*)\)\s*([+\-*/])\s*(.+)$/);
+        const regularMatch = term.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*([+\-*/])\s*(.+)$/);
+        const match = intMatch || regularMatch;
+        if (!match || !getContextField(set, match[1])) return null;
+        wrapInt = !!intMatch;
+        const right = String(match[3] || "").trim();
+        const rightIsParameter = /^[A-Za-z_][A-Za-z0-9_]*$/.test(right) && getContextField(set, right);
+        if (!rightIsParameter && !/^-?\d+(?:\.\d+)?$/.test(right)) return null;
+        rows.push({
+            join: index ? parts.joins[index - 1] || "+" : "+",
+            parameter: match[1],
+            wrap_int: wrapInt,
+            operator: match[2],
+            value_type: rightIsParameter ? "parameter" : "number",
+            value: rightIsParameter ? "1" : right,
+            value_parameter: rightIsParameter ? right : getQuestionKeys(set)[0] || "value",
+        });
+    }
+    return { rows, final_multiplier: finalMultiplier, result_as_integer: resultAsInteger, custom: false };
+}
+
+function parseFormulaBuilderOperand(raw, set) {
+    const value = String(raw || "").trim();
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value) && getContextField(set, value)) {
+        return { value_source: "parameter", value: "", value_parameter: value };
+    }
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        return { value_source: "manual", value: value.slice(1, -1), value_parameter: "" };
+    }
+    if (/^-?\d+(?:\.\d+)?$/.test(value) || ["true", "false"].includes(value.toLowerCase())) {
+        return { value_source: "manual", value: value.toLowerCase(), value_parameter: "" };
+    }
+    return null;
+}
+
+function splitBooleanFormula(expression) {
+    return splitFormulaAtTopLevel(expression, ["and", "or"]);
+}
+
+function splitQuantityFormula(expression) {
+    const result = splitFormulaAtTopLevel(expression, ["+", "-"]);
+    return result ? { terms: result.clauses, joins: result.joins } : null;
+}
+
+function splitFormulaAtTopLevel(expression, operators) {
+    const clauses = [];
+    const joins = [];
+    let start = 0;
+    let depth = 0;
+    let quote = "";
+    for (let index = 0; index < expression.length; index += 1) {
+        const char = expression[index];
+        if (quote) {
+            if (char === quote && expression[index - 1] !== "\\") quote = "";
+            continue;
+        }
+        if (char === '"' || char === "'") { quote = char; continue; }
+        if (char === "(") { depth += 1; continue; }
+        if (char === ")") { depth -= 1; if (depth < 0) return null; continue; }
+        if (depth !== 0) continue;
+        const matched = operators.find((operator) => {
+            if (["+", "-"].includes(operator)) return char === operator && index > start;
+            return expression.slice(index).match(new RegExp(`^\\s+${operator}\\s+`, "i"));
+        });
+        if (!matched) continue;
+        const clause = expression.slice(start, index).trim();
+        if (!clause) return null;
+        clauses.push(clause);
+        joins.push(matched);
+        if (["+", "-"].includes(matched)) {
+            start = index + 1;
+        } else {
+            const consumed = expression.slice(index).match(new RegExp(`^\\s+${matched}\\s+`, "i"))[0].length;
+            start = index + consumed;
+            index = start - 1;
+        }
+    }
+    if (depth !== 0 || quote) return null;
+    const last = expression.slice(start).trim();
+    if (!last) return null;
+    clauses.push(last);
+    return { clauses, joins };
+}
+
+function formulasEquivalent(left, right) {
+    return normalizeFormulaForSync(left) === normalizeFormulaForSync(right);
+}
+
+function normalizeFormulaForSync(value) {
+    const expression = stripOuterFormulaParentheses(normalizeUserFormulaInput(value || ""));
+    let result = "";
+    let quote = "";
+    for (let index = 0; index < expression.length; index += 1) {
+        const char = expression[index];
+        if (quote) {
+            result += char;
+            if (char === quote && expression[index - 1] !== "\\") quote = "";
+        } else if (char === '"' || char === "'") {
+            quote = char;
+            result += char;
+        } else if (!/\s/.test(char)) {
+            result += char;
+        }
+    }
+    return result;
+}
+
+function stripOuterFormulaParentheses(value) {
+    let expression = String(value || "").trim();
+    while (expression.startsWith("(") && expression.endsWith(")") && outerParenthesesWrapExpression(expression)) {
+        expression = expression.slice(1, -1).trim();
+    }
+    return expression;
+}
+
+function outerParenthesesWrapExpression(expression) {
+    let depth = 0;
+    let quote = "";
+    for (let index = 0; index < expression.length; index += 1) {
+        const char = expression[index];
+        if (quote) {
+            if (char === quote && expression[index - 1] !== "\\") quote = "";
+            continue;
+        }
+        if (char === '"' || char === "'") { quote = char; continue; }
+        if (char === "(") depth += 1;
+        if (char === ")") depth -= 1;
+        if (depth === 0 && index < expression.length - 1) return false;
+    }
+    return depth === 0;
+}
+
+function hasBalancedParentheses(expression) {
+    return outerParenthesesWrapExpression(`(${expression})`);
+}
+
+function hasBalancedOuterCall(expression, name) {
+    return expression.startsWith(`${name}(`) && expression.endsWith(")") && outerParenthesesWrapExpression(expression.slice(name.length));
 }
 
 function compileQuantityFormulaBuilder(builder) {
@@ -1922,22 +2161,44 @@ function renderGeneratedItems(preview) {
 
 function renderGeneratedRow(row) {
     const warnings = [];
-    if (row.missing_item) warnings.push(`<span class="ods-badge danger">${__("Missing item")}</span>`);
-    if (row.filtered_item && !row.missing_item) warnings.push(`<span class="ods-badge ok-soft">${__("Resolved by filters")}</span>`);
-    if (row.resolution_warning) warnings.push(`<span class="ods-badge warn">${frappe.utils.escape_html(row.resolution_warning)}</span>`);
+    const resolutionStatus = (row.resolution || {}).status || "";
+    if (row.filtered_item && resolutionStatus === "unique") warnings.push(`<span class="ods-badge ok-soft">${__("Unique match")}</span>`);
+    else if (row.filtered_item && resolutionStatus === "multiple") warnings.push(`<span class="ods-badge danger">${__("Multiple matches")}</span>`);
+    else if (row.filtered_item && resolutionStatus === "none") warnings.push(`<span class="ods-badge danger">${__("No match")}</span>`);
+    else if (row.filtered_item && resolutionStatus === "missing_value") warnings.push(`<span class="ods-badge warn">${__("Missing test value")}</span>`);
+    else if (row.missing_item) warnings.push(`<span class="ods-badge danger">${__("Missing item")}</span>`);
     if (row.missing_price) warnings.push(`<span class="ods-badge warn">${__("Missing price")}</span>`);
     if (!row.show_in_detail) warnings.push(`<span class="ods-badge muted">${__("Summary only")}</span>`);
     return `
         <div class="ods-generated-row">
             <div>
                 <strong>${frappe.utils.escape_html(row.item)}</strong>
-                <span>${frappe.utils.escape_html(row.item_name || row.rule_label || "")}</span>
+                <span>${frappe.utils.escape_html([row.rule_group_title, row.rule_label, row.item_name].filter(Boolean).join(" / "))}</span>
+                ${renderResolutionDetails(row)}
             </div>
             <div class="ods-generated-meta">
                 <strong>${frappe.utils.escape_html(String(row.qty))}</strong>
                 <span>${frappe.utils.escape_html(row.unit || "")}</span>
             </div>
             <div class="ods-row-badges">${warnings.join("")}</div>
+        </div>
+    `;
+}
+
+function renderResolutionDetails(row) {
+    const resolution = row.resolution || {};
+    if (!row.filtered_item || resolution.status === "unique") return "";
+    const candidates = (resolution.candidate_items || []).map((item) => `
+        <li><code>${frappe.utils.escape_html(item.item_code || item)}</code>${item.item_name ? ` <span>${frappe.utils.escape_html(item.item_name)}</span>` : ""}</li>
+    `).join("");
+    const filters = (resolution.resolved_filters || []).map((filter) => `
+        <li>${frappe.utils.escape_html(filter.label || filter.field || filter.attribute || "Filter")} ${frappe.utils.escape_html(filter.operator || "=")} <strong>${frappe.utils.escape_html(String(filter.value ?? ""))}</strong></li>
+    `).join("");
+    return `
+        <div class="ods-resolution-detail" role="alert">
+            <strong>${frappe.utils.escape_html(row.resolution_warning || __("Item filters need review."))}</strong>
+            ${filters ? `<div><span>${__("Applied filters")}</span><ul>${filters}</ul></div>` : ""}
+            ${candidates ? `<div><span>${__("Matching Items")}</span><ul>${candidates}</ul></div>` : ""}
         </div>
     `;
 }
@@ -2086,9 +2347,12 @@ function bindDimensioningBuilderEvents(page) {
     });
     root.find("[data-add-rule]").on("click", () => {
         const set = getActiveSet();
-        const nextGroup = `GROUP-${getArticleRuleGroups(set).length + 1}`;
-        const rule = ruleRow("New rule article", "", "Ungrouped", "1", "", true);
+        const ruleNumber = getArticleRuleGroups(set).length + 1;
+        const nextGroup = nextDimensioningRuleGroupKey(set);
+        const title = `${__("Rule")} ${ruleNumber}`;
+        const rule = ruleRow(`${title} - ${__("Article")} 1`, "", "Ungrouped", "1", "", true);
         rule.rule_group = nextGroup;
+        rule.rule_group_title = title;
         set.item_rules.push(rule);
         ODS_STATE.selectedRule = set.item_rules.length - 1;
         ODS_STATE.openRuleGroups = { [getArticleRuleGroups(set).length - 1]: true };
@@ -2098,14 +2362,19 @@ function bindDimensioningBuilderEvents(page) {
         const set = getActiveSet();
         const group = getArticleRuleGroups(set)[Number(this.dataset.addRuleArticle) || 0];
         if (!group) return;
-        const rule = ruleRow("New article", "", "Ungrouped", "1", group.condition, true);
+        const rule = ruleRow(`${group.title || __("Rule")} - ${__("Article")} ${group.rules.length + 1}`, "", "Ungrouped", "1", group.condition, true);
         rule.rule_group = group.key;
+        rule.rule_group_title = group.title || "";
         set.item_rules.push(rule);
         ODS_STATE.selectedRule = set.item_rules.length - 1;
         renderDimensioningBuilder(page);
     });
     root.find("[data-open-item-picker]").on("click", function () {
         openDimensioningItemPicker(page, Number(this.dataset.openItemPicker) || 0);
+    });
+    root.find("[data-test-rule-filters]").on("click", function () {
+        ODS_STATE.activeSection = "preview";
+        runDimensioningBuilderPreview(page);
     });
     root.find("[data-rule-item-advanced-search]").on("click", function () {
         openDimensioningItemAdvancedSearch(Number(this.dataset.ruleItemAdvancedSearch) || 0);
@@ -2161,9 +2430,17 @@ function bindDimensioningBuilderEvents(page) {
     root.find("[data-article-settings]").on("toggle", function () {
         ODS_STATE.openArticleSettings[Number(this.dataset.articleSettings) || 0] = this.open;
     });
+    root.find("[data-rule-group-title]").on("input", function () {
+        updateRuleGroupTitle(Number(this.dataset.ruleGroupTitle) || 0, this.value);
+    }).on("change", function () {
+        ODS_STATE.lastPreview = null;
+        renderDimensioningBuilder(page);
+    });
     root.find("[data-group-condition-mode]").on("change", function () {
         const set = getActiveSet();
         const groupIndex = Number(this.dataset.groupConditionMode) || 0;
+        const currentGroup = getArticleRuleGroups(set)[groupIndex];
+        const existingFormula = currentGroup?.rules?.[0]?.rule?.condition_formula || "";
         const token = getQuestionKeys(set)[0] || "field_key";
         const nextMode = this.value;
         updateRuleGroupCondition(groupIndex, {
@@ -2172,15 +2449,20 @@ function bindDimensioningBuilderEvents(page) {
             operator: "==",
             compare_source: "manual",
             manual_value: defaultComparisonValue(getContextField(set, token)),
-            condition_formula: nextMode === "formula" ? `${token} > 0` : "",
+            condition_formula: nextMode === "formula" ? existingFormula || `${token} > 0` : "",
         });
         if (nextMode === "formula") {
             const group = getArticleRuleGroups(set)[groupIndex];
             if (group) {
-                const builder = defaultConditionFormulaBuilder(set);
-                builder.rows[0].parameter = token;
-                builder.custom = false;
-                applyConditionFormulaBuilderToGroup(group, builder, set);
+                const parsed = conditionFormulaBuilderFromRaw(existingFormula, set);
+                if (parsed) applyConditionFormulaBuilderToGroup(group, parsed, set);
+                else if (existingFormula) updateConditionFormulaRaw(groupIndex, existingFormula);
+                else {
+                    const builder = defaultConditionFormulaBuilder(set);
+                    builder.rows[0].parameter = token;
+                    builder.custom = false;
+                    applyConditionFormulaBuilderToGroup(group, builder, set);
+                }
             }
         }
         ODS_STATE.lastPreview = null;
@@ -2190,6 +2472,9 @@ function bindDimensioningBuilderEvents(page) {
         updateConditionFormulaRaw(Number(this.dataset.groupConditionFormula) || 0, this.value);
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
+    });
+    root.find("[data-replace-custom-condition]").on("click", function () {
+        replaceCustomConditionFormula(page, Number(this.dataset.replaceCustomCondition) || 0);
     });
     root.find("[data-add-condition-builder-row]").on("click", function () {
         addConditionFormulaBuilderRow(Number(this.dataset.addConditionBuilderRow) || 0);
@@ -2256,9 +2541,10 @@ function bindDimensioningBuilderEvents(page) {
     root.find("[data-rule-quantity-mode]").on("change", function () {
         const ruleIndex = Number(this.dataset.ruleQuantityMode) || 0;
         const rule = getActiveSet().item_rules[ruleIndex];
+        const existingFormula = rule?.qty_formula || "";
         const token = getQuestionKeys(getActiveSet())[0] || "1";
-        updateRuleQuantity(ruleIndex, { quantity_mode: this.value, qty_formula: this.value === "formula" ? rule?.qty_formula || token : rule?.qty_formula || "" });
-        if (this.value === "formula" && rule) {
+        updateRuleQuantity(ruleIndex, { quantity_mode: this.value, qty_formula: this.value === "formula" ? existingFormula || token : existingFormula });
+        if (this.value === "formula" && rule && !String(existingFormula).trim()) {
             const builder = defaultQuantityFormulaBuilder(getActiveSet());
             builder.rows[0].parameter = token;
             builder.custom = false;
@@ -2283,6 +2569,9 @@ function bindDimensioningBuilderEvents(page) {
         updateQuantityFormulaRaw(ruleIndex, this.value);
         ODS_STATE.lastPreview = null;
         renderDimensioningBuilder(page);
+    });
+    root.find("[data-replace-custom-quantity]").on("click", function () {
+        replaceCustomQuantityFormula(page, Number(this.dataset.replaceCustomQuantity) || 0);
     });
     root.find("[data-add-qty-builder-row]").on("click", function () {
         addQuantityFormulaBuilderRow(Number(this.dataset.addQtyBuilderRow) || 0);
@@ -2659,7 +2948,7 @@ async function loadDimensioningSet(page, setName) {
         ODS_STATE.selectedSet = 0;
         ODS_STATE.openQuestionCards = {};
         ODS_STATE.openRuleGroups = {};
-        ODS_STATE.testValues = buildDefaultValues(loadedSet);
+        ODS_STATE.testValues = { ...buildDefaultValues(loadedSet), ...(loadedSet.preview_test_values || {}) };
         ODS_STATE.validation = [];
         ODS_STATE.lastPreview = null;
         syncDimensioningSetRoute(loadedSet.docname, loadedSet.name);
@@ -2704,6 +2993,7 @@ function previewFromServerMessage(set, message) {
     const local = buildPreview(set, ODS_STATE.testValues);
     const generated = (message.items || []).map((row) => ({
         rule_label: row.rule_label || row.item || "",
+        rule_group_title: row.rule_group_title || row.rule_group || "",
         item: row.item || "",
         item_name: row.item_name || row.description || "",
         unit: row.stock_uom || row.unit || "",
@@ -2713,12 +3003,14 @@ function previewFromServerMessage(set, message) {
         missing_item: !!row.missing_item,
         filtered_item: (row.item_selection_mode || "fixed") === "filtered",
         resolution_warning: row.resolution_warning || "",
+        resolution: row.resolution || {},
         missing_price: false,
     }));
     return {
         ...local,
         generated,
-        matched_count: generated.length,
+        matched_count: generated.filter((row) => !row.missing_item).length,
+        unresolved_count: generated.filter((row) => row.missing_item).length,
         server_backed: true,
         values: message.values || {},
     };
@@ -2730,6 +3022,28 @@ async function saveActiveDimensioningSet(page) {
     ODS_STATE.isSaving = true;
     updateDimensioningSaveState(page);
     try {
+        if (set.is_active) {
+            const previewResponse = await frappe.call({
+                method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.preview_dimensioning_builder_payload",
+                args: {
+                    payload: JSON.stringify(payloadFromBuilderSet(set)),
+                    input_values_json: JSON.stringify(ODS_STATE.testValues || {}),
+                },
+            });
+            ODS_STATE.lastPreview = previewFromServerMessage(set, previewResponse.message || {});
+            ODS_STATE.validation = validateSet(set, ODS_STATE.lastPreview);
+            const blockers = ODS_STATE.validation.filter((issue) => issue.level === "error");
+            if (blockers.length) {
+                ODS_STATE.activeSection = "preview";
+                renderDimensioningBuilder(page);
+                frappe.msgprint({
+                    title: __("Cannot save active Dimensioning Set"),
+                    message: blockers.map((issue) => `<strong>${frappe.utils.escape_html(issue.title)}</strong><br>${frappe.utils.escape_html(issue.message)}`).join("<br><br>"),
+                    indicator: "red",
+                });
+                return;
+            }
+        }
         const response = await frappe.call({
             method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.save_dimensioning_builder_payload",
             args: { payload: JSON.stringify(payloadFromBuilderSet(set)) },
@@ -2737,7 +3051,7 @@ async function saveActiveDimensioningSet(page) {
         const payload = (response.message || {}).set;
         if (payload) {
             ODS_STATE.sets[ODS_STATE.selectedSet] = builderSetFromPayload(payload);
-            ODS_STATE.testValues = buildDefaultValues(getActiveSet());
+            ODS_STATE.testValues = { ...buildDefaultValues(getActiveSet()), ...(getActiveSet().preview_test_values || {}) };
             ODS_STATE.lastPreview = null;
             syncDimensioningSetRoute(getActiveSet().docname, getActiveSet().name);
         }
@@ -2769,6 +3083,7 @@ function builderSetFromPayload(payload) {
         name: payload.set_name || payload.name || __("New Dimensioning Set"),
         description: payload.description || "",
         is_active: !!payload.is_active,
+        preview_test_values: payload.preview_test_values || {},
         fields: (payload.fields || []).map((field) => ({
             ...field,
             is_required: !!field.is_required,
@@ -2779,6 +3094,9 @@ function builderSetFromPayload(payload) {
     };
     (payload.rule_groups || []).forEach((group) => {
         (group.articles || []).forEach((article) => {
+            const groupConditionFormula = conditionFormulaFromRulesJson(group.condition_rules_json || article.condition_rules_json || "");
+            const articleConditionFormula = normalizeUserFormulaInput(article.condition_formula || "");
+            const hasArticleSpecificCondition = !!articleConditionFormula && !!groupConditionFormula && !formulasEquivalent(articleConditionFormula, groupConditionFormula);
             const rule = ruleRow(
                 article.rule_label || article.item,
                 article.item || "",
@@ -2792,14 +3110,15 @@ function builderSetFromPayload(payload) {
                 sequence: article.sequence || group.sequence || 10,
                 is_active: !!article.is_active,
                 rule_group: group.rule_group || "",
-                condition_mode: group.condition_mode || "always",
+                rule_group_title: group.rule_group_title || article.rule_group_title || "",
+                condition_mode: articleConditionFormula && !groupConditionFormula ? "formula" : group.condition_mode || "always",
                 question_key: group.question_key || "",
                 operator: group.operator || "==",
                 compare_source: group.compare_source || "manual",
                 manual_value: group.manual_value || "",
                 compare_question_key: group.compare_question_key || "",
                 condition_rules_json: group.condition_rules_json || article.condition_rules_json || "",
-                quantity_mode: ["fixed", "question", "formula"].includes(quantity.mode) ? quantity.mode : "fixed",
+                quantity_mode: String(article.qty_formula || "").trim() ? "formula" : ["fixed", "question", "formula"].includes(quantity.mode) ? quantity.mode : "fixed",
                 fixed_qty: String(article.fixed_qty || "1"),
                 quantity_question_key: article.quantity_question_key || "",
                 item_selection_mode: article.item_selection_mode || "fixed",
@@ -2809,7 +3128,7 @@ function builderSetFromPayload(payload) {
                 condition_formula_builder_json: article.condition_formula_builder_json || "",
                 qty_formula: normalizeUserFormulaInput(article.qty_formula || ""),
                 qty_formula_builder_json: article.qty_formula_builder_json || "",
-                uses_advanced_formula: !!((article.condition_formula || "").trim() || (article.qty_formula || "").trim()) && group.condition_mode !== "formula" && quantity.mode !== "formula",
+                uses_advanced_formula: hasArticleSpecificCondition,
             });
             ensureStructuredRule(rule, set);
             set.item_rules.push(rule);
@@ -2824,6 +3143,7 @@ function payloadFromBuilderSet(set) {
         set_name: set.name || "",
         description: set.description || "",
         is_active: set.is_active ? 1 : 0,
+        preview_test_values: ODS_STATE.testValues || set.preview_test_values || {},
         fields: (set.fields || []).map((field, index) => ({
             ...field,
             sequence: field.sequence || (index + 1) * 10,
@@ -2836,6 +3156,7 @@ function payloadFromBuilderSet(set) {
         })),
         rule_groups: getArticleRuleGroups(set).map((group, groupIndex) => ({
             rule_group: group.key === "__always__" ? `GROUP-${groupIndex + 1}` : group.key,
+            rule_group_title: group.title || `${__("Rule")} ${groupIndex + 1}`,
             sequence: (groupIndex + 1) * 100,
             is_active: 1,
             condition_mode: group.condition_state.mode || "always",
@@ -2849,6 +3170,7 @@ function payloadFromBuilderSet(set) {
                 sequence: rule.sequence || (groupIndex + 1) * 100 + articleIndex + 1,
                 is_active: rule.is_active ? 1 : 0,
                 rule_label: rule.rule_label || rule.item || `Article ${articleIndex + 1}`,
+                rule_group_title: group.title || `${__("Rule")} ${groupIndex + 1}`,
                 item_selection_mode: rule.item_selection_mode || "fixed",
                 item: rule.item || "",
                 item_filters_json: JSON.stringify(normalizeRuleItemFilters(rule)),
@@ -2859,7 +3181,7 @@ function payloadFromBuilderSet(set) {
                 quantity_question_key: rule.quantity_question_key || "",
                 condition_formula: rule.uses_advanced_formula || rule.condition_mode === "formula" ? compileStructuredCondition(rule, set) : "",
                 condition_formula_builder_json: rule.condition_formula_builder_json || "",
-                qty_formula: rule.uses_advanced_formula || rule.quantity_mode === "formula" ? compileQuantityFormula(rule, set) : "",
+                qty_formula: rule.quantity_mode === "formula" ? compileQuantityFormula(rule, set) : "",
                 qty_formula_builder_json: rule.qty_formula_builder_json || "",
                 show_in_detail: rule.show_in_detail ? 1 : 0,
             })),
@@ -2925,6 +3247,7 @@ function duplicateRuleGroup(page, groupIndex) {
     const clones = group.rules.map(({ rule }, index) => {
         const clone = cloneDimensioningRule(rule);
         clone.rule_group = newGroup;
+        clone.rule_group_title = `${group.title || `${__("Rule")} ${groupIndex + 1}`} (${__("Copy")})`;
         clone.rule_label = `${clone.rule_label || clone.item || __("Article")} (${__("Copy")})`;
         clone.sequence = Number(rule.sequence || 10) + index + 1;
         return clone;
@@ -3080,6 +3403,11 @@ function validateSet(set, preview) {
         keys.add(field.field_key);
         if (field.field_type === "Select" && !splitOptions(field.options).length) issues.push({ level: "warning", title: "Choice question has no choices", message: `${field.label || field.field_key} should define choices.` });
     }
+    getArticleRuleGroups(set).forEach((group, groupIndex) => {
+        if (!String(group.title || "").trim()) {
+            issues.push({ level: set.is_active ? "error" : "warning", title: __("Rule title required"), message: `${__("Rule")} ${groupIndex + 1} ${__("needs a short title.")}` });
+        }
+    });
     for (const rule of set.item_rules || []) {
         if ((rule.item_selection_mode || "fixed") === "filtered") {
             if (!normalizeRuleItemFilters(rule).length) issues.push({ level: "error", title: "Filtered rule needs filters", message: `${rule.rule_label || "Rule"} needs at least one Item filter.` });
@@ -3101,8 +3429,17 @@ function validateSet(set, preview) {
         issues.push({ level: "error", title: `Formula needs review: ${error.source}`, message: error.message });
     }
     for (const row of preview.generated || []) {
-        if (preview.server_backed && row.missing_item) issues.push({ level: "warning", title: "Item not found", message: row.resolution_warning || `${row.item || row.rule_label} was not found in the Items list.` });
-        if (preview.server_backed && row.filtered_item && row.resolution_warning) issues.push({ level: "warning", title: "Filtered item needs review", message: row.resolution_warning });
+        const resolutionStatus = (row.resolution || {}).status || "";
+        const identity = [row.rule_group_title, row.rule_label].filter(Boolean).join(" / ") || __("Filtered article");
+        if (preview.server_backed && row.filtered_item && resolutionStatus !== "unique") {
+            issues.push({
+                level: set.is_active ? "error" : "warning",
+                title: `${identity}: ${resolutionStatus === "multiple" ? __("Multiple Items matched") : resolutionStatus === "missing_value" ? __("Missing filter value") : __("No Item matched")}`,
+                message: row.resolution_warning || __("Refine this article's filters and test again."),
+            });
+        } else if (preview.server_backed && row.missing_item) {
+            issues.push({ level: set.is_active ? "error" : "warning", title: `${identity}: ${__("Item not found")}`, message: row.resolution_warning || `${row.item || row.rule_label} ${__("was not found in the Items list.")}` });
+        }
         if (row.missing_price) issues.push({ level: "warning", title: "Price warning", message: `${row.item} generated but has a missing price warning.` });
     }
     return issues;
@@ -3383,6 +3720,8 @@ function injectDimensioningBuilderStyles() {
         .ods-rule-toggle-indicator { align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 999px; color: #64748b; display: inline-flex; font-size: 10px; font-weight: 900; min-height: 24px; padding: 0 8px; white-space: nowrap; }
         .ods-rule-group-card:hover .ods-rule-toggle-indicator { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; }
         .ods-rule-group-body { border-top: 1px solid #eff1f4; display: grid; gap: 12px; padding: 10px 12px 12px; }
+        .ods-rule-title-field { background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 12px; padding: 10px 12px; }
+        .ods-rule-title-field input { font-size: 16px; font-weight: 800; min-height: 44px; }
         .ods-hierarchy-block { border-radius: 12px; display: grid; gap: 8px; padding: 9px; }
         .ods-hierarchy-block.when { background: #f8fafc; border: 1px solid #eef2f7; }
         .ods-hierarchy-block.then { background: #fff; border: 1px solid #e2e8f0; }
@@ -3435,7 +3774,14 @@ function injectDimensioningBuilderStyles() {
         .ods-formula-join-field strong { align-items: center; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; color: #3730a3; display: flex; font-size: 10px; height: 36px; justify-content: center; }
         .ods-final-multiplier-field { max-width: 260px; }
         .ods-result-integer-check, .ods-row-integer-check { background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1d4ed8; min-height: 36px; padding: 0 10px; }
-        .ods-formula-builder-warning { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #92400e; font-size: 11px; font-weight: 700; padding: 7px 9px; }
+        .ods-formula-builder-warning { align-items: start; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #92400e; display: grid; font-size: 11px; gap: 6px; padding: 9px 10px; }
+        .ods-formula-builder-warning strong { font-size: 12px; }
+        .ods-formula-builder-warning .btn { justify-self: start; min-height: 36px; }
+        .ods-resolution-detail { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; display: grid; gap: 7px; margin-top: 8px; max-width: 760px; padding: 9px 10px; }
+        .ods-resolution-detail > div { display: grid; gap: 3px; }
+        .ods-resolution-detail > div > span { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+        .ods-resolution-detail ul { display: grid; gap: 3px; list-style: none; margin: 0; padding: 0; }
+        .ods-resolution-detail li { font-size: 11px; line-height: 1.45; }
         .ods-compact-field { display: grid; gap: 3px; min-width: 0; }
         .ods-compact-field span { color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
         .ods-compact-field input, .ods-compact-field select, .ods-compact-field textarea { background: #f8fafc; border: 1px solid #dbe3ef; border-radius: 9px; color: #0f172a; font-size: 11px; font-weight: 750; min-height: 31px; outline: none; padding: 0 8px; width: 100%; }

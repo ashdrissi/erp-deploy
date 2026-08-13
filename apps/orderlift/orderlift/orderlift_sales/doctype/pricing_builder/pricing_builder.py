@@ -10,7 +10,9 @@ from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import (
     get_latest_item_prices,
     get_price_list_currency,
 )
+from orderlift.orderlift_sales.utils.item_group import descendant_leaf_item_groups, is_item_group_node
 from orderlift.orderlift_sales.utils.price_list_scope import apply_price_list_company, current_company, validate_price_list_scope
+from orderlift.orderlift_sales.utils.price_list_usage_guard import MANUAL_CHARGE_ITEM_CODES
 from orderlift.sales.utils.pricing_projection import apply_expenses
 from orderlift.sales.utils.scenario_policy import resolve_scenario_rule
 
@@ -78,6 +80,7 @@ class PricingBuilder(Document):
 
         scenario_docs = _get_scenario_docs(rules)
         scenario_caches = sheet._build_scenario_caches(scenario_docs, item_codes, target_currency=target_currency)
+        neutral_scenario_caches = {}
         customs_cache = {}
         benchmark_cache = {}
         benchmark_runtime_cache = {}
@@ -99,12 +102,19 @@ class PricingBuilder(Document):
                 continue
 
             scenario_name = (matched_rule.get("pricing_scenario") or "").strip()
-            if not scenario_name or scenario_name not in scenario_caches:
+            cache = _scenario_cache_for_builder_rule(
+                scenario_name=scenario_name,
+                buying_list=buying_list,
+                item_codes=item_codes,
+                scenario_caches=scenario_caches,
+                neutral_caches=neutral_scenario_caches,
+                target_currency=target_currency,
+            )
+            if not cache:
                 result_rows.append(_build_result_row(item_code, buying_list, meta.get("origin") or "", qty, base_buy, flt(published_map.get(item_code) or 0), "Missing Rule", _("Select a valid Expenses Policy for buying list {0}.").format(buying_list or "-"), item_group=details.get("item_group") or "", item_category=details.get("custom_item_category") or "", item_name=meta.get("item_name") or item_code, override_selling_price=_existing_override(existing_overrides, item_code, buying_list), selected=_existing_selected(existing_selected, item_code, buying_list)))
                 continue
 
             row = frappe._dict(item=item_code, qty=qty, source_buying_price_list=buying_list, source_bundle="")
-            cache = scenario_caches.get(scenario_name) or {}
             sheet._set_buy_price_for_row(
                 row,
                 cache.get("buying_price_list"),
@@ -312,6 +322,9 @@ class PricingBuilder(Document):
                 continue
             status = _effective_builder_status(row)
             if status in {"Missing Rule", "Missing Buy Price"}:
+                skipped += 1
+                continue
+            if item_code in MANUAL_CHARGE_ITEM_CODES:
                 skipped += 1
                 continue
             final_price = flt(row.override_selling_price or 0) or flt(row.projected_price or 0)
@@ -526,9 +539,8 @@ def _load_builder_items(buying_lists, manual_items=None, item_group=None, max_it
     if grouped:
         filters = {"name": ["in", list(grouped.keys())], "disabled": 0}
         if item_group and item_group != "All Item Groups":
-            from orderlift.orderlift_sales.page.pricing_simulator.pricing_simulator import _descendant_leaf_item_groups, _is_item_group_node
-            if _is_item_group_node(item_group):
-                descendants = _descendant_leaf_item_groups(item_group)
+            if is_item_group_node(item_group):
+                descendants = descendant_leaf_item_groups(item_group)
                 if descendants:
                     filters["item_group"] = ["in", descendants]
                 else:
@@ -622,6 +634,35 @@ def _get_scenario_docs(rules):
         if frappe.db.exists("Pricing Scenario", name):
             docs[name] = frappe.get_doc("Pricing Scenario", name)
     return docs
+
+
+def _scenario_cache_for_builder_rule(
+    scenario_name,
+    buying_list,
+    item_codes,
+    scenario_caches,
+    neutral_caches,
+    target_currency=None,
+):
+    scenario_name = (scenario_name or "").strip()
+    if scenario_name:
+        return scenario_caches.get(scenario_name)
+
+    key = ((buying_list or "").strip(), (target_currency or "").strip())
+    if key not in neutral_caches:
+        neutral_caches[key] = {
+            "buying_price_list": key[0],
+            "buy_prices": get_latest_item_prices(
+                item_codes,
+                key[0],
+                buying=True,
+                target_currency=key[1],
+            ),
+            "line_expenses": [],
+            "transport_config": {},
+            "storage_config": {},
+        }
+    return neutral_caches[key]
 
 
 def _match_sourcing_rule(rules, buying_list):

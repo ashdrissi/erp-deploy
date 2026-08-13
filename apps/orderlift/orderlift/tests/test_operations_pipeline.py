@@ -212,7 +212,9 @@ class TestOperationsPipeline(unittest.TestCase):
         original_find_upstream_refs = pipeline._find_upstream_refs
         original_doc_exists = pipeline._doc_exists
         original_get_all = pipeline.frappe.get_all
+        original_deny_retired_page = pipeline.deny_retired_page
         try:
+            pipeline.deny_retired_page = lambda page_name: None
             pipeline._fetch_doc = lambda doctype, name: docs.get((doctype, name))
             pipeline._doc_exists = lambda doctype, name: (doctype, name) in docs
             pipeline.frappe.get_all = lambda *args, **kwargs: []
@@ -234,6 +236,7 @@ class TestOperationsPipeline(unittest.TestCase):
             pipeline._find_upstream_refs = original_find_upstream_refs
             pipeline._doc_exists = original_doc_exists
             pipeline.frappe.get_all = original_get_all
+            pipeline.deny_retired_page = original_deny_retired_page
 
     def test_get_trace_data_keeps_supplier_as_leaf_context(self):
         docs = {
@@ -266,7 +269,9 @@ class TestOperationsPipeline(unittest.TestCase):
         original_find_upstream_refs = pipeline._find_upstream_refs
         original_doc_exists = pipeline._doc_exists
         original_get_all = pipeline.frappe.get_all
+        original_deny_retired_page = pipeline.deny_retired_page
         try:
+            pipeline.deny_retired_page = lambda page_name: None
             pipeline._fetch_doc = lambda doctype, name: docs.get((doctype, name))
             pipeline._doc_exists = lambda doctype, name: (doctype, name) in docs
             pipeline.frappe.get_all = lambda *args, **kwargs: []
@@ -288,6 +293,7 @@ class TestOperationsPipeline(unittest.TestCase):
             pipeline._find_upstream_refs = original_find_upstream_refs
             pipeline._doc_exists = original_doc_exists
             pipeline.frappe.get_all = original_get_all
+            pipeline.deny_retired_page = original_deny_retired_page
 
 
 if __name__ == "__main__":

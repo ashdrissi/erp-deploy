@@ -270,6 +270,7 @@ def _ensure_vat_templates(summary, dry_run=0):
             _apply_vat_template(doc, company["name"], account)
             doc.insert(ignore_permissions=True)
             summary["created"].append(doc.name)
+        _ensure_zero_purchase_tax_template(company, summary, dry_run=dry_run)
 
 
 def _apply_vat_template(doc, company: str, account: str):
@@ -289,6 +290,40 @@ def _apply_vat_template(doc, company: str, account: str):
             "rate": VAT_RATE,
         },
     )
+
+
+def _ensure_zero_purchase_tax_template(company, summary, dry_run=0):
+    doctype = "Purchase Taxes and Charges Template"
+    if not _exists("DocType", doctype):
+        return
+    title = "VAT 0%"
+    template_name = _tax_template_docname(title, company["abbr"])
+    existing = _tax_template_name(doctype, template_name, title, company["name"])
+    if existing:
+        if not dry_run:
+            doc = frappe.get_doc(doctype, existing)
+            _apply_zero_purchase_tax_template(doc, company["name"])
+            doc.save(ignore_permissions=True)
+        summary["updated"].append(existing)
+        return
+    if dry_run:
+        summary["created"].append(template_name)
+        return
+    doc = frappe.new_doc(doctype)
+    doc.title = title
+    _apply_zero_purchase_tax_template(doc, company["name"])
+    doc.insert(ignore_permissions=True)
+    summary["created"].append(doc.name)
+
+
+def _apply_zero_purchase_tax_template(doc, company: str):
+    if doc.meta.get_field("company"):
+        doc.company = company
+    if doc.meta.get_field("is_default"):
+        doc.is_default = 0
+    if doc.meta.get_field(VAT_ONLY_FIELD):
+        setattr(doc, VAT_ONLY_FIELD, 1)
+    doc.set("taxes", [])
 
 
 def _get_or_create_tax_account(company, summary, dry_run=0):
@@ -362,6 +397,11 @@ def _cleanup_extra_tax_templates(summary, dry_run=0):
         if company.get("operating")
         for prefix in ["Sales", "Purchase"]
     }
+    targets.update(
+        _tax_template_docname("VAT 0%", company["abbr"])
+        for company in TARGET_COMPANIES
+        if company.get("operating")
+    )
     for doctype in ["Sales Taxes and Charges Template", "Purchase Taxes and Charges Template"]:
         if not _exists("DocType", doctype):
             continue

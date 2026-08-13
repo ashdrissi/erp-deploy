@@ -13,6 +13,21 @@ def load_doctype(folder, filename=None):
 
 
 class TestPricingCrmContextSchema(unittest.TestCase):
+    def test_pricing_sheet_item_uses_canonical_sell_fields(self):
+        doc = load_doctype("pricing_sheet_item")
+        fields = {row["fieldname"]: row for row in doc["fields"]}
+
+        for fieldname in ("sell_unit_price", "sell_total", "discount_amount_per_unit"):
+            self.assertIn(fieldname, fields)
+            self.assertEqual(int(fields[fieldname]["precision"]), 9)
+        for fieldname in (
+            "manual_sell_unit_price",
+            "final_sell_unit_price",
+            "discounted_sell_unit_price",
+            "discount_amount",
+        ):
+            self.assertNotIn(fieldname, fields)
+
     def test_pricing_sheet_uses_crm_context_and_hides_customer_group(self):
         doc = load_doctype("pricing_sheet")
         fields = {row["fieldname"]: row for row in doc["fields"]}
@@ -176,9 +191,10 @@ class TestPricingCrmContextSchema(unittest.TestCase):
             / "pricing_sheet_builder.js"
         ).read_text()
 
-        self.assertIn('key === "buy_price" ? "static_list_price" : key', builder_js)
+        self.assertIn("function sellPriceReference(row)", builder_js)
+        self.assertIn("return Number(row.static_list_price || row.projected_unit_price || 0);", builder_js)
         self.assertIn('label: __("PU List HT")', builder_js)
-        self.assertIn('return projected || Number(row.final_sell_unit_price || 0) || staticBaseUnit(row);', builder_js)
+        self.assertIn('return projected || Number(row.sell_unit_price || 0) || staticBaseUnit(row);', builder_js)
 
     def test_pricing_sheet_builder_separates_admin_static_columns(self):
         builder_js = (
@@ -205,7 +221,20 @@ class TestPricingCrmContextSchema(unittest.TestCase):
         self.assertIn('"options": "Pricing Tier"', setup_py)
         self.assertIn('for doctype in ("Customer", "Prospect", "Lead")', setup_py)
         self.assertIn('"before_save": "orderlift.sales.utils.customer_tier.sync_customer_tier_mode"', hooks_py)
-        self.assertIn('"Lead": "public/js/customer_tier_mode.js"', hooks_py)
+        self.assertIn('"Lead": ["public/js/customer_tier_mode.js", "public/js/party_form_simplify_20260812a.js"]', hooks_py)
+
+    def test_party_create_actions_use_orderlift_prefill_paths(self):
+        party_js = (APP_ROOT / "orderlift" / "public" / "js" / "party_form_simplify_20260812a.js").read_text()
+        crm_js = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification_20260723a.js").read_text()
+
+        self.assertIn('prepare_opportunity_from_party', party_js)
+        self.assertIn('frappe.model.sync(doc)', party_js)
+        self.assertIn('data-orderlift-party-action", "opportunity"', party_js)
+        self.assertIn('data-orderlift-party-action", "customer"', party_js)
+        self.assertIn('routeOptions.opportunity_from', crm_js)
+        self.assertIn('default: partyName', crm_js)
+        self.assertIn('setDialogValueIfPresent(dialog, "title", defaults.display_name)', crm_js)
+        self.assertIn('custom_customer_tax_id: data.tax_id || ""', crm_js)
 
 
 if __name__ == "__main__":

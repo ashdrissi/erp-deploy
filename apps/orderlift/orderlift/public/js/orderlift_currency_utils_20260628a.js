@@ -7,7 +7,7 @@
 
     function activeCompany() {
         const access = companyAccess();
-        return access.current_company || access.user_default_company || "";
+        return access.current_company || "";
     }
 
     function activeCompanyCurrency() {

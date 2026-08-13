@@ -15,9 +15,15 @@
     var BUSINESS_ROLES = [
         "Orderlift Admin",
         "Sales User",
-        "Pricing Manager",
+        "Sales Manager",
+        "Purchase User",
+        "Purchase Manager",
+        "Stock User",
+        "Stock Manager",
+        "Pricing Configuration",
         "Logistics User",
         "Finance User",
+        "Finance Admin",
         "Installation User",
         "Service User",
     ];

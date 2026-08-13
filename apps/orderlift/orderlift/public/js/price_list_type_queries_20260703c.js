@@ -9,22 +9,8 @@
         "Purchase Receipt": { fieldname: "buying_price_list", priceListType: "Buying", itemPriceType: "buying" },
     };
 
-    const PRICE_OVERRIDE_ROLES = new Set(["Administrator", "System Manager", "Orderlift Admin", "Orderlift Business Admin"]);
-    const COMMISSION_ASSIGNMENT_MANAGER_ROLES = new Set([
-        "Administrator",
-        "Orderlift Admin",
-        "Orderlift Business Admin",
-        "Sales Manager",
-        "Pricing Manager",
-        "System Manager",
-    ]);
-
     function canOverrideQuotationPricing() {
-        var roles = frappe.user_roles || [];
-        if (!roles.length && frappe.boot && frappe.boot.user && Array.isArray(frappe.boot.user.roles)) {
-            return frappe.boot.user.roles.some(function (role) { return PRICE_OVERRIDE_ROLES.has(role); });
-        }
-        return roles.some(function (role) { return PRICE_OVERRIDE_ROLES.has(role); });
+        return Boolean(frappe.boot?.orderlift_capabilities?.quotation_override);
     }
 
     Object.entries(FORM_QUERIES).forEach(([doctype, config]) => {
@@ -132,14 +118,14 @@
         if (!frm || !frm.set_query || !config || !config.fieldname) return;
         if (!frm.fields_dict || !frm.fields_dict[config.fieldname]) return;
         frm.set_query(config.fieldname, () => ({
-            filters: buildFilters(config.priceListType, frm.doc.company || frm.doc.custom_company || ""),
+            filters: buildFilters(config.priceListType, transactionCompany(frm)),
         }));
     }
 
     function applyQuotationSelectedPriceListQuery(frm) {
         if (!frm || !frm.set_query || !frm.fields_dict || !frm.fields_dict.selected_selling_price_lists) return;
         frm.set_query("price_list", "selected_selling_price_lists", () => ({
-            filters: buildFilters("Selling", frm.doc.company || frm.doc.custom_company || ""),
+            filters: buildFilters("Selling", transactionCompany(frm)),
         }));
     }
 
@@ -147,7 +133,7 @@
         if (!frm || !frm.set_query || !frm.fields_dict || !frm.fields_dict.items) return;
         frm.set_query("source_selling_price_list", "items", () => {
             const priceLists = quotationSelectedPriceLists(frm);
-            const filters = buildFilters("Selling", frm.doc.company || frm.doc.custom_company || "");
+            const filters = buildFilters("Selling", transactionCompany(frm));
             if (priceLists.length) filters.name = ["in", priceLists];
             return { filters };
         });
@@ -201,19 +187,22 @@
     }
 
     function currentUserCanAssignCommissionSalesPerson() {
-        let roles = frappe.user_roles || [];
-        if (!roles.length && frappe.boot && frappe.boot.user && Array.isArray(frappe.boot.user.roles)) {
-            roles = frappe.boot.user.roles;
-        }
-        return roles.some((role) => COMMISSION_ASSIGNMENT_MANAGER_ROLES.has(role));
+        return Boolean(frappe.boot?.orderlift_capabilities?.commission_assignment_management);
     }
 
     function buildFilters(priceListType, company) {
         const filters = { custom_price_list_type: priceListType };
         if (priceListType === "Buying") filters.buying = 1;
         if (priceListType === "Selling") filters.selling = 1;
-        if (company) filters.custom_company = company;
+        filters.custom_company = company || "__no_company__";
         return filters;
+    }
+
+    function transactionCompany(frm) {
+        const docCompany = frm && frm.doc ? String(frm.doc.company || frm.doc.custom_company || "").trim() : "";
+        if (docCompany) return docCompany;
+        const access = frappe.boot && frappe.boot.orderlift_company_access;
+        return String((access && (access.current_company || access.user_default_company || (access.companies || [])[0])) || "").trim();
     }
 
     function applyTransactionItemQuery(frm, config) {
@@ -227,6 +216,7 @@
                     price_list: priceLists[0],
                     price_lists: JSON.stringify(priceLists),
                     price_list_type: config.itemPriceType || "selling",
+                    company: transactionCompany(frm),
                 },
             };
         });
@@ -251,6 +241,7 @@
 
     function clearUnselectedQuotationPrimaryPriceList(frm) {
         if (!frm || frm.doctype !== "Quotation") return;
+        if (!isDraftQuotation(frm)) return;
         if (quotationSelectedPriceLists(frm).length) return;
         if (!String(frm.doc.selling_price_list || "").trim()) return;
         frm.__orderlift_syncing_primary_selling_price_list = true;
@@ -261,6 +252,7 @@
 
     function syncQuotationPrimarySellingPriceList(frm) {
         if (!frm || frm.doctype !== "Quotation") return;
+        if (!isDraftQuotation(frm)) return;
         const selected = quotationSelectedPriceLists(frm);
         const primary = selected[0] || "";
         if ((frm.doc.selling_price_list || "") === primary) return;
@@ -268,6 +260,10 @@
         frm.set_value("selling_price_list", primary).finally(() => {
             frm.__orderlift_syncing_primary_selling_price_list = false;
         });
+    }
+
+    function isDraftQuotation(frm) {
+        return Boolean(frm && frm.doc && Number(frm.doc.docstatus || 0) === 0);
     }
 
     async function refreshQuotationItemPrices(frm) {
@@ -284,6 +280,7 @@
                     price_lists: JSON.stringify(priceLists),
                     price_list_type: "selling",
                     sales_person: frm.doc.commission_sales_person || "",
+                    company: transactionCompany(frm),
                 },
             });
             const rows = (res.message || {}).rows || {};
@@ -308,6 +305,7 @@
                     price_lists: JSON.stringify(priceLists),
                     price_list_type: "selling",
                     sales_person: frm.doc.commission_sales_person || "",
+                    company: transactionCompany(frm),
                 },
             });
             const payload = ((res.message || {}).rows || {})[row.item_code];
@@ -338,7 +336,7 @@
             discount = maxDiscount;
             netRate = rate * (1 - discount / 100);
         }
-        const commissionAmount = commissionFor(rate, qty, discount, maxDiscount, commissionRate, netRate);
+        const commissionAmount = commissionFor(netRate, qty, discount, maxDiscount, commissionRate);
         beginQuotationPriceMutation(frm);
         try {
             frappe.model.set_value(row.doctype, row.name, "price_list_rate", rate);
@@ -347,11 +345,9 @@
             if ("discount_percentage" in row) row.discount_percentage = discount;
             setChildValue(row, "source_selling_price_list", payload.price_list || "");
             setChildValue(row, "source_price_list_sell_rate", rate);
-            setChildValue(row, "source_gross_sell_rate", rate);
             setChildValue(row, "source_max_discount_percent", maxDiscount);
             setChildValue(row, "source_discount_percent", discount);
             setChildValue(row, "source_discount_amount", Math.max(rate - netRate, 0));
-            setChildValue(row, "source_discounted_sell_rate", netRate);
             setChildValue(row, "source_sales_person", payload.sales_person || frm.doc.commission_sales_person || "");
             setChildValue(row, "source_commission_rate", commissionRate);
             setChildValue(row, "source_commission_amount", commissionAmount);
@@ -384,15 +380,11 @@
         return Boolean(frappe.meta.has_field(doctype, fieldname));
     }
 
-    function commissionFor(priceListRate, qty, discountPercent, maxDiscountPercent, commissionRate, actualUnitPrice) {
-        const listRate = Number(priceListRate || 0);
+    function commissionFor(actualUnitPrice, qty, discountPercent, maxDiscountPercent, commissionRate) {
         const actualRate = Number(actualUnitPrice || 0);
         const quantity = Number(qty || 1) || 1;
-        const effectiveDiscount = listRate > 0 && actualRate < listRate ? Math.max((1 - actualRate / listRate) * 100, 0) : Number(discountPercent || 0);
-        const unusedDiscount = Math.max(Number(maxDiscountPercent || 0) - effectiveDiscount, 0);
-        const baseCommission = listRate * quantity * (unusedDiscount / 100) * (Number(commissionRate || 0) / 100);
-        const upliftCommission = Math.max(actualRate - listRate, 0) * quantity * 0.2;
-        return baseCommission + upliftCommission;
+        const unusedDiscount = Math.max(Number(maxDiscountPercent || 0) - Number(discountPercent || 0), 0);
+        return actualRate * quantity * (unusedDiscount / 100) * (Number(commissionRate || 0) / 100);
     }
 
     function cint(value) {

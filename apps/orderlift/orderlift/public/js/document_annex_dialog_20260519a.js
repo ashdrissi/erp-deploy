@@ -62,6 +62,7 @@
                 </section>
             </div>
         `);
+        bindFileControls(body, frm);
 
         body.find("[data-annex-template-switch]").on("click", function () {
             state.active = $(this).data("annex-template-switch");
@@ -75,6 +76,35 @@
             const annexName = entry && entry.annex && entry.annex.name;
             if (!annexName) return;
             window.open(`/printview?doctype=Orderlift%20Annex%20Document&name=${encodeURIComponent(annexName)}&format=Orderlift%20Annex%20Document&no_letterhead=0`, "_blank");
+        });
+    }
+
+    function bindFileControls(root, frm) {
+        root.find("[data-annex-upload]").on("click", function (event) {
+            event.preventDefault();
+            const control = $(this).closest("[data-annex-file-control]");
+            const imageOnly = Number($(this).data("image-only")) === 1;
+            new frappe.ui.FileUploader({
+                doctype: frm.doctype,
+                docname: frm.doc.name,
+                restrictions: imageOnly ? { allowed_file_types: ["image/*"] } : {},
+                on_success(file) {
+                    const url = file.file_url || file.file_name || "";
+                    if (!url) return;
+                    control.find("input[type=hidden]").val(url);
+                    control.find(".ol-annex-dialog-file-preview").html(imageOnly ? `<img src="${esc(url)}" alt="" />` : `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(String(url).split("/").pop() || url)}</a>`);
+                    control.find("[data-annex-upload]").text(__("Remplacer"));
+                    control.find("[data-annex-clear-file]").prop("hidden", false);
+                },
+            });
+        });
+        root.find("[data-annex-clear-file]").on("click", function (event) {
+            event.preventDefault();
+            const control = $(this).closest("[data-annex-file-control]");
+            control.find("input[type=hidden]").val("");
+            control.find(".ol-annex-dialog-file-preview").html(`<span>${esc(__("Aucun fichier"))}</span>`);
+            control.find("[data-annex-upload]").text(__("Téléverser"));
+            $(this).prop("hidden", true);
         });
     }
 
@@ -109,7 +139,7 @@
                 </div>
             </div>
             <div class="ol-annex-dialog-fields">
-                ${(template.fields || []).map((field) => fieldMarkup(template, field, annex.values || {})).join("") || `<div class="ol-annex-dialog-empty">${esc(__("Aucun champ configuré pour cette fiche."))}</div>`}
+                ${fieldsMarkup(template, annex.values || {}) || `<div class="ol-annex-dialog-empty">${esc(__("Aucun champ configuré pour cette fiche."))}</div>`}
             </div>
         `;
     }
@@ -127,10 +157,6 @@
     }
 
     function fieldMarkup(template, field, values) {
-        if (field.fieldtype === "Section Break") {
-            return `<div class="ol-annex-dialog-section"><h4>${esc(__(field.field_label))}</h4>${field.options ? `<p>${esc(field.options)}</p>` : ""}</div>`;
-        }
-        if (field.fieldtype === "Column Break") return "";
         if (field.fieldtype === "HTML") return `<div class="ol-annex-dialog-html">${field.options || field.default_value || ""}</div>`;
 
         const value = values[field.field_key] != null ? values[field.field_key] : (field.default_value || "");
@@ -146,14 +172,63 @@
             control = `<label class="ol-annex-dialog-check"><input type="checkbox" ${common} ${["1", "true", "True", true].includes(value) ? "checked" : ""} /> <span>${esc(__("Oui"))}</span></label>`;
         } else if (field.fieldtype === "Link") {
             control = `<input type="text" ${common} value="${esc(value)}" placeholder="${esc(field.options || __("Nom du document lié"))}" />`;
-        } else if (field.fieldtype === "Attach" || field.fieldtype === "Attach Image") {
-            control = `<input type="text" ${common} value="${esc(value)}" placeholder="${esc(__("URL ou chemin du fichier"))}" />`;
+        } else if (["Attach", "Attach Image", "Signature"].includes(field.fieldtype)) {
+            control = fileControl(field, value, common);
         } else {
             const type = field.fieldtype === "Date" ? "date" : (field.fieldtype === "Datetime" ? "datetime-local" : (field.fieldtype === "Time" ? "time" : (["Int", "Float", "Currency"].includes(field.fieldtype) ? "number" : "text")));
             control = `<input type="${type}" ${common} value="${esc(value)}" />`;
         }
-        const wide = ["Small Text", "Text", "Text Editor", "Attach Image"].includes(field.fieldtype);
+        const wide = ["Small Text", "Text", "Text Editor", "Attach", "Attach Image", "Signature", "HTML"].includes(field.fieldtype);
         return `<label class="ol-annex-dialog-field ${wide ? "wide" : ""}"><span>${esc(__(field.field_label))}${required}</span>${control}</label>`;
+    }
+
+    function fieldsMarkup(template, values) {
+        return splitFieldLayout(template.fields || []).map((section) => `
+            <section class="ol-annex-dialog-dynamic-section">
+                ${section.label ? `<div class="ol-annex-dialog-section"><h4>${esc(__(section.label))}</h4>${section.description ? `<p>${esc(section.description)}</p>` : ""}</div>` : ""}
+                <div class="ol-annex-dialog-columns columns-${Math.min(section.columns.length, 2)}">
+                    ${section.columns.map((column) => `<div class="ol-annex-dialog-column">${column.map((field) => fieldMarkup(template, field, values)).join("")}</div>`).join("")}
+                </div>
+            </section>
+        `).join("");
+    }
+
+    function splitFieldLayout(fields) {
+        const sections = [];
+        let section = { label: "", description: "", columns: [[]] };
+        const push = () => {
+            if (section.label || section.columns.some((column) => column.length)) sections.push(section);
+        };
+        fields.forEach((field) => {
+            if (field.fieldtype === "Section Break") {
+                push();
+                section = { label: field.field_label || "", description: field.options || "", columns: [[]] };
+            } else if (field.fieldtype === "Column Break") {
+                if (section.columns.length < 2) section.columns.push([]);
+            } else {
+                section.columns[section.columns.length - 1].push(field);
+            }
+        });
+        push();
+        return sections;
+    }
+
+    function fileControl(field, value, common) {
+        const image = ["Attach Image", "Signature"].includes(field.fieldtype);
+        return `<div class="ol-annex-dialog-file" data-annex-file-control>
+            <input type="hidden" ${common} value="${esc(value)}" />
+            <div class="ol-annex-dialog-file-preview">${filePreviewMarkup(field, value)}</div>
+            <div class="ol-annex-dialog-file-actions">
+                <button type="button" class="btn btn-sm btn-default" data-annex-upload data-image-only="${image ? 1 : 0}">${esc(__(value ? "Remplacer" : "Téléverser"))}</button>
+                <button type="button" class="btn btn-sm btn-default" data-annex-clear-file ${value ? "" : "hidden"}>${esc(__("Effacer"))}</button>
+            </div>
+        </div>`;
+    }
+
+    function filePreviewMarkup(field, value) {
+        if (!value) return `<span>${esc(__(field.fieldtype === "Signature" ? "Aucune signature" : "Aucun fichier"))}</span>`;
+        if (["Attach Image", "Signature"].includes(field.fieldtype)) return `<img src="${esc(value)}" alt="${esc(field.field_label)}" />`;
+        return `<a href="${esc(value)}" target="_blank" rel="noopener">${esc(String(value).split("/").pop() || value)}</a>`;
     }
 
     async function saveAnnex(frm, dialog, entries, state, templateName) {
@@ -225,6 +300,9 @@
             .ol-annex-dialog-list,.ol-annex-dialog-panel{min-height:0;max-height:100%;overscroll-behavior:contain;}
             .ol-annex-dialog-fields{padding-bottom:18px;}
             @media (max-width: 767px){.modal-dialog:has(.ol-annex-dialog){margin:8px}.modal-xl .ol-annex-dialog,.modal-extra-large .ol-annex-dialog,.ol-annex-dialog{height:calc(100vh - 120px);max-height:calc(100vh - 120px);grid-template-columns:1fr}.ol-annex-dialog-list{max-height:220px;border-right:0;border-bottom:1px solid #e2e8f0}.ol-annex-dialog-panel{max-height:none}}
+        `;
+        style.textContent += `
+            .ol-annex-dialog-fields{display:block}.ol-annex-dialog-dynamic-section+.ol-annex-dialog-dynamic-section{margin-top:14px}.ol-annex-dialog-columns{display:grid;grid-template-columns:1fr;gap:14px}.ol-annex-dialog-columns.columns-2{grid-template-columns:repeat(2,minmax(0,1fr))}.ol-annex-dialog-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start}.ol-annex-dialog-columns.columns-2 .ol-annex-dialog-column{grid-template-columns:1fr}.ol-annex-dialog-file{display:grid;gap:7px;padding:8px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.ol-annex-dialog-file-preview{display:flex;align-items:center;justify-content:center;min-height:42px;color:#64748b;font-weight:600}.ol-annex-dialog-file-preview img{display:block;max-width:100%;max-height:150px;object-fit:contain}.ol-annex-dialog-file-preview a{word-break:break-all}.ol-annex-dialog-file-actions{display:flex;gap:6px;justify-content:flex-end}@media(max-width:767px){.ol-annex-dialog-columns.columns-2,.ol-annex-dialog-column{grid-template-columns:1fr}}
         `;
         document.head.appendChild(style);
     }

@@ -66,6 +66,7 @@ class FakeDB:
         "Receivable - D": "Demo Company",
         "Payable - D": "Demo Company",
         "Bank - D": "Demo Company",
+        "Wire Bank - D": "Demo Company",
         "Cash - D": "Demo Company",
         "Sales Revenue - D": "Demo Company",
         "Purchases - D": "Demo Company",
@@ -77,6 +78,7 @@ class FakeDB:
         "Receivable - D": {"company": "Demo Company", "is_group": 0, "root_type": "Asset", "account_name": "Accounts Receivable", "account_type": "Receivable"},
         "Payable - D": {"company": "Demo Company", "is_group": 0, "root_type": "Liability", "account_name": "Accounts Payable", "account_type": "Payable"},
         "Bank - D": {"company": "Demo Company", "is_group": 0, "root_type": "Asset", "account_name": "Bank", "account_type": "Bank"},
+        "Wire Bank - D": {"company": "Demo Company", "is_group": 0, "root_type": "Asset", "account_name": "Wire Bank", "account_type": "Bank"},
         "Cash - D": {"company": "Demo Company", "is_group": 0, "root_type": "Asset", "account_name": "Cash", "account_type": "Cash"},
         "Sales Revenue - D": {"company": "Demo Company", "is_group": 0, "root_type": "Income", "account_name": "Sales Revenue", "account_type": "Income Account"},
         "Purchases - D": {"company": "Demo Company", "is_group": 0, "root_type": "Expense", "account_name": "Purchases / COGS", "account_type": "Expense Account"},
@@ -319,6 +321,23 @@ class TestFinanceAccountGovernance(unittest.TestCase):
 
         self.assertEqual(doc.paid_from, "Receivable - D")
         self.assertEqual(doc.paid_to, "Cash - D")
+
+    def test_wire_transfer_uses_its_company_account(self):
+        doc = FakeDoc(
+            "Payment Entry",
+            company="Demo Company",
+            payment_type="Receive",
+            party_type="Customer",
+            mode_of_payment="Wire Transfer",
+            paid_from="",
+            paid_to="",
+        )
+
+        with patch.object(account_governance, "_mode_of_payment_account", return_value="Wire Bank - D"):
+            account_governance.apply_document_account_defaults(doc)
+
+        self.assertEqual(doc.paid_from, "Receivable - D")
+        self.assertEqual(doc.paid_to, "Wire Bank - D")
 
     def test_non_superadmin_cannot_change_account_fields_after_save(self):
         before = FakeDoc("Sales Invoice", company="Demo Company", debit_to="Receivable - D")

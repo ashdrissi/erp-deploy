@@ -1,0 +1,38 @@
+{
+  "actions": [],
+  "autoname": "format:PCA-.YYYY.-.#####",
+  "creation": "2026-08-12 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": ["party_type", "party_name", "source_company", "requested_company", "status", "requested_by", "requested_on", "request_reason", "reviewed_by", "reviewed_on", "review_comment"],
+  "fields": [
+    {"fieldname": "party_type", "fieldtype": "Select", "label": "Party Type", "options": "Lead\nProspect\nCustomer", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
+    {"fieldname": "party_name", "fieldtype": "Dynamic Link", "label": "Party", "options": "party_type", "reqd": 1, "in_list_view": 1},
+    {"fieldname": "source_company", "fieldtype": "Link", "label": "Primary Internal Company", "options": "Company", "read_only": 1},
+    {"fieldname": "requested_company", "fieldtype": "Link", "label": "Requested Internal Company", "options": "Company", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
+    {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Pending\nApproved\nRejected", "default": "Pending", "reqd": 1, "read_only": 1, "in_list_view": 1, "in_standard_filter": 1},
+    {"fieldname": "requested_by", "fieldtype": "Link", "label": "Requested By", "options": "User", "read_only": 1},
+    {"fieldname": "requested_on", "fieldtype": "Datetime", "label": "Requested On", "read_only": 1},
+    {"fieldname": "request_reason", "fieldtype": "Text", "label": "Reason"},
+    {"fieldname": "reviewed_by", "fieldtype": "Link", "label": "Reviewed By", "options": "User", "read_only": 1},
+    {"fieldname": "reviewed_on", "fieldtype": "Datetime", "label": "Reviewed On", "read_only": 1},
+    {"fieldname": "review_comment", "fieldtype": "Text", "label": "Review Comment", "read_only": 1}
+  ],
+  "links": [],
+  "modified": "2026-08-12 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift CRM",
+  "name": "Party Company Access Request",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1},
+    {"role": "Sales Manager", "read": 1, "write": 1, "create": 1},
+    {"role": "Sales User", "read": 1, "create": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}

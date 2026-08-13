@@ -852,6 +852,9 @@
     function assignmentPill(card) {
         const hasAssignment = Boolean(card.assigned_user);
         const label = card.assigned_user_label || card.assigned_user || __("Unassigned");
+        if (!frappe.boot?.orderlift_capabilities?.sales_order_pipeline_assignment) {
+            return `<span class="olp-assignee-pill ${hasAssignment ? "" : "is-unassigned"}"><i>${frappe.utils.escape_html(ownerInitials(label))}</i><strong>${frappe.utils.escape_html(label)}</strong></span>`;
+        }
         const title = hasAssignment ? __("Change or unassign") : __("Assign");
         return `
             <button type="button" class="olp-assignee-pill ${hasAssignment ? "" : "is-unassigned"}" data-assign-card="${frappe.utils.escape_html(card.name)}" title="${frappe.utils.escape_html(title)}">

@@ -417,6 +417,7 @@ function persistSelectionRuleBlock(frm, existingBlock, values) {
     const targets = existingBlock?.items?.length ? existingBlock.items : [frm.add_child("item_rules")];
     targets.forEach((target, index) => {
         target.rule_group = ruleGroup;
+        target.rule_group_title = values.rule_label;
         target.rule_label = values.rule_label;
         target.is_active = existingBlock ? (values.is_active ? 1 : 0) : 1;
         target.sequence = cint(target.sequence || ((frm.doc.item_rules || []).length + index) * 10 || 10);
@@ -430,6 +431,7 @@ function persistSelectionRuleItem(frm, existingRule, ruleGroup, values) {
     const target = existingRule || placeholder || frm.add_child("item_rules");
     const block = getSelectionRuleBlocks(frm).find((entry) => entry.rule_group === ruleGroup);
     target.rule_group = ruleGroup;
+    target.rule_group_title = block?.rule_group_title || block?.rule_label || values.rule_label || __("Regle");
     target.rule_label = block?.rule_label || values.rule_label || __("Regle");
     target.is_active = block?.is_active ?? 1;
     target.condition_formula = block?.condition_formula || "";
@@ -449,10 +451,11 @@ function duplicateSelectionRuleBlock(frm, ruleGroup) {
     const newGroup = makeRuleGroupId();
     block.items.forEach((source, index) => {
         const clone = frm.add_child("item_rules");
-        ["sequence", "is_active", "condition_formula", "item", "qty_formula", "display_group", "show_in_detail"].forEach((field) => {
+        ["sequence", "is_active", "rule_group_title", "condition_mode", "question_key", "operator", "compare_source", "manual_value", "compare_question_key", "condition_rules_json", "condition_formula", "condition_formula_builder_json", "item_selection_mode", "item", "item_filters_json", "quantity_mode", "fixed_qty", "quantity_question_key", "qty_formula", "qty_formula_builder_json", "display_group", "show_in_detail"].forEach((field) => {
             clone[field] = source[field];
         });
         clone.rule_group = newGroup;
+        clone.rule_group_title = `${block.rule_group_title || block.rule_label || __("Regle")} (${__("copie")})`;
         clone.rule_label = `${block.rule_label || __("Regle")} (${__("copie")})`;
         clone.sequence = cint(source.sequence || ((frm.doc.item_rules || []).length + index) * 10);
     });
@@ -497,7 +500,7 @@ function rewriteItemRules(frm, rows) {
     frm.clear_table("item_rules");
     rows.forEach((entry) => {
         const target = frm.add_child("item_rules");
-        ["sequence", "is_active", "rule_group", "rule_label", "condition_formula", "item", "qty_formula", "display_group", "show_in_detail"].forEach((field) => {
+        ["sequence", "is_active", "rule_group", "rule_group_title", "rule_label", "condition_mode", "question_key", "operator", "compare_source", "manual_value", "compare_question_key", "condition_rules_json", "condition_formula", "condition_formula_builder_json", "item_selection_mode", "item", "item_filters_json", "quantity_mode", "fixed_qty", "quantity_question_key", "qty_formula", "qty_formula_builder_json", "display_group", "show_in_detail"].forEach((field) => {
             target[field] = entry[field];
         });
     });
@@ -519,6 +522,7 @@ function getSelectionRuleBlocks(frm) {
         if (!grouped.has(key)) {
             grouped.set(key, {
                 rule_group: key,
+                rule_group_title: row.rule_group_title || row.rule_label || __("Nouvelle regle"),
                 rule_label: row.rule_label || __("Nouvelle regle"),
                 is_active: cint(row.is_active ?? 1),
                 condition_formula: row.condition_formula || "",

@@ -72,15 +72,25 @@ PY
 - `apps/orderlift/orderlift/scripts/import_item_packaging_profiles.py`: imports packaging profiles from `logistique_export.csv`, creates missing UOMs, and updates item HS codes.
 - `apps/orderlift/orderlift/scripts/setup_workbook_pricing_policies.py`: seeds workbook-derived customs, scenario, and passive benchmark policy records and can verify parity against imported price lists.
 - `apps/orderlift/orderlift/scripts/setup_internal_notifications.py`: seeds enabled internal-only native Frappe `Notification` records for key Orderlift sales, finance, SAV, logistics, project, and commission events.
+- `apps/orderlift/orderlift/scripts/setup_document_templates.py`: dry-runs by default and, with `dry_run=0`, creates or updates the standard Project `Prise des mesures` and `Information du Projet` annex templates.
 - `apps/orderlift/orderlift/scripts/import_workbook_dimensioning_set.py`: parses the pricing workbook formulas and upserts the dynamic Ascenseur Complet Dimensioning Set.
 - `apps/orderlift/orderlift/orderlift_crm/page/opportunity_pipeline`: custom Opportunity kanban using native `Opportunity.sales_stage` as the main editable status.
 - `apps/orderlift/orderlift/orderlift_crm/page/project_pipeline`: custom Project kanban using `Project.custom_project_status` as the main editable status.
 - `apps/orderlift/orderlift/orderlift_crm/page/sales_order_pipeline`: custom Sales Order kanban using `Sales Order.custom_orderlift_order_status` as the main editable status.
 - `apps/orderlift/orderlift/orderlift_crm/page/status_control`: editable status control page for Opportunity, Project, Sales Order, and Forecast Load Plan workflow statuses.
+- `apps/orderlift/orderlift/orderlift_crm/party_management.py`: unified Lead/Prospect/Customer form APIs, duplicate detection, internal-company access requests, and explicit conversion. Party behavior is documented in `docs/unified_party_model.md`.
 - `apps/orderlift/orderlift/orderlift_crm/page/campaign_editor` and `campaign_manager`: Partner Campaign builder/manager. `campaign_action_type` contains peer values (`Email`, `WhatsApp`, `Call`, `Visit`, `Other`); native `default_channel` stays channel-only (`Email`, `WhatsApp`, `Call`, or blank). The Content tab shows only the selected campaign action type. Email uses ERPNext/Frappe Email Queue, WhatsApp supports manual click-to-chat plus Twilio/custom webhook automated templates, Visit creates target ToDos, and Other is notes-only.
 - `apps/orderlift/orderlift/orderlift_sales/page/pricing_sheet_manager`: independent custom Pricing Sheet landing page for opening/creating sheets without the native ERPNext list/form UI.
 - `apps/orderlift/orderlift/orderlift_sales/page/pricing_sheet_builder`: independent custom Pricing Sheet builder page for setup, line building, dimensioning insertion, bundle import, recalculation, and quotation generation.
+- `apps/orderlift/orderlift/orderlift_logistics/page/stock_rate_review`: bulk review page for missing/provisional Purchase Receipt and Material Receipt rates. Warehouse-only users work in native forms with value fields hidden; users with purchasing or privileged-pricing capability can review rates.
+- `apps/orderlift/orderlift/orderlift_logistics/page/stock_dashboard`: active-company and warehouse-scoped stock cockpit with item quantity/valuation drill-down, read-only movement history, and read-only Stock Entry history. See `docs/stock_dashboard.md`.
+- `apps/orderlift/orderlift/orderlift_logistics/stock_planning.py`: confirmed-Sales-Order stock planning engine. It allocates submitted incoming PO quantity once by delivery priority, creates due/partial Pick Lists, optionally creates Material Requests, and never creates Stock Reservation Entries directly. Company settings and worked examples live in `Stock Planning Settings`; operational plans live in `Stock Demand Plan`. See `docs/stock_planning.md`.
+- `apps/orderlift/orderlift/orderlift_sales/page/buying_price_review`: privileged multi-Purchase Order review page for negotiated buying-price approvals; the Purchase Order form exposes the same decisions in `Pricing Alerts & Approvals`.
 - `apps/orderlift/orderlift/orderlift_finance/account_governance.py`: minimal backend account defaults, Account edit restriction, and invoice/payment account defaulting/protection. Native finance documents stay visible; backend account fields are superadmin-only.
+- `apps/orderlift/orderlift/delete_blocker_helper.py`: permission-safe recursive blocker discovery and transactional deletion used by the global Desk delete popup. It deduplicates the readable downstream dependency graph and deletes deepest dependencies first. Users with `delete_submitted_blockers` may cancel submitted selected blockers through native hooks and delete them with the parent; other users retain native delete/submission restrictions.
+- `apps/orderlift/orderlift/orderlift_logistics/source_chain.py`: permission-safe, read-only commercial source chain for Material Request, Purchase Order, Purchase Receipt, and Purchase Invoice forms. It resolves Opportunity through Sales Order lineage without changing Project, Cost Center, or accounting dimensions.
+- `apps/orderlift/orderlift/orderlift_logistics/utils/material_request.py`: keeps Material Requests quantity-only and maps multiple selected submitted Purchase Material Requests into one unsaved supplier Purchase Order while preserving row-level source links.
+- `apps/orderlift/orderlift/orderlift_logistics/doctype/purchase_agent_rules`: company-scoped, capability-gated Buying Price List allowances for purchasing users. It is separate from sales-only Agent Pricing Rules; `privileged_pricing` bypasses allowances while non-privileged users require an enabled user/company policy.
 - `apps/orderlift/orderlift/orderlift_logistics/page/logistics_pipeline`: container-first Forecast Load Plan pipeline using logistics lifecycle statuses.
 - `apps/orderlift`: main business logic app; Python-heavy with `unittest` coverage.
 - `apps/custom_desk_theme`: small Frappe desk theme app with vanilla JS assets.
@@ -116,9 +126,16 @@ PY
 - To update `Item.custom_customs_material` from a materials workbook with columns `ITEM CATEGORY`, `ITEM GROUP`, `ITEM NAME FR`, and `DOUANE MATERIAL`, copy the workbook into the app container and run dry-run first: `bench --site <site> execute orderlift.scripts.sync_customs_material_values.sync_item_customs_materials --kwargs '{"workbook_path":"/tmp/materials.xlsx","sheet_name":"Database","dry_run":1}'`, then rerun with `"dry_run":0` after reviewing unmatched, ambiguous, and conflict samples.
 - To stamp existing selling Price Lists/Item Prices with Pricing Builder source and max-discount metadata, run dry-run first: `bench --site <site> execute orderlift.scripts.backfill_pricing_builder_selling_list_stamps.run --kwargs '{"price_list":"<Selling Price List>","dry_run":1}'`, then rerun with `"dry_run":0`; use `"update_prices":1` only when the current selling rates should be recalculated from the builder.
 - To import the dynamic workbook-derived Ascenseur Complet Dimensioning Set, copy the `.xlsm` into the app container and run `bench --site <site> execute orderlift.scripts.import_workbook_dimensioning_set.run --kwargs '{"workbook_path":"/tmp/Pricing & Edition Devis_V01.2026 (1).xlsm","target_name":"DSET-00038","dry_run":1}'`, then rerun with `"dry_run":0` after reviewing counts.
+- To repair the Electric/Hydraulic Dimensioning Set door filters and rule titles, run `bench --site <site> execute orderlift.scripts.repair_dimensioning_filtered_rules.run --kwargs '{"dry_run":1}'`, review the row-level changes, then rerun with `"dry_run":0`.
+- To create inactive draft approval workflows for Purchase Order, Sales Order, and Quotation, run the dry-run first: `bench --site <site> execute orderlift.scripts.setup_approval_workflows.run`, then apply with `bench --site <site> execute orderlift.scripts.setup_approval_workflows.run --kwargs '{"dry_run":0}'`. This command is explicit and is not called by migrations.
+- To create or refresh the standard dynamic Quotation detail proposal template, run the dry-run first: `bench --site <site> execute orderlift.scripts.setup_quotation_detail_template.run`, then apply once with `bench --site <site> execute orderlift.scripts.setup_quotation_detail_template.run --kwargs '{"dry_run":0}'`. This command is explicit and is not called by migrations; pass `{"dry_run":0,"update_existing":1}` only when intentionally refreshing the reusable template.
 - To seed SIG demo projects and QC data, run `bench --site <site> execute orderlift.orderlift_sig.utils.demo_seed.seed_demo_data`.
+- To normalize the approved simplified named-user role assignments, run the read-only preview first: `bench --site <site> execute orderlift.scripts.normalize_simplified_user_roles.run`; review missing users and Sales Person mappings, then apply with `bench --site <site> execute orderlift.scripts.normalize_simplified_user_roles.run --kwargs '{"dry_run":0}'`. This command does not change User Permission scopes.
+- To remove compiled `Custom DocPerm`, managed Page/Report, and menu references owned by retired roles, run `bench --site <site> execute orderlift.scripts.cleanup_retired_access.run` first, then apply with `bench --site <site> execute orderlift.scripts.cleanup_retired_access.run --kwargs '{"dry_run":0}'`. User role assignments and Role records are not changed.
 - To seed live logistics demo flows (inbound, domestic, outbound customer-managed, outbound Orderlift-managed), run `bench --site <site> execute orderlift.scripts.seed_logistics_demo_flows.run --kwargs '{"company":"Orderlift","batch_key":"DEMO-LOG-YYYYMMDD"}'` and use `scenarios` to limit reruns, e.g. `{"company":"Orderlift","batch_key":"DEMO-LOG-YYYYMMDD","scenarios":"outbound_customer,outbound_orderlift"}`.
+- To create/update internal Customer/Supplier records between Orderlift operating companies for draft PO -> draft SO automation, run the dry-run first: `bench --site <site> execute orderlift.scripts.setup_internal_orderlift_parties.run`, then apply with `bench --site <site> execute orderlift.scripts.setup_internal_orderlift_parties.run --kwargs '{"dry_run":0}'`. By default it discovers non-group operating companies under parent `Orderlift` or marked with `custom_orderlift_reporting_company`; pass comma-separated `companies` only for an intentional override.
 - To import B2C opportunity workbook rows from `Suivi Projets B2C (1).xlsx`, copy the workbook into the app container and run dry-run first: `bench --site <site> execute orderlift.scripts.import_b2c_opportunities.run --kwargs '{"workbook_path":"/tmp/Suivi Projets B2C (1).xlsx","dry_run":1}'`, then rerun with `"dry_run":0` after reviewing counts and warnings.
+- To regenerate only selected company-scoped commercial Print Formats, pass comma-separated `companies` and `doc_types` to `orderlift.scripts.update_pf.run`; for the Morocco customer/supplier document set use `bench --site <site> execute orderlift.scripts.update_pf.run --kwargs '{"companies":"Orderlift Maroc Distribution,Orderlift Maroc Installation","doc_types":"Quotation,Sales Order,Delivery Note,Sales Invoice,Purchase Order,Purchase Invoice"}'`.
 
 ## Build Commands
 - Dev stack: `docker compose -f docker-compose.dev.yml up -d`
@@ -179,6 +196,16 @@ Always use `-w /home/frappe/frappe-bench` with `docker exec` for bench commands.
 - ERPNext `Customer Group` is a hidden technical fallback only; default it to `All Customer Groups` and do not use it for Orderlift business logic, targeting, portal access, pricing, campaigns, segmentation, or logistics decisions.
 - Use `CRM Business Type` and `CRM Segment` as the active classification source for customer targeting, portal policies, pricing context, campaigns, segmentation, and pipeline filters.
 - Party-level campaign fields (`custom_partner_campaign`, `custom_partner_campaign_target`) are legacy/hidden; campaign history is derived from `Partner Campaign Target` rows.
+- Deal identification uses optional `custom_deal_abbreviation`: Opportunity is authoritative, Sales Order and Project may edit it back to one readable source Opportunity, and downstream sales/operations/purchasing documents inherit it read-only. New document names append `~CODE`; existing names are never renamed when the code changes. Multi-source documents display `MIXED`. See `docs/deal_abbreviation_workflow.md`.
+
+### Company Session Context
+- Company `User Permission` records define the allowed-company security boundary.
+- `orderlift_preferred_company` is the new-session fallback; legacy `Company` defaults remain compatibility data only.
+- The active company is stored in Redis under `orderlift:company_context:<sid>`. Never persist an active switch back to user defaults.
+- Tabs in one browser session share the active company. Separate browsers/devices using the same account have independent company contexts.
+- Do not add URL/deep-link company overrides. Interactive Desk queries use the exact SID company; noninteractive jobs, API-token requests, and console operations use all allowed companies.
+- The global switcher is `orderlift/public/js/orderlift_company_switcher_20260803d.js`. Native Frappe Company Session Defaults are retired by `orderlift.patches.v1_0.backfill_session_company_context`.
+- Run the live Redis isolation check with `bench --site <site> execute orderlift.tests.live_company_session_context.run`.
 
 ### Typical Live Apply Flow
 1. Edit local files under `/root/erp-deploy/apps/orderlift/...`
@@ -222,7 +249,7 @@ The project uses **one unified sidebar** called `Main Dashboard`. All section-sp
 | SIG | `sig` | `orderlift_sig` |
 
 ### Business Roles
-Seven seeded roles in `menu_registry.py`: `Orderlift Admin`, `Sales User`, `Pricing Manager`, `Logistics User`, `Finance User`, `Installation User`, `Service User`. Each role gets different sidebar section visibility.
+Thirteen canonical business roles in `menu_registry.py`: `Orderlift Admin`, `Sales User`, `Sales Manager`, `Purchase User`, `Purchase Manager`, `Stock User`, `Stock Manager`, `Finance User`, `Finance Admin`, `Pricing Configuration`, `Installation User`, `Service User`, and `Logistics User`. Optional specialist roles remain supported but are outside the canonical assignment baseline.
 
 ### Doctype Module Map (~94 custom doctypes)
 
@@ -308,6 +335,13 @@ List view scripts for inline editing, quick-entry, column filters. Registered in
   `cd apps/orderlift && python -m unittest orderlift.test_consolidation`
 - Run the SIG unit tests:
   `cd apps/orderlift && python -m unittest orderlift.tests.test_sig_qc orderlift.tests.test_sig_sidebar_setup`
+- Run rollback-only Lead/Prospect CRM propagation acceptance checks inside the target app container:
+  `bench --site <site> execute orderlift.tests.live_party_propagation.run`
+  `bench --site <site> execute orderlift.tests.live_party_propagation.run_prospect`
+- Verify first Customer Address primary selection with rollback-only data:
+  `bench --site <site> execute orderlift.tests.live_party_propagation.run_customer_address`
+- Verify Customize Form preserves omitted Administrator-owned fields for the approved system user:
+  `bench --site <site> execute orderlift.tests.live_customize_form_guard.run`
 - `infintrix_theme` uses Frappe's test framework for doctype tests.
 - Run all tests for that app inside the bench container:
   `bench --site $SITE_NAME run-tests --app infintrix_theme`
@@ -402,3 +436,5 @@ List view scripts for inline editing, quick-entry, column filters. Registered in
 - Operator-facing campaign workflow notes now live in `docs/campaign_workflows.md`.
 - Operator-facing role/menu/company access notes now live in `docs/access_command_center_menu_company_access.md`.
 - Operator-facing finance account and Cost Center governance notes now live in `docs/finance_account_governance.md`.
+- Operator-facing stock rate review notes now live in `docs/stock_rate_review.md`.
+- Operator-facing customer delivery stock reservation notes now live in `docs/customer_delivery_stock_reservation.md`.

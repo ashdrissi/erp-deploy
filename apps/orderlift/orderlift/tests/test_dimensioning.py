@@ -12,8 +12,6 @@ from orderlift.sales.utils.dimensioning import (
     validate_structured_condition,
     validate_structured_quantity,
 )
-
-
 APP_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -181,6 +179,12 @@ class TestDimensioning(unittest.TestCase):
         self.assertIn("item_filters.append(_db_filter_condition(filter_row))", source)
         self.assertNotIn('item_filters[filter_row["field"]] =', source)
 
+    def test_filtered_item_contains_matches_dot_and_comma_decimals(self):
+        source = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.py").read_text()
+
+        self.assertIn('value = str(value).replace(".", "_").replace(",", "_")', source)
+        self.assertIn('return str(right).replace(",", ".") in str(left).replace(",", ".")', source)
+
     def test_dimensioning_builder_rule_actions_are_implemented(self):
         script = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_builder" / "dimensioning_set_builder.js").read_text()
 
@@ -219,6 +223,81 @@ class TestDimensioning(unittest.TestCase):
         self.assertIn('doc.check_permission("write")', source)
         self.assertIn('frappe.has_permission("Dimensioning Set", "create", throw=True)', source)
         self.assertLess(source.index('doc.check_permission("write")'), source.index('doc.set_name ='))
+
+    def test_dimensioning_use_paths_accept_select_without_configuration_read(self):
+        dimensioning_source = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.py").read_text()
+        pricing_sheet_source = (APP_ROOT / "orderlift_sales" / "doctype" / "pricing_sheet" / "pricing_sheet.py").read_text()
+        reference_access_source = (APP_ROOT / "reference_access.py").read_text()
+
+        self.assertIn('from orderlift.reference_access import get_reference_doc_for_use', dimensioning_source)
+        self.assertIn('filters={"is_active": 1}', dimensioning_source)
+        self.assertIn('ptype="select"', reference_access_source)
+        self.assertIn('frappe.get_list(', reference_access_source)
+        self.assertIn('frappe.has_permission("Item", "read", throw=True)', dimensioning_source)
+        self.assertIn('get_match_cond("Item")', dimensioning_source)
+        self.assertIn('candidates = frappe.get_list(', dimensioning_source)
+        self.assertIn('return get_reference_doc_for_use(', pricing_sheet_source)
+        self.assertNotIn('doc.check_permission("read")', pricing_sheet_source)
+        self.assertIn('frappe.has_permission("Dimensioning Set", "read", throw=True)', dimensioning_source)
+
+    def test_dimensioning_document_tool_hides_mutations_on_read_only_documents(self):
+        source = (APP_ROOT / "public" / "js" / "dimensioning_document_tool_20260724d.js").read_text()
+
+        self.assertIn("if (!canEditDocument(frm))", source)
+        self.assertIn("frm.is_new() ? permissions.create : permissions.write", source)
+
+    def test_formula_builder_uses_source_neutral_language(self):
+        source = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_builder" / "dimensioning_set_builder.js").read_text()
+
+        self.assertNotIn('__("Workbook formulas")', source)
+        self.assertNotIn('__("Imported workbook logic")', source)
+        self.assertNotIn('__("The Excel formula decides whether each article is added and in what quantity.")', source)
+        self.assertIn('__("Custom formula protected")', source)
+
+    def test_rule_group_title_round_trips_into_child_rows(self):
+        source = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.py").read_text()
+
+        self.assertIn('"rule_group_title": group.get("rule_group_title") or article.get("rule_group_title") or ""', source)
+        self.assertIn('"rule_group_title": getattr(row, "rule_group_title", None) or ""', source)
+        schema = json.loads(
+            (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set_item_rule" / "dimensioning_set_item_rule.json").read_text()
+        )
+        self.assertIn("rule_group_title", schema["field_order"])
+
+    def test_missing_dynamic_filter_value_is_not_silently_discarded(self):
+        source = (APP_ROOT / "orderlift_sales" / "doctype" / "dimensioning_set" / "dimensioning_set.py").read_text()
+
+        self.assertIn('diagnostic["status"] = "missing_value"', source)
+        self.assertIn('missing.append(', source)
+        self.assertIn('"missing_filter_values": missing_filter_values', source)
+
+    def test_builder_persists_titles_test_values_and_resolution_counts(self):
+        source = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_builder" / "dimensioning_set_builder.js").read_text()
+
+        for token in [
+            "data-rule-group-title",
+            "rule_group_title: group.title",
+            "preview_test_values: ODS_STATE.testValues",
+            'generated.filter((row) => !row.missing_item).length',
+            "function renderResolutionDetails",
+            "data-test-rule-filters",
+        ]:
+            self.assertIn(token, source)
+
+    def test_raw_and_visual_formula_sync_is_guarded(self):
+        source = (APP_ROOT / "orderlift_sales" / "page" / "dimensioning_set_builder" / "dimensioning_set_builder.js").read_text()
+
+        for token in [
+            "function conditionFormulaBuilderFromRaw",
+            "function quantityFormulaBuilderFromRaw",
+            "function formulasEquivalent",
+            "data-replace-custom-condition",
+            "data-replace-custom-quantity",
+            "hasArticleSpecificCondition",
+            "Replace this custom condition formula",
+            "Replace this custom quantity formula",
+        ]:
+            self.assertIn(token, source)
 
     def test_condition_rules_json_parameter_comparison(self):
         rule = {

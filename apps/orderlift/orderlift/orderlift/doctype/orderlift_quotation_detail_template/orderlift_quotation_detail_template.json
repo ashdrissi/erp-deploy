@@ -1,0 +1,36 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:template_name",
+  "creation": "2026-08-09 00:00:00.000000",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": ["template_name", "is_active", "company", "display_order", "description", "blocks_section", "blocks"],
+  "fields": [
+    {"fieldname": "template_name", "fieldtype": "Data", "label": "Template Name", "reqd": 1, "unique": 1, "in_list_view": 1, "search_index": 1},
+    {"fieldname": "is_active", "fieldtype": "Check", "label": "Active", "default": "1", "in_list_view": 1},
+    {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "in_list_view": 1, "in_standard_filter": 1, "description": "Leave blank to allow this template for every company."},
+    {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100", "in_list_view": 1},
+    {"fieldname": "description", "fieldtype": "Small Text", "label": "Description"},
+    {"fieldname": "blocks_section", "fieldtype": "Section Break", "label": "Quotation Detail Blocks"},
+    {"fieldname": "blocks", "fieldtype": "Table", "label": "Blocks", "options": "Orderlift Quotation Detail Template Block"}
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-08-09 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift",
+  "name": "Orderlift Quotation Detail Template",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "print": 1, "email": 1},
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "print": 1, "email": 1}
+  ],
+  "sort_field": "display_order",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "template_name",
+  "track_changes": 1
+}

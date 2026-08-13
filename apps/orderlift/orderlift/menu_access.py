@@ -18,12 +18,26 @@ from orderlift.menu_registry import (
     menu_item_for_row,
     page_menu_map,
 )
+from orderlift.startup_roles import ORDERLIFT_MANAGED_ROLE_FIELD
+from orderlift.retired_pages import RETIRED_PAGE_NAMES
 
 
 MENU_ACCESS_DOCTYPE = "Orderlift Menu Access Rule"
 COMPANY_DOCTYPE = "Company"
 BUSINESS_TYPE_DOCTYPE = "CRM Business Type"
-ADMIN_BYPASS_ROLES = {"System Manager", "Administrator", "Developer"}
+PREFERRED_COMPANY_DEFAULT_KEY = "orderlift_preferred_company"
+SESSION_COMPANY_CACHE_PREFIX = "orderlift:company_context"
+ADMIN_BYPASS_ROLES = {"System Manager", "Administrator"}
+BUSINESS_SCOPE_BYPASS_ROLES = {"Orderlift Admin"}
+SUPPORTING_PAGE_MENU_KEYS = {
+    "planning": "logistics.container_planning",
+    "forecast-plans": "logistics.container_planning",
+    "dimensioning-set-builder": "items.dimensioning_sets",
+    "pricing-sheet-builder": "sales.pricing_sheets",
+    "pricing-builder-builder": "items.static_pricing_builder",
+    "document-template-builder": "administration.document_templates",
+    "quotation-detail-template-builder": "administration.document_templates",
+}
 LEGACY_DEFAULT_MENU_ROLES = {
     "Accounts Manager",
     "Accounts User",
@@ -40,6 +54,7 @@ LEGACY_DEFAULT_MENU_ROLES = {
     "Orderlift Technician",
     "Projects Manager",
     "Projects User",
+    "Pricing Manager",
     "Purchase Manager",
     "Purchase User",
     "Purchasing User",
@@ -226,6 +241,60 @@ def save_menu_access_for_role(role: str, menu_keys: list[str] | str) -> dict:
     return {"role": role, "changed": changed, "selected": len(selected_keys)}
 
 
+def set_menu_key_access_for_role(role: str, menu_key: str, enabled: bool) -> bool:
+    role = (role or "").strip()
+    menu_key = (menu_key or "").strip()
+    if not role or not frappe.db.exists("Role", role):
+        frappe.throw(f"Role {role} was not found.")
+    item = menu_item_by_key(menu_key)
+    if not item:
+        frappe.throw(f"Menu item {menu_key} was not found.")
+
+    doc_name = frappe.db.exists(MENU_ACCESS_DOCTYPE, menu_key) or frappe.db.exists(
+        MENU_ACCESS_DOCTYPE,
+        {"menu_key": menu_key},
+    )
+    if not doc_name:
+        sync_menu_access_rules()
+        doc_name = frappe.db.exists(MENU_ACCESS_DOCTYPE, menu_key) or frappe.db.exists(
+            MENU_ACCESS_DOCTYPE,
+            {"menu_key": menu_key},
+        )
+    if not doc_name:
+        frappe.throw(f"Menu access rule {menu_key} was not found.")
+
+    doc = frappe.get_doc(MENU_ACCESS_DOCTYPE, doc_name)
+    roles = _rule_roles(doc, menu_key)
+    denied_roles = _rule_denied_roles(doc)
+    next_roles = list(roles)
+    next_denied_roles = list(denied_roles)
+    if enabled:
+        if role in next_denied_roles:
+            next_denied_roles.remove(role)
+        if ALL_USERS_ROLE not in next_roles and role not in next_roles:
+            next_roles.append(role)
+    else:
+        if ALL_USERS_ROLE in next_roles and role not in next_denied_roles:
+            next_denied_roles.append(role)
+        elif role in next_roles:
+            next_roles.remove(role)
+        elif role in next_denied_roles and ALL_USERS_ROLE not in next_roles:
+            next_denied_roles.remove(role)
+
+    next_roles = _sanitize_allowed_roles_for_item(item, next_roles)
+    values = {}
+    if enabled and not _rule_enabled(doc):
+        values["enabled"] = 1
+    if next_roles != roles:
+        values["allowed_roles_json"] = json.dumps(next_roles)
+    if next_denied_roles != denied_roles:
+        values["denied_roles_json"] = json.dumps(next_denied_roles)
+    if values:
+        frappe.db.set_value(MENU_ACCESS_DOCTYPE, doc.name, values)
+        return True
+    return False
+
+
 def user_can_access_menu_key(
     menu_key: str,
     user: str | None = None,
@@ -245,20 +314,35 @@ def user_can_access_menu_key(
     allowed_roles = _rule_roles(rule, menu_key)
     if roles.intersection(_rule_denied_roles(rule)):
         return False
-    return _roles_allow(allowed_roles, roles)
+    if not _roles_allow(allowed_roles, roles):
+        return False
+    if menu_key in {"sales.commission_dashboard", "sales.commissions"} and not _commission_access_allowed(
+        user, roles
+    ):
+        return False
+    item = menu_item_by_key(menu_key) or {}
+    return _required_capability_allowed(item.get("required_capability"), user=user, roles=roles)
 
 
 def user_can_access_page(page_name: str, user: str | None = None, rules: dict[str, object] | None = None) -> bool:
     page_name = (page_name or "").strip()
     if not page_name:
         return True
+    if page_name in RETIRED_PAGE_NAMES:
+        return False
     user = user or frappe.session.user
     roles = _get_roles(user)
     if _is_admin_user(user, roles):
         return True
 
     menu_keys = page_menu_map().get(page_name)
+    if not menu_keys and page_name in SUPPORTING_PAGE_MENU_KEYS:
+        menu_keys = [SUPPORTING_PAGE_MENU_KEYS[page_name]]
     if not menu_keys:
+        if frappe.db.exists("Page", page_name):
+            module = frappe.db.get_value("Page", page_name, "module") or ""
+            if module.startswith("Orderlift"):
+                return False
         return True
     rules = rules if rules is not None else _menu_rule_map()
     visible_items = [
@@ -334,13 +418,15 @@ def apply_menu_access_to_bootinfo(bootinfo, user: str | None = None) -> None:
 
     workspace_sidebar = bootinfo.get("workspace_sidebar_item") or {}
     main_sidebar = _get_main_dashboard_sidebar(workspace_sidebar)
-    if not main_sidebar or not isinstance(main_sidebar.get("items"), list):
-        return
 
     if _is_orderlift_business_user(user, roles):
+        if not main_sidebar or not isinstance(main_sidebar.get("items"), list):
+            main_sidebar = _build_main_dashboard_sidebar()
         bootinfo["workspace_sidebar_item"] = {"main dashboard": main_sidebar}
         workspace_sidebar = bootinfo["workspace_sidebar_item"]
     else:
+        if not main_sidebar or not isinstance(main_sidebar.get("items"), list):
+            return
         for section in get_menu_sections():
             workspace_sidebar.pop(section["label"], None)
 
@@ -349,6 +435,15 @@ def apply_menu_access_to_bootinfo(bootinfo, user: str | None = None) -> None:
 
 def _get_main_dashboard_sidebar(workspace_sidebar: dict) -> dict | None:
     return workspace_sidebar.get("main dashboard") or workspace_sidebar.get("Main Dashboard")
+
+
+def _build_main_dashboard_sidebar() -> dict:
+    return {
+        "name": "Main Dashboard",
+        "title": "Main Dashboard",
+        "label": "Main Dashboard",
+        "items": build_central_sidebar_rows(),
+    }
 
 
 def get_boot_menu_access(user: str | None = None) -> dict:
@@ -381,16 +476,21 @@ def get_company_access_payload(user: str | None = None, requested_company: str |
     user = user or frappe.session.user
     unrestricted = user_can_access_all_companies(user)
     companies = get_allowed_companies(user) if not unrestricted else get_all_companies()
-    user_default_company = get_user_default_company(user)
+    preferred_company = get_user_default_company(user)
+    current_company = resolve_current_company(
+        user=user,
+        requested_company=requested_company,
+        allowed_companies=companies,
+    )
+    context = get_session_company_context(user=user, allowed_companies=companies)
     return {
         "unrestricted": unrestricted,
         "companies": companies,
-        "current_company": resolve_current_company(
-            user=user,
-            requested_company=requested_company,
-            allowed_companies=companies,
-        ),
-        "user_default_company": user_default_company if user_default_company in companies else "",
+        "current_company": current_company,
+        "user_default_company": preferred_company if preferred_company in companies else "",
+        "preferred_company": preferred_company if preferred_company in companies else "",
+        "context_revision": cint(context.get("revision")) if context else 0,
+        "requires_company_selection": bool(not current_company and len(companies) > 1),
         "company_currencies": get_company_currency_map(companies),
     }
 
@@ -427,8 +527,11 @@ def set_current_company(company: str) -> dict:
         frappe.throw("Company is required")
     if not user_can_access_company(company):
         frappe.throw(f"You do not have access to company {company}.")
-    _set_user_default_company(company, user=frappe.session.user)
-    frappe.clear_cache(user=frappe.session.user)
+    request = _current_request()
+    if request is None or (getattr(request, "method", "") or "").upper() != "POST":
+        frappe.throw("Company switching requires a POST request", frappe.PermissionError)
+    if not set_session_current_company(company, user=frappe.session.user):
+        frappe.throw("An authenticated browser session is required to switch company.")
     return get_company_access_payload(requested_company=company)
 
 
@@ -445,18 +548,36 @@ def resolve_current_company(
             return requested_company
         frappe.throw(f"You do not have access to company {requested_company}.")
 
-    default_company = get_user_default_company(user)
-    if default_company in allowed_companies:
-        return default_company
-    return allowed_companies[0] if allowed_companies else ""
+    context = get_session_company_context(user=user, allowed_companies=allowed_companies)
+    session_company = (context.get("company") or "").strip() if context else ""
+    if session_company in allowed_companies:
+        return session_company
+
+    preferred_company = get_user_default_company(user)
+    if preferred_company in allowed_companies:
+        if _interactive_session_sid(user):
+            set_session_current_company(preferred_company, user=user)
+        return preferred_company
+
+    if len(allowed_companies) == 1:
+        company = allowed_companies[0]
+        if _interactive_session_sid(user):
+            set_session_current_company(company, user=user)
+        return company
+    return ""
 
 
 def get_user_default_company(user: str | None = None) -> str:
     defaults = getattr(frappe, "defaults", None)
     if not defaults or not hasattr(defaults, "get_user_default"):
         return ""
+    user = user or frappe.session.user
     with suppress(Exception):
-        return (defaults.get_user_default("Company", user=user or frappe.session.user) or "").strip()
+        preferred = (defaults.get_user_default(PREFERRED_COMPANY_DEFAULT_KEY, user=user) or "").strip()
+        if preferred:
+            return preferred
+    with suppress(Exception):
+        return (defaults.get_user_default("Company", user=user) or "").strip()
     with suppress(Exception):
         return (defaults.get_user_default("Company") or "").strip()
     return ""
@@ -468,10 +589,146 @@ def _set_user_default_company(company: str, user: str | None = None) -> None:
         return
     user = user or frappe.session.user
     with suppress(Exception):
+        defaults.set_user_default(PREFERRED_COMPANY_DEFAULT_KEY, company, user=user)
+    with suppress(Exception):
         defaults.set_user_default("Company", company, user=user)
         return
     with suppress(Exception):
         defaults.set_user_default("Company", company)
+
+
+def get_session_company_context(
+    user: str | None = None,
+    allowed_companies: list[str] | None = None,
+) -> dict:
+    user = user or frappe.session.user
+    sid = _interactive_session_sid(user)
+    if not sid:
+        return {}
+
+    local = getattr(frappe, "local", None)
+    memo = getattr(local, "orderlift_company_context", None) if local else None
+    if isinstance(memo, dict) and memo.get("sid") == sid and memo.get("user") == user:
+        return memo
+
+    cache = getattr(frappe, "cache", None)
+    if not cache:
+        return {}
+    try:
+        context = cache.get_value(
+            _session_company_cache_key(sid),
+            expires=True,
+            use_local_cache=False,
+        ) or {}
+    except Exception:
+        return {}
+    if not isinstance(context, dict) or context.get("user") != user:
+        return {}
+
+    allowed_companies = allowed_companies if allowed_companies is not None else (
+        get_all_companies() if user_can_access_all_companies(user) else get_allowed_companies(user)
+    )
+    company = (context.get("company") or "").strip()
+    if company not in allowed_companies:
+        clear_session_company_context(user=user)
+        return {}
+
+    context = dict(context)
+    context["sid"] = sid
+    _cache_session_company_context(sid, {key: value for key, value in context.items() if key != "sid"})
+    if local is not None:
+        local.orderlift_company_context = context
+    return context
+
+
+def set_session_current_company(company: str, user: str | None = None) -> dict:
+    user = user or frappe.session.user
+    sid = _interactive_session_sid(user)
+    if not sid:
+        return {}
+    allowed_companies = get_all_companies() if user_can_access_all_companies(user) else get_allowed_companies(user)
+    if company not in allowed_companies:
+        frappe.throw(f"You do not have access to company {company}.")
+
+    current = get_session_company_context(user=user, allowed_companies=allowed_companies)
+    context = {
+        "user": user,
+        "company": company,
+        "revision": cint(current.get("revision")) + 1,
+    }
+    _cache_session_company_context(sid, context)
+    local = getattr(frappe, "local", None)
+    if local is not None:
+        local.orderlift_company_context = {**context, "sid": sid}
+    return context
+
+
+def clear_session_company_context(user: str | None = None) -> None:
+    user = user or getattr(getattr(frappe, "session", None), "user", None)
+    sid = _interactive_session_sid(user)
+    if not sid:
+        return
+    cache = getattr(frappe, "cache", None)
+    if cache:
+        with suppress(Exception):
+            cache.delete_value(_session_company_cache_key(sid))
+    local = getattr(frappe, "local", None)
+    if local is not None and hasattr(local, "orderlift_company_context"):
+        delattr(local, "orderlift_company_context")
+
+
+def has_interactive_company_session(user: str | None = None) -> bool:
+    return bool(_interactive_session_sid(user or frappe.session.user))
+
+
+def _interactive_session_sid(user: str | None = None) -> str:
+    try:
+        session = getattr(frappe, "session", None)
+        request = _current_request()
+        if not session or request is None:
+            return ""
+        session_user = getattr(session, "user", None)
+        user = user or session_user
+        sid = (getattr(session, "sid", None) or "").strip()
+        if not sid or sid == "Guest" or not user or user != session_user:
+            return ""
+        cookies = getattr(request, "cookies", None) or {}
+        cookie_sid = (cookies.get("sid") or "").strip()
+        return sid if cookie_sid and cookie_sid == sid else ""
+    except (AttributeError, RuntimeError):
+        return ""
+
+
+def _current_request():
+    try:
+        local = getattr(frappe, "local", None)
+        request = getattr(local, "request", None) if local is not None else None
+        return request if request is not None else getattr(frappe, "request", None)
+    except (AttributeError, RuntimeError):
+        return None
+
+
+def _session_company_cache_key(sid: str) -> str:
+    return f"{SESSION_COMPANY_CACHE_PREFIX}:{sid}"
+
+
+def _cache_session_company_context(sid: str, context: dict) -> None:
+    cache = getattr(frappe, "cache", None)
+    if not cache:
+        return
+    cache.set_value(
+        _session_company_cache_key(sid),
+        context,
+        expires_in_sec=_session_context_ttl(),
+    )
+
+
+def _session_context_ttl() -> int:
+    with suppress(Exception):
+        from frappe.sessions import get_expiry_in_seconds
+
+        return max(cint(get_expiry_in_seconds()), 3600)
+    return 86400
 
 
 def get_all_companies() -> list[str]:
@@ -504,7 +761,7 @@ def user_can_access_all_companies(user: str | None = None) -> bool:
     user = user or frappe.session.user
     if user in ("Administrator", "Guest"):
         return user == "Administrator"
-    return bool(_get_roles(user).intersection(ADMIN_BYPASS_ROLES))
+    return bool(_get_roles(user).intersection(ADMIN_BYPASS_ROLES | BUSINESS_SCOPE_BYPASS_ROLES))
 
 
 def user_can_access_company(company: str | None, user: str | None = None) -> bool:
@@ -681,8 +938,49 @@ def _roles_allow(allowed_roles: list[str], user_roles: set[str]) -> bool:
     return bool(set(allowed_roles).intersection(user_roles))
 
 
+def _required_capability_allowed(capability: str | None, *, user: str, roles: set[str]) -> bool:
+    capability = (capability or "").strip()
+    if not capability:
+        return True
+    try:
+        from orderlift.role_capabilities import user_has_capability
+
+        return user_has_capability(capability, user=user, roles=roles)
+    except Exception:
+        return False
+
+
+def _commission_access_allowed(user: str, roles: set[str]) -> bool:
+    if _is_admin_user(user, roles):
+        return True
+    try:
+        from orderlift.role_capabilities import (
+            CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT,
+            CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT,
+            user_has_capability,
+        )
+
+        if user_has_capability(CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT, user=user, roles=roles):
+            return True
+        if user_has_capability(CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT, user=user, roles=roles):
+            return True
+    except Exception:
+        return False
+
+    if not _doctype_available("Sales Person") or not frappe.db.has_column("Sales Person", "user"):
+        return False
+    salesperson = frappe.db.get_value("Sales Person", {"user": user, "enabled": 1}, "name")
+    if not salesperson or not frappe.db.exists("Agent Pricing Rules", {"sales_person": salesperson}):
+        return False
+    if not frappe.db.has_column("Agent Pricing Rules", "commission_enabled"):
+        return True
+    return bool(
+        frappe.db.get_value("Agent Pricing Rules", {"sales_person": salesperson}, "commission_enabled")
+    )
+
+
 def _prune_legacy_default_roles(roles: list[str]) -> list[str]:
-    allowed_legacy = set(BUSINESS_ROLES) | {ALL_USERS_ROLE, "System Manager", "Developer"}
+    allowed_legacy = set(BUSINESS_ROLES) | {ALL_USERS_ROLE, "System Manager"}
     return [
         role
         for role in roles
@@ -695,7 +993,7 @@ def _sanitize_allowed_roles_for_item(item: dict, roles: list[str]) -> list[str]:
     if item.get("section_key") != "administration":
         return roles
 
-    allowed_admin_roles = set(ADMIN_ROLES) | {"Orderlift Admin", "Administrator", "System Manager", "Developer"}
+    allowed_admin_roles = set(ADMIN_ROLES) | {"Orderlift Admin", "Administrator", "System Manager"}
     return [role for role in roles if role in allowed_admin_roles]
 
 
@@ -704,6 +1002,8 @@ def _link_target_allowed(row: dict, *, user: str, roles: set[str], rules: dict[s
     link_to = row.get("link_to")
     if not link_type or not link_to:
         return True
+    if link_type == "Page" and link_to in RETIRED_PAGE_NAMES:
+        return False
     if _is_admin_user(user, roles):
         return True
     if link_type == "DocType":
@@ -773,7 +1073,22 @@ def _is_admin_user(user: str, roles: set[str]) -> bool:
 def _is_orderlift_business_user(user: str, roles: set[str]) -> bool:
     if user == "Guest":
         return False
-    return user == "Administrator" or bool(roles.intersection(BUSINESS_ROLES))
+    if user == "Administrator" or roles.intersection(BUSINESS_ROLES):
+        return True
+    with suppress(Exception):
+        if frappe.get_meta("Role").get_field(ORDERLIFT_MANAGED_ROLE_FIELD):
+            return bool(
+                frappe.get_all(
+                    "Role",
+                    filters={
+                        "name": ["in", list(roles)],
+                        ORDERLIFT_MANAGED_ROLE_FIELD: 1,
+                        "disabled": 0,
+                    },
+                    limit_page_length=1,
+                )
+            )
+    return False
 
 
 def _clean_list(value: str | list | tuple | set | None) -> list[str]:

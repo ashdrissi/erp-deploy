@@ -18,12 +18,39 @@ frappe_stub.PermissionError = Exception
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.throw = lambda *args, **kwargs: (_ for _ in ()).throw(Exception(args[0] if args else "error"))
 frappe_stub._ = lambda msg: msg
+frappe_stub.redirect = lambda url: (_ for _ in ()).throw(RuntimeError(url))
 sys.modules["frappe"] = frappe_stub
 
 from orderlift.client_portal.utils import access
+from orderlift.www import b2b_portal
 
 
 class TestB2BPortalAccess(unittest.TestCase):
+    def setUp(self):
+        self._session_user = frappe_stub.session.user
+        self._get_value = frappe_stub.db.get_value
+
+    def tearDown(self):
+        frappe_stub.session.user = self._session_user
+        frappe_stub.db.get_value = self._get_value
+
+    def test_b2b_portal_redirects_authenticated_system_users_to_desk(self):
+        frappe_stub.session.user = "sales@example.com"
+        frappe_stub.db.get_value = lambda doctype, name, fieldname: "System User"
+
+        with self.assertRaisesRegex(RuntimeError, "/desk/home-page"):
+            b2b_portal.get_context(types.SimpleNamespace())
+
+    def test_b2b_portal_keeps_guest_login_destination(self):
+        frappe_stub.session.user = "Guest"
+        context = types.SimpleNamespace()
+
+        result = b2b_portal.get_context(context)
+
+        self.assertIs(result, context)
+        self.assertTrue(context.is_guest)
+        self.assertEqual(context.login_url, "/login?redirect-to=/b2b-portal")
+
     @patch("orderlift.client_portal.utils.access.frappe.db.get_value")
     def test_policy_name_uses_legacy_fallback_when_crm_fields_absent(self, mock_get_value):
         mock_get_value.return_value = "All Customer Groups"

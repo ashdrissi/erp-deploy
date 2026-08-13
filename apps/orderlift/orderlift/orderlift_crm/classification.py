@@ -5,6 +5,12 @@ from contextlib import suppress
 import frappe
 from frappe.utils import cint
 
+try:
+    from frappe import _
+except ImportError:  # Unit tests use a small frappe stub without translation.
+    def _(msg, *args, **kwargs):
+        return msg
+
 
 PARTY_DOCTYPES = {"Lead", "Prospect", "Customer"}
 BUSINESS_FIELD = "custom_crm_business_type"
@@ -17,6 +23,7 @@ def sync_quotation_crm_classification(doc, method=None) -> None:
 
     if doc.get("opportunity"):
         info = classification_from_document("Opportunity", doc.get("opportunity"))
+        _validate_quotation_opportunity_scope(doc, info)
         if _apply_classification(doc, info):
             return
 
@@ -72,12 +79,17 @@ def classification_from_document(doctype: str | None, name: str | None) -> dict:
         fields.append(BUSINESS_FIELD)
     if _has_field(doctype, SEGMENT_FIELD):
         fields.append(SEGMENT_FIELD)
+    if _has_field(doctype, "company"):
+        fields.append("company")
+    if _has_field(doctype, "custom_company"):
+        fields.append("custom_company")
     if not fields:
         return {"business_type": "", "crm_segment": ""}
     values = frappe.db.get_value(doctype, name, fields, as_dict=True) or {}
     return {
         "business_type": values.get(BUSINESS_FIELD) or "",
         "crm_segment": values.get(SEGMENT_FIELD) or "",
+        "company": values.get("company") or values.get("custom_company") or "",
     }
 
 
@@ -130,6 +142,22 @@ def linked_quotation_names_from_sales_order(doc) -> list[str]:
 def _apply_party_classification(doc, party_type: str | None, party_name: str | None) -> bool:
     resolved = primary_party_classification(party_type, party_name)
     return _apply_classification(doc, resolved, valid_segments=resolved.get("segments") or [])
+
+
+def _validate_quotation_opportunity_scope(doc, info: dict | None) -> None:
+    opportunity = (doc.get("opportunity") or "").strip()
+    quotation_company = (doc.get("company") or "").strip()
+    opportunity_company = ((info or {}).get("company") or "").strip()
+    if not opportunity or not quotation_company or not opportunity_company:
+        return
+    if opportunity_company == quotation_company:
+        return
+    frappe.throw(
+        _(
+            "Opportunity {0} belongs to company {1} and cannot be used for a Quotation in company {2}. "
+            "Switch the active company or choose an Opportunity from {2}."
+        ).format(opportunity, opportunity_company, quotation_company)
+    )
 
 
 def _apply_classification(

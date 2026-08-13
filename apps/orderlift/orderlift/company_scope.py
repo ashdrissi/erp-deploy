@@ -32,6 +32,7 @@ except ImportError:  # Unit tests use a small frappe stub without translation.
 from orderlift.menu_access import (
     get_allowed_business_types,
     get_allowed_companies,
+    has_interactive_company_session,
     resolve_current_company,
     user_can_access_all_business_types,
     user_can_access_all_companies,
@@ -50,10 +51,11 @@ from orderlift.orderlift_crm.company_business_type import (
 SCOPED_DOCTYPES: dict[str, dict] = {
     # Core ERPNext masters — custom_company added via fixture.
     "Customer": {"company_field": "custom_company", "bt_field": None, "segments_field": "custom_crm_segments"},
+    "Supplier": {"company_field": "custom_company", "bt_field": None, "segments_field": None},
     "Price List": {"company_field": "custom_company", "bt_field": None, "segments_field": None},
     # Native company field.
-    "Prospect": {"company_field": "company", "bt_field": None, "segments_field": "custom_crm_segments"},
-    "Lead": {"company_field": "company", "bt_field": None, "segments_field": "custom_crm_segments"},
+    "Prospect": {"company_field": "custom_company", "bt_field": None, "segments_field": "custom_crm_segments"},
+    "Lead": {"company_field": "custom_company", "bt_field": None, "segments_field": "custom_crm_segments"},
     "Opportunity": {"company_field": "company", "bt_field": "custom_crm_business_type", "segments_field": None},
     "Quotation": {"company_field": "company", "bt_field": "custom_crm_business_type", "segments_field": None},
     "Sales Order": {"company_field": "company", "bt_field": "custom_crm_business_type", "segments_field": None},
@@ -67,7 +69,29 @@ SCOPED_DOCTYPES: dict[str, dict] = {
     "Pricing Scenario": {"company_field": "custom_company", "bt_field": None, "segments_field": None},
     "Portal Customer Group Policy": {"company_field": "custom_company", "bt_field": "business_type", "segments_field": None},
     "Portal Quote Request": {"company_field": "custom_company", "bt_field": "business_type", "segments_field": None},
+    "Purchase Agent Rules": {"company_field": "company", "bt_field": None, "segments_field": None},
+    "Stock Planning Settings": {"company_field": "company", "bt_field": None, "segments_field": None},
+    "Stock Demand Plan": {"company_field": "company", "bt_field": None, "segments_field": None},
 }
+
+# Native ERPNext transaction doctypes whose Company must always follow the active
+# Desk company. They remain outside SCOPED_DOCTYPES because they do not share the
+# CRM business-type model above.
+TRANSACTION_COMPANY_DOCTYPES = frozenset(
+    {
+        "Delivery Note",
+        "Material Request",
+        "Payment Entry",
+        "Purchase Invoice",
+        "Purchase Order",
+        "Purchase Receipt",
+        "Quotation",
+        "Request for Quotation",
+        "Sales Invoice",
+        "Sales Order",
+        "Stock Entry",
+    }
+)
 
 # Fixture file holding the custom_company field definitions (created on migrate).
 _CUSTOM_FIELD_FIXTURE = "custom_field_company_scope.json"
@@ -97,6 +121,8 @@ def segments_field_for(doctype: str) -> str | None:
 
 
 def apply_company_scope(doc, method=None) -> None:
+    if _ignore_orderlift_company_scope(doc):
+        return
     config = SCOPED_DOCTYPES.get(getattr(doc, "doctype", None))
     if not config:
         return
@@ -117,16 +143,58 @@ def apply_company_scope(doc, method=None) -> None:
         _validate_segments(doc, company, segments_field)
 
 
+def apply_transaction_company_scope(doc, method=None) -> None:
+    """Default native transactions to the active Desk company and lock it.
+
+    Only System Manager and Administrator may intentionally change a draft to a
+    different company. This mirrors the client-side company field lock while
+    protecting API, import, and background writes.
+    """
+    if _ignore_orderlift_company_scope(doc):
+        return
+    if getattr(doc, "doctype", None) not in TRANSACTION_COMPANY_DOCTYPES:
+        return
+    if not _meta_has_field(doc.doctype, "company"):
+        return
+
+    user = frappe.session.user
+    current = (doc.get("company") or "").strip()
+    active = resolve_current_company(user=user)
+    _require_interactive_company_selection(user, active)
+    may_override = _user_can_override_transaction_company(user)
+
+    if _is_new_doc(doc):
+        if not current and active:
+            doc.set("company", active)
+        elif current and active and current != active and not may_override:
+            frappe.throw(
+                _("Company is locked to the current Desk company: {0}.").format(active)
+            )
+        return
+
+    if may_override:
+        return
+
+    old = (frappe.db.get_value(doc.doctype, doc.name, "company") or "").strip()
+    if old and current != old:
+        frappe.throw(_("Company is locked for this record and cannot be changed."))
+    if old and not current:
+        doc.set("company", old)
+
+
 def _apply_company(doc, company_field: str) -> None:
     user = frappe.session.user
     unrestricted = user_can_access_all_companies(user)
     current = (doc.get(company_field) or "").strip()
 
     if _is_new_doc(doc):
+        active = resolve_current_company(user=user)
+        _require_interactive_company_selection(user, active)
         if not current:
-            active = resolve_current_company(user=user)
             if active:
                 doc.set(company_field, active)
+        elif active and current != active and not unrestricted:
+            frappe.throw(_("Company is locked to the current Desk company: {0}.").format(active))
         return
 
     # Existing record: lock the company against change for restricted users.
@@ -141,6 +209,15 @@ def _apply_company(doc, company_field: str) -> None:
         )
     if not current:
         doc.set(company_field, old)
+
+
+def _ignore_orderlift_company_scope(doc) -> bool:
+    flags = getattr(doc, "flags", None)
+    if not flags:
+        return False
+    if hasattr(flags, "get"):
+        return bool(flags.get("ignore_orderlift_company_scope"))
+    return bool(getattr(flags, "ignore_orderlift_company_scope", 0))
 
 
 def _apply_business_type(doc, company: str, bt_field: str) -> None:
@@ -207,7 +284,9 @@ def _user_business_type_error(business_type: str, user_allowed: set[str]) -> str
 
 def after_migrate() -> None:
     sync_custom_fields()
+    backfill_party_custom_company()
     backfill_company()
+    backfill_party_internal_companies()
     frappe.db.commit()
 
 
@@ -251,6 +330,52 @@ def backfill_company() -> None:
         )
 
 
+def backfill_party_custom_company() -> None:
+    for doctype in ("Lead", "Prospect"):
+        if not (_meta_has_field(doctype, "custom_company") and _meta_has_field(doctype, "company")):
+            continue
+        frappe.db.sql(
+            f"UPDATE `tab{doctype}` SET custom_company = company "
+            "WHERE COALESCE(custom_company, '') = '' AND COALESCE(company, '') != ''"
+        )
+
+
+def backfill_party_internal_companies() -> None:
+    if not frappe.db.exists("DocType", "Party Internal Company Access"):
+        return
+    for doctype in ("Lead", "Prospect", "Customer"):
+        if not (_meta_has_field(doctype, "custom_company") and _meta_has_field(doctype, "custom_internal_company_access")):
+            continue
+        rows = frappe.get_all(
+            doctype,
+            filters={"custom_company": ["!=", ""]},
+            fields=["name", "custom_company"],
+            limit_page_length=0,
+        )
+        for row in rows:
+            exists = frappe.db.exists(
+                "Party Internal Company Access",
+                {
+                    "parenttype": doctype,
+                    "parent": row.name,
+                    "parentfield": "custom_internal_company_access",
+                    "company": row.custom_company,
+                },
+            )
+            if exists:
+                continue
+            frappe.get_doc(
+                {
+                    "doctype": "Party Internal Company Access",
+                    "parenttype": doctype,
+                    "parent": row.name,
+                    "parentfield": "custom_internal_company_access",
+                    "company": row.custom_company,
+                    "is_primary": 1,
+                }
+            ).db_insert()
+
+
 def _default_company() -> str:
     company = frappe.db.get_single_value("Global Defaults", "default_company")
     if company:
@@ -275,3 +400,17 @@ def _is_new_doc(doc) -> bool:
         return bool(doc.is_new())
     except Exception:
         return not bool(getattr(doc, "name", None))
+
+
+def _user_can_override_transaction_company(user: str) -> bool:
+    if user == "Administrator":
+        return True
+    try:
+        return "System Manager" in set(frappe.get_roles(user))
+    except Exception:
+        return False
+
+
+def _require_interactive_company_selection(user: str, active_company: str) -> None:
+    if has_interactive_company_session(user) and not active_company:
+        frappe.throw(_("Select an active Company before creating this document."))

@@ -28,7 +28,6 @@
         "Pricing Sheet Builder": "/app/pricing-sheet-builder",
         "Pricing Sheet Manager": "/app/pricing-sheet-manager",
         "Pricing Sheets": "/app/pricing-sheet-manager",
-        "Pricing Simulator": "/app/pricing-simulator",
         "Project Map": "/app/project-map",
         "Project Pipeline": "/app/project-pipeline",
         "SAV Dashboard": "/app/sav-dashboard",
@@ -67,7 +66,7 @@
         {
             title: "Price",
             summary: "Build controlled prices using items, buying prices, scenarios, customs, benchmark policies, tiers, and agent rules.",
-            pages: ["Pricing Sheets", "Pricing Dashboard", "Pricing Simulator", "Buying Price Builder", "Selling Price Builder"],
+            pages: ["Pricing Sheets", "Pricing Dashboard", "Buying Price Builder", "Selling Price Builder"],
             outputs: ["Calculated pricing sheet", "Quotation", "Updated price list", "Pricing warnings"],
             controls: ["Scenario", "Customs policy", "Benchmark policy", "Tier", "Agent rules"],
         },
@@ -240,8 +239,8 @@
             protection: "CRM classification, company scope, pricing warnings, pipeline status discipline.",
         },
         {
-            role: "Pricing Manager",
-            pages: ["Pricing Dashboard", "Pricing Sheets", "Pricing Simulator", "Customs Policy", "Benchmark Policy", "Pricing Tiers", "Selling Price Builder"],
+            role: "Pricing Configuration",
+            pages: ["Pricing Dashboard", "Pricing Sheets", "Customs Policy", "Benchmark Policy", "Pricing Tiers", "Selling Price Builder"],
             actions: ["Maintain policies", "Recalculate prices", "Review warnings", "Publish/update price lists", "Control agent rules"],
             output: "Controlled prices and consistent quotation logic.",
             protection: "Scenario sequence, customs rules, benchmark fallback, tier/agent controls.",

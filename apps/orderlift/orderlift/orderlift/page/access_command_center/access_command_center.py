@@ -4,7 +4,9 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.model.rename_doc import rename_doc as _rename_doc
+from frappe.utils import cint, now_datetime, validate_email_address
+from frappe.utils.background_jobs import get_redis_conn
 
 from orderlift.menu_access import (
     get_all_companies,
@@ -13,13 +15,14 @@ from orderlift.menu_access import (
     get_user_default_company,
     get_menu_access_payload,
     save_menu_access_for_role as _save_menu_access_for_role,
+    SUPPORTING_PAGE_MENU_KEYS,
+    set_menu_key_access_for_role,
     save_user_business_type_access as _save_user_business_type_access,
     save_user_company_access as _save_user_company_access,
-    sync_menu_access_rules,
     user_can_access_all_business_types,
     user_can_access_all_companies,
 )
-from orderlift.menu_registry import BUSINESS_ROLES, iter_menu_items
+from orderlift.menu_registry import BUSINESS_ROLES, iter_menu_items, menu_item_by_key
 from orderlift.company_access import ORDERLIFT_MANAGED_SHARE_DISABLED_DOCTYPES
 from orderlift.role_capabilities import (
     ROLE_CAPABILITY_FIELD,
@@ -33,9 +36,15 @@ from orderlift.warehouse_access import (
     get_visible_warehouses,
     save_user_warehouse_access as _save_user_warehouse_access,
 )
+from orderlift.scripts.setup_startup_roles import COMMON_TRANSACTION_SUPPORT_PERMISSIONS
+from orderlift.startup_roles import (
+    ORDERLIFT_BUSINESS_GRANTS_FIELD,
+    ORDERLIFT_MANAGED_ROLE_FIELD,
+    RETIRED_BUSINESS_ROLES,
+)
 
 
-SUPERADMIN_VISIBLE_ROLES = ["Administrator", "System Manager", "Developer"]
+SUPERADMIN_VISIBLE_ROLES = ["Administrator", "System Manager"]
 BUSINESS_ROLE_SET = set(BUSINESS_ROLES)
 BASE_PERMISSION_ROLE = "All"
 BASE_PERMISSION_LABEL = _("Base Permissions (All Users)")
@@ -54,6 +63,10 @@ GENERAL_PERMISSION_DOCTYPES = {
     "Tag",
     "Tag Link",
     "ToDo",
+}
+HIDDEN_PERMISSION_DOCTYPES = {
+    "Data Import",
+    "Data Import Log",
 }
 
 
@@ -76,9 +89,10 @@ PERMISSION_FIELDS = (
 HIDDEN_PERMISSION_FIELDS = ("if_owner",)
 MANAGED_FORCED_OFF_PERMISSION_FIELDS = ("share",)
 MANAGED_PERMISSION_DOCTYPE_SET = set(ORDERLIFT_MANAGED_SHARE_DISABLED_DOCTYPES)
+MATRIX_MANAGED_DOCTYPES = {"User"}
 
-ADMIN_ROLES = {"Administrator", "System Manager", "Developer"}
-HIGH_ACCESS_ROLES = {"System Manager", "Administrator", "Developer", "Orderlift Admin"}
+ADMIN_ROLES = {"Administrator", "System Manager"}
+HIGH_ACCESS_ROLES = {"System Manager", "Administrator", "Orderlift Admin"}
 PROTECTED_DOCTYPES = {"User", "Role", "DocType", "Custom DocPerm", "DocPerm", "Page", "Report", "Workspace"}
 BACKEND_FINANCE_PERMISSION_DOCTYPES = {"Account", "Cost Center", "Accounting Dimension", "Accounting Dimension Detail"}
 SUPERADMIN_ONLY_PERMISSION_DOCTYPES = PROTECTED_DOCTYPES | BACKEND_FINANCE_PERMISSION_DOCTYPES | {
@@ -86,6 +100,7 @@ SUPERADMIN_ONLY_PERMISSION_DOCTYPES = PROTECTED_DOCTYPES | BACKEND_FINANCE_PERMI
     "Client Script",
     "Custom Field",
     "Customize Form",
+    "Error Log",
     "Module Def",
     "Property Setter",
     "Role Profile",
@@ -97,13 +112,126 @@ SUPERADMIN_ONLY_PERMISSION_DOCTYPES = PROTECTED_DOCTYPES | BACKEND_FINANCE_PERMI
 SENSITIVE_PAGE_ACCESS_TARGETS = {"access-command-center", "menu-editor"}
 LEGACY_ROLE_KEYWORDS = ("legacy", "old", "deprecated")
 NON_BUSINESS_CUSTOM_ROLES = {"Employee Self Service"}
-CRITICAL_USERS = {"Administrator"}
+CRITICAL_USERS = {"Administrator", "Guest"}
 AUDIT_DOCTYPES = ["User", "Role", "Custom DocPerm", "Page", "Report", "User Permission", "Orderlift Menu Access Rule"]
 MATRIX_DOCTYPE_LIMIT = 10000
 ACCESS_CENTER_USER_PERMISSION_DOCTYPES = {"Company", "CRM Business Type", "Warehouse"}
 MATRIX_SINGLE_DOCTYPES = {"Stock Settings"}
+USER_RENAME_JOB_TIMEOUT = 60 * 60
+USER_RENAME_STATUS_TTL = USER_RENAME_JOB_TIMEOUT + 60 * 60
+USER_RENAME_STATUS_PREFIX = "orderlift:user_email_rename"
 
-
+BUSINESS_ACTION_LABELS = {
+    "open": _("Open"),
+    "select": _("Use in Fields"),
+    "view": _("View"),
+    "create_edit": _("Create / Edit"),
+    "approve_cancel": _("Approve / Cancel"),
+    "delete": _("Delete"),
+    "import": _("Import"),
+    "export": _("Export"),
+}
+BUSINESS_ACTION_PERMISSION_FIELDS = {
+    "select": ("select",),
+    "view": ("read", "report", "print"),
+    "create_edit": ("read", "write", "create", "report", "print"),
+    "approve_cancel": ("read", "write", "submit", "cancel", "amend"),
+    "delete": ("read", "delete"),
+    "import": ("read", "create", "import"),
+    "export": ("read", "export"),
+}
+IMPORT_SUPPORT_PERMISSION_FIELDS = {
+    "Data Import": ("read", "write", "create"),
+    "Data Import Log": ("read",),
+}
+BUSINESS_PERMISSION_EXCLUDED_KEYS = {
+    "administration.menu_editor",
+}
+ACCESS_COMMAND_CENTER_PERMISSION_KEY = "administration.access_command_center"
+BUSINESS_READ_ONLY_FEATURES = {
+    "home.dashboard",
+    "administration.business_delivery",
+    "crm.crm_dashboard",
+    "sales.pricing_dashboard",
+    "finance.sale_financial_dashboard",
+    "hr.dashboard",
+    "hr.payroll_dashboard",
+    "training.performance_leaderboard",
+    "training.leaderboard",
+    "stock.dashboard",
+    "stock.warehouse_report",
+    "stock.balance",
+    "stock.ledger",
+    "logistics.container_planning",
+    "b2b.dashboard",
+    "sig.dashboard",
+    "sig.project_map",
+}
+BUSINESS_FEATURE_BACKING_DOCTYPES = {
+    "administration.access_command_center": ("User",),
+    "my_work.todo": ("ToDo",),
+    "administration.status_control": ("Sales Stage", "Project Status", "Orderlift Order Status", "Logistics Pipeline Status"),
+    "administration.document_templates": ("Orderlift Document Template",),
+    "crm.crm_dashboard": ("Opportunity",),
+    "crm.campaign_manager": ("Partner Campaign",),
+    "crm.campaign_builder": ("Partner Campaign",),
+    "crm.opportunity_pipeline": ("Opportunity", "Sales Stage", "Quotation", "Sales Order", "Project", "ToDo"),
+    "sales.pricing_sheets": ("Pricing Sheet",),
+    "sales.pricing_dashboard": ("Pricing Sheet",),
+    "sales.sales_order_pipeline": ("Sales Order", "Orderlift Order Status", "ToDo"),
+    "sales.quotation": ("Workflow State",),
+    "sales.sales_order": (
+        "Workflow State",
+        "CRM Business Type",
+        "CRM Segment",
+        "Orderlift Order Status",
+        "Quotation",
+        "Opportunity",
+    ),
+    "sales.project_pipeline": ("Project", "Project Status", "ToDo"),
+    "sales.commission_dashboard": ("Sales Commission",),
+    "policies.customer_segmentation": ("Customer Segmentation Engine",),
+    "sav.dashboard": ("SAV Ticket",),
+    "items.dimensioning_sets": ("Dimensioning Set",),
+    "items.catalogue_prix_articles": ("Item",),
+    "items.buying_price_builder": ("Buying Price Formula Rule",),
+    "items.static_pricing_builder": ("Pricing Builder",),
+    "finance.sale_financial_dashboard": ("Sales Order",),
+    "hr.dashboard": ("Employee",),
+    "hr.payroll_dashboard": ("Salary Slip", "Payroll Entry"),
+    "training.performance_leaderboard": ("Performance Metric Snapshot",),
+    "training.cycle_dashboard": ("Appraisal Cycle",),
+    "training.center": ("Training Program",),
+    "training.leaderboard": ("Employee Training Progress",),
+    "projects.project_pipeline": ("Project", "Project Status", "ToDo"),
+    "projects.sales_order_pipeline": ("Sales Order", "Orderlift Order Status", "ToDo"),
+    "stock.dashboard": ("Bin", "Item", "Warehouse", "Stock Ledger Entry", "Stock Entry", "Stock Demand Plan"),
+    "stock.demand_plan": ("Stock Demand Plan", "Sales Order", "Pick List", "Purchase Order"),
+    "stock.planning_settings": ("Stock Planning Settings",),
+    "stock.rate_review": ("Purchase Receipt", "Stock Entry"),
+    "purchasing.buying_price_review": ("Purchase Order", "Buying Price Change Log"),
+    "purchasing.purchase_order": ("Workflow State",),
+    "logistics.pipeline": ("Forecast Load Plan", "Logistics Pipeline Status", "ToDo"),
+    "logistics.container_planning": ("Forecast Load Plan", "Logistics Pipeline Status"),
+    "b2b.dashboard": ("Portal Customer Group Policy",),
+    "b2b.review_board": ("Portal Quote Request",),
+    "sig.dashboard": ("Project",),
+    "sig.project_map": ("Project",),
+    "sig.mobile_qc": ("Project", "QC Checklist Template"),
+}
+BUSINESS_FEATURE_ACTION_OVERRIDES = {
+    "administration.access_command_center": ("open", "create_edit", "delete", "export"),
+    "administration.status_control": ("open", "create_edit", "delete"),
+    "administration.currency_exchange_settings": ("view", "create_edit"),
+    "items.dimensioning_sets": ("select", "open"),
+    "stock.bins": ("view", "export"),
+    "stock.stock_settings": ("view", "create_edit"),
+    "stock.demand_plan": ("view", "export"),
+    "stock.planning_settings": ("view", "create_edit"),
+    "stock.warehouse_report": ("view", "export"),
+    "stock.balance": ("view", "export"),
+    "stock.ledger": ("view", "export"),
+}
 MATRIX_DOCTYPE_GROUPS = (
     {
         "key": "access_admin",
@@ -112,6 +240,7 @@ MATRIX_DOCTYPE_GROUPS = (
             "User", "Role", "Role Profile", "User Permission", "Custom DocPerm", "DocPerm", "Page", "Report",
             "Workspace", "Workflow", "Workflow State", "Assignment Rule", "Orderlift Menu Access Rule",
             "Module Def", "DocType", "Custom Field", "Property Setter", "Client Script", "Server Script",
+            "Error Log",
         ),
         "prefixes": ("User", "Role", "Workflow", "DocPerm", "Page", "Report", "Workspace"),
     },
@@ -157,6 +286,7 @@ MATRIX_DOCTYPE_GROUPS = (
         "members": (
             "Warehouse", "Bin", "Stock Entry", "Stock Ledger Entry", "Stock Reconciliation", "Pick List",
             "Delivery Note", "Purchase Receipt", "Quality Inspection", "Quality Inspection Template", "Stock Settings",
+            "Stock Planning Settings", "Stock Demand Plan",
         ),
         "prefixes": ("Warehouse", "Bin", "Stock", "Pick List", "Delivery Note", "Quality Inspection", "Serial No", "Batch"),
     },
@@ -232,6 +362,7 @@ def get_access_command_center_data(
         "business_types": _get_business_types(),
         "menu_access": _get_menu_access(),
         "permission_matrix": _get_permission_matrix(selected_role, doctype_search),
+        "business_permissions": _get_business_permission_matrix(selected_role),
         "selected_role": selected_role,
         "page_access": _get_page_access(search),
         "report_access": _get_report_access(report_search or search),
@@ -241,6 +372,97 @@ def get_access_command_center_data(
         "permission_fields": list(PERMISSION_FIELDS),
         "role_capabilities": capability_options(),
     }
+
+
+@frappe.whitelist()
+def get_business_permission_matrix(role: str) -> dict:
+    _require_access_manager()
+    _assert_permission_role_scope(role)
+    return _get_business_permission_matrix(role)
+
+
+@frappe.whitelist()
+def get_role_access_context(role: str) -> dict:
+    """Load the role's business matrix without the expensive technical matrix."""
+    _require_access_manager()
+    _assert_permission_role_scope(role)
+    if not frappe.db.exists("Role", role):
+        frappe.throw(_("Role {0} was not found.").format(role))
+    return {
+        "selected_role": role,
+        "business_permissions": _get_business_permission_matrix(role),
+    }
+
+
+@frappe.whitelist()
+def save_business_permissions(role: str, changes: str | list, audit_note: str | None = None) -> dict:
+    _require_access_manager()
+    _assert_permission_role_scope(role)
+    if not frappe.db.exists("Role", role):
+        frappe.throw(_("Role {0} was not found.").format(role))
+
+    rows = _loads(changes)
+    if not isinstance(rows, list) or not rows:
+        frappe.throw(_("Select at least one business permission to save."))
+
+    prepared = []
+    for row in rows:
+        data = _loads(row)
+        menu_key = (data.get("key") or "").strip()
+        item = menu_item_by_key(menu_key)
+        if (
+            not item
+            or menu_key in BUSINESS_PERMISSION_EXCLUDED_KEYS
+            or not _business_feature_available_for_role(item, role)
+        ):
+            frappe.throw(_("Unsupported business permission: {0}").format(menu_key))
+        allowed_actions = _business_feature_actions(item)
+        requested_actions = data.get("actions") or {}
+        unknown = sorted(set(requested_actions) - set(allowed_actions))
+        if unknown:
+            frappe.throw(_("Unsupported actions for {0}: {1}").format(item["label"], ", ".join(unknown)))
+        actions = _normalize_business_actions(
+            {action: cint(requested_actions.get(action)) for action in allowed_actions}
+        )
+        menu_override = cint(data.get("menu_visible")) if "menu_visible" in data else None
+        prepared.append((item, actions, menu_override))
+
+    feature_grants = _load_business_grants(role)
+    if not feature_grants:
+        feature_grants = _snapshot_target_feature_grants(role)
+    changed_doctypes = set()
+    for item, actions, menu_override in prepared:
+        link_type = item.get("link_type")
+        grant = feature_grants.setdefault(
+            item["key"],
+            {"actions": {}, "menu_visible": None},
+        )
+        grant["actions"] = actions
+        if menu_override is not None:
+            grant["menu_visible"] = menu_override
+        elif grant.get("menu_visible") is None:
+            grant["menu_visible"] = int(any(cint(value) for key, value in actions.items() if key != "select"))
+        if link_type == "DocType":
+            changed_doctypes.add(item["link_to"])
+        elif link_type == "Page":
+            changed_doctypes.update(_business_backing_doctypes(item))
+        elif link_type == "Report":
+            ref_doctype = frappe.db.get_value("Report", item["link_to"], "ref_doctype") or ""
+            if ref_doctype:
+                changed_doctypes.add(ref_doctype)
+        elif link_type == "Dashboard":
+            changed_doctypes.add("Dashboard")
+
+    _compile_target_feature_access(role, feature_grants)
+    _sync_business_import_support_permissions(role)
+    changed_doctypes.update(IMPORT_SUPPORT_PERMISSION_FIELDS)
+    _save_business_grants(role, feature_grants)
+    _add_audit_note("Role", role, audit_note, _("Updated business permissions from Access Command Center."))
+    for doctype in changed_doctypes:
+        frappe.clear_cache(doctype=doctype)
+    frappe.clear_cache()
+    frappe.db.commit()
+    return {"role": role, "business_permissions": _get_business_permission_matrix(role)}
 
 
 @frappe.whitelist()
@@ -256,7 +478,17 @@ def save_user_basic_info(payload: str | dict) -> dict:
     if _is_critical_user(user_name) and not cint(data.get("enabled", 1)):
         frappe.throw(_("The Administrator account cannot be disabled from Access Command Center."))
 
+    email = (data.get("email") or user_name).strip().lower()
+    if not validate_email_address(email):
+        frappe.throw(_("Enter a valid email address."))
+    if email != user_name:
+        if user_name == frappe.session.user:
+            frappe.throw(_("Another Orderlift Admin must change your login email."))
+        if frappe.db.exists("User", email):
+            frappe.throw(_("User {0} already exists.").format(email))
+
     user = frappe.get_doc("User", user_name)
+    _prepare_user_email_login_alias(user, user_name, email)
     if not cint(data.get("enabled", 1)) and _has_role(user, "System Manager") and _enabled_system_manager_count() <= 1:
         frappe.throw(_("At least one enabled System Manager must remain available."))
     _set_if_field(user, "full_name", (data.get("full_name") or "").strip())
@@ -269,10 +501,257 @@ def save_user_basic_info(payload: str | dict) -> dict:
         frappe.throw(_("Role Profile {0} was not found.").format(role_profile))
     _assert_role_profile_scope(role_profile)
     _set_if_field(user, "role_profile_name", role_profile)
+    new_password = data.get("new_password") or ""
+    if new_password:
+        user.new_password = new_password
     user.save(ignore_permissions=True)
+    if email != user_name:
+        _queue_user_email_rename(user_name, email, frappe.session.user)
     _add_audit_note("User", user.name, data.get("audit_note"), _("Updated user details."))
     frappe.db.commit()
-    return get_user_detail(user.name)
+    result = get_user_detail(user.name)
+    result["email_change_queued"] = email if email != user.name else ""
+    return result
+
+
+def rename_user_email(user_name: str, email: str, requested_by: str | None = None) -> None:
+    user_name = (user_name or "").strip()
+    email = (email or "").strip().lower()
+    if not user_name or not email or not frappe.db.exists("User", user_name):
+        _clear_user_email_rename_status(user_name)
+        return
+    if frappe.db.exists("User", email):
+        message = _("User email change skipped because {0} already exists.").format(email)
+        _set_user_email_rename_status(user_name, email, "failed", requested_by=requested_by, error=message)
+        frappe.log_error(message)
+        return
+    _set_user_email_rename_status(user_name, email, "started", requested_by=requested_by)
+    try:
+        if frappe.db.exists("Notification Settings", user_name):
+            if frappe.db.exists("Notification Settings", email):
+                frappe.throw(_("Notification Settings already exist for {0}.").format(email))
+            _rename_doc(
+                "Notification Settings",
+                user_name,
+                email,
+                force=True,
+                ignore_permissions=True,
+                show_alert=False,
+                rebuild_search=False,
+            )
+        _rename_doc(
+            "User",
+            user_name,
+            email,
+            force=True,
+            merge=False,
+            ignore_permissions=True,
+            rebuild_search=False,
+        )
+        _add_audit_note(
+            "User",
+            email,
+            _("Requested by {0}").format(requested_by or "Access Command Center"),
+            _("Changed login email from {0} to {1}.").format(user_name, email),
+        )
+        frappe.db.commit()
+    except Exception as exc:
+        _set_user_email_rename_status(
+            user_name,
+            email,
+            "failed",
+            requested_by=requested_by,
+            error=str(exc),
+        )
+        raise
+    else:
+        _clear_user_email_rename_status(user_name)
+
+
+def _queue_user_email_rename(user_name: str, email: str, requested_by: str) -> dict:
+    existing = _get_user_email_rename_status(user_name)
+    if existing.get("target_email") == email and existing.get("status") in {"queued", "started"}:
+        return existing
+
+    status = _set_user_email_rename_status(user_name, email, "queued", requested_by=requested_by)
+    try:
+        frappe.enqueue(
+            "orderlift.orderlift.page.access_command_center.access_command_center.rename_user_email",
+            queue="long",
+            timeout=USER_RENAME_JOB_TIMEOUT,
+            enqueue_after_commit=True,
+            user_name=user_name,
+            email=email,
+            requested_by=requested_by,
+        )
+    except Exception as exc:
+        _set_user_email_rename_status(
+            user_name,
+            email,
+            "failed",
+            requested_by=requested_by,
+            error=str(exc),
+        )
+        raise
+    return status
+
+
+def _prepare_user_email_login_alias(user, user_name: str, email: str) -> None:
+    if not email or email == user_name:
+        return
+    username_owner = frappe.db.get_value("User", {"username": email}, "name")
+    if username_owner and username_owner != user_name:
+        frappe.throw(_("Login alias {0} is already used by {1}.").format(email, username_owner))
+    if not cint(frappe.db.get_single_value("System Settings", "allow_login_using_user_name")):
+        frappe.db.set_single_value("System Settings", "allow_login_using_user_name", 1)
+        frappe.clear_cache(doctype="System Settings")
+    _set_if_field(user, "username", email)
+
+
+def _user_email_rename_status_key(user_name: str) -> str:
+    return f"{USER_RENAME_STATUS_PREFIX}:{user_name}"
+
+
+def _set_user_email_rename_status(
+    user_name: str,
+    email: str,
+    status: str,
+    *,
+    requested_by: str | None = None,
+    error: str | None = None,
+) -> dict:
+    if not user_name:
+        return {}
+    existing = _get_user_email_rename_status(user_name)
+    payload = {
+        "source_email": user_name,
+        "target_email": email,
+        "status": status,
+        "requested_by": requested_by or existing.get("requested_by") or "",
+        "requested_at": existing.get("requested_at") or str(now_datetime()),
+        "updated_at": str(now_datetime()),
+        "error": (error or "")[:500],
+        "login_ready": _user_email_login_ready(user_name, email),
+    }
+    get_redis_conn().setex(
+        _user_email_rename_status_key(user_name),
+        USER_RENAME_STATUS_TTL,
+        json.dumps(payload),
+    )
+    return payload
+
+
+def _user_email_login_ready(user_name: str, email: str) -> bool:
+    try:
+        return bool(
+            cint(frappe.db.get_single_value("System Settings", "allow_login_using_user_name"))
+            and frappe.db.get_value("User", user_name, "username") == email
+        )
+    except Exception:
+        return False
+
+
+def _get_user_email_rename_status(user_name: str) -> dict:
+    if not user_name:
+        return {}
+    try:
+        value = get_redis_conn().get(_user_email_rename_status_key(user_name))
+        if isinstance(value, bytes):
+            value = value.decode()
+        value = json.loads(value) if value else {}
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _clear_user_email_rename_status(user_name: str) -> None:
+    if user_name:
+        get_redis_conn().delete(_user_email_rename_status_key(user_name))
+
+
+@frappe.whitelist()
+def save_user_configuration(payload: str | dict) -> dict:
+    _require_access_manager()
+    data = _loads(payload)
+    user_name = (data.get("name") or "").strip()
+    if not user_name or not frappe.db.exists("User", user_name):
+        frappe.throw(_("User was not found."))
+    _assert_user_scope(user_name)
+
+    email = (data.get("email") or user_name).strip().lower()
+    if not validate_email_address(email):
+        frappe.throw(_("Enter a valid email address."))
+    if email != user_name:
+        if user_name == frappe.session.user:
+            frappe.throw(_("Another Orderlift Admin must change your login email."))
+        if frappe.db.exists("User", email):
+            frappe.throw(_("User {0} already exists.").format(email))
+
+    role_names = _clean_list(data.get("roles"))
+    _assert_role_scope(role_names)
+    missing_roles = [role for role in role_names if not frappe.db.exists("Role", role)]
+    if missing_roles:
+        frappe.throw(_("Unknown roles: {0}").format(", ".join(missing_roles)))
+
+    companies = _clean_list(data.get("companies"))
+    default_company = (data.get("default_company") or "").strip()
+    if default_company and default_company not in companies:
+        companies.append(default_company)
+    business_types = _clean_list(data.get("business_types"))
+    warehouses = _clean_list(data.get("warehouses"))
+    _assert_company_assignment_scope(companies, default_company)
+    _assert_business_type_assignment_scope(business_types)
+    _assert_warehouse_assignment_scope(warehouses)
+
+    user = frappe.get_doc("User", user_name)
+    _prepare_user_email_login_alias(user, user_name, email)
+    enabled = cint(data.get("enabled", 1))
+    if user_name == frappe.session.user and not enabled:
+        frappe.throw(_("You cannot disable your own user account."))
+    if _is_critical_user(user_name) and not enabled:
+        frappe.throw(_("The Administrator account cannot be disabled from Access Command Center."))
+
+    current_roles = [row.role for row in user.get("roles", []) if row.role]
+    role_names = _merge_scoped_roles(current_roles, role_names)
+    user_type = (data.get("user_type") or user.get("user_type") or "Website User").strip()
+    _assert_user_type_matches_roles(user_type, role_names)
+    if user_name == frappe.session.user and "System Manager" in _session_roles() and "System Manager" not in role_names and frappe.session.user != "Administrator":
+        frappe.throw(_("You cannot remove your own System Manager role from this page."))
+    if _is_critical_user(user_name) and "System Manager" not in role_names:
+        frappe.throw(_("Administrator must keep the System Manager role."))
+    if "System Manager" in current_roles and "System Manager" not in role_names and cint(user.get("enabled")) and _enabled_system_manager_count() <= 1:
+        frappe.throw(_("At least one enabled System Manager must remain available."))
+
+    full_name = (data.get("full_name") or "").strip()
+    if full_name:
+        _set_if_field(user, "first_name", full_name)
+        _set_if_field(user, "middle_name", "")
+        _set_if_field(user, "last_name", "")
+    _set_if_field(user, "enabled", enabled)
+    _set_if_field(user, "user_type", user_type)
+    _set_if_field(user, "custom_owned_documents_only", cint(data.get("custom_owned_documents_only", 0)))
+    user.set("roles", [])
+    for idx, role in enumerate(role_names, start=1):
+        user.append("roles", {"role": role, "idx": idx})
+    new_password = data.get("new_password") or ""
+    if new_password:
+        user.new_password = new_password
+    user.save(ignore_permissions=True)
+
+    _save_user_company_access(user_name, companies, default_company=default_company)
+    _cleanup_company_dependent_user_permissions(user_name)
+    _assert_business_types_match_user_companies(user_name, business_types)
+    _save_user_business_type_access(user_name, business_types)
+    _assert_warehouses_match_user_companies(user_name, warehouses)
+    _save_user_warehouse_access(user_name, warehouses)
+
+    if email != user_name:
+        _queue_user_email_rename(user_name, email, frappe.session.user)
+    _add_audit_note("User", user_name, data.get("audit_note"), _("Updated complete user configuration."))
+    frappe.db.commit()
+    result = get_user_detail(user_name)
+    result["email_change_queued"] = email if email != user_name else ""
+    return result
 
 
 @frappe.whitelist()
@@ -312,6 +791,8 @@ def create_user(payload: str | dict) -> dict:
     missing = [role for role in roles if not frappe.db.exists("Role", role)]
     if missing:
         frappe.throw(_("Unknown roles: {0}").format(", ".join(missing)))
+    user_type = (data.get("user_type") or "System User").strip()
+    _assert_user_type_matches_roles(user_type, roles)
 
     full_name = (data.get("full_name") or "").strip()
     user = frappe.new_doc("User")
@@ -319,7 +800,7 @@ def create_user(payload: str | dict) -> dict:
     user.first_name = full_name or email.split("@")[0]
     user.full_name = full_name or email
     user.enabled = cint(data.get("enabled", 1))
-    user.user_type = data.get("user_type") or "System User"
+    user.user_type = user_type
     if user.meta.get_field("send_welcome_email"):
         user.send_welcome_email = cint(data.get("send_welcome_email", 0))
     role_profile = (data.get("role_profile_name") or "").strip()
@@ -418,6 +899,7 @@ def save_user_warehouses(
 @frappe.whitelist()
 def save_menu_access_for_role(role: str, menu_keys: str | list, audit_note: str | None = None) -> dict:
     _require_access_manager()
+    _require_business_permission_compiler()
     _assert_role_scope([role])
     result = _save_menu_access_for_role(role, menu_keys)
     _add_audit_note("Role", role, audit_note, _("Updated menu access for role."))
@@ -431,7 +913,10 @@ def save_role(payload: str | dict) -> dict:
     data = _loads(payload)
     role_name = _validate_role_name(data.get("name") or data.get("role_name"))
     current_name = (data.get("current_name") or "").strip()
-    _assert_role_scope([current_name or role_name, role_name])
+    if current_name:
+        _assert_role_scope([current_name, role_name])
+    elif _is_superadmin_session():
+        _assert_role_scope([role_name])
 
     if current_name:
         if not frappe.db.exists("Role", current_name):
@@ -445,10 +930,13 @@ def save_role(payload: str | dict) -> dict:
     else:
         if frappe.db.exists("Role", role_name):
             frappe.throw(_("Role {0} already exists.").format(role_name))
+        _validate_new_managed_role_name(role_name)
         role = frappe.new_doc("Role")
         role.role_name = role_name
         if role.meta.get_field("is_custom"):
             role.is_custom = 1
+        if role.meta.get_field(ORDERLIFT_MANAGED_ROLE_FIELD):
+            role.set(ORDERLIFT_MANAGED_ROLE_FIELD, 1)
 
     if role.meta.get_field("desk_access"):
         role.desk_access = cint(data.get("desk_access", 1))
@@ -460,12 +948,82 @@ def save_role(payload: str | dict) -> dict:
         role.set(ROLE_CAPABILITY_FIELD, serialize_capabilities(data.get("capabilities")))
 
     if role.is_new():
-        role.insert(ignore_permissions=False)
+        role.insert(ignore_permissions=True)
+        _apply_managed_role_baseline(role.name)
     else:
-        role.save(ignore_permissions=False)
+        role.save(ignore_permissions=True)
     _add_audit_note("Role", role.name, data.get("audit_note"), _("Updated custom role from Access Command Center."))
+    _clear_role_caches(role.name)
     frappe.db.commit()
     return {"role": _role_payload(role.name)}
+
+
+def _apply_managed_role_baseline(role_name: str) -> None:
+    for doctype_name, required in COMMON_TRANSACTION_SUPPORT_PERMISSIONS.items():
+        if not frappe.db.exists("DocType", doctype_name):
+            continue
+        _ensure_custom_permission_matrix(doctype_name)
+        current = _perm_rows("Custom DocPerm", doctype_name, role_name).get(0) or {}
+        flags = _coerce_permission_flags(current, doctype_name)
+        for fieldname, enabled in required.items():
+            if cint(enabled) and fieldname in flags:
+                flags[fieldname] = 1
+        _save_custom_docperm_record(role_name, doctype_name, flags, 0, internal=True)
+
+
+def ensure_managed_role_baselines() -> None:
+    if not _has_field("Role", ORDERLIFT_MANAGED_ROLE_FIELD):
+        return
+    roles = frappe.get_all(
+        "Role",
+        filters={ORDERLIFT_MANAGED_ROLE_FIELD: 1},
+        pluck="name",
+        limit_page_length=0,
+    )
+    for role in roles:
+        _apply_managed_role_baseline(role)
+    frappe.clear_cache()
+
+
+def ensure_managed_role_grant_snapshots() -> None:
+    if not _has_field("Role", ORDERLIFT_BUSINESS_GRANTS_FIELD):
+        return
+    roles = frappe.get_all(
+        "Role",
+        filters={"name": ["in", sorted(_business_scope_role_set())]},
+        fields=["name", ORDERLIFT_BUSINESS_GRANTS_FIELD],
+        limit_page_length=0,
+    )
+    for row in roles:
+        raw = row.get(ORDERLIFT_BUSINESS_GRANTS_FIELD) or ""
+        snapshot = _snapshot_target_feature_grants(row.name)
+        if not raw:
+            _save_business_grants(row.name, snapshot)
+            continue
+        try:
+            stored = json.loads(raw)
+        except (TypeError, ValueError):
+            stored = {}
+        if isinstance(stored, dict) and stored.get("version") == 2 and isinstance(stored.get("features"), dict):
+            continue
+        stored_grants = _load_business_grants(row.name)
+        snapshot.update(stored_grants)
+        _save_business_grants(row.name, snapshot)
+
+
+def _clear_role_caches(role_name: str) -> None:
+    users = frappe.get_all(
+        "Has Role",
+        filters={"parenttype": "User", "role": role_name},
+        pluck="parent",
+        limit_page_length=0,
+    )
+    frappe.clear_cache(doctype="Role")
+    if frappe.db.exists("DocType", "Purchase Agent Rules"):
+        frappe.clear_cache(doctype="Purchase Agent Rules")
+    for user in users:
+        frappe.clear_cache(user=user)
+    frappe.clear_cache()
 
 
 @frappe.whitelist()
@@ -478,12 +1036,14 @@ def delete_role(role_name: str, audit_note: str | None = None) -> dict:
     role = frappe.get_doc("Role", role_name)
     if _is_protected_role_doc(role):
         frappe.throw(_("Protected/system roles cannot be deleted."))
-    references = _role_dependency_summary(role_name)
+    references = _role_blocking_dependency_summary(role_name)
     if references:
         frappe.throw(_("Role {0} is still referenced: {1}. Remove references before deleting.").format(role_name, ", ".join(references)))
 
+    _remove_managed_role_access(role_name)
     _add_audit_note("Role", role.name, audit_note, _("Deleted custom role from Access Command Center."))
-    role.delete(ignore_permissions=False)
+    role.delete(ignore_permissions=True)
+    _clear_role_caches(role_name)
     frappe.db.commit()
     return {"deleted": role_name}
 
@@ -617,6 +1177,7 @@ def get_user_detail(user_name: str) -> dict:
         "allowed_business_types": get_allowed_business_types(user.name),
         "allowed_warehouses": get_selected_warehouses(user.name),
         "user_permissions": user_permissions,
+        "email_rename": _get_user_email_rename_status(user.name),
         "warnings": _user_warnings(user.name, roles),
     }
 
@@ -669,9 +1230,16 @@ def save_custom_docperms(role: str, changes: str | list, audit_note: str | None 
     return {"saved": saved, "permission_matrix": _get_permission_matrix(role)}
 
 
-def _save_custom_docperm_record(role: str, doctype_name: str, flags: dict, permlevel: int):
+def _save_custom_docperm_record(
+    role: str,
+    doctype_name: str,
+    flags: dict,
+    permlevel: int,
+    *,
+    internal: bool = False,
+):
     flags = _force_disabled_permission_flags(doctype_name, flags)
-    _validate_permission_edit(role, doctype_name, flags)
+    _validate_permission_edit(role, doctype_name, flags, internal=internal)
 
     filters = {"parent": doctype_name, "role": role, "permlevel": permlevel}
     doc_name = frappe.db.exists("Custom DocPerm", filters)
@@ -713,11 +1281,14 @@ def delete_custom_docperm(role: str, doctype_name: str, permlevel: int = 0, audi
 @frappe.whitelist()
 def save_page_access(page_name: str, roles: str | list, audit_note: str | None = None) -> dict:
     _require_access_manager()
+    _require_business_permission_compiler()
     if not frappe.db.exists("Page", page_name):
         frappe.throw(_("Page {0} was not found.").format(page_name))
     _assert_page_access_target(page_name)
     _save_child_roles("Page", page_name, roles)
     _add_audit_note("Page", page_name, audit_note, _("Updated page access roles."))
+    frappe.clear_cache(doctype="Page")
+    frappe.clear_cache()
     frappe.db.commit()
     return {"page_access": _get_page_access(page_name)}
 
@@ -725,11 +1296,14 @@ def save_page_access(page_name: str, roles: str | list, audit_note: str | None =
 @frappe.whitelist()
 def save_report_access(report_name: str, roles: str | list, audit_note: str | None = None) -> dict:
     _require_access_manager()
+    _require_business_permission_compiler()
     if not frappe.db.exists("Report", report_name):
         frappe.throw(_("Report {0} was not found.").format(report_name))
     _assert_report_access_target(report_name)
     _save_child_roles("Report", report_name, roles)
     _add_audit_note("Report", report_name, audit_note, _("Updated report access roles."))
+    frappe.clear_cache(doctype="Report")
+    frappe.clear_cache()
     frappe.db.commit()
     return {"report_access": _get_report_access(report_name)}
 
@@ -737,6 +1311,7 @@ def save_report_access(report_name: str, roles: str | list, audit_note: str | No
 @frappe.whitelist()
 def save_report_role_access(report_names: str | list, role: str, enabled: int = 1, audit_note: str | None = None) -> dict:
     _require_access_manager()
+    _require_business_permission_compiler()
     report_names = _clean_list(report_names)
     role = (role or "").strip()
     _assert_role_scope([role])
@@ -767,6 +1342,8 @@ def save_report_role_access(report_names: str | list, role: str, enabled: int = 
         updated.append(report_name)
         _add_audit_note("Report", report_name, audit_note, _("Updated report access roles."))
 
+    frappe.clear_cache(doctype="Report")
+    frappe.clear_cache()
     frappe.db.commit()
     return {"updated": updated, "report_access": _get_report_access()}
 
@@ -858,6 +1435,7 @@ def _get_users(search: str | None = None) -> list[dict]:
             "role_count": len(visible_roles),
             "main_role": _main_role(visible_roles),
             "access_level": _access_level(visible_roles),
+            "email_rename": _get_user_email_rename_status(row.name),
         })
     return result
 
@@ -868,7 +1446,10 @@ def _get_roles(search: str | None = None) -> list[dict]:
     clean_search = (search or "").strip()
     if clean_search:
         filters.append(["Role", "name", "like", f"%{clean_search}%"])
-    fields = _safe_fields("Role", ["name", "role_name", "desk_access", "disabled", "is_custom", ROLE_CAPABILITY_FIELD])
+    fields = _safe_fields(
+        "Role",
+        ["name", "role_name", "desk_access", "disabled", "is_custom", ORDERLIFT_MANAGED_ROLE_FIELD, ROLE_CAPABILITY_FIELD],
+    )
     rows = frappe.get_all("Role", filters=filters, fields=fields, order_by="disabled asc, is_custom asc, name asc", limit_page_length=150)
     assigned_counts = _role_user_counts([row.name for row in rows])
     return [_role_payload(row.name, row, assigned_counts) for row in rows]
@@ -903,7 +1484,6 @@ def _get_business_types() -> list[str]:
 
 def _get_menu_access() -> list[dict]:
     try:
-        sync_menu_access_rules()
         payload = get_menu_access_payload()
         if _is_superadmin_session():
             return payload
@@ -986,6 +1566,610 @@ def _get_permission_matrix(role: str | None, doctype_search: str | None = None) 
             )
     rows.sort(key=_permission_matrix_sort_key)
     return {"role": role, "rows": rows}
+
+
+def _get_business_permission_matrix(role: str | None) -> dict:
+    if not role:
+        return {"role": "", "groups": []}
+    _assert_permission_role_scope(role)
+    menu_rows = {row.get("key"): row for row in _get_menu_access()}
+    features = []
+    target_keys: dict[str, list[str]] = {}
+
+    for item in iter_menu_items():
+        if item["key"] in BUSINESS_PERMISSION_EXCLUDED_KEYS or not _business_feature_available_for_role(item, role):
+            continue
+        actions = _business_feature_actions(item)
+        if not actions:
+            continue
+        shared_key = f"{item.get('link_type')}::{item.get('link_to')}"
+        target_keys.setdefault(shared_key, []).append(item["key"])
+        feature = {
+            "key": item["key"],
+            "section_key": item.get("section_key") or "home",
+            "section": item.get("section") or _("Home"),
+            "label": item.get("label") or item["key"],
+            "shared_key": shared_key,
+            "includes": _business_feature_includes(item),
+            "menu_visible": _business_menu_role_enabled(menu_rows.get(item["key"]), role),
+            "actions": _business_feature_action_state(item, role, actions),
+        }
+        features.append(feature)
+
+    groups = []
+    group_map = {}
+    for feature in features:
+        feature["shared_with"] = [key for key in target_keys.get(feature["shared_key"], []) if key != feature["key"]]
+        section_key = feature["section_key"]
+        if section_key not in group_map:
+            group = {"key": section_key, "label": feature["section"], "features": []}
+            group_map[section_key] = group
+            groups.append(group)
+        group_map[section_key]["features"].append(feature)
+    return {"role": role, "groups": groups, "action_labels": BUSINESS_ACTION_LABELS}
+
+
+def _business_feature_actions(item: dict) -> tuple[str, ...]:
+    override = BUSINESS_FEATURE_ACTION_OVERRIDES.get(item["key"])
+    if override:
+        return (("select",) + override) if item.get("link_type") == "DocType" else override
+    link_type = item.get("link_type")
+    if link_type in {"Page", "Dashboard"}:
+        return ("open",)
+    if link_type == "Report":
+        return ("view", "export")
+    if link_type != "DocType" or not item.get("link_to") or not frappe.db.exists("DocType", item["link_to"]):
+        return ()
+    meta = frappe.get_meta(item["link_to"])
+    if cint(getattr(meta, "issingle", 0)):
+        return ("select", "view", "create_edit")
+    actions = ["select", "view", "create_edit"]
+    if item["key"] not in BUSINESS_READ_ONLY_FEATURES:
+        if cint(getattr(meta, "is_submittable", 0)):
+            actions.append("approve_cancel")
+        actions.extend(["delete", "import"])
+    actions.append("export")
+    return tuple(actions)
+
+
+def _business_feature_available_for_role(item: dict, role: str) -> bool:
+    return item.get("key") != ACCESS_COMMAND_CENTER_PERMISSION_KEY or role in HIGH_ACCESS_ROLES
+
+
+def _normalize_business_actions(actions: dict) -> dict:
+    actions = {key: cint(value) for key, value in (actions or {}).items()}
+    view_key = "open" if "open" in actions else "view" if "view" in actions else ""
+    stronger_enabled = any(
+        actions.get(key)
+        for key in actions
+        if key not in {"select", view_key}
+    )
+    if view_key and stronger_enabled:
+        actions[view_key] = 1
+    if view_key and actions.get(view_key) and "select" in actions:
+        actions["select"] = 1
+    if actions.get("approve_cancel") or actions.get("import"):
+        if "create_edit" in actions:
+            actions["create_edit"] = 1
+    if "select" in actions and not actions.get("select"):
+        return {key: 0 for key in actions}
+    if view_key and not actions.get(view_key):
+        return {
+            key: value if key == "select" else 0
+            for key, value in actions.items()
+        }
+    return actions
+
+
+def _business_feature_action_state(item: dict, role: str, actions: tuple[str, ...]) -> list[dict]:
+    link_type = item.get("link_type")
+    if link_type == "DocType":
+        resolved = _business_doctype_resolved(item["link_to"], role)
+        return [_business_doc_action_payload(action, resolved) for action in actions]
+    if link_type == "Dashboard":
+        resolved = _business_doctype_resolved("Dashboard", role)
+        view = _business_doc_action_payload("view", resolved)
+        return [{**view, "key": "open", "label": BUSINESS_ACTION_LABELS["open"]}]
+    if link_type == "Page":
+        access = _native_target_role_state("Page", item["link_to"], role)
+        backing = [_business_doctype_resolved(doctype, role) for doctype in _business_backing_doctypes(item)]
+        backing_read = all(cint((row.get("effective") or {}).get("read")) for row in backing) if backing else True
+        enabled = bool(access["effective"] and backing_read)
+        payload = []
+        for action in actions:
+            if action == "open":
+                payload.append({
+                    "key": "open",
+                    "label": BUSINESS_ACTION_LABELS["open"],
+                    "enabled": cint(enabled),
+                    "mixed": cint(len({bool(access["effective"]), bool(backing_read)}) > 1),
+                    "inherited": cint(access["inherited"]),
+                    "locked": cint(access["inherited"]),
+                })
+                continue
+
+            action_states = [_business_doc_action_payload(action, row) for row in backing]
+            action_enabled = bool(action_states) and all(state["enabled"] for state in action_states)
+            if action == "select":
+                payload.append({
+                    "key": action,
+                    "label": BUSINESS_ACTION_LABELS[action],
+                    "enabled": cint(action_enabled),
+                    "mixed": cint(any(state["mixed"] for state in action_states)),
+                    "inherited": cint(bool(action_states) and all(state["inherited"] for state in action_states)),
+                    "locked": cint(bool(action_states) and all(state["locked"] for state in action_states)),
+                })
+                continue
+            payload.append({
+                "key": action,
+                "label": BUSINESS_ACTION_LABELS[action],
+                "enabled": cint(bool(access["effective"]) and action_enabled),
+                "mixed": cint(
+                    any(state["mixed"] for state in action_states)
+                    or len({bool(access["effective"]), action_enabled}) > 1
+                ),
+                "inherited": cint(bool(action_states) and all(state["inherited"] for state in action_states)),
+                "locked": cint(bool(action_states) and all(state["locked"] for state in action_states)),
+            })
+        return payload
+    if link_type == "Report":
+        access = _native_target_role_state("Report", item["link_to"], role)
+        ref_doctype = frappe.db.get_value("Report", item["link_to"], "ref_doctype") or ""
+        resolved = _business_doctype_resolved(ref_doctype, role) if ref_doctype else None
+        payload = []
+        for action in actions:
+            state = _business_doc_action_payload(action, resolved) if resolved else {
+                "key": action,
+                "label": BUSINESS_ACTION_LABELS[action],
+                "enabled": 1,
+                "mixed": 0,
+                "inherited": 0,
+                "locked": 0,
+            }
+            doc_enabled = bool(state["enabled"])
+            state["enabled"] = cint(doc_enabled and bool(access["effective"]))
+            state["mixed"] = cint(bool(state["mixed"]) or (bool(access["effective"]) != doc_enabled))
+            state["inherited"] = cint(bool(state["inherited"]) or bool(access["inherited"]))
+            state["locked"] = cint(bool(state["locked"]) or bool(access["inherited"]))
+            payload.append(state)
+        return payload
+    return []
+
+
+def _business_doc_action_payload(action: str, resolved: dict | None) -> dict:
+    state_fields = {
+        "select": ("select",),
+        "view": ("read",),
+        "create_edit": ("write", "create"),
+        "approve_cancel": ("submit", "cancel", "amend"),
+        "delete": ("delete",),
+        "import": ("import",),
+        "export": ("export",),
+    }.get(action, ())
+    direct = (resolved or {}).get("direct") or {}
+    base = (resolved or {}).get("base") or {}
+    effective = (resolved or {}).get("effective") or {}
+    enabled_count = sum(cint(effective.get(field)) for field in state_fields)
+    direct_count = sum(cint(direct.get(field)) for field in state_fields)
+    base_count = sum(cint(base.get(field)) for field in state_fields)
+    total = len(state_fields)
+    return {
+        "key": action,
+        "label": BUSINESS_ACTION_LABELS[action],
+        "enabled": cint(bool(total) and enabled_count == total),
+        "mixed": cint(0 < enabled_count < total),
+        "inherited": cint(bool(total) and base_count == total and direct_count < total),
+        "locked": cint(bool(total) and base_count == total),
+    }
+
+
+def _business_doctype_resolved(doctype_name: str, role: str) -> dict:
+    if not doctype_name or not frappe.db.exists("DocType", doctype_name):
+        return {"direct": {}, "base": {}, "effective": {}}
+    standard = _perm_rows("DocPerm", doctype_name, role).get(0, {})
+    custom = _perm_rows("Custom DocPerm", doctype_name, role).get(0, {})
+    base_standard = {} if role == BASE_PERMISSION_ROLE else _perm_rows("DocPerm", doctype_name, BASE_PERMISSION_ROLE).get(0, {})
+    base_custom = {} if role == BASE_PERMISSION_ROLE else _perm_rows("Custom DocPerm", doctype_name, BASE_PERMISSION_ROLE).get(0, {})
+    return _resolve_permission_matrix_row(doctype_name, role, standard, custom, base_standard, base_custom)
+
+
+def _business_backing_doctypes(item: dict) -> tuple[str, ...]:
+    configured = BUSINESS_FEATURE_BACKING_DOCTYPES.get(item["key"])
+    if configured:
+        return tuple(doctype for doctype in configured if frappe.db.exists("DocType", doctype))
+    return tuple(doctype for doctype in item.get("required_doctypes") or [] if frappe.db.exists("DocType", doctype))
+
+
+def _business_feature_includes(item: dict) -> list[str]:
+    link_type = item.get("link_type") or ""
+    link_to = item.get("link_to") or ""
+    includes = [f"{link_type}: {link_to}"] if link_type and link_to else []
+    dependencies = list(_business_backing_doctypes(item))
+    if link_type == "DocType" and link_to:
+        dependencies.extend(_child_table_dependencies(link_to))
+    elif link_type == "Report" and link_to:
+        ref_doctype = frappe.db.get_value("Report", link_to, "ref_doctype") or ""
+        if ref_doctype:
+            dependencies.append(ref_doctype)
+    includes.extend(f"DocType: {doctype}" for doctype in _dedupe(dependencies) if doctype != link_to)
+    return includes
+
+
+def _load_business_grants(role: str) -> dict[str, dict]:
+    if not _has_field("Role", ORDERLIFT_BUSINESS_GRANTS_FIELD):
+        return {}
+    raw = frappe.db.get_value("Role", role, ORDERLIFT_BUSINESS_GRANTS_FIELD) or ""
+    try:
+        value = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    if value.get("version") == 2 and isinstance(value.get("features"), dict):
+        return value["features"]
+    return {
+        key: {"actions": actions, "menu_visible": None}
+        for key, actions in value.items()
+        if isinstance(actions, dict)
+    }
+
+
+def _save_business_grants(role: str, grants: dict[str, dict]) -> None:
+    if not _has_field("Role", ORDERLIFT_BUSINESS_GRANTS_FIELD):
+        return
+    role_doc = frappe.get_doc("Role", role)
+    role_doc.set(
+        ORDERLIFT_BUSINESS_GRANTS_FIELD,
+        frappe.as_json({"version": 2, "features": grants}, separators=(",", ":")),
+    )
+    role_doc.save(ignore_permissions=True)
+
+
+def _snapshot_target_feature_grants(role: str) -> dict[str, dict]:
+    grants = {}
+    menu_rows = {row.get("key"): row for row in _get_menu_access()}
+    for item in iter_menu_items():
+        if not _business_feature_available_for_role(item, role):
+            continue
+        actions = _business_feature_actions(item)
+        if not actions:
+            continue
+        if item.get("link_type") == "DocType":
+            resolved = _business_doctype_resolved(item["link_to"], role)
+            action_state = [_business_doc_action_payload(action, resolved) for action in actions]
+        else:
+            action_state = _business_feature_action_state(item, role, actions)
+        grants[item["key"]] = {
+            "actions": {action["key"]: cint(action["enabled"]) for action in action_state},
+            "menu_visible": cint(_business_menu_role_enabled(menu_rows.get(item["key"]), role)),
+        }
+    return grants
+
+
+def _compile_target_feature_access(role: str, grants: dict[str, dict]) -> None:
+    page_access: dict[str, bool] = {}
+    report_access: dict[str, bool] = {}
+    backing_flags: dict[str, dict[str, int]] = {}
+    backing_managed_fields: dict[str, set[str]] = {}
+    dashboard_open = False
+
+    for item in iter_menu_items():
+        if not _business_feature_available_for_role(item, role):
+            continue
+        key = item["key"]
+        grant = grants.get(key) or {}
+        actions = grant.get("actions") if "actions" in grant else grant
+        actions = actions or {}
+        link_type = item.get("link_type")
+        if link_type == "Page":
+            open_enabled = bool(any(cint(actions.get(action)) for action in _business_feature_actions(item)))
+            page_access[item["link_to"]] = page_access.get(item["link_to"], False) or open_enabled
+            allowed_actions = _business_feature_actions(item)
+            for doctype_name in _business_backing_doctypes(item):
+                fields = backing_flags.setdefault(doctype_name, {})
+                managed = backing_managed_fields.setdefault(doctype_name, set())
+                managed.update(("read", "select", "report", "print"))
+                if open_enabled:
+                    for fieldname in ("read", "select", "report", "print"):
+                        fields[fieldname] = 1
+                        managed.add(fieldname)
+                if cint(actions.get("select")):
+                    fields["select"] = 1
+                    managed.add("select")
+                for action in allowed_actions:
+                    for fieldname in BUSINESS_ACTION_PERMISSION_FIELDS.get(action, ()):
+                        managed.add(fieldname)
+                        fields[fieldname] = max(fields.get(fieldname, 0), cint(actions.get(action)))
+        elif link_type == "Report":
+            enabled = bool(cint(actions.get("view")) or cint(actions.get("export")))
+            report_access[item["link_to"]] = report_access.get(item["link_to"], False) or enabled
+            ref_doctype = frappe.db.get_value("Report", item["link_to"], "ref_doctype") or ""
+            if ref_doctype:
+                fields = backing_flags.setdefault(ref_doctype, {})
+                managed = backing_managed_fields.setdefault(ref_doctype, set())
+                managed.update(("read", "report", "print"))
+                if "export" in _business_feature_actions(item):
+                    managed.add("export")
+            if ref_doctype and enabled:
+                fields = backing_flags[ref_doctype]
+                managed = backing_managed_fields[ref_doctype]
+                for fieldname in ("read", "report", "print"):
+                    fields[fieldname] = 1
+                    managed.add(fieldname)
+                if cint(actions.get("export")):
+                    fields["export"] = 1
+                    managed.add("export")
+        elif link_type == "Dashboard":
+            dashboard_open = dashboard_open or bool(cint(actions.get("open")))
+        elif link_type == "DocType":
+            fields = backing_flags.setdefault(item["link_to"], {})
+            managed = backing_managed_fields.setdefault(item["link_to"], set())
+            for action in actions:
+                for fieldname in BUSINESS_ACTION_PERMISSION_FIELDS.get(action, ()):
+                    managed.add(fieldname)
+                    fields[fieldname] = max(fields.get(fieldname, 0), cint(actions.get(action)))
+            doctype_enabled = any(cint(value) for value in actions.values())
+            for doctype_name in _business_backing_doctypes(item):
+                backing_fields = backing_flags.setdefault(doctype_name, {})
+                backing_managed = backing_managed_fields.setdefault(doctype_name, set())
+                backing_managed.update(("read", "select"))
+                if doctype_enabled:
+                    backing_fields["read"] = 1
+                    backing_fields["select"] = 1
+
+    for page_name, enabled in page_access.items():
+        _set_native_target_role("Page", page_name, role, enabled)
+    for page_name, menu_key in SUPPORTING_PAGE_MENU_KEYS.items():
+        grant = grants.get(menu_key) or {}
+        actions = grant.get("actions") if "actions" in grant else grant
+        _set_native_target_role("Page", page_name, role, bool(cint((actions or {}).get("open"))))
+    for report_name, enabled in report_access.items():
+        _set_native_target_role("Report", report_name, role, enabled)
+
+    for doctype_name, desired in backing_flags.items():
+        _save_managed_docperm_fields(role, doctype_name, backing_managed_fields[doctype_name], desired)
+
+    _save_managed_docperm_fields(role, "Dashboard", {"read", "report", "print"}, {"read": int(dashboard_open), "report": int(dashboard_open), "print": int(dashboard_open)})
+
+    for item in iter_menu_items():
+        if not _business_feature_available_for_role(item, role):
+            continue
+        if item.get("link_type") not in {"Page", "Report", "Dashboard", "DocType"}:
+            continue
+        grant = grants.get(item["key"]) or {}
+        actions = grant.get("actions") if "actions" in grant else grant
+        actions = actions or {}
+        if not actions:
+            continue
+        menu_visible = grant.get("menu_visible")
+        enabled = (
+            bool(cint(menu_visible))
+            if menu_visible is not None
+            else any(cint(value) for key, value in actions.items() if key != "select")
+        )
+        set_menu_key_access_for_role(role, item["key"], enabled)
+
+
+def _role_has_business_import_target(role: str) -> bool:
+    for item in iter_menu_items():
+        if item.get("link_type") != "DocType":
+            continue
+        if "import" not in _business_feature_actions(item):
+            continue
+        resolved = _business_doctype_resolved(item.get("link_to") or "", role)
+        if cint((resolved.get("effective") or {}).get("import")):
+            return True
+    return False
+
+
+def _sync_business_import_support_permissions(role: str) -> None:
+    if role not in _business_scope_role_set():
+        return
+
+    enabled = _role_has_business_import_target(role)
+    for doctype_name, fields in IMPORT_SUPPORT_PERMISSION_FIELDS.items():
+        if not frappe.db.exists("DocType", doctype_name):
+            continue
+        desired = {fieldname: int(enabled) for fieldname in fields}
+        _save_managed_docperm_fields(role, doctype_name, set(fields), desired)
+
+
+def sync_business_import_support_permissions(role: str | None = None) -> None:
+    roles = [role] if role else sorted(_business_scope_role_set())
+    for role_name in roles:
+        if role_name and frappe.db.exists("Role", role_name):
+            _sync_business_import_support_permissions(role_name)
+
+
+def _save_managed_docperm_fields(
+    role: str,
+    doctype_name: str,
+    managed_fields: set[str],
+    desired: dict[str, int],
+) -> None:
+    if not frappe.db.exists("DocType", doctype_name):
+        return
+    doc_name = frappe.db.exists("Custom DocPerm", {"parent": doctype_name, "role": role, "permlevel": 0})
+    current = _perm_rows("Custom DocPerm", doctype_name, role).get(0) if doc_name else {}
+    flags = _coerce_permission_flags(current or {}, doctype_name)
+    for fieldname in managed_fields:
+        flags[fieldname] = cint(desired.get(fieldname))
+    if not doc_name and not any(flags.values()):
+        return
+    if doc_name and not any(flags.values()):
+        frappe.delete_doc("Custom DocPerm", doc_name, ignore_permissions=True)
+        return
+    _save_custom_docperm_record(role, doctype_name, flags, 0, internal=True)
+
+
+def _child_table_dependencies(parent_doctype: str) -> list[str]:
+    children = frappe.get_all(
+        "DocField",
+        filters={"parent": parent_doctype, "fieldtype": ["in", ["Table", "Table MultiSelect"]]},
+        pluck="options",
+        limit_page_length=0,
+    )
+    if frappe.db.exists("DocType", "Custom Field"):
+        children.extend(
+            frappe.get_all(
+                "Custom Field",
+                filters={"dt": parent_doctype, "fieldtype": ["in", ["Table", "Table MultiSelect"]]},
+                pluck="options",
+                limit_page_length=0,
+            )
+        )
+    return _dedupe([child for child in children if child])
+
+
+def reconcile_business_menu_access(role: str | None = None) -> None:
+    roles = [role] if role else list(_business_scope_role_set())
+    for role_name in roles:
+        if not role_name or not frappe.db.exists("Role", role_name):
+            continue
+        grants = _load_business_grants(role_name) or _snapshot_target_feature_grants(role_name)
+        _compile_target_feature_access(role_name, grants)
+        _sync_business_import_support_permissions(role_name)
+        for item in iter_menu_items():
+            if item.get("link_type") not in {"Page", "Report", "Dashboard", "DocType"}:
+                continue
+            grant = grants.get(item["key"]) or {}
+            actions = grant.get("actions") if "actions" in grant else grant
+            menu_visible = grant.get("menu_visible") if "actions" in grant else None
+            if not actions:
+                continue
+            enabled = (
+                bool(cint(menu_visible))
+                if menu_visible is not None
+                else any(cint(value) for key, value in actions.items() if key != "select")
+            )
+            set_menu_key_access_for_role(role_name, item["key"], enabled)
+    if frappe.db.exists("Role", "System Manager"):
+        for item in iter_menu_items():
+            if item.get("link_type") in {"Page", "Report"} and item.get("link_to"):
+                _set_native_target_role(item["link_type"], item["link_to"], "System Manager", True)
+        for page_name in SUPPORTING_PAGE_MENU_KEYS:
+            _set_native_target_role("Page", page_name, "System Manager", True)
+    frappe.clear_cache()
+
+
+def _business_menu_role_enabled(row: dict | None, role: str) -> bool:
+    if not row or not cint(row.get("enabled")):
+        return False
+    allowed = row.get("allowed_roles") or []
+    denied = row.get("denied_roles") or []
+    return role not in denied and (role in allowed or BASE_PERMISSION_ROLE in allowed)
+
+
+def _native_target_role_state(parenttype: str, parent: str, role: str) -> dict:
+    rows = frappe.get_all(
+        "Has Role",
+        filters={"parenttype": parenttype, "parent": parent},
+        pluck="role",
+        limit_page_length=0,
+    )
+    direct = role in rows
+    inherited = not rows or BASE_PERMISSION_ROLE in rows
+    return {"direct": direct, "inherited": inherited, "effective": direct or inherited}
+
+
+def _apply_business_doctype_actions(
+    doctype_name: str,
+    role: str,
+    actions: dict,
+    allowed_actions: tuple[str, ...] | None = None,
+) -> None:
+    if not frappe.db.exists("DocType", doctype_name):
+        frappe.throw(_("DocType {0} was not found.").format(doctype_name))
+    allowed_actions = allowed_actions or tuple(actions)
+    _ensure_custom_permission_matrix(doctype_name)
+    current = _perm_rows("Custom DocPerm", doctype_name, role).get(0) or _perm_rows("DocPerm", doctype_name, role).get(0) or {}
+    flags = _coerce_permission_flags(current, doctype_name)
+    managed_fields = {
+        field
+        for action in allowed_actions
+        for field in BUSINESS_ACTION_PERMISSION_FIELDS.get(action, ())
+    }
+    for field in managed_fields:
+        flags[field] = 0
+    for action in allowed_actions:
+        if not cint(actions.get(action)):
+            continue
+        for field in BUSINESS_ACTION_PERMISSION_FIELDS.get(action, ()):
+            flags[field] = 1
+    _save_custom_docperm_record(role, doctype_name, flags, 0, internal=True)
+
+
+def _ensure_custom_permission_matrix(doctype_name: str) -> None:
+    if frappe.db.exists("Custom DocPerm", {"parent": doctype_name}):
+        return
+    from frappe.permissions import setup_custom_perms
+
+    setup_custom_perms(doctype_name)
+
+
+def _set_native_target_role(parenttype: str, parent: str, role: str, enabled: bool) -> None:
+    if not frappe.db.exists(parenttype, parent):
+        frappe.throw(_("{0} {1} was not found.").format(parenttype, parent))
+    filters = {"parenttype": parenttype, "parent": parent, "role": role}
+    existing = frappe.get_all("Has Role", filters=filters, pluck="name", limit_page_length=0)
+    if enabled:
+        if existing:
+            return
+        frappe.get_doc({
+            "doctype": "Has Role",
+            "parenttype": parenttype,
+            "parent": parent,
+            "parentfield": "roles",
+            "role": role,
+        }).insert(ignore_permissions=True)
+        return
+    if not existing:
+        return
+    all_roles = frappe.get_all(
+        "Has Role",
+        filters={"parenttype": parenttype, "parent": parent},
+        pluck="role",
+        limit_page_length=0,
+    )
+    if len(all_roles) == len(existing):
+        if role == "System Manager" or not frappe.db.exists("Role", "System Manager"):
+            frappe.throw(_("Cannot remove the final access role from {0} {1}.").format(parenttype, parent))
+        frappe.get_doc({
+            "doctype": "Has Role",
+            "parenttype": parenttype,
+            "parent": parent,
+            "parentfield": "roles",
+            "role": "System Manager",
+        }).insert(ignore_permissions=True)
+    for name in existing:
+        frappe.delete_doc("Has Role", name, ignore_permissions=True)
+
+
+def _grant_business_backing_read(item: dict, role: str) -> set[str]:
+    changed = set()
+    for doctype_name in _business_backing_doctypes(item):
+        _ensure_custom_permission_matrix(doctype_name)
+        current = _perm_rows("Custom DocPerm", doctype_name, role).get(0) or _perm_rows("DocPerm", doctype_name, role).get(0) or {}
+        flags = _coerce_permission_flags(current, doctype_name)
+        flags["read"] = 1
+        flags["select"] = 1
+        flags["report"] = 1
+        flags["print"] = 1
+        _save_custom_docperm_record(role, doctype_name, flags, 0, internal=True)
+        changed.add(doctype_name)
+    return changed
+
+
+def _grant_business_report_access(doctype_name: str, role: str, actions: dict) -> None:
+    _ensure_custom_permission_matrix(doctype_name)
+    current = _perm_rows("Custom DocPerm", doctype_name, role).get(0) or _perm_rows("DocPerm", doctype_name, role).get(0) or {}
+    flags = _coerce_permission_flags(current, doctype_name)
+    flags["read"] = 1
+    flags["report"] = 1
+    flags["print"] = 1
+    if cint(actions.get("export")):
+        flags["export"] = 1
+        _save_custom_docperm_record(role, doctype_name, flags, 0, internal=True)
 
 
 def _matrix_child_parent_map(doctype_names: list[str]) -> dict[str, list[str]]:
@@ -1279,16 +2463,23 @@ def _save_child_roles(parenttype: str, parent: str, roles: str | list) -> None:
     doc.set("roles", [])
     for role in role_names:
         doc.append("roles", {"role": role})
-    doc.save(ignore_permissions=False)
+    doc.save(ignore_permissions=True)
 
 
 def _role_payload(role_name: str, row=None, assigned_counts: dict[str, int] | None = None) -> dict:
     assigned_counts = assigned_counts or {}
     if row is None:
-        fields = _safe_fields("Role", ["name", "role_name", "desk_access", "disabled", "is_custom", ROLE_CAPABILITY_FIELD])
+        fields = _safe_fields("Role", ["name", "role_name", "desk_access", "disabled", "is_custom", ORDERLIFT_MANAGED_ROLE_FIELD, ROLE_CAPABILITY_FIELD])
         row = frappe.get_all("Role", filters={"name": role_name}, fields=fields, limit_page_length=1)[0]
         assigned_counts = _role_user_counts([role_name])
     is_custom = cint(row.get("is_custom"))
+    is_managed = cint(row.get(ORDERLIFT_MANAGED_ROLE_FIELD))
+    is_protected = (
+        row.name in HIGH_ACCESS_ROLES
+        or row.name in BUSINESS_ROLE_SET
+        or not is_custom
+        or (not is_managed and not _is_superadmin_session())
+    )
     return {
         "name": row.name,
         "label": row.get("role_name") or row.name,
@@ -1297,7 +2488,9 @@ def _role_payload(role_name: str, row=None, assigned_counts: dict[str, int] | No
         "is_custom": is_custom,
         "is_system": not is_custom,
         "is_legacy": _is_legacy_role(row.name),
-        "is_protected": row.name in HIGH_ACCESS_ROLES or not is_custom,
+        "is_managed": is_managed,
+        "is_protected": is_protected,
+        "can_open_native_role": _can_open_native_role_form(),
         "users": assigned_counts.get(row.name, 0),
         "access_level": _access_level([row.name]),
         "capabilities": normalize_capabilities(row.get(ROLE_CAPABILITY_FIELD)),
@@ -1457,10 +2650,19 @@ def _role_dependency_summary(role_name: str) -> list[str]:
         ("report access rows", lambda: frappe.db.count("Has Role", {"parenttype": "Report", "role": role_name})),
         ("standard permissions", lambda: frappe.db.count("DocPerm", {"role": role_name})),
         ("custom permission overrides", lambda: frappe.db.count("Custom DocPerm", {"role": role_name})),
+        ("menu access rules", lambda: _menu_role_reference_count(role_name)),
     ]
     child_doctype = _child_table_doctype("Role Profile", "roles")
     if child_doctype:
-        checks.append(("role profiles", lambda: frappe.db.count(child_doctype, {"role": role_name})))
+        checks.append(
+            (
+                "role profiles",
+                lambda: frappe.db.count(
+                    child_doctype,
+                    {"parenttype": "Role Profile", "role": role_name},
+                ),
+            )
+        )
     for label, count_fn in checks:
         try:
             count = count_fn()
@@ -1469,6 +2671,97 @@ def _role_dependency_summary(role_name: str) -> list[str]:
         if count:
             dependencies.append(_("{0} {1}").format(count, label))
     return dependencies
+
+
+def _role_blocking_dependency_summary(role_name: str) -> list[str]:
+    dependencies = []
+    checks = [
+        ("assigned users", lambda: frappe.db.count("Has Role", {"parenttype": "User", "role": role_name})),
+        ("standard permissions", lambda: frappe.db.count("DocPerm", {"role": role_name})),
+        (
+            "role user permissions",
+            lambda: frappe.db.count("User Permission", {"allow": "Role", "for_value": role_name}),
+        ),
+    ]
+    child_doctype = _child_table_doctype("Role Profile", "roles")
+    if child_doctype:
+        checks.append(
+            (
+                "role profiles",
+                lambda: frappe.db.count(
+                    child_doctype,
+                    {"parenttype": "Role Profile", "role": role_name},
+                ),
+            )
+        )
+    for label, count_fn in checks:
+        try:
+            count = count_fn()
+        except Exception:
+            count = 0
+        if count:
+            dependencies.append(_("{0} {1}").format(count, label))
+    return dependencies
+
+
+def _remove_managed_role_access(role_name: str) -> None:
+    changed_doctypes = set()
+    for parenttype in ("Page", "Report"):
+        rows = frappe.get_all(
+            "Has Role",
+            filters={"parenttype": parenttype, "role": role_name},
+            pluck="name",
+            limit_page_length=0,
+        )
+        for name in rows:
+            frappe.delete_doc("Has Role", name, ignore_permissions=True)
+
+    rows = frappe.get_all(
+        "Custom DocPerm",
+        filters={"role": role_name},
+        fields=["name", "parent"],
+        limit_page_length=0,
+    )
+    for row in rows:
+        changed_doctypes.add(row.parent)
+        frappe.delete_doc("Custom DocPerm", row.name, ignore_permissions=True)
+
+    if frappe.db.exists("DocType", "Orderlift Menu Access Rule"):
+        rows = frappe.get_all(
+            "Orderlift Menu Access Rule",
+            fields=["name", "allowed_roles_json", "denied_roles_json"],
+            limit_page_length=0,
+        )
+        for row in rows:
+            allowed = [role for role in _clean_list(row.allowed_roles_json) if role != role_name]
+            denied = [role for role in _clean_list(row.denied_roles_json) if role != role_name]
+            if allowed == _clean_list(row.allowed_roles_json) and denied == _clean_list(row.denied_roles_json):
+                continue
+            frappe.db.set_value(
+                "Orderlift Menu Access Rule",
+                row.name,
+                {"allowed_roles_json": json.dumps(allowed), "denied_roles_json": json.dumps(denied)},
+                update_modified=False,
+            )
+
+    for doctype_name in changed_doctypes:
+        frappe.clear_cache(doctype=doctype_name)
+
+
+def _menu_role_reference_count(role_name: str) -> int:
+    if not frappe.db.exists("DocType", "Orderlift Menu Access Rule"):
+        return 0
+    rows = frappe.get_all(
+        "Orderlift Menu Access Rule",
+        fields=["allowed_roles_json", "denied_roles_json"],
+        limit_page_length=0,
+    )
+    return sum(
+        1
+        for row in rows
+        if role_name in _clean_list(row.get("allowed_roles_json"))
+        or role_name in _clean_list(row.get("denied_roles_json"))
+    )
 
 
 def _session_roles() -> set[str]:
@@ -1481,15 +2774,22 @@ def _is_superadmin_session() -> bool:
     return bool(ADMIN_ROLES.intersection(_session_roles()))
 
 
+def _can_open_native_role_form() -> bool:
+    return _is_superadmin_session() or "Orderlift Admin" in _session_roles()
+
+
 def _visible_role_names() -> list[str]:
     custom_business_roles = _custom_business_role_names()
     if _is_superadmin_session():
         return _dedupe([*BUSINESS_ROLES, *custom_business_roles, *SUPERADMIN_VISIBLE_ROLES])
-    return _dedupe(BUSINESS_ROLES)
+    return _dedupe([*BUSINESS_ROLES, *custom_business_roles])
 
 
 def _visible_permission_role_names() -> list[str]:
-    return _dedupe([BASE_PERMISSION_ROLE, *_visible_role_names()])
+    roles = _visible_role_names()
+    if _is_superadmin_session():
+        roles = [BASE_PERMISSION_ROLE, *roles]
+    return _dedupe(roles)
 
 
 def _custom_business_role_names() -> list[str]:
@@ -1500,6 +2800,8 @@ def _custom_business_role_names() -> list[str]:
     try:
         if _has_field("Role", "is_custom"):
             filters["is_custom"] = 1
+        if _has_field("Role", ORDERLIFT_MANAGED_ROLE_FIELD):
+            filters[ORDERLIFT_MANAGED_ROLE_FIELD] = 1
     except Exception:
         return []
 
@@ -1512,13 +2814,14 @@ def _custom_business_role_names() -> list[str]:
     return [
         row.name
         for row in rows
-        if row.name and row.name not in protected_roles and not _is_legacy_role(row.name)
+        if row.name
+        and row.name not in protected_roles
+        and row.name not in RETIRED_BUSINESS_ROLES
+        and not _is_legacy_role(row.name)
     ]
 
 
 def _business_scope_role_set() -> set[str]:
-    if not _is_superadmin_session():
-        return BUSINESS_ROLE_SET
     return BUSINESS_ROLE_SET | set(_custom_business_role_names())
 
 
@@ -1526,7 +2829,7 @@ def _filter_roles_for_session(roles: list[str]) -> list[str]:
     if _is_superadmin_session():
         return roles
     business_scope_roles = _business_scope_role_set()
-    return [role for role in roles if role in business_scope_roles]
+    return [role for role in roles if role == BASE_PERMISSION_ROLE or role in business_scope_roles]
 
 
 def _assert_role_scope(roles: list[str]) -> None:
@@ -1545,7 +2848,9 @@ def _assert_role_scope(roles: list[str]) -> None:
 def _assert_permission_role_scope(role: str | None) -> None:
     role = _validate_role_name(role)
     if role == BASE_PERMISSION_ROLE:
-        return
+        if _is_superadmin_session():
+            return
+        frappe.throw(_("Only superadmins can edit base permissions."), frappe.PermissionError)
     _assert_role_scope([role])
 
 
@@ -1576,11 +2881,13 @@ def _superadmin_users() -> set[str]:
 
 def _hidden_users_for_session() -> set[str]:
     if _is_superadmin_session():
-        return set()
+        return {"Guest"}
     return _superadmin_users().union({"Guest"})
 
 
 def _assert_user_scope(user_name: str | None) -> None:
+    if user_name == "Guest":
+        frappe.throw(_("The system Guest account cannot be managed from Access Command Center."))
     if _is_superadmin_session():
         return
     if not user_name:
@@ -1599,6 +2906,25 @@ def _child_table_doctype(parent_doctype: str, fieldname: str) -> str:
 
 def _is_critical_user(user_name: str) -> bool:
     return user_name in CRITICAL_USERS
+
+
+def _assert_user_type_matches_roles(user_type: str, role_names: list[str]) -> None:
+    if user_type not in {"System User", "Website User"}:
+        frappe.throw(_("User Type must be System User or Website User."))
+    desk_roles = frappe.get_all(
+        "Role",
+        filters={"name": ["in", role_names or []], "desk_access": 1, "disabled": 0},
+        pluck="name",
+        limit_page_length=0,
+    )
+    if user_type == "System User" and not desk_roles:
+        frappe.throw(_("System Users require at least one assigned Desk Access role."))
+    if user_type == "Website User" and desk_roles:
+        frappe.throw(
+            _("Website Users cannot have Desk Access roles. Remove these roles or select System User: {0}").format(
+                ", ".join(sorted(desk_roles))
+            )
+        )
 
 
 def _has_role(user, role_name: str) -> bool:
@@ -1645,8 +2971,8 @@ def _disabled_permission_fields(doctype_name: str | None) -> tuple[str, ...]:
     return ()
 
 
-def _validate_permission_edit(role: str, doctype_name: str, flags: dict) -> None:
-    if not _permission_doctype_visible(doctype_name, role):
+def _validate_permission_edit(role: str, doctype_name: str, flags: dict, *, internal: bool = False) -> None:
+    if not internal and not _permission_doctype_visible(doctype_name, role):
         frappe.throw(_("Protected system, accounting, and Cost Center permissions are superadmin-only."))
     if frappe.session.user == "Administrator":
         return
@@ -1665,8 +2991,19 @@ def _validate_role_name(role_name: str | None) -> str:
     return role_name
 
 
+def _validate_new_managed_role_name(role_name: str) -> None:
+    if role_name in HIGH_ACCESS_ROLES or role_name in BUSINESS_ROLE_SET:
+        frappe.throw(_("Protected business roles cannot be recreated."))
+    if role_name in RETIRED_BUSINESS_ROLES or _is_legacy_role(role_name):
+        frappe.throw(_("Retired or legacy role names cannot be used for new roles."))
+
+
 def _is_protected_role_doc(role) -> bool:
-    return role.name in HIGH_ACCESS_ROLES or not cint(role.get("is_custom"))
+    if role.name in HIGH_ACCESS_ROLES or role.name in BUSINESS_ROLE_SET or not cint(role.get("is_custom")):
+        return True
+    if _is_superadmin_session():
+        return False
+    return not cint(role.get(ORDERLIFT_MANAGED_ROLE_FIELD))
 
 
 def _require_access_manager() -> None:
@@ -1676,7 +3013,19 @@ def _require_access_manager() -> None:
         frappe.throw(_("Only Orderlift Admins and superadmins can use Access Command Center."), frappe.PermissionError)
 
 
+def _require_business_permission_compiler() -> None:
+    if not _is_superadmin_session():
+        frappe.throw(
+            _("Use the Business Permissions tab for managed Page, Report, and menu access."),
+            frappe.PermissionError,
+        )
+
+
 def _permission_doctype_visible(doctype_name: str, role: str | None = None) -> bool:
+    if doctype_name in HIDDEN_PERMISSION_DOCTYPES:
+        return False
+    if doctype_name in MATRIX_MANAGED_DOCTYPES:
+        return True
     if doctype_name in SUPERADMIN_ONLY_PERMISSION_DOCTYPES:
         return _is_superadmin_session() and role in ADMIN_ROLES
     return True
@@ -1878,7 +3227,12 @@ def _main_role(roles: list[str]) -> str:
     for role in (
         "System Manager",
         "Orderlift Admin",
-        "Pricing Manager",
+        "Sales Manager",
+        "Pricing Configuration",
+        "Purchase Manager",
+        "Purchase User",
+        "Stock Manager",
+        "Stock User",
         "Sales User",
         "Logistics User",
         "Finance User",

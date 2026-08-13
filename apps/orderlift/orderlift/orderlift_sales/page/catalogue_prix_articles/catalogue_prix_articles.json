@@ -13,7 +13,6 @@
     "roles": [
         {"role": "Orderlift Admin"},
         {"role": "System Manager"},
-        {"role": "Pricing Manager"},
         {"role": "Sales Manager"},
         {"role": "Sales User"}
     ],

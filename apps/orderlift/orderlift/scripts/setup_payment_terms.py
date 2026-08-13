@@ -45,6 +45,7 @@ def ensure_standard_payment_terms() -> dict:
         template.append("terms", dict(row))
 
     template.save(ignore_permissions=True)
+    _seed_agent_payment_terms()
     frappe.db.commit()
     return {"template": STANDARD_TEMPLATE, "action": action, "rows": len(STANDARD_ROWS)}
 
@@ -66,3 +67,26 @@ def _ensure_payment_term(row: dict) -> None:
     ):
         doc.set(fieldname, row.get(fieldname))
     doc.save(ignore_permissions=True)
+
+
+def _seed_agent_payment_terms() -> None:
+    if not frappe.get_meta("Agent Pricing Rules").get_field("allowed_payment_terms"):
+        return
+    for name in frappe.get_all("Agent Pricing Rules", pluck="name", limit_page_length=0):
+        if frappe.db.exists(
+            "Agent Allowed Payment Terms",
+            {"parent": name, "parentfield": "allowed_payment_terms"},
+        ):
+            continue
+        child = frappe.get_doc(
+            {
+                "doctype": "Agent Allowed Payment Terms",
+                "parent": name,
+                "parenttype": "Agent Pricing Rules",
+                "parentfield": "allowed_payment_terms",
+                "payment_terms_template": STANDARD_TEMPLATE,
+                "is_default": 1,
+                "is_active": 1,
+            },
+        )
+        child.insert(ignore_permissions=True)

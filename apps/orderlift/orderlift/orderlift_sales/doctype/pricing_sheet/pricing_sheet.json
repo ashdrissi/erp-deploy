@@ -27,8 +27,12 @@
    "taxes_and_charges_template",
     "selected_price_list",
     "selected_selling_price_lists",
+    "output_mode",
+    "commercial_designation",
+    "commercial_total",
    "section_dimensioning",
    "dimensioning_set",
+   "dimensioning_multiplier",
    "dimensioning_inputs_json",
    "dimensioning_inputs_html",
    "strict_margin_guard",
@@ -211,6 +215,14 @@
    "options": "Dimensioning Set"
   },
   {
+   "default": "1",
+   "fieldname": "dimensioning_multiplier",
+   "fieldtype": "Int",
+   "label": "Number of Sets",
+   "mandatory_depends_on": "eval:doc.dimensioning_set",
+   "non_negative": 1
+  },
+  {
    "fieldname": "dimensioning_inputs_json",
    "fieldtype": "Long Text",
    "label": "Dimensioning Inputs JSON",
@@ -260,13 +272,27 @@
     "depends_on": "eval:doc.resolved_mode=='Static'"
    },
   {
-   "fieldname": "output_mode",
-   "fieldtype": "Select",
-   "label": "Output Mode",
-   "hidden": 1,
-   "options": "Avec details\nSans details",
-   "default": "Avec details",
-   "reqd": 1
+    "fieldname": "output_mode",
+    "fieldtype": "Select",
+    "label": "Output Mode",
+    "options": "Avec details\nSans details",
+    "default": "Avec details",
+    "reqd": 1
+  },
+  {
+    "fieldname": "commercial_designation",
+    "fieldtype": "Small Text",
+    "label": "Commercial Designation",
+    "depends_on": "eval:doc.output_mode=='Sans details'",
+    "mandatory_depends_on": "eval:doc.output_mode=='Sans details'",
+    "description": "Customer-facing designation used when documents are printed without item details."
+  },
+  {
+    "fieldname": "commercial_total",
+    "fieldtype": "Currency",
+    "label": "Commercial Summary Total",
+    "read_only": 1,
+    "depends_on": "eval:doc.output_mode=='Sans details'"
   },
   {
    "fieldname": "minimum_margin_percent",
@@ -415,17 +441,7 @@
    "share": 1,
    "print": 1,
    "email": 1
-   },
-   {
-    "role": "Pricing Manager",
-    "read": 1,
-    "write": 1,
-    "create": 1,
-    "delete": 1,
-    "report": 1,
-    "print": 1,
-    "email": 1
-   },
+    },
    {
     "role": "Orderlift Commercial",
     "read": 1,

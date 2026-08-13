@@ -7,6 +7,9 @@
   "engine": "InnoDB",
   "field_order": [
     "price_list",
+    "source_currency",
+    "exchange_rate",
+    "exchange_rate_source",
     "sequence",
     "is_active"
   ],
@@ -14,10 +17,33 @@
     {
       "fieldname": "price_list",
       "fieldtype": "Link",
-      "label": "Selling Price List",
+      "label": "Price List",
       "options": "Price List",
       "reqd": 1,
       "in_list_view": 1
+    },
+    {
+      "fieldname": "source_currency",
+      "fieldtype": "Link",
+      "label": "Source Currency",
+      "options": "Currency",
+      "read_only": 1
+    },
+    {
+      "fieldname": "exchange_rate",
+      "fieldtype": "Float",
+      "label": "Exchange Rate to Document Currency",
+      "precision": 9,
+      "default": "1"
+    },
+    {
+      "fieldname": "exchange_rate_source",
+      "fieldtype": "Select",
+      "label": "Exchange Rate Source",
+      "options": "System\nManual",
+      "default": "System",
+      "hidden": 1,
+      "read_only": 1
     },
     {
       "fieldname": "sequence",

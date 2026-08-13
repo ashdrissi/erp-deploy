@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import cint
 
 from orderlift.menu_access import get_allowed_companies, user_can_access_company
+from orderlift.reference_access import get_reference_options
 from orderlift.orderlift_crm.status_config import STATUS_SOURCES, UNASSIGNED_STATUS
 from orderlift.orderlift_crm.todo_priority import normalize_todo_priority
 
@@ -61,12 +62,11 @@ def list_editable_statuses(
     if company_field and _status_field_available(status_doctype, status_meta, company_field):
         order_fields.append(f"{company_field} asc")
     order_fields.append(f"{meta['label_field']} asc")
-    rows = frappe.get_all(
+    rows = get_reference_options(
         status_doctype,
         filters=filters,
         fields=fields,
         order_by=", ".join(order_fields),
-        limit_page_length=0,
     )
     statuses = []
     assigned_user_field = meta.get("assigned_user_field")
@@ -153,6 +153,15 @@ def get_default_status_name(document_type: str, company: str | None = None) -> s
         if status["is_default"]:
             return status["name"]
     return statuses[0]["name"] if statuses else None
+
+
+@frappe.whitelist()
+def get_status_reference_data(document_type: str, company: str | None = None) -> dict:
+    """Select-aware active status metadata for transactional forms and pipelines."""
+    return {
+        "document_type": document_type,
+        "statuses": list_editable_statuses(document_type, include_inactive=False, company=company),
+    }
 
 
 def get_status_usage(document_type: str, company: str | None = None) -> dict[str, int]:

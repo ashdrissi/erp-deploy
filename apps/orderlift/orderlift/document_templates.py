@@ -48,6 +48,63 @@ def normalize_field_key(label: str) -> str:
     return key or "field"
 
 
+def resolve_template_field_value(source_doc, field) -> str:
+    """Return a safe, scalar value from a target document for one template field."""
+    source_field = (field.get("source_field") or field.get("field_key") or "").strip()
+    if not source_field:
+        return ""
+
+    current_doc = source_doc
+    for index, fieldname in enumerate(source_field.split(".")):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", fieldname):
+            return ""
+        value = _get_document_value(current_doc, fieldname)
+        if value in (None, ""):
+            return ""
+        if index == len(source_field.split(".")) - 1:
+            if isinstance(value, bool):
+                return "1" if value else "0"
+            if isinstance(value, (str, int, float)):
+                return str(value)
+            return ""
+        current_doc = _get_linked_document(current_doc, fieldname, value)
+        if not current_doc:
+            return ""
+    return ""
+
+
+def get_template_prefill_values(template_doc, source_doc, existing_values: dict | None = None) -> dict[str, str]:
+    """Build form values without replacing values already saved on an annex."""
+    values = dict(existing_values or {})
+    for field in template_doc.get("fields") or []:
+        if field.get("fieldtype") in {"Section Break", "Column Break", "HTML"}:
+            continue
+        field_key = field.get("field_key")
+        if not field_key or field_key in values:
+            continue
+        values[field_key] = resolve_template_field_value(source_doc, field) or field.get("default_value") or ""
+    return values
+
+
+def _get_document_value(doc, fieldname: str):
+    if fieldname == "name":
+        return getattr(doc, "name", None) or (doc.get("name") if hasattr(doc, "get") else None)
+    return doc.get(fieldname) if hasattr(doc, "get") else getattr(doc, fieldname, None)
+
+
+def _get_linked_document(doc, fieldname: str, value):
+    meta = getattr(doc, "meta", None)
+    field = meta.get_field(fieldname) if meta and hasattr(meta, "get_field") else None
+    if not field or field.fieldtype != "Link" or not field.options:
+        return None
+
+    import frappe
+
+    if not frappe.has_permission(field.options, "read", doc=value):
+        return None
+    return frappe.get_doc(field.options, value)
+
+
 def get_default_status(template_doc) -> str:
     statuses = list(template_doc.get("statuses") or [])
     for row in statuses:
@@ -65,7 +122,7 @@ def _require_template_manager_access() -> None:
     if frappe.session.user == "Administrator":
         return
     roles = set(frappe.get_roles(frappe.session.user))
-    if not roles.intersection({"Orderlift Admin", "System Manager", "Administrator", "Developer"}):
+    if not roles.intersection({"Orderlift Admin", "System Manager", "Administrator"}):
         frappe.throw(_("Only administrators can manage document templates."), frappe.PermissionError)
 
 
@@ -130,6 +187,7 @@ def _template_payload(doc) -> dict:
                 "field_label": row.field_label,
                 "fieldtype": row.fieldtype,
                 "options": row.options or "",
+                "source_field": row.get("source_field") or "",
                 "is_required": int(row.is_required or 0),
                 "default_value": row.default_value or "",
                 "display_order": row.display_order or row.idx,
@@ -171,6 +229,26 @@ def get_template(name: str) -> dict:
 
     _require_template_manager_access()
     return _template_payload(frappe.get_doc("Orderlift Document Template", name))
+
+
+@frappe.whitelist()
+def delete_template(name: str) -> dict:
+    """Permanently delete a template and every annex document created from it."""
+    import frappe
+
+    _require_template_manager_access()
+    template = frappe.get_doc("Orderlift Document Template", name)
+    annex_names = frappe.get_all(
+        "Orderlift Annex Document",
+        filters={"template": template.name},
+        pluck="name",
+        limit_page_length=0,
+    )
+    for annex_name in annex_names:
+        frappe.delete_doc("Orderlift Annex Document", annex_name, force=1, ignore_permissions=True)
+    frappe.delete_doc("Orderlift Document Template", template.name, force=1, ignore_permissions=True)
+    frappe.db.commit()
+    return {"template_name": template.template_name, "annex_count": len(annex_names)}
 
 
 @frappe.whitelist()
@@ -216,7 +294,7 @@ def save_template(payload: str | dict) -> dict:
     doc.print_title = (data.get("print_title") or "").strip()
     doc.print_header = data.get("print_header") or ""
     doc.print_footer = data.get("print_footer") or ""
-    doc.show_signature_block = cint(data.get("show_signature_block"))
+    doc.show_signature_block = 0
 
     doc.set("targets", [])
     for target in data.get("targets") or []:
@@ -247,6 +325,7 @@ def save_template(payload: str | dict) -> dict:
                 "field_label": field_label,
                 "fieldtype": row.get("fieldtype") or "Data",
                 "options": row.get("options") or "",
+                "source_field": (row.get("source_field") or "").strip(),
                 "is_required": cint(row.get("is_required")),
                 "default_value": row.get("default_value") or "",
                 "display_order": cint(row.get("display_order")) or index,
@@ -305,12 +384,12 @@ def _active_templates_for_doctype(reference_doctype: str) -> list:
     return [frappe.get_doc("Orderlift Document Template", row.name) for row in rows]
 
 
-def _annex_payload(annex, template_doc) -> dict:
+def _annex_payload(annex, template_doc, source_doc) -> dict:
     values = {row.field_key: row.value for row in annex.values} if annex else {}
     return {
         "name": annex.name if annex else "",
         "status": annex.status if annex else get_default_status(template_doc),
-        "values": values,
+        "values": get_template_prefill_values(template_doc, source_doc, values),
     }
 
 
@@ -334,7 +413,7 @@ def get_annex_bundle(reference_doctype: str, reference_name: str) -> dict:
             "name",
         )
         annex = frappe.get_doc("Orderlift Annex Document", existing_name) if existing_name else None
-        templates.append({"template": _template_payload(template_doc), "annex": _annex_payload(annex, template_doc)})
+        templates.append({"template": _template_payload(template_doc), "annex": _annex_payload(annex, template_doc, source)})
     return {"reference_doctype": reference_doctype, "reference_name": reference_name, "templates": templates}
 
 
@@ -376,6 +455,9 @@ def save_annex_document(
     annex.company = source.get("company") or ""
 
     submitted_values = _as_payload(values)
+    existing_values = {row.field_key: row.value for row in annex.values} if not annex.is_new() else {}
+    resolved_values = get_template_prefill_values(template_doc, source, existing_values)
+    resolved_values.update(submitted_values)
     annex.set("values", [])
     for field in template_doc.fields or []:
         if field.fieldtype in {"Section Break", "Column Break", "HTML"}:
@@ -386,10 +468,10 @@ def save_annex_document(
                 "field_key": field.field_key,
                 "field_label": field.field_label,
                 "fieldtype": field.fieldtype,
-                "value": str(submitted_values.get(field.field_key, "")),
+                "value": str(resolved_values.get(field.field_key, "")),
                 "display_order": field.display_order or field.idx,
             },
         )
     annex.save(ignore_permissions=True)
     frappe.db.commit()
-    return {"annex": _annex_payload(annex, template_doc)}
+    return {"annex": _annex_payload(annex, template_doc, source)}

@@ -1,0 +1,244 @@
+{
+  "actions": [],
+  "autoname": "field:company",
+  "creation": "2026-08-09 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "company_section",
+    "company",
+    "enabled",
+    "reservation_section",
+    "reservation_mode",
+    "partial_pick_list",
+    "reservation_buffer_days",
+    "incoming_section",
+    "rely_on_incoming_stock",
+    "incoming_safety_days",
+    "procurement_section",
+    "procurement_safety_days",
+    "default_procurement_delay_days",
+    "auto_create_material_request",
+    "auto_submit_material_request",
+    "stock_floor_section",
+    "protected_stock_floor_mode",
+    "alerts_section",
+    "alert_days_before_action",
+    "examples_section",
+    "examples_html"
+  ],
+  "fields": [
+    {
+      "fieldname": "company_section",
+      "fieldtype": "Section Break",
+      "label": "Company Stock Planning"
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "enabled",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Enable Stock Planning"
+    },
+    {
+      "fieldname": "reservation_section",
+      "fieldtype": "Section Break",
+      "label": "Pick List Protection"
+    },
+    {
+      "default": "Create Draft Pick List",
+      "description": "The planner never creates Stock Reservation Entries directly. A submitted Pick List activates the existing stock reservation hook.",
+      "fieldname": "reservation_mode",
+      "fieldtype": "Select",
+      "label": "When Stock Protection Is Due",
+      "options": "Manual Alert Only\nCreate Draft Pick List\nCreate and Submit Pick List",
+      "reqd": 1
+    },
+    {
+      "default": "1",
+      "description": "Create a Pick List for the quantity currently available and keep the remaining demand open.",
+      "fieldname": "partial_pick_list",
+      "fieldtype": "Check",
+      "label": "Allow Partial Pick Lists"
+    },
+    {
+      "default": "15",
+      "description": "Operational preparation buffer before delivery. Used for visibility and final reservation risk; stock protection may occur earlier at the procurement cutoff.",
+      "fieldname": "reservation_buffer_days",
+      "fieldtype": "Int",
+      "label": "Delivery Preparation Buffer (Days)",
+      "non_negative": 1
+    },
+    {
+      "fieldname": "incoming_section",
+      "fieldtype": "Section Break",
+      "label": "Incoming Stock"
+    },
+    {
+      "default": "1",
+      "description": "Allow a confirmed Sales Order to wait for incoming stock that is expected safely before delivery.",
+      "fieldname": "rely_on_incoming_stock",
+      "fieldtype": "Check",
+      "label": "Rely on Incoming Stock"
+    },
+    {
+      "default": "15",
+      "depends_on": "eval:doc.rely_on_incoming_stock",
+      "description": "Incoming is safe only when expected by Delivery Date minus this buffer. The backup stock check occurs the same number of days before the incoming date.",
+      "fieldname": "incoming_safety_days",
+      "fieldtype": "Int",
+      "label": "Incoming Safety Delay (Days)",
+      "mandatory_depends_on": "eval:doc.rely_on_incoming_stock",
+      "non_negative": 1
+    },
+    {
+      "fieldname": "procurement_section",
+      "fieldtype": "Section Break",
+      "label": "Procurement"
+    },
+    {
+      "default": "7",
+      "description": "Internal time needed to review demand, create the request/order, approve, negotiate, or pay before supplier lead time starts.",
+      "fieldname": "procurement_safety_days",
+      "fieldtype": "Int",
+      "label": "Procurement Safety Delay (Days)",
+      "non_negative": 1
+    },
+    {
+      "default": "0",
+      "description": "Used only when Item Lead Time is empty. Procurement delay remains an Item property.",
+      "fieldname": "default_procurement_delay_days",
+      "fieldtype": "Int",
+      "label": "Fallback Procurement Delay (Days)",
+      "non_negative": 1
+    },
+    {
+      "default": "0",
+      "description": "Create a Purchase-type Material Request for confirmed demand that is not covered by physical or safely allocated incoming stock.",
+      "fieldname": "auto_create_material_request",
+      "fieldtype": "Check",
+      "label": "Create Material Requests Automatically"
+    },
+    {
+      "default": "0",
+      "depends_on": "eval:doc.auto_create_material_request",
+      "fieldname": "auto_submit_material_request",
+      "fieldtype": "Check",
+      "label": "Submit Automatic Material Requests"
+    },
+    {
+      "fieldname": "stock_floor_section",
+      "fieldtype": "Section Break",
+      "label": "Protected Stock Floor"
+    },
+    {
+      "default": "None",
+      "description": "Item Reorder Level preserves the configured warehouse floor when the planner creates a Pick List.",
+      "fieldname": "protected_stock_floor_mode",
+      "fieldtype": "Select",
+      "label": "Protected Stock Floor",
+      "options": "None\nItem Reorder Level",
+      "reqd": 1
+    },
+    {
+      "fieldname": "alerts_section",
+      "fieldtype": "Section Break",
+      "label": "Alerts"
+    },
+    {
+      "default": "3",
+      "description": "Show upcoming actions this many days before their due date.",
+      "fieldname": "alert_days_before_action",
+      "fieldtype": "Int",
+      "label": "Upcoming Action Alert (Days)",
+      "non_negative": 1
+    },
+    {
+      "collapsed": 1,
+      "collapsible": 1,
+      "fieldname": "examples_section",
+      "fieldtype": "Section Break",
+      "label": "Examples: How Stock Planning Works"
+    },
+    {
+      "fieldname": "examples_html",
+      "fieldtype": "HTML",
+      "label": "Examples",
+      "options": "<div style='line-height:1.65'><p><b>Formula:</b> Stock Protection Date = Sales Order Item Delivery Date - Item Lead Time - Procurement Safety Delay.</p><p><b>No incoming:</b> At the protection date, create a Pick List from available physical stock.</p><p><b>Reliable incoming:</b> Incoming is safe only when its date is at least the configured safety delay before delivery. Allocate it once to the earliest confirmed demand and wait.</p><p><b>Incoming arrives early:</b> As soon as it is received into sellable stock, create the Pick List immediately; do not wait for the backup date.</p><p><b>Incoming not received by its backup date:</b> Create a Pick List from the physical stock still available. If only part is available, pick that part and keep the balance waiting for incoming.</p><p><b>No physical backup:</b> Keep the incoming allocation, show an orange risk alert, and escalate if the ETA becomes unsafe.</p><p><b>Competing Sales Orders:</b> Incoming quantity is allocated by earliest delivery date, then oldest submitted order. Later orders cannot reuse quantity already allocated.</p></div>"
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-08-09 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Stock Planning Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Orderlift Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Stock Manager",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "write": 1
+    },
+    {
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Logistics User"
+    },
+    {
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Purchase Manager"
+    },
+    {
+      "email": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Sales Manager"
+    }
+  ],
+  "search_fields": "company",
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "company",
+  "track_changes": 1
+}

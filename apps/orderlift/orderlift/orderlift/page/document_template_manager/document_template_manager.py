@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from orderlift.document_templates import get_template_manager_bootstrap
+from orderlift.quotation_detail_templates import get_quotation_template_manager_bootstrap
 
 
-__all__ = ["get_template_manager_bootstrap"]
+__all__ = ["get_template_manager_bootstrap", "get_quotation_template_manager_bootstrap"]

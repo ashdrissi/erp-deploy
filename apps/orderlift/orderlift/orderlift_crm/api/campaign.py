@@ -11,6 +11,7 @@ from frappe import _
 from frappe.utils import cint, flt, nowdate, today
 
 from orderlift.warehouse_access import stock_warehouse_condition
+from orderlift.reference_access import get_reference_options
 
 try:
     from frappe.utils import now
@@ -25,6 +26,7 @@ except ImportError:  # pragma: no cover - Frappe images include requests.
 from orderlift.company_scope import company_field_for
 from orderlift.menu_access import get_allowed_business_types, resolve_current_company, user_can_access_all_business_types
 from orderlift.orderlift_crm.status_workflow import get_default_status_name
+from orderlift.orderlift_crm.party_propagation import apply_party_context_to_opportunity, resolve_party_context
 from orderlift.orderlift_crm.doctype.partner_campaign.partner_campaign import (
     clean_date_value,
     get_default_target_status,
@@ -36,11 +38,11 @@ from orderlift.startup_roles import STOCK_QUANTITY_VIEWER_ROLE
 
 
 def _scope_company() -> str:
-    """Active company to focus custom-page queries on (empty = no focus)."""
-    try:
-        return resolve_current_company() or ""
-    except Exception:
-        return ""
+    """Active company used to focus custom-page queries."""
+    company = resolve_current_company() or ""
+    if not company:
+        frappe.throw(_("Select an active Company before using Campaign Manager."))
+    return company
 
 
 def _scope_currency() -> str:
@@ -57,12 +59,11 @@ def _scope_currency() -> str:
 
 def _apply_company_filter(filters: dict, doctype: str) -> dict:
     """Focus a query on the active company when the doctype carries one."""
-    company = _scope_company()
-    if not company:
-        return filters
     field = company_field_for(doctype)
-    if _has_field(doctype, field):
-        filters[field] = company
+    if not _has_field(doctype, field):
+        return filters
+    company = _scope_company()
+    filters[field] = company
     return filters
 
 
@@ -77,9 +78,9 @@ def _campaign_company_in_scope(campaign: str) -> bool:
         return True
     company = _scope_company()
     if not company:
-        return True
+        return False
     campaign_company = frappe.db.get_value("Partner Campaign", campaign, field)
-    return not campaign_company or campaign_company == company
+    return campaign_company == company
 
 
 def _campaign_business_type_in_scope(campaign: str) -> bool:
@@ -333,6 +334,15 @@ def save_campaign(payload: str | dict) -> dict:
     _normalize_campaign_action_payload(data)
     name = data.get("name")
     doc = _get_campaign_doc(name, ptype="write") if name else frappe.new_doc("Partner Campaign")
+    company = _scope_company()
+    if not company:
+        frappe.throw(_("Select an active Company before saving a Campaign."))
+    company_field = company_field_for("Partner Campaign")
+    if doc.meta.get_field(company_field):
+        document_company = (doc.get(company_field) or "").strip()
+        if document_company and document_company != company:
+            frappe.throw(_("Campaign belongs to company {0}, not the active company {1}.").format(document_company, company))
+        doc.set(company_field, company)
     _ensure_campaign_action_field(doc, data.get("campaign_action_type"))
 
     for fieldname in [
@@ -658,6 +668,9 @@ def create_prospect_from_target(campaign: str, target_row: str) -> dict:
     prospect.prospect_owner = lead.lead_owner or frappe.session.user
     prospect.company = lead.company
     prospect.territory = lead.territory
+    for fieldname in ("industry", "website"):
+        if prospect.meta.get_field(fieldname) and lead.get(fieldname):
+            prospect.set(fieldname, lead.get(fieldname))
     _copy_party_segments(lead, prospect)
     _ensure_doc_segment(prospect, row.business_type, row.crm_segment)
     prospect.append(
@@ -702,6 +715,12 @@ def create_opportunity_from_target(campaign: str, target_row: str) -> dict:
     opportunity.opportunity_amount = _campaign_offer_amount(doc)
     opportunity.probability = 20
     opportunity.title = _opportunity_title_for_campaign_target(doc, row)
+    if row.get("contact") and opportunity.meta.get_field("contact_person"):
+        opportunity.contact_person = row.contact
+    apply_party_context_to_opportunity(
+        opportunity,
+        resolve_party_context(row.party_type, row.party_name, source_doc=opportunity, preferred_contact=row.get("contact")),
+    )
     _set_if_field(opportunity, "custom_partner_campaign", doc.name)
     _set_if_field(opportunity, "custom_partner_campaign_target", row.name)
     _set_if_field(opportunity, "custom_crm_business_type", row.business_type)
@@ -734,6 +753,8 @@ def create_quotation_from_target(campaign: str, target_row: str) -> dict:
     quotation.quotation_to = row.party_type
     quotation.party_name = row.party_name
     quotation.customer_name = row.display_name
+    if row.get("contact") and quotation.meta.get_field("contact_person"):
+        quotation.contact_person = row.contact
     quotation.transaction_date = today()
     quotation.order_type = "Sales"
     if row.opportunity:
@@ -869,12 +890,11 @@ def get_partner_segments() -> list[dict]:
         if not allowed:
             return []
         filters["business_type"] = ["in", sorted(allowed)]
-    return frappe.get_all(
+    return get_reference_options(
         "CRM Segment",
         filters=filters,
         fields=["name", "segment_name", "business_type", "sequence"],
         order_by="sequence asc, segment_name asc",
-        limit_page_length=0,
     )
 
 
@@ -888,12 +908,11 @@ def get_business_types() -> list[dict]:
         if not allowed:
             return []
         filters["name"] = ["in", sorted(allowed)]
-    return frappe.get_all(
+    return get_reference_options(
         "CRM Business Type",
         filters=filters,
         fields=["name", "type_name", "sequence"],
         order_by="sequence asc, type_name asc",
-        limit_page_length=0,
     )
 
 
@@ -2300,10 +2319,10 @@ def _default_opportunity_type() -> str | None:
 
 
 def _default_company() -> str:
-    company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value("Global Defaults", "default_company")
+    company = resolve_current_company()
     if company:
         return company
-    return frappe.get_all("Company", pluck="name", limit_page_length=1)[0]
+    frappe.throw(_("Select an active Company before creating commercial documents."))
 
 
 def _campaign_company(campaign_doc) -> str:
@@ -2356,12 +2375,11 @@ def _price_list_options() -> list[dict]:
     allowed = _allowed_selling_price_lists()
     if not allowed:
         return []
-    return frappe.get_list(
+    return get_reference_options(
         "Price List",
         filters={"enabled": 1, "selling": 1, "name": ["in", allowed]},
         fields=["name", "currency"],
         order_by="name asc",
-        limit_page_length=0,
     )
 
 
@@ -2377,6 +2395,8 @@ def _item_group_options() -> list[dict]:
 
 def _container_options() -> list[dict]:
     if not frappe.db.exists("DocType", "Forecast Load Plan"):
+        return []
+    if not frappe.has_permission("Forecast Load Plan", "read"):
         return []
     return frappe.get_list(
         "Forecast Load Plan",

@@ -549,6 +549,7 @@ def _build_rule_groups(cells: dict[str, str | None], formulas: dict[str, str], t
         groups.append(
             {
                 "rule_group": f"WB-{row:03d}",
+                "rule_group_title": cells.get(f"B{row}") or item_code,
                 "sequence": row * 10,
                 "is_active": 1,
                 "condition_mode": "always",
@@ -565,7 +566,7 @@ def _build_rule_groups(cells: dict[str, str | None], formulas: dict[str, str], t
                         "price_normal": cells.get(f"G{row}") or "",
                         "price_stock": cells.get(f"H{row}") or "",
                         "display_group": cells.get(f"C{row}") or "Workbook",
-                        "quantity_mode": "fixed",
+                        "quantity_mode": "formula" if expression else "fixed",
                         "fixed_qty": 1,
                         "condition_formula": "",
                         "qty_formula": expression,

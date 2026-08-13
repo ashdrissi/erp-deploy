@@ -1,0 +1,71 @@
+{
+  "actions": [],
+  "creation": "2026-08-09 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "purchase_order",
+    "purchase_order_item",
+    "forecast_load_plan",
+    "allocated_qty",
+    "expected_date",
+    "status"
+  ],
+  "fields": [
+    {
+      "fieldname": "purchase_order",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Purchase Order",
+      "options": "Purchase Order",
+      "read_only": 1
+    },
+    {
+      "fieldname": "purchase_order_item",
+      "fieldtype": "Data",
+      "label": "Purchase Order Item",
+      "read_only": 1
+    },
+    {
+      "fieldname": "forecast_load_plan",
+      "fieldtype": "Link",
+      "label": "Forecast Load Plan",
+      "options": "Forecast Load Plan",
+      "read_only": 1
+    },
+    {
+      "fieldname": "allocated_qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Allocated Qty",
+      "read_only": 1
+    },
+    {
+      "fieldname": "expected_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Expected Date",
+      "read_only": 1
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Status",
+      "read_only": 1
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-08-09 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Stock Demand Allocation",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "idx",
+  "sort_order": "ASC",
+  "states": []
+}

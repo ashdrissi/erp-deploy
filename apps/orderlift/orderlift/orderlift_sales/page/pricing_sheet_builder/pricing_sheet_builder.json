@@ -14,7 +14,7 @@
         {"role": "Orderlift Admin"},
         {"role": "System Manager"},
         {"role": "Sales Manager"},
-        {"role": "Orderlift Commercial"}
+        {"role": "Sales User"}
     ],
     "script": null,
     "standard": "Yes",

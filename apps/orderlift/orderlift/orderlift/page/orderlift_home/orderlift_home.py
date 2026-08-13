@@ -7,6 +7,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, nowdate, add_days, get_first_day, get_last_day, formatdate
 
+from orderlift.retired_pages import deny_retired_page
+
 
 # ── Custom DocType names used across the app ──────────────────────────────────
 PRICING_SHEET   = "Pricing Sheet"
@@ -17,6 +19,7 @@ SCENARIO        = "Pricing Scenario"
 
 @frappe.whitelist()
 def get_dashboard_data():
+    deny_retired_page("orderlift-home")
     return {
         "user": _get_user_info(),
         "kpis": _get_global_kpis(),

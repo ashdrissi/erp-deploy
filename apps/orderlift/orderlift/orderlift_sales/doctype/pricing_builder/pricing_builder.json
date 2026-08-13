@@ -197,7 +197,7 @@
       "email": 1
     },
     {
-      "role": "Pricing Manager",
+      "role": "Pricing Configuration",
       "read": 1,
       "write": 1,
       "create": 1,

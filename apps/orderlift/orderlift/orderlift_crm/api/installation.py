@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import flt
 
 from orderlift.menu_access import resolve_current_company
+from orderlift.reference_access import get_reference_doc_for_use, get_reference_options
 
 
 @frappe.whitelist()
@@ -36,15 +37,19 @@ def get_pipeline_data(search: str | None = None, owner: str | None = None, sourc
 def update_opportunity_stage(opportunity: str, stage: str) -> dict:
     if not frappe.db.exists("Opportunity", opportunity):
         frappe.throw(_("Opportunity {0} was not found.").format(opportunity))
-    if not frappe.db.exists("Installation Stage", stage):
-        frappe.throw(_("Installation stage {0} was not found.").format(stage))
-
     doc = frappe.get_doc("Opportunity", opportunity)
+    doc.check_permission("write")
     if not doc.meta.get_field("custom_installation_stage"):
         frappe.throw(_("Opportunity is missing custom_installation_stage. Run migrate first."))
 
-    doc.custom_installation_stage = stage
-    probability = frappe.db.get_value("Installation Stage", stage, "default_probability")
+    stage_doc = get_reference_doc_for_use(
+        "Installation Stage",
+        stage,
+        filters={"is_active": 1},
+        label="Installation Stage",
+    )
+    doc.custom_installation_stage = stage_doc.name
+    probability = stage_doc.default_probability
     if probability is not None:
         doc.probability = probability
     doc.save(ignore_permissions=False)
@@ -55,12 +60,11 @@ def update_opportunity_stage(opportunity: str, stage: str) -> dict:
 def _installation_stages() -> list[dict]:
     if not frappe.db.exists("DocType", "Installation Stage"):
         return []
-    rows = frappe.get_all(
+    rows = get_reference_options(
         "Installation Stage",
         filters={"is_active": 1},
         fields=["name", "stage_name", "sequence", "color", "is_closed"],
         order_by="sequence asc, stage_name asc",
-        limit_page_length=0,
     )
     return [
         {

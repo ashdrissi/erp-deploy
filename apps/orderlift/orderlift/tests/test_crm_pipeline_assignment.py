@@ -123,6 +123,7 @@ class TestCrmPipelineAssignment(unittest.TestCase):
         self.fake = _FakeFrappe()
         pipeline.frappe = self.fake
         pipeline.nowdate = lambda: "2026-04-27"
+        pipeline.user_has_capability = lambda capability: True
 
     def test_assignment_reuses_existing_pipeline_todo_for_same_user(self):
         first = pipeline._assign_pipeline_document("Opportunity", "OPP-1", "sales@example.com", "Qualified")
@@ -131,6 +132,7 @@ class TestCrmPipelineAssignment(unittest.TestCase):
         self.assertEqual(first["todo"], second["todo"])
         self.assertEqual(len([todo for todo in self.fake.todos if todo["status"] == "Open"]), 1)
         self.assertEqual(self.fake.todos[0]["allocated_to"], "sales@example.com")
+        self.assertEqual(self.fake.todos[0]["assigned_by"], "manager@example.com")
         self.assertEqual(self.fake.todos[0]["priority"], "Important Non Urgent")
         self.assertEqual(self.fake.shares, [])
 
@@ -180,6 +182,7 @@ class TestCrmPipelineAssignment(unittest.TestCase):
         self.assertEqual(by_name["TODO-OTHER"]["status"], "Open")
         self.assertEqual(by_name[result["todo"]]["status"], "Open")
         self.assertEqual(by_name[result["todo"]]["priority"], "Non Important Urgent")
+        self.assertEqual(by_name[result["todo"]]["assigned_by"], "manager@example.com")
 
     def test_assignment_closes_previous_pipeline_assignment_only(self):
         self.fake.todos.append(
@@ -231,6 +234,24 @@ class TestCrmPipelineAssignment(unittest.TestCase):
 
             self.assertEqual(result["assignment"]["user"], "sales@example.com")
             self.assertEqual(result["card"]["assignment"]["label"], "Sales User")
+        finally:
+            pipeline._card_for_document = original_card_for_document
+
+    def test_manual_assignment_requires_pipeline_assignment_capability(self):
+        pipeline.user_has_capability = lambda capability: False
+
+        with self.assertRaisesRegex(Exception, "do not have permission"):
+            pipeline.assign_pipeline_document("Opportunity", "OPP-1", "sales@example.com")
+
+    def test_manual_assignment_uses_document_specific_capability(self):
+        original_card_for_document = pipeline._card_for_document
+        calls = []
+        try:
+            pipeline._card_for_document = lambda document_type, document_name: {"name": document_name}
+            pipeline.user_has_capability = lambda capability: calls.append(capability) or True
+            for document_type, expected in pipeline.PIPELINE_ASSIGNMENT_CAPABILITIES.items():
+                pipeline.assign_pipeline_document(document_type, f"{document_type}-1", "sales@example.com")
+            self.assertEqual(calls, list(pipeline.PIPELINE_ASSIGNMENT_CAPABILITIES.values()))
         finally:
             pipeline._card_for_document = original_card_for_document
 

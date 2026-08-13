@@ -43,6 +43,15 @@ or a custom guard in `orderlift.orderlift_guards`. Doctypes with custom hooks:
 
 **Who manages it:** ACC Roles tab (view/edit custom roles), ACC Permissions Matrix (DocPerm).
 
+### Data Import dependency
+
+The Business Permissions `Import` action is end-to-end. When a role has at least
+one effective target DocType Import grant, the compiler also grants that role
+`Data Import` read/write/create and `Data Import Log` read access. These are
+runtime dependencies of the Import action and are not separate business
+permissions. Removing the final Import target removes the managed supporting
+flags.
+
 **Operational transaction ownership:**
 
 | Workflow area | Owner roles | Main responsibility |
@@ -199,6 +208,12 @@ be owned by, assigned to, or linked through a visible source document.
 
 **Who manages it:** ACC Menu Access tab.
 
+The Access Command Center stores the compiled business policy in
+`Role.custom_orderlift_business_grants_json` as a version-2 feature snapshot. The
+snapshot keeps menu visibility separate from the action grant. Native Page, Report,
+menu, DocPerm, and Import-support rows are derived from that snapshot; registry defaults
+are bootstrap metadata and must not overwrite an existing snapshot.
+
 ---
 
 ## Page & Report Access
@@ -207,12 +222,17 @@ be owned by, assigned to, or linked through a visible source document.
 roles can access them.
 
 **How it works:**
-- `user_can_access_page(page_name)` checks the page's `Has Role` rows.
+- `user_can_access_page(page_name)` checks the parent menu policy, required DocTypes, and
+  the page's `Has Role` rows. Supporting builder/detail routes inherit their registered
+  parent menu key, while unknown Orderlift custom Pages fail closed.
 - If a page has `required_doctypes` declared in its menu registry entry, those are also checked.
 - Reports work the same way via `Has Role` on the Report doctype.
+- Legacy `operations-pipeline`, `finance-dashboard`, and `orderlift-home` routes redirect
+  to their current replacements and their old data APIs are denied.
 
-**Who manages it:** ACC handles page/report roles from the UI (both the Permissions Matrix
-and dedicated page/report access dialogs).
+**Who manages it:** ACC Business Permissions is authoritative. Native Page/Report role
+rows and menu rules are compiler outputs; direct writers for managed targets must not be
+used to bypass the snapshot compiler.
 
 ---
 
@@ -220,6 +240,8 @@ and dedicated page/report access dialogs).
 
 Capabilities are role flags that bypass specific access gates. Unlike DocPerm
 ("can you see this doctype?"), capabilities answer "can you override pricing rules?"
+Pipeline Page access and pipeline assignment are intentionally separate: viewing a
+pipeline does not grant its assignment capability.
 
 ### How capabilities work
 
@@ -227,18 +249,14 @@ The capability system lives in `orderlift/role_capabilities.py`. Each capability
 1. Has a constant key (e.g., `"quotation_override"`) and a human label.
 2. Is stored as a newline-separated string in the `custom_orderlift_capabilities`
    field on the native `Role` doctype.
-3. Is seeded with default values via `after_migrate` in `pricing_setup.py`.
+3. Is normalized explicitly with `orderlift.role_capabilities.normalize_managed_role_capabilities`.
 4. Is checked at enforcement points through `role_capability_decision()`.
 
-### Shadow mode (current state)
+### Authoritative mode
 
-**`orderlift_use_role_capabilities = 0`** in production. This means:
-- Legacy hardcoded role checks remain authoritative.
-- The capability field on Role is populated but checked in shadow/log-only mode.
-- When a capability decision differs from the legacy decision, a mismatch is logged
-  to Error Log (once per user/capability/context) for review.
-- Activation: set `orderlift_use_role_capabilities = 1` in the bench site config,
-  then capabilities take over at each enforcement point.
+Role capabilities are authoritative at every migrated enforcement point. Legacy
+role-name sets and the old `orderlift_use_role_capabilities` shadow switch no
+longer decide access.
 
 ### Hardcoded bypass roles
 
@@ -248,8 +266,10 @@ even after capabilities are enabled:
 | Role | Hardcoded | Notes |
 |------|-----------|-------|
 | `Administrator` | Always | Checks at the top of every function |
-| `System Manager` | Yes (`HARDCODED_CAPABILITY_ROLES`) | Same as Orderlift Admin |
-| `Orderlift Admin` | Yes (`HARDCODED_CAPABILITY_ROLES`) | Pinned permanently |
+| `System Manager` | Yes (`HARDCODED_CAPABILITY_ROLES`) | Platform Superadmin |
+
+`Orderlift Admin` is not a hardcoded bypass. Its business capabilities are stored
+visibly on the Role and can be audited in Access Command Center.
 
 ### Capability: `privileged_pricing`
 
@@ -264,8 +284,7 @@ Also bypasses item price restriction checks for non-selling price lists.
 | `price_list_scope.py` | 202 | `get_visible_price_lists()` |
 | `price_list_usage_guard.py` | 377 | `_can_bypass_item_price_restriction()` |
 
-**Default roles:** Orderlift Admin, Orderlift Business Admin, Pricing Manager,
-Sales Manager, Purchase Manager, System Manager
+**Default roles:** Orderlift Admin, Pricing Configuration, System Manager
 
 ### Capability: `quotation_override`
 
@@ -286,7 +305,7 @@ and cannot change inherited pricing. Effectively unrestricted pricing.
 | `pricing_sheet.py` | 2112 | Manual price floor validation on pricing sheet |
 | `pricing_sheet.py` | 2056 | Max discount cap on pricing sheet |
 
-**Default roles:** Orderlift Admin, Orderlift Business Admin, System Manager
+**Default roles:** Orderlift Admin, Sales Manager, System Manager
 
 ### Capability: `purchasing_access`
 
@@ -300,8 +319,20 @@ and cannot change inherited pricing. Effectively unrestricted pricing.
 | `price_list_scope.py` | 210 | `get_visible_price_lists()` — buying kind |
 | `price_list_scope.py` | 248 | `get_item_price_access()` — buying kind |
 
-**Default roles:** Orderlift Admin, System Manager, Purchase Manager, Purchase User,
-Purchasing User, Stock Manager
+**Default roles:** Orderlift Admin, Pricing Configuration, Purchase Manager,
+Purchase User, System Manager
+
+Stock-rate approval is separate through `stock_rate_management`; purchasing access
+does not unlock Purchase Receipt or Stock Entry valuation controls.
+
+Additional authoritative capabilities:
+
+- `stock_rate_management`: Orderlift Admin and Stock Manager.
+- `commission_assignment_management`: Orderlift Admin and Sales Manager.
+- `commission_payout_management`: Orderlift Admin and Finance Admin.
+- `pipeline_assignment_management`: Orderlift Admin and Sales Manager.
+- `saved_other_charge_management`: Orderlift Admin and Pricing Configuration.
+- `todo_all_access`: Orderlift Admin.
 
 ---
 
@@ -324,9 +355,8 @@ behind `_require_access_manager()` (Orderlift Admin or superadmin only).
 ### Managing capabilities in ACC
 
 The **Roles** tab shows capability badges on each role card. Click **Edit** on a
-custom role to open a dialog with a "Capabilities" multi-check field. Capabilities
-are shadow-checked for now — setting them does not change live behavior until the
-site flag is enabled.
+custom role to open a dialog with a "Capabilities" multi-check field. Saved
+capabilities are authoritative after role and boot caches are cleared.
 
 ### Sales Order Pricing Governance
 
@@ -337,7 +367,7 @@ have Sales Order create/write permissions but still be quotation-only for pricin
 |-----------------|----------------------|---------------|
 | No Pricing Override | Submitted Quotation only | Locked to inherited Quotation pricing |
 | Pricing Override | Direct or from Quotation | Manual changes allowed |
-| Administrator / Orderlift Admin / System Manager | Direct or from Quotation | Manual changes allowed |
+| Orderlift Admin / Sales Manager / System Manager | Direct or from Quotation | Manual changes allowed |
 
 When troubleshooting Sales Order save errors, check both the Permissions Matrix
 for Sales Order document access and the role capability badges for Pricing
@@ -355,15 +385,14 @@ Override.
 
 2. **Add default assignments** in `DEFAULT_ROLE_CAPABILITIES`.
 
-3. **Add to hardcoded bypass** if needed (`HARDCODED_CAPABILITY_ROLES`).
+3. **Do not add ordinary business roles to hardcoded bypasses.** Only System Manager is the platform capability bypass.
 
 4. **Call at enforcement point**:
    ```python
-   from orderlift.role_capabilities import CAPABILITY_NEW_FEATURE, role_capability_decision
-   # ...
-   legacy_allowed = bool(user_roles & HARDCODED_SET)
-   if not role_capability_decision(CAPABILITY_NEW_FEATURE, legacy_allowed, ...):
-       frappe.throw("Not allowed")
+    from orderlift.role_capabilities import CAPABILITY_NEW_FEATURE, user_has_capability
+    # ...
+    if not user_has_capability(CAPABILITY_NEW_FEATURE):
+        frappe.throw("Not allowed")
    ```
 
 5. **Deploy:** if the `Role` custom field is unchanged, just clear cache + restart.
@@ -378,7 +407,7 @@ Override.
 
 | File | Purpose |
 |------|---------|
-| `orderlift/role_capabilities.py` | Capability constants, helpers, shadow-mode switch |
+| `orderlift/role_capabilities.py` | Capability constants, defaults, and authoritative checks |
 | `orderlift/company_access.py` | `has_company_permission`, all query conditions, owned-only clauses |
 | `orderlift/company_scope.py` | `SCOPED_DOCTYPES` registry, company field mappings, `after_migrate` |
 | `orderlift/menu_access.py` | User companies, business types, page access, menu rule evaluation |

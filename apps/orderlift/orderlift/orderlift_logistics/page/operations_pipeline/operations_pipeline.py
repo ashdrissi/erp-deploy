@@ -3,6 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe.utils import cint, flt, getdate, today
 
+from orderlift.retired_pages import deny_retired_page
+
 
 TERMINAL_STATUSES = {
     "Cancelled",
@@ -162,6 +164,7 @@ def get_pipeline_data(
     date_filter=None,
 ):
     """Return the 6-column Kanban pipeline with deal cards and health metadata."""
+    deny_retired_page("operations-pipeline")
     frappe.has_permission("Sales Order", "read", throw=True)
     cards = []
     cards.extend(_get_leads(company, date_filter))
@@ -207,6 +210,7 @@ def get_trace_data(entity_type, entity_name):
     Walk the document graph from a starting node.
     Returns: { focused_node, nodes[], edges[], health_summary, communications[] }
     """
+    deny_retired_page("operations-pipeline")
     frappe.has_permission(entity_type, "read", throw=True)
     visited = set()
     nodes = []
@@ -320,6 +324,7 @@ def get_trace_data(entity_type, entity_name):
 @frappe.whitelist()
 def get_document_preview(doctype, name):
     """Return generic preview data for a trace document popup."""
+    deny_retired_page("operations-pipeline")
     frappe.has_permission(doctype, "read", throw=True)
     doc = _fetch_doc(doctype, name)
     if not doc:

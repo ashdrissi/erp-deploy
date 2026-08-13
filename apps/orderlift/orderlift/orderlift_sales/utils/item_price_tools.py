@@ -406,6 +406,7 @@ def get_transaction_stock_snapshot(item_codes=None, company=None) -> dict:
         LEFT JOIN `tabBin` b ON b.item_code = i.name AND b.warehouse = w.name
         WHERE i.name IN %(item_codes)s
         {_warehouse_disabled_condition("w")}
+        {_warehouse_leaf_condition("w")}
         {stock_warehouse_condition("w.name", params)}
         GROUP BY i.name, i.item_name, w.name
         ORDER BY i.name ASC, w.name ASC
@@ -505,13 +506,14 @@ def item_query_for_transaction_price_list(doctype, txt, searchfield, start, page
     price_list = (filters.get("price_list") or "").strip()
     price_lists = _clean_list(_parse_json(filters.get("price_lists"), []))
     kind = (filters.get("price_list_type") or filters.get("kind") or "selling").strip().lower()
+    company = (filters.get("company") or "").strip()
     if kind not in {"selling", "buying"}:
         kind = "selling"
     if price_list and price_list not in price_lists:
         price_lists.append(price_list)
     if not price_lists:
         return []
-    price_lists = [validate_visible_price_list(value, kind=kind, required=True) for value in price_lists]
+    price_lists = [validate_visible_price_list(value, kind=kind, required=True, company=company) for value in price_lists]
 
     txt = (txt or "").strip()
     start = cint(start)
@@ -552,6 +554,7 @@ def get_transaction_item_prices(
     price_lists=None,
     price_list_type="selling",
     sales_person="",
+    company="",
 ) -> dict:
     item_codes = _clean_list(_parse_json(item_codes, item_codes or []))
     price_lists = _clean_list(_parse_json(price_lists, price_lists or []))
@@ -565,9 +568,10 @@ def get_transaction_item_prices(
     if not item_codes:
         return {"rows": {}}
 
-    validated_lists = _valid_transaction_price_lists(price_lists, kind=kind)
+    company = (company or "").strip()
+    validated_lists = _valid_transaction_price_lists(price_lists, kind=kind, company=company)
     if not validated_lists and kind == "selling":
-        validated_lists = _current_static_agent_selling_price_lists()
+        validated_lists = _current_static_agent_selling_price_lists(company=company)
     if not validated_lists:
         return {"rows": {}, "price_lists": []}
     rows = _resolve_transaction_item_prices(item_codes, validated_lists, kind=kind)
@@ -664,14 +668,14 @@ def _item_price_max_discount_percent(row) -> float:
     )
 
 
-def _valid_transaction_price_lists(price_lists: list[str], *, kind: str) -> list[str]:
+def _valid_transaction_price_lists(price_lists: list[str], *, kind: str, company: str | None = None) -> list[str]:
     out = []
     for value in price_lists or []:
         if kind == "buying":
-            price_list = validate_visible_price_list(value, kind=kind, required=True)
+            price_list = validate_visible_price_list(value, kind=kind, required=True, company=company)
         else:
             try:
-                price_list = validate_visible_price_list(value, kind=kind, required=True)
+                price_list = validate_visible_price_list(value, kind=kind, required=True, company=company)
             except Exception:
                 continue
         if price_list and price_list not in out:
@@ -679,7 +683,7 @@ def _valid_transaction_price_lists(price_lists: list[str], *, kind: str) -> list
     return out
 
 
-def _current_static_agent_selling_price_lists() -> list[str]:
+def _current_static_agent_selling_price_lists(company: str | None = None) -> list[str]:
     sales_person = _current_user_sales_person()
     if not sales_person:
         return []
@@ -688,7 +692,7 @@ def _current_static_agent_selling_price_lists() -> list[str]:
     context = build_static_context(sales_person=sales_person)
     if (context.get("pricing_mode") or "") != STATIC_MODE:
         return []
-    return _valid_transaction_price_lists(context.get("selling_price_lists") or [], kind="selling")
+    return _valid_transaction_price_lists(context.get("selling_price_lists") or [], kind="selling", company=company)
 
 
 def _current_agent_commission_rate() -> float:
@@ -720,16 +724,9 @@ def _validated_commission_sales_person(sales_person: str = "") -> str:
 
 
 def _can_select_any_commission_salesperson() -> bool:
-    if frappe.session.user == "Administrator":
-        return True
-    allowed_roles = {
-        "Orderlift Admin",
-        "Orderlift Business Admin",
-        "Sales Manager",
-        "Pricing Manager",
-        "System Manager",
-    }
-    return bool(allowed_roles.intersection(set(frappe.get_roles(frappe.session.user) or [])))
+    from orderlift.role_capabilities import CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT, user_has_capability
+
+    return user_has_capability(CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT)
 
 
 def _current_user_sales_person() -> str:
@@ -753,6 +750,7 @@ def _warehouse_stock_rows(item_code: str) -> list[dict]:
         LEFT JOIN `tabBin` b ON b.warehouse = w.name AND b.item_code = %(item_code)s
         WHERE w.company = %(company)s
         {_warehouse_disabled_condition("w")}
+        {_warehouse_leaf_condition("w")}
         {stock_warehouse_condition("w.name", params)}
         GROUP BY w.name
         ORDER BY w.name ASC
@@ -771,6 +769,12 @@ def _warehouse_disabled_condition(alias="w") -> str:
     if not _doctype_has_column("Warehouse", "disabled"):
         return ""
     return f"AND ifnull({alias}.disabled, 0) = 0"
+
+
+def _warehouse_leaf_condition(alias="w") -> str:
+    if not _doctype_has_column("Warehouse", "is_group"):
+        return ""
+    return f"AND ifnull({alias}.is_group, 0) = 0"
 
 
 def _get_item_price_rows(item_code: str, config: dict, allowed=None) -> list[dict]:

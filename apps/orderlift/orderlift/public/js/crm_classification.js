@@ -126,6 +126,10 @@
     }
 
     function showOpportunityPreFormIfNeeded(frm) {
+        if (frappe.route_options && frappe.route_options.orderlift_skip_opportunity_preform) {
+            frappe.route_options = null;
+            return false;
+        }
         if (!frm.is_new() || frm._orderlift_creating_draft) return false;
         frm._orderlift_creating_draft = true;
         resolveActiveCompany().then((company) => showOpportunityPreFormDialog({
@@ -143,15 +147,17 @@
         const company = defaults.company || routeOptions.company || activeCompany();
         const businessType = defaults.business_type || routeOptions.custom_crm_business_type || "";
         const segment = defaults.segment || routeOptions.custom_crm_segment || "";
+        const partyType = defaults.party_type || routeOptions.opportunity_from || routeOptions.party_type || "Prospect";
+        const partyName = defaults.party_name || routeOptions.party_name || "";
         const dialog = new frappe.ui.Dialog({
             title: __("New Opportunity"),
             fields: [
                 { fieldname: "company", label: __("Company"), fieldtype: "Link", options: "Company", default: company, reqd: 1 },
                 { fieldname: "title", label: __("Title"), fieldtype: "Data", reqd: 1 },
-                { fieldname: "party_type", label: __("Party Type"), fieldtype: "Select", options: "Prospect\nCustomer\nLead", default: "Prospect" },
-                { fieldname: "party_name", label: __("Existing Client"), fieldtype: "Dynamic Link", options: "party_type" },
+                { fieldname: "party_type", label: __("Party Type"), fieldtype: "Select", options: "Prospect\nCustomer\nLead", default: partyType },
+                { fieldname: "party_name", label: __("Existing Client"), fieldtype: "Dynamic Link", options: "party_type", default: partyName },
                 { fieldname: "client_name", label: __("Client Name"), fieldtype: "Data" },
-                { fieldname: "phone", label: __("N Tel"), fieldtype: "Data" },
+                { fieldname: "phone", label: __("General Phone"), fieldtype: "Data" },
                 { fieldname: "tier", label: __("Tier"), fieldtype: "Link", options: "Pricing Tier" },
                 { fieldname: "business_type", label: __("Business Type"), fieldtype: "Link", options: "CRM Business Type", default: businessType },
                 { fieldname: "segment", label: __("Segment"), fieldtype: "Link", options: "CRM Segment", default: segment },
@@ -183,6 +189,7 @@
         lockPreFormCompanyIfRestricted(dialog, company);
         setupPreFormBusinessTypeFilters(dialog);
         setupPreFormPartyDefaults(dialog);
+        if (partyName) dialog.fields_dict.party_name.df.onchange();
     }
 
     window.orderliftShowOpportunityPreForm = showOpportunityPreFormDialog;
@@ -226,8 +233,10 @@
                 });
                 if (dialog.get_value("party_type") !== partyType || dialog.get_value("party_name") !== partyName) return;
                 const defaults = res.message || {};
+                setDialogValueIfPresent(dialog, "company", defaults.company);
+                setDialogValueIfPresent(dialog, "title", defaults.display_name);
                 setDialogValueIfPresent(dialog, "client_name", defaults.display_name);
-                setDialogValueIfPresent(dialog, "phone", defaults.mobile || defaults.phone);
+                setDialogValueIfPresent(dialog, "phone", defaults.general_phone || defaults.general_mobile || defaults.general_whatsapp || defaults.mobile || defaults.phone);
                 setDialogValueIfPresent(dialog, "tier", defaults.tier);
                 setDialogValueIfPresent(dialog, "business_type", defaults.business_type);
                 setDialogValueIfPresent(dialog, "segment", defaults.crm_segment);
@@ -271,7 +280,7 @@
     }
 
     function canChangePreFormCompany() {
-        const adminRoles = ["Administrator", "System Manager", "Developer", "Orderlift Admin"];
+        const adminRoles = ["Administrator", "System Manager", "Orderlift Admin"];
         return adminRoles.some((role) => frappe.user && frappe.user.has_role && frappe.user.has_role(role));
     }
 
@@ -822,6 +831,15 @@
                 website: data.website || "",
                 customer_group: data.customer_group || "",
                 custom_tier: data.tier || "",
+                contact_person: data.contact_name || "",
+                contact_display: data.contact_display || "",
+                custom_customer_tax_id: data.tax_id || "",
+                customer_address: data.billing_address_name || data.address_name || "",
+                address_display: data.billing_address_display || data.address || "",
+                shipping_address_name: data.shipping_address_name || "",
+                shipping_address: data.shipping_address_display || "",
+                custom_site_address_name: data.site_address_name || "",
+                custom_site_address: data.site_address_display || "",
             };
             for (const [fieldname, value] of Object.entries(values)) {
                 await setAutoValue(frm, fieldname, value, applyValues);
@@ -1026,7 +1044,7 @@
         if (OPPORTUNITY_STATUS_COLORS) return Promise.resolve(OPPORTUNITY_STATUS_COLORS);
         if (!OPPORTUNITY_STATUS_COLORS_PROMISE) {
             OPPORTUNITY_STATUS_COLORS_PROMISE = frappe.call({
-                method: "orderlift.orderlift_crm.api.status_control.get_status_control_data",
+                method: "orderlift.orderlift_crm.status_workflow.get_status_reference_data",
                 args: { document_type: "Opportunity" },
             }).then((res) => {
                 OPPORTUNITY_STATUS_COLORS = {};

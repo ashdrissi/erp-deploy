@@ -12,7 +12,7 @@
     {"fieldname": "is_active", "fieldtype": "Check", "label": "Active", "default": "1", "in_list_view": 1},
     {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100", "in_list_view": 1},
     {"fieldname": "targets_section", "fieldtype": "Section Break", "label": "Target Documents"},
-    {"fieldname": "targets", "fieldtype": "Table", "label": "Targets", "options": "Orderlift Document Template Target", "reqd": 1},
+    {"fieldname": "targets", "fieldtype": "Table", "label": "Targets", "options": "Orderlift Document Template Target"},
     {"fieldname": "fields_section", "fieldtype": "Section Break", "label": "Form Fields"},
     {"fieldname": "fields", "fieldtype": "Table", "label": "Fields", "options": "Orderlift Document Template Field"},
     {"fieldname": "statuses_section", "fieldtype": "Section Break", "label": "Statuses"},
@@ -21,7 +21,7 @@
     {"fieldname": "print_title", "fieldtype": "Data", "label": "Print Title"},
     {"fieldname": "print_header", "fieldtype": "Text Editor", "label": "Print Header"},
     {"fieldname": "print_footer", "fieldtype": "Text Editor", "label": "Print Footer"},
-    {"fieldname": "show_signature_block", "fieldtype": "Check", "label": "Show Signature Block", "default": "1"}
+    {"fieldname": "show_signature_block", "fieldtype": "Check", "label": "Legacy Signature Block", "default": "0", "hidden": 1, "description": "Retained only for existing records. Add Signature fields to the template instead."}
   ],
   "index_web_pages_for_search": 0,
   "links": [],

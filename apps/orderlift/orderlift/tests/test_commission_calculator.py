@@ -123,9 +123,9 @@ class TestCommissionCalculator(unittest.TestCase):
                     qty=10,
                     source_sales_person="Agent A",
                     source_commission_rate=5,
-                    source_commission_amount=0,
-                    source_gross_sell_rate=100,
-                    source_discounted_sell_rate=95,
+                    source_price_list_sell_rate=100,
+                    price_list_rate=100,
+                    rate=95,
                     source_max_discount_percent=10,
                 )
             ],
@@ -133,15 +133,15 @@ class TestCommissionCalculator(unittest.TestCase):
 
         payloads = commission_calculator._build_sales_order_snapshot_commissions(sales_order)
 
-        # Actual discount: (100 - 95) * 10 = 50 MAD.
         # Unused discount allowance: 10% maximum - 5% used = 5%.
-        # Commission: (100 * 10) * 5% unused allowance * 5% agent rate = 2.50 MAD.
+        # Payout base: (95 * 10) * 5% unused allowance = 47.50 MAD.
+        # Commission: 47.50 * 5% agent rate = 2.375 MAD.
         self.assertEqual(len(payloads), 1)
         self.assertEqual(payloads[0]["salesperson"], "Agent A")
         self.assertEqual(payloads[0]["currency"], "MAD")
         self.assertEqual(payloads[0]["status"], "Approved")
-        self.assertAlmostEqual(payloads[0]["base_amount"], 50)
-        self.assertAlmostEqual(payloads[0]["commission_amount"], 2.5)
+        self.assertAlmostEqual(payloads[0]["base_amount"], 47.5)
+        self.assertAlmostEqual(payloads[0]["commission_amount"], 2.375)
 
         commission = types.SimpleNamespace(
             name="COMM-COMMISSION-EXAMPLE",
@@ -199,15 +199,49 @@ class TestCommissionCalculator(unittest.TestCase):
         self.assertEqual(commission.status, "Approved")
         self.assertEqual(commission.sales_invoice, "")
 
-    def test_blank_quotation_commission_snapshot_recalculates_with_uplift(self):
+    def test_primary_commission_pool_is_split_across_team(self):
+        commission_calculator.frappe.db = DbStub()
+        sales_order = types.SimpleNamespace(
+            name="SO-TEAM-001",
+            project="PROJ-001",
+            customer="CUST-001",
+            company="Orderlift",
+            currency="MAD",
+            custom_sales_team=[
+                Row(sales_person="Agent A", allocated_percentage=50, is_primary=1),
+                Row(sales_person="Agent B", allocated_percentage=50, is_primary=0),
+            ],
+            items=[
+                Row(
+                    qty=10,
+                    source_commission_rate=5,
+                    source_price_list_sell_rate=100,
+                    price_list_rate=100,
+                    rate=95,
+                    source_max_discount_percent=10,
+                )
+            ],
+        )
+
+        with patch.object(commission_calculator, "team_rows", return_value=sales_order.custom_sales_team), patch.object(
+            commission_calculator, "primary_sales_person", return_value="Agent A"
+        ), patch.object(commission_calculator, "commission_rate", return_value=5):
+            payloads = commission_calculator._build_sales_order_snapshot_commissions(sales_order)
+
+        self.assertEqual([row["salesperson"] for row in payloads], ["Agent A", "Agent B"])
+        self.assertAlmostEqual(payloads[0]["commission_amount"], 1.1875)
+        self.assertAlmostEqual(payloads[1]["commission_amount"], 1.1875)
+        self.assertEqual(payloads[0]["custom_primary_commission_rate"], 5)
+        self.assertEqual(payloads[0]["custom_contribution_percent"], 50)
+
+    def test_quotation_snapshot_above_list_has_no_uplift(self):
         commission_calculator.frappe.db = DbStub(
             {
                 "source_sales_person": "Agent A",
                 "source_commission_rate": 5,
-                "source_commission_amount": 0,
-                "source_discount_amount": 0,
-                "source_gross_sell_rate": 100,
-                "source_discounted_sell_rate": 110,
+                "source_price_list_sell_rate": 100,
+                "price_list_rate": 100,
+                "rate": 110,
                 "source_max_discount_percent": 10,
                 "qty": 10,
             }
@@ -224,9 +258,10 @@ class TestCommissionCalculator(unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["salesperson"], "Agent A")
-        self.assertAlmostEqual(rows[0]["commission_amount"], 25)
+        self.assertAlmostEqual(rows[0]["base_amount"], 110)
+        self.assertAlmostEqual(rows[0]["commission_amount"], 5.5)
 
-    def test_sales_order_item_snapshot_recalculates_without_uplift_below_list(self):
+    def test_sales_order_item_snapshot_uses_native_price_list_fallback_and_rate(self):
         commission_calculator.frappe.db = DbStub({})
         sales_order = types.SimpleNamespace(
             name="SO-001",
@@ -238,9 +273,8 @@ class TestCommissionCalculator(unittest.TestCase):
                     qty=10,
                     source_sales_person="Agent A",
                     source_commission_rate=5,
-                    source_commission_amount=0,
-                    source_gross_sell_rate=100,
-                    source_discounted_sell_rate=95,
+                    price_list_rate=100,
+                    rate=95,
                     source_max_discount_percent=10,
                 )
             ],
@@ -249,7 +283,50 @@ class TestCommissionCalculator(unittest.TestCase):
         rows = commission_calculator._build_sales_order_snapshot_commissions(sales_order)
 
         self.assertEqual(len(rows), 1)
-        self.assertAlmostEqual(rows[0]["commission_amount"], 2.5)
+        self.assertAlmostEqual(rows[0]["base_amount"], 47.5)
+        self.assertAlmostEqual(rows[0]["commission_amount"], 2.375)
+
+    def test_sales_order_snapshot_preserves_nine_decimal_precision(self):
+        commission_calculator.frappe.db = DbStub({})
+        price_list_unit_price = 100.123456789
+        actual_unit_price = 95.987654321
+        qty = 3.333333333
+        max_discount_percent = 8.765432109
+        commission_rate = 6.543210987
+        used_discount_percent = max(
+            ((price_list_unit_price - actual_unit_price) / price_list_unit_price) * 100,
+            0,
+        )
+        expected_base = (
+            actual_unit_price
+            * qty
+            * max(max_discount_percent - used_discount_percent, 0)
+            / 100
+        )
+        expected_commission = expected_base * commission_rate / 100
+        sales_order = types.SimpleNamespace(
+            name="SO-PRECISE",
+            project="PROJ-001",
+            customer="CUST-001",
+            company="Orderlift",
+            items=[
+                Row(
+                    qty=qty,
+                    source_sales_person="Agent A",
+                    source_commission_rate=commission_rate,
+                    source_price_list_sell_rate=price_list_unit_price,
+                    price_list_rate=1,
+                    rate=actual_unit_price,
+                    source_max_discount_percent=max_discount_percent,
+                )
+            ],
+        )
+
+        rows = commission_calculator._build_sales_order_snapshot_commissions(sales_order)
+
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["base_amount"], expected_base, places=9)
+        self.assertAlmostEqual(rows[0]["commission_amount"], expected_commission, places=9)
 
     def test_sales_order_must_be_completely_billed_before_commission_is_payable(self):
         commission_calculator.frappe.db = DbStub(
@@ -277,15 +354,20 @@ class TestCommissionCalculator(unittest.TestCase):
             ["SINV-001", "SINV-002"],
         )
 
-    def test_commission_discount_base_is_derived_as_a_line_total(self):
-        self.assertEqual(
-            commission_calculator._line_discount_amount(
-                gross_unit_price=100,
-                actual_unit_price=90,
-                qty=5,
-            ),
-            50,
+    def test_snapshot_base_is_actual_unused_discount_monetary_base(self):
+        result = commission_calculator._calculate_snapshot_commission(
+            {
+                "source_price_list_sell_rate": 100,
+                "price_list_rate": 1000,
+                "rate": 90,
+                "source_max_discount_percent": 15,
+                "source_commission_rate": 20,
+            },
+            qty=5,
         )
+
+        self.assertAlmostEqual(result["base_amount"], 22.5)
+        self.assertAlmostEqual(result["commission_amount"], 4.5)
 
     def test_fully_billed_order_is_not_payable_while_an_invoice_is_outstanding(self):
         commission_calculator.frappe.db = DbStub(
@@ -401,6 +483,45 @@ class TestCommissionCalculator(unittest.TestCase):
             )
 
         self.assertEqual(commission.save_calls, 0)
+
+    def test_new_sales_order_commission_submit_uses_snapshot_update_flag(self):
+        commission_calculator.frappe.db = DbStub(qitem=None)
+        payload = {
+            "doctype": "Sales Commission",
+            "sales_order": "SO-001",
+            "salesperson": "Agent A",
+            "company": "Orderlift",
+            "customer": "CUST-001",
+            "project": "",
+            "commission_rate": 5,
+            "base_amount": 50,
+            "commission_amount": 2.5,
+        }
+        checks = []
+
+        class CommissionStub:
+            def __init__(self):
+                self.flags = types.SimpleNamespace()
+
+            def insert(self, ignore_permissions=False):
+                checks.append(("insert", ignore_permissions, self.flags.orderlift_commission_snapshot_update))
+
+            def submit(self):
+                checks.append(("submit", self.flags.orderlift_commission_snapshot_update))
+
+        commission = CommissionStub()
+        commission_calculator.frappe.get_doc = lambda data: commission
+
+        with patch.object(
+            commission_calculator,
+            "_build_sales_order_snapshot_commissions",
+            return_value=[payload],
+        ):
+            commission_calculator.create_sales_order_commissions(
+                types.SimpleNamespace(name="SO-001")
+            )
+
+        self.assertEqual(checks, [("insert", True, True), ("submit", True)])
 
     def test_paid_commission_cannot_be_reverted_by_lifecycle_helper(self):
         db = DbStub()

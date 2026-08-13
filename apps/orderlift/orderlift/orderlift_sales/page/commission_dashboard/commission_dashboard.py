@@ -8,9 +8,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, flt, getdate, nowdate
 
-from orderlift.startup_roles import COMMISSION_MANAGER_ROLE
-
-COMMISSION_MANAGER_ROLES = {"Orderlift Admin", "Sales Manager", "Orderlift Accountant", "System Manager", "Administrator", COMMISSION_MANAGER_ROLE}
+from orderlift.role_capabilities import CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT, user_has_capability
 
 
 @frappe.whitelist()
@@ -71,10 +69,8 @@ def _get_commission_rows():
         return []
 
     filters = {"docstatus": 1}
-    if not _can_manage_commissions():
-        salesperson = _sales_person_for_user(frappe.session.user)
-        if not salesperson:
-            return []
+    if not _can_manage_commissions() and not _commission_enabled_for_current_user():
+        return []
         filters["salesperson"] = salesperson
 
     commissions = frappe.get_list(
@@ -209,6 +205,8 @@ def _normalize_status(status):
 def _require_commission_read_access():
     if not frappe.has_permission("Sales Commission", "read"):
         frappe.throw(_("You do not have access to Sales Commissions."), frappe.PermissionError)
+    if not _can_manage_commissions() and not _commission_enabled_for_current_user():
+        frappe.throw(_("Commission access is disabled for your Sales Person."), frappe.PermissionError)
 
 
 def _require_commission_manager_access():
@@ -217,8 +215,7 @@ def _require_commission_manager_access():
 
 
 def _can_manage_commissions(user: str | None = None) -> bool:
-    roles = set(frappe.get_roles(user or frappe.session.user))
-    return bool(COMMISSION_MANAGER_ROLES.intersection(roles))
+    return user_has_capability(CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT, user=user)
 
 
 def _sales_person_for_user(user: str) -> str:
@@ -228,3 +225,12 @@ def _sales_person_for_user(user: str) -> str:
     if frappe.db.has_column("Sales Person", "enabled"):
         filters["enabled"] = 1
     return frappe.db.get_value("Sales Person", filters, "name") or ""
+
+
+def _commission_enabled_for_current_user() -> bool:
+    salesperson = _sales_person_for_user(frappe.session.user)
+    if not salesperson or not frappe.db.exists("Agent Pricing Rules", {"sales_person": salesperson}):
+        return False
+    if not frappe.db.has_column("Agent Pricing Rules", "commission_enabled"):
+        return True
+    return bool(frappe.db.get_value("Agent Pricing Rules", {"sales_person": salesperson}, "commission_enabled"))

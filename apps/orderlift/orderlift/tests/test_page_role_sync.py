@@ -24,11 +24,11 @@ class TestPageRoleSync(unittest.TestCase):
         self.assertIn("Sales User", page_roles["sales-order-pipeline"])
         self.assertIn("Installation User", page_roles["sales-order-pipeline"])
         self.assertIn("campaign-editor", page_roles)
-        self.assertIn("Marketing User", page_roles["campaign-editor"])
-        self.assertNotIn("Sales User", page_roles["campaign-editor"])
+        self.assertIn("Sales User", page_roles["campaign-editor"])
+        self.assertIn("Sales Manager", page_roles["campaign-editor"])
         self.assertIn("campaign-manager", page_roles)
-        self.assertIn("Marketing User", page_roles["campaign-manager"])
-        self.assertNotIn("Sales User", page_roles["campaign-manager"])
+        self.assertIn("Sales User", page_roles["campaign-manager"])
+        self.assertIn("Sales Manager", page_roles["campaign-manager"])
         self.assertIn("project-pipeline", page_roles)
         self.assertIn("Sales User", page_roles["project-pipeline"])
 
@@ -40,8 +40,27 @@ class TestPageRoleSync(unittest.TestCase):
     def test_campaign_page_roles_are_strict(self):
         strict_page_roles = sync_page_roles_from_menu_registry.strict_menu_page_role_map()
 
-        self.assertEqual(strict_page_roles["campaign-manager"], ["Orderlift Admin", "Marketing User"])
-        self.assertEqual(strict_page_roles["campaign-editor"], ["Orderlift Admin", "Marketing User"])
+        expected = ["Orderlift Admin", "Sales User", "Sales Manager", "System Manager"]
+        self.assertEqual(strict_page_roles["campaign-manager"], expected)
+        self.assertEqual(strict_page_roles["campaign-editor"], expected)
+
+    def test_supporting_builder_pages_are_strict(self):
+        strict = sync_page_roles_from_menu_registry.strict_menu_page_role_map()
+
+        self.assertEqual(
+            strict["dimensioning-set-builder"],
+            ["Orderlift Admin", "Pricing Configuration", "System Manager"],
+        )
+        self.assertCountEqual(
+            strict["pricing-sheet-builder"],
+            ["Orderlift Admin", "Sales Manager", "Sales User", "System Manager"],
+        )
+
+    def test_registry_reports_include_system_manager(self):
+        report_roles = sync_page_roles_from_menu_registry.menu_report_role_map()
+
+        self.assertIn("System Manager", report_roles["Stock Balance"])
+        self.assertIn("Orderlift Admin", report_roles["Stock Balance"])
 
     def test_sync_script_updates_page_and_menu_rule_roles(self):
         source = sync_page_roles_from_menu_registry.__loader__.get_source(

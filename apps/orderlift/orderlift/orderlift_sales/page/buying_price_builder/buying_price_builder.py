@@ -16,9 +16,7 @@ from orderlift.orderlift_sales.utils.price_list_scope import (
     validate_visible_price_list,
 )
 from orderlift.orderlift_sales.utils.buying_price_builder import calculate_preview_rows, normalize_formula_rules
-
-
-PRICING_WRITE_ROLES = {"Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Purchase Manager", "System Manager"}
+from orderlift.role_capabilities import CAPABILITY_PRIVILEGED_PRICING, user_has_capability
 
 
 @frappe.whitelist()
@@ -393,9 +391,7 @@ def _clean_list(values):
 
 
 def _require_pricing_write():
-    if frappe.session.user == "Administrator":
-        return
-    if PRICING_WRITE_ROLES.intersection(set(frappe.get_roles())):
+    if user_has_capability(CAPABILITY_PRIVILEGED_PRICING):
         return
     frappe.throw(_("You do not have permission to manage buying price builder records."), frappe.PermissionError)
 

@@ -23,7 +23,7 @@ CUSTOMER_DOCTYPE = _first_existing("Customer")
 CONTACT_DOCTYPE = _first_existing("Contact")
 SEGMENT_ENGINE_DOCTYPE = _first_existing("Customer Segmentation Engine")
 NO_COMPANY_ACCESS_VALUE = "__orderlift_no_company_access__"
-DASHBOARD_ADMIN_ROLES = {"Orderlift Admin", "Administrator", "System Manager", "Developer"}
+DASHBOARD_ADMIN_ROLES = {"Orderlift Admin", "Administrator", "System Manager"}
 
 
 @frappe.whitelist()

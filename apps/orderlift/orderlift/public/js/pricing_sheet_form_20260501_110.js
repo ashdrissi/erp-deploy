@@ -1,7 +1,6 @@
 // Active Pricing Sheet form script loaded via hooks.py doctype_js.
 
 const PRICING_SHEET_STOCK_SNAPSHOT_METHOD = "orderlift.orderlift_sales.utils.item_price_tools.get_transaction_stock_snapshot";
-
 function statusBadge(value) {
     const status = value || "";
     const map = {
@@ -26,10 +25,7 @@ function marginSourceBadge(value) {
 }
 
 function isRestrictedAgentUser() {
-    const roles = frappe.user_roles || [];
-    const isCommercial = roles.includes("Orderlift Commercial");
-    const isPrivileged = ["Orderlift Admin", "Sales Manager", "System Manager"].some((role) => roles.includes(role));
-    return isCommercial && !isPrivileged;
+    return !Boolean(frappe.boot?.orderlift_capabilities?.privileged_pricing);
 }
 
 async function choosePricingSheetQuotationTarget(frm) {
@@ -129,30 +125,40 @@ function applyNativeLinesGridProperties(frm) {
         "item",
         "qty",
         "custom_current_company_stock_qty",
+        "resolved_selling_price_list",
+        "static_list_price",
+        "sell_unit_price",
+        "max_discount_percent_allowed",
+        "discount_percent",
+        "discount_amount_per_unit",
+        "sell_total",
+        "custom_pu_ttc",
+        "custom_pt_ttc",
+        "commission_rate",
+        "commission_amount",
         "buy_price",
         "expense_total",
         "customs_applied",
         "base_amount",
         "margin_total_amount",
         "projected_unit_price",
-        "manual_sell_unit_price",
-        "final_sell_unit_price",
-        "final_sell_total",
-        "max_discount_percent_allowed",
-        "discount_percent",
-        "discount_amount",
-        "discounted_sell_unit_price",
-        "discounted_sell_total",
+        "margin_pct",
     ]);
     const restrictedColumns = new Set([
         "item",
         "qty",
         "custom_current_company_stock_qty",
-        "final_sell_unit_price",
-        "final_sell_total",
+        "resolved_selling_price_list",
+        "static_list_price",
+        "sell_unit_price",
         "max_discount_percent_allowed",
         "discount_percent",
-        "discounted_sell_total",
+        "discount_amount_per_unit",
+        "sell_total",
+        "custom_pu_ttc",
+        "custom_pt_ttc",
+        "commission_rate",
+        "commission_amount",
     ]);
 
     Object.entries(PRICING_SHEET_WORKSPACE_LABELS).forEach(([fieldname, label]) => {
@@ -164,6 +170,23 @@ function applyNativeLinesGridProperties(frm) {
         if (["Section Break", "Column Break", "HTML", "Button", "Long Text"].includes(df.fieldtype)) return;
         const visibleSet = restrictedAgent ? restrictedColumns : businessListColumns;
         linesGrid.update_docfield_property(df.fieldname, "in_list_view", visibleSet.has(df.fieldname) ? 1 : 0);
+        if (["sell_unit_price", "discount_percent", "discount_amount_per_unit"].includes(df.fieldname)) {
+            linesGrid.update_docfield_property(df.fieldname, "read_only", 0);
+        }
+        if (["sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount"].includes(df.fieldname)) {
+            linesGrid.update_docfield_property(df.fieldname, "read_only", 1);
+        }
+        if (["Currency", "Float", "Percent"].includes(df.fieldtype)) {
+            linesGrid.update_docfield_property(df.fieldname, "precision", "9");
+            const gridField = linesGrid.get_field && linesGrid.get_field(df.fieldname);
+            if (gridField) {
+                gridField.formatter = (value) => {
+                    if (df.fieldtype === "Currency") return formatPricingSheetCurrency(value);
+                    if (df.fieldtype === "Percent") return formatPricingSheetPercent(value);
+                    return formatPricingSheetFloat(value);
+                };
+            }
+        }
         if (restrictedAgent) {
             linesGrid.update_docfield_property(df.fieldname, "hidden", visibleSet.has(df.fieldname) ? 0 : 1);
         }
@@ -173,43 +196,48 @@ function applyNativeLinesGridProperties(frm) {
     frm.refresh_field("lines");
 }
 
-const PRICING_SHEET_WORKSPACE_STORAGE_KEY = "orderlift.pricing-sheet.workspace-columns.v6";
+const PRICING_SHEET_WORKSPACE_STORAGE_KEY = "orderlift.pricing-sheet.workspace-columns.v7";
 const PRICING_SHEET_AGENT_VISIBLE_COLUMNS = [
     "qty",
     "custom_current_company_stock_qty",
-    "final_sell_unit_price",
-    "final_sell_total",
+    "resolved_selling_price_list",
+    "static_list_price",
+    "sell_unit_price",
     "max_discount_percent_allowed",
     "discount_percent",
-    "discount_amount",
-    "discounted_sell_total",
+    "discount_amount_per_unit",
+    "sell_total",
+    "custom_pu_ttc",
+    "custom_pt_ttc",
+    "commission_rate",
+    "commission_amount",
+    "actions",
 ];
 const PRICING_SHEET_WORKSPACE_DEFAULT_COLUMNS = [
     "qty",
     "custom_current_company_stock_qty",
+    "resolved_selling_price_list",
+    "static_list_price",
+    "sell_unit_price",
+    "max_discount_percent_allowed",
+    "discount_percent",
+    "discount_amount_per_unit",
+    "sell_total",
+    "custom_pu_ttc",
+    "custom_pt_ttc",
+    "commission_rate",
+    "commission_amount",
     "buy_price",
-    "expense_unit_price",
-    "customs_unit_amount",
     "landed_cost",
-    "margin_unit_amount",
-    "modifier_total",
     "total_margin",
     "projected_unit_price",
-    "manual_sell_unit_price",
-    "final_sell_unit_price",
-    "final_sell_total",
-    "discount_percent",
-    "discounted_sell_total",
+    "target_margin_percent",
+    "margin_pct",
+    "actions",
 ];
 const PRICING_SHEET_WORKSPACE_EDITABLE_TYPES = new Set(["Data", "Currency", "Float", "Int", "Percent", "Check", "Select", "Link"]);
 const PRICING_SHEET_WORKSPACE_HIDDEN_FIELDS = new Set([
     "item",
-    "source_buying_price_list",
-    "pricing_scenario",
-    "resolved_pricing_scenario",
-    "resolved_scenario_rule",
-    "resolved_margin_rule",
-    "scenario_source",
     "has_scenario_override",
     "has_line_override",
     "source_bundle",
@@ -229,16 +257,7 @@ const PRICING_SHEET_WORKSPACE_HIDDEN_FIELDS = new Set([
     "transport_basis_total",
     "transport_numerator",
     "transport_allocated",
-    "benchmark_note",
-    "benchmark_reference",
-    "benchmark_source_count",
-    "benchmark_ratio",
-    "benchmark_method",
-    "resolved_benchmark_rule",
-    "margin_source",
     "pricing_breakdown_json",
-    "commission_rate",
-    "commission_amount",
 ]);
 const PRICING_SHEET_SYNTHETIC_COLUMNS = [
     {
@@ -269,6 +288,13 @@ const PRICING_SHEET_SYNTHETIC_COLUMNS = [
         read_only: true,
         in_list_view: 1,
     },
+    {
+        fieldname: "actions",
+        label: "",
+        fieldtype: "Button",
+        read_only: true,
+        in_list_view: 1,
+    },
 ];
 const PRICING_SHEET_COLUMN_GROUPS = [
     {
@@ -284,7 +310,7 @@ const PRICING_SHEET_COLUMN_GROUPS = [
             "margin_total_amount",
             "modifier_total",
             "total_margin",
-            "final_sell_total",
+            "sell_total",
             "net_profit_margin",
             "margin_pct",
         ],
@@ -295,8 +321,7 @@ const PRICING_SHEET_COLUMN_GROUPS = [
         fields: [
             "max_discount_percent_allowed",
             "discount_percent",
-            "discount_amount",
-            "discounted_sell_total",
+            "discount_amount_per_unit",
         ],
     },
     {
@@ -308,6 +333,25 @@ const PRICING_SHEET_COLUMN_GROUPS = [
             "benchmark_delta_abs",
             "benchmark_delta_pct",
             "material",
+        ],
+    },
+    {
+        key: "advanced",
+        label: "Advanced",
+        fields: [
+            "source_buying_price_list",
+            "pricing_scenario",
+            "resolved_pricing_scenario",
+            "resolved_scenario_rule",
+            "resolved_margin_rule",
+            "scenario_source",
+            "resolved_benchmark_rule",
+            "margin_source",
+            "benchmark_note",
+            "benchmark_reference",
+            "benchmark_source_count",
+            "benchmark_ratio",
+            "benchmark_method",
         ],
     },
     {
@@ -347,14 +391,15 @@ const PRICING_SHEET_WORKSPACE_LABELS = {
     projected_unit_price: "Cout PU HT",
     projected_total_price: "Cout PT HT",
     static_list_price: "PU List HT",
-    manual_sell_unit_price: "Manual Unit Override",
-    final_sell_unit_price: "PU HT",
-    final_sell_total: "PT HT",
+    resolved_selling_price_list: "Resolved Selling List",
+    sell_unit_price: "PU HT",
+    sell_total: "PT HT",
     max_discount_percent_allowed: "Max Discount %",
     discount_percent: "Remise %",
-    discount_amount: "Remise HT",
-    discounted_sell_unit_price: "PU HT net",
-    discounted_sell_total: "PT HT net",
+    discount_amount_per_unit: "Remise PU HT",
+    custom_applied_taxes: "Taxes",
+    custom_pu_ttc: "PU TTC",
+    custom_pt_ttc: "PT TTC",
     commission_rate: "Commission %",
     commission_amount: "Commission",
 };
@@ -364,24 +409,30 @@ function escapePricingSheetText(value) {
 }
 
 function formatPricingSheetCurrency(value) {
-    if (window.orderlift?.formatCurrency) return window.orderlift.formatCurrency(value);
-    return frappe.format(Number(value || 0), { fieldtype: "Currency" });
+    return frappe.format(Number(value || 0), { fieldtype: "Currency", precision: 2 });
 }
 
 function formatPricingSheetFloat(value) {
-    return frappe.format(Number(value || 0), { fieldtype: "Float" });
+    return frappe.format(Number(value || 0), { fieldtype: "Float", precision: 2 });
 }
 
 function formatPricingSheetPercent(value) {
-    return `${Number(value || 0).toFixed(1)}%`;
+    return `${Number(value || 0).toFixed(2)}%`;
+}
+
+function pricingSheetCommissionPreview(row) {
+    const unusedDiscount = Math.max(
+        Number(row.max_discount_percent_allowed || 0) - Number(row.discount_percent || 0),
+        0
+    );
+    return Number(row.sell_unit_price || 0)
+        * (Number(row.qty || 0) || 1)
+        * (unusedDiscount / 100)
+        * (Number(row.commission_rate || 0) / 100);
 }
 
 function getPricingSheetGrid(frm) {
     return frm.fields_dict.lines && frm.fields_dict.lines.grid;
-}
-
-function isManualOverrideActive(row) {
-    return Number(row.is_manual_override || 0) === 1 || Number(row.manual_sell_unit_price || 0) > 0;
 }
 
 function getPricingSheetWorkspaceAllColumns(frm) {
@@ -410,7 +461,9 @@ function getPricingSheetWorkspaceAllColumns(frm) {
             label: PRICING_SHEET_WORKSPACE_LABELS[df.fieldname] || df.label || df.fieldname,
             fieldtype: df.fieldtype || "Data",
             options: df.options || "",
-            read_only: Number(df.read_only || 0) === 1,
+            read_only: ["sell_unit_price", "discount_percent", "discount_amount_per_unit"].includes(df.fieldname)
+                ? false
+                : Number(df.read_only || 0) === 1,
             in_list_view: Number(df.in_list_view || 0) === 1,
         }));
 
@@ -481,6 +534,7 @@ function getPricingSheetWorkspaceStorageKey() {
 function loadPricingSheetWorkspaceColumns() {
     try {
         const raw = window.localStorage.getItem(getPricingSheetWorkspaceStorageKey())
+            || window.localStorage.getItem("orderlift.pricing-sheet.workspace-columns.v6")
             || window.localStorage.getItem("orderlift.pricing-sheet.workspace-columns.v4");
         const parsed = raw ? JSON.parse(raw) : [];
         return Array.isArray(parsed) ? parsed : [];
@@ -504,10 +558,16 @@ function getPricingSheetWorkspaceColumns(frm) {
 
     if (!frm.__ps_workspace_columns) {
         const stored = loadPricingSheetWorkspaceColumns();
-        const valid = stored.filter((fieldname) => getPricingSheetWorkspaceColumn(frm, fieldname));
+        const seen = new Set();
+        const valid = stored.filter((fieldname) => {
+            if (seen.has(fieldname) || !getPricingSheetWorkspaceColumn(frm, fieldname)) return false;
+            seen.add(fieldname);
+            return true;
+        });
         frm.__ps_workspace_columns = valid.length
             ? valid
             : getPricingSheetWorkspaceDefaultColumns(frm);
+        savePricingSheetWorkspaceColumns(frm.__ps_workspace_columns);
     }
 
     return frm.__ps_workspace_columns;
@@ -708,10 +768,12 @@ function getPricingSheetWorkspaceSummary(frm) {
     const totalModifiers = totalTierModifiers + totalTerritoryModifiers;
     const totalMargin = totalBaseMargin + totalModifiers;
     const costBeforeMargin = totalBuy + totalExpenses + totalCustoms + totalTierModifiers + totalTerritoryModifiers;
-    const finalSell = lines.reduce((sum, row) => sum + Number(row.final_sell_total || 0), 0);
-    const totalDiscount = lines.reduce((sum, row) => sum + Number(row.discount_amount || 0), 0);
-    const discountedSell = lines.reduce((sum, row) => sum + Number(row.discounted_sell_total || row.final_sell_total || 0), 0);
-    const netProfitMargin = discountedSell - costBeforeMargin;
+    const finalSell = lines.reduce((sum, row) => sum + Number(row.sell_total || 0), 0);
+    const totalDiscount = lines.reduce(
+        (sum, row) => sum + Number(row.discount_amount_per_unit || 0) * (Number(row.qty || 0) || 1),
+        0
+    );
+    const netProfitMargin = finalSell - costBeforeMargin;
     const policyMarginWeightedBase = lines.reduce((sum, row) => sum + (Number(row.base_amount || 0) * Number(row.margin_pct || 0)), 0);
     const totalPolicyBase = lines.reduce((sum, row) => sum + Number(row.base_amount || 0), 0);
     const policyMarginPercent = totalPolicyBase ? (policyMarginWeightedBase / totalPolicyBase) : 0;
@@ -754,10 +816,6 @@ function getPricingSheetWorkspaceSummary(frm) {
             value: formatPricingSheetCurrency(totalDiscount),
         },
         {
-            label: __("PT HT net"),
-            value: formatPricingSheetCurrency(discountedSell),
-        },
-        {
             label: __("Net Profit Margin"),
             value: formatPricingSheetCurrency(netProfitMargin),
         },
@@ -777,7 +835,7 @@ function getPricingSheetWorkspaceSummary(frm) {
             value: String(lines.length),
         },
         {
-            label: __("Sell Total Price"),
+            label: __("PT HT"),
             value: formatPricingSheetCurrency(finalSell),
         },
         {
@@ -785,8 +843,8 @@ function getPricingSheetWorkspaceSummary(frm) {
             value: formatPricingSheetPercent(Math.max(0, ...lines.map((row) => Number(row.max_discount_percent_allowed || 0)), 0)),
         },
         {
-            label: __("Discounted Sell Price"),
-            value: formatPricingSheetCurrency(discountedSell),
+            label: __("Commission"),
+            value: formatPricingSheetCurrency(lines.reduce((sum, row) => sum + pricingSheetCommissionPreview(row), 0)),
         },
     ];
 }
@@ -810,18 +868,11 @@ function getPricingSheetWorkspaceAlerts(frm) {
                 body: escapePricingSheetText(row.benchmark_note || row.benchmark_status),
             });
         }
-        if (isManualOverrideActive(row)) {
-            alerts.push({
-                tone: "info",
-                title: `${escapePricingSheetText(row.item || row.idx || __("Line"))} · ${__("Manual sell override")}`,
-                body: formatPricingSheetCurrency(row.manual_sell_unit_price || 0),
-            });
-        }
         if (Number(row.discount_percent || 0) > 0) {
             alerts.push({
                 tone: "info",
                 title: `${escapePricingSheetText(row.item || row.idx || __("Line"))} · ${__("Agent discount")}`,
-                body: `${formatPricingSheetPercent(row.discount_percent || 0)} / ${formatPricingSheetCurrency(row.discount_amount || 0)}`,
+                body: `${formatPricingSheetPercent(row.discount_percent || 0)} / ${formatPricingSheetCurrency(row.discount_amount_per_unit || 0)} ${__("per unit")}`,
             });
         }
         if (Number(row.price_floor_violation || 0) === 1) {
@@ -878,7 +929,7 @@ function getPricingSheetWorkspaceBreakdownHtml(frm) {
                             <div class="ps-workspace-breakdown-title">${escapePricingSheetText(row.item || __("Line"))}</div>
                             <div class="ps-workspace-breakdown-meta">#${escapePricingSheetText(row.idx || "")} · ${escapePricingSheetText(row.line_type || __("Standard"))}</div>
                         </div>
-                        <div class="ps-workspace-breakdown-final">${formatPricingSheetCurrency(row.discounted_sell_total || row.final_sell_total || row.projected_total_price || 0)}</div>
+                        <div class="ps-workspace-breakdown-final">${formatPricingSheetCurrency(row.sell_total || row.projected_total_price || 0)}</div>
                     </div>
                     <div class="ps-workspace-breakdown-list">
                         ${steps.map((step) => `
@@ -1070,7 +1121,7 @@ function getPricingSheetWorkspaceDisplayValue(frm, row, column) {
     }
     if (column.fieldname === "net_profit_margin") {
         return formatPricingSheetCurrency(
-            Number(row.discounted_sell_total || row.final_sell_total || 0)
+            Number(row.sell_total || 0)
             - Number(row.base_amount || 0)
             - Number(row.expense_total || 0)
             - Number(row.customs_applied || 0)
@@ -1086,6 +1137,9 @@ function getPricingSheetWorkspaceDisplayValue(frm, row, column) {
     }
     if (column.fieldname === "margin_source") {
         return marginSourceBadge(value);
+    }
+    if (column.fieldname === "commission_amount") {
+        return formatPricingSheetCurrency(pricingSheetCommissionPreview(row));
     }
     if (column.fieldtype === "Currency") {
         return formatPricingSheetCurrency(value || 0);
@@ -1112,19 +1166,33 @@ function getPricingSheetWorkspaceColumnTone(fieldname) {
     if (["projected_unit_price"].includes(fieldname)) {
         return "is-sell-projected";
     }
-    if (["final_sell_unit_price", "final_sell_total", "discounted_sell_unit_price", "discounted_sell_total", "projected_total_price"].includes(fieldname)) {
+    if (["sell_unit_price", "sell_total", "projected_total_price"].includes(fieldname)) {
         return "is-sell-final";
     }
-    if (["max_discount_percent_allowed", "discount_percent", "discount_amount", "discounted_sell_unit_price", "discounted_sell_total"].includes(fieldname)) {
+    if (["max_discount_percent_allowed", "discount_percent", "discount_amount_per_unit"].includes(fieldname)) {
         return "is-discount";
     }
     return "";
+}
+
+function rawPricingSheetNumber(value) {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) return "0";
+    return number.toFixed(9).replace(/\.?0+$/, "");
+}
+
+function displayPricingSheetInputNumber(value, fieldtype) {
+    if (fieldtype === "Int") return String(Math.trunc(Number(value || 0)));
+    return Number(value || 0).toFixed(2);
 }
 
 function getPricingSheetWorkspaceCellHtml(frm, row, column) {
     const value = row[column.fieldname];
     const alignClass = ["Currency", "Float", "Int", "Percent"].includes(column.fieldtype) ? "is-right" : "";
     const toneClass = getPricingSheetWorkspaceColumnTone(column.fieldname);
+    if (column.fieldname === "actions") {
+        return `<td><button class="btn btn-default btn-xs" type="button" data-ps-delete-row="${row.name}">${__("Delete")}</button></td>`;
+    }
     if (!canInlineEditPricingSheetWorkspaceColumn(column)) {
         return `
             <td class="${alignClass} ${toneClass}">
@@ -1168,9 +1236,12 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
         `;
     }
 
-    const inputType = ["Float", "Currency", "Int", "Percent"].includes(column.fieldtype) ? "number" : "text";
+    const numeric = ["Float", "Currency", "Int", "Percent"].includes(column.fieldtype);
+    const inputType = numeric ? "number" : "text";
     const step = column.fieldtype === "Int" ? "1" : "any";
     const fieldClass = column.fieldname === "qty" ? "ps-workspace-cell-input is-qty" : "ps-workspace-cell-input";
+    const inputValue = numeric ? displayPricingSheetInputNumber(value, column.fieldtype) : (value ?? "");
+    const rawValue = numeric ? rawPricingSheetNumber(value) : (value ?? "");
     return `
         <td class="${toneClass}">
             <input
@@ -1178,9 +1249,10 @@ function getPricingSheetWorkspaceCellHtml(frm, row, column) {
                 data-ps-cell-input="1"
                 data-row-name="${row.name}"
                 data-fieldname="${column.fieldname}"
+                data-raw-value="${escapePricingSheetText(rawValue)}"
                 type="${inputType}"
                 step="${step}"
-                value="${escapePricingSheetText(value ?? "")}">
+                value="${escapePricingSheetText(inputValue)}">
         </td>
     `;
 }
@@ -1339,7 +1411,7 @@ function bindPricingSheetWorkspaceInlineInputs(frm, $root) {
         } else {
             value = element.value;
             if (["Currency", "Float", "Int", "Percent"].includes(column.fieldtype)) {
-                value = value === "" ? 0 : value;
+                value = value === "" ? 0 : Number(value);
             }
         }
 
@@ -1358,6 +1430,18 @@ function bindPricingSheetWorkspaceInlineInputs(frm, $root) {
         await commitValue(event.currentTarget);
         event.currentTarget.blur();
     });
+
+    $root.find("[data-ps-cell-input][type='number']")
+        .on("focus", (event) => {
+            event.currentTarget.value = event.currentTarget.getAttribute("data-raw-value") || "0";
+            event.currentTarget.select();
+        })
+        .on("blur", (event) => {
+            const fieldname = event.currentTarget.getAttribute("data-fieldname");
+            const column = getPricingSheetWorkspaceColumn(frm, fieldname);
+            if (!column) return;
+            event.currentTarget.value = displayPricingSheetInputNumber(event.currentTarget.value, column.fieldtype);
+        });
 }
 
 function renderPricingSheetWorkspace(frm) {
@@ -1427,6 +1511,9 @@ function renderPricingSheetWorkspace(frm) {
     $root.find("[data-ps-add-line]").on("click", () => addPricingSheetLine(frm));
     $root.find("[data-ps-delete-selected]").on("click", () => {
         deletePricingSheetWorkspaceSelectedRows(frm);
+    });
+    $root.find("[data-ps-delete-row]").on("click", (event) => {
+        deletePricingSheetLine(frm, event.currentTarget.getAttribute("data-ps-delete-row"));
     });
 
     $root.find("[data-ps-select-all]").on("change", (event) => {
@@ -1769,12 +1856,14 @@ async function renderDimensioningTool(frm) {
         args: { set_name: frm.doc.dimensioning_set },
     });
     const setConfig = (response.message || {}).set;
+    const canConfigureSet = Boolean((response.message || {}).can_configure);
     if (!setConfig) {
         $target.html(`<div class="text-danger small">${__("Impossible de charger le set de dimensionnement selectionne.")}</div>`);
         return;
     }
 
     const values = normalizeDimensioningValues(setConfig, parseDimensioningValues(frm));
+    const multiplier = Math.max(1, Math.trunc(Number(frm.doc.dimensioning_multiplier || 1)));
     frm.doc.dimensioning_inputs_json = JSON.stringify(values);
 
     const rowsHtml = (setConfig.fields || []).map((cfg) => {
@@ -1812,7 +1901,7 @@ async function renderDimensioningTool(frm) {
                     <div class="od-copy">${frappe.utils.escape_html(setConfig.description || __("Renseignez les caracteristiques du projet, previsualisez les articles generes, puis ajoutez-les a la fiche tarifaire."))}</div>
                 </div>
                 <div class="od-actions">
-                    <button class="btn btn-default btn-sm" type="button" data-dimensioning-configure>${__("Configurer le set")}</button>
+                    ${canConfigureSet ? `<button class="btn btn-default btn-sm" type="button" data-dimensioning-configure>${__("Configurer le set")}</button>` : ""}
                     <button class="btn btn-default btn-sm" type="button" data-dimensioning-preview>${__("Apercu des articles")}</button>
                     <button class="btn btn-default btn-sm" type="button" data-dimensioning-reset>${__("Reinitialiser")}</button>
                     <button class="btn btn-primary btn-sm" type="button" data-dimensioning-add>${__("Ajouter les articles")}</button>
@@ -1823,16 +1912,30 @@ async function renderDimensioningTool(frm) {
                 <span class="od-tip">${__("2. Previsualiser les articles")}</span>
                 <span class="od-tip">${__("3. Ajouter les lignes")}</span>
             </div>
-            <div class="od-grid">${rowsHtml || `<div class="text-muted small">${__("Aucune caracteristique n'est configuree dans ce set.")}</div>`}</div>
+            <div class="od-grid">
+                <div class="od-field-card">
+                    <label class="control-label od-field-label">${__("Number of Sets")} *</label>
+                    <input type="number" min="1" step="1" class="form-control" data-dimensioning-multiplier value="${multiplier}">
+                    <div class="small text-muted od-field-help">${__("Generated item quantities are multiplied by this number.")}</div>
+                </div>
+                ${rowsHtml || `<div class="text-muted small">${__("Aucune caracteristique n'est configuree dans ce set.")}</div>`}
+            </div>
             <div class="od-preview" data-dimensioning-preview-box>${__("Cliquez sur Apercu des articles pour voir ce qui sera genere avant insertion.")}</div>
         </div>
     `);
 
     const $root = $target;
+    $root.find("[data-dimensioning-multiplier]").on("change", async function () {
+        const nextMultiplier = Math.max(1, Math.trunc(Number($(this).val() || 1)));
+        $(this).val(nextMultiplier);
+        await frm.set_value("dimensioning_multiplier", nextMultiplier);
+        const currentValues = collectDimensioningValues($root, setConfig);
+        await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues, nextMultiplier);
+    });
     $root.find("[data-dimensioning-key]").on("change input", () => {
         const currentValues = collectDimensioningValues($root, setConfig);
         frm.doc.dimensioning_inputs_json = JSON.stringify(currentValues);
-        renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues);
+        renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues, frm.doc.dimensioning_multiplier);
     });
 
     $root.find("[data-dimensioning-reset]").on("click", async () => {
@@ -1848,7 +1951,7 @@ async function renderDimensioningTool(frm) {
     $root.find("[data-dimensioning-preview]").on("click", async () => {
         const currentValues = collectDimensioningValues($root, setConfig);
         frm.doc.dimensioning_inputs_json = JSON.stringify(currentValues);
-        await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues);
+        await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, currentValues, frm.doc.dimensioning_multiplier);
     });
 
     $root.find("[data-dimensioning-add]").on("click", async () => {
@@ -1859,6 +1962,7 @@ async function renderDimensioningTool(frm) {
         }
         await frm.call("add_dimensioning_items", {
             input_values_json: JSON.stringify(currentValues),
+            dimensioning_multiplier: frm.doc.dimensioning_multiplier || 1,
             replace_existing_generated: 1,
         });
         await frm.reload_doc();
@@ -1866,10 +1970,10 @@ async function renderDimensioningTool(frm) {
         frappe.show_alert({ message: __("Articles de dimensionnement ajoutes"), indicator: "green" });
     });
 
-    await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, values);
+    await renderDimensioningPreviewBox($root, frm.doc.dimensioning_set, values, multiplier);
 }
 
-async function renderDimensioningPreviewBox($root, setName, currentValues) {
+async function renderDimensioningPreviewBox($root, setName, currentValues, multiplier = 1) {
     const box = $root.find("[data-dimensioning-preview-box]");
     if (!box.length) return;
     box.html(`<span class="text-muted">${__("Preparation de l'apercu...")}</span>`);
@@ -1880,6 +1984,7 @@ async function renderDimensioningPreviewBox($root, setName, currentValues) {
             args: {
                 set_name: setName,
                 input_values_json: JSON.stringify(currentValues || {}),
+                multiplier: multiplier || 1,
             },
         });
         const items = (response.message || {}).items || [];
@@ -2195,7 +2300,7 @@ function applyModeLayout(frm) {
             "source_buying_price_list", "pricing_scenario", "resolved_pricing_scenario", "resolved_scenario_rule",
             "resolved_margin_rule", "scenario_source", "has_scenario_override", "has_line_override", "buy_price",
             "buy_price_missing", "buy_price_message", "base_amount", "expense_unit_price", "expense_total",
-            "customs_unit_amount", "margin_unit_amount", "margin_total_amount", "projected_unit_price", "projected_total_price", "manual_sell_unit_price", "margin_pct",
+            "customs_unit_amount", "margin_unit_amount", "margin_total_amount", "projected_unit_price", "projected_total_price", "margin_pct",
             "customs_material", "customs_tariff_number", "customs_weight_kg", "customs_value_per_kg", "customs_base_value", "customs_total_percent", "customs_rate_per_kg", "customs_rate_percent",
             "customs_by_kg", "customs_by_percent", "customs_applied", "customs_basis", "tier_modifier_total", "zone_modifier_total",
             "transport_allocation_mode", "transport_container_type", "transport_basis_total", "transport_numerator",
@@ -2242,7 +2347,7 @@ function collapseAdvancedSections(frm) {
 function psMarginBadge(pct) {
     const v = Number(pct || 0);
     const cls = v >= 20 ? "ps-mgn-good" : v >= 10 ? "ps-mgn-mid" : "ps-mgn-bad";
-    return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+    return `<span class="${cls}">${v.toFixed(2)}%</span>`;
 }
 
 function derivePolicyMarginPercent(row, isStatic) {
@@ -2760,6 +2865,7 @@ frappe.ui.form.on("Pricing Sheet", {
 
     dimensioning_set(frm) {
         frm.doc.dimensioning_inputs_json = "";
+        frm.doc.dimensioning_multiplier = 1;
         renderDimensioningTool(frm);
     },
 
@@ -2846,7 +2952,12 @@ frappe.ui.form.on("Pricing Sheet Item", {
         schedulePricingSheetWorkspaceRefresh(frm);
     },
 
-    manual_sell_unit_price(frm) {
+    sell_unit_price(frm) {
+        schedulePricingSheetServerRecalculate(frm);
+        schedulePricingSheetWorkspaceRefresh(frm);
+    },
+
+    discount_amount_per_unit(frm) {
         schedulePricingSheetServerRecalculate(frm);
         schedulePricingSheetWorkspaceRefresh(frm);
     },

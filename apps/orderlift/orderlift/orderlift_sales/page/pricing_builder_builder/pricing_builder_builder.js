@@ -865,7 +865,7 @@
 
     function overrideCell(row, entry) {
         const index = entry ? entry.index : 0;
-        return `<div class="pbb-override-cell"><input type="number" step="0.01" min="0" value="${escapeHtml(row.override_selling_price || 0)}" data-item-field="override_selling_price"><button type="button" class="pbb-override-apply" data-apply-override="${escapeHtml(index)}" title="${escapeHtml(__("Validate manual override"))}" aria-label="${escapeHtml(__("Validate manual override"))}">&#10003;</button></div>`;
+        return `<div class="pbb-override-cell"><input type="number" step="any" min="0" value="${escapeHtml(row.override_selling_price || 0)}" data-item-field="override_selling_price"><button type="button" class="pbb-override-apply" data-apply-override="${escapeHtml(index)}" title="${escapeHtml(__("Validate manual override"))}" aria-label="${escapeHtml(__("Validate manual override"))}">&#10003;</button></div>`;
     }
 
     function itemTableColumns() {

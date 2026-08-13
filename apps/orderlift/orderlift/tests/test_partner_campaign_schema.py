@@ -359,6 +359,12 @@ class TestPartnerCampaignSchema(unittest.TestCase):
         self.assertIn("showBulkActionResult", manager)
         self.assertIn("Campaign is not ready", manager)
 
+    def test_campaign_container_options_are_optional_without_logistics_access(self):
+        api = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py").read_text()
+
+        self.assertIn('if not frappe.has_permission("Forecast Load Plan", "read"):', api)
+        self.assertIn("def _container_options()", api)
+
     def test_status_config_declares_single_primary_status_per_document(self):
         config_path = APP_ROOT / "orderlift" / "orderlift_crm" / "status_config.py"
         content = config_path.read_text()

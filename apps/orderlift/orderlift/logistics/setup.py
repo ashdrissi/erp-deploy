@@ -226,7 +226,7 @@ def after_migrate():
             "Purchase Order": [
                 {
                     "fieldname": "custom_pricing_alerts_section",
-                    "label": "Pricing Alerts",
+                    "label": "Pricing Alerts & Approvals",
                     "fieldtype": "Section Break",
                     "insert_after": "items",
                 },
@@ -445,6 +445,69 @@ def after_migrate():
                     "default": "0",
                     "description": "Items have been routed to correct warehouse based on QC results",
                 },
+                {
+                    "fieldname": "custom_stock_rate_status",
+                    "label": "Stock Rate Status",
+                    "fieldtype": "Select",
+                    "options": "Not Required\nMissing Rate\nProvisional Rate\nApproved Rate",
+                    "insert_after": "custom_qc_routed",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "in_standard_filter": 1,
+                },
+            ],
+            "Purchase Receipt Item": [
+                {
+                    "fieldname": "custom_stock_rate_status",
+                    "label": "Rate Status",
+                    "fieldtype": "Select",
+                    "options": "Not Required\nMissing Rate\nProvisional Rate\nApproved Rate",
+                    "insert_after": "valuation_rate",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_stock_rate_source",
+                    "label": "Rate Source",
+                    "fieldtype": "Select",
+                    "options": "Not Required\nMissing\nPurchase Order\nBuying Price List\nLast Purchase\nManual",
+                    "insert_after": "custom_stock_rate_status",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_stock_rate_source_detail",
+                    "label": "Rate Source Detail",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_stock_rate_source",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_suggested_rate",
+                    "label": "Suggested Rate",
+                    "fieldtype": "Currency",
+                    "options": "currency",
+                    "insert_after": "custom_stock_rate_source_detail",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_rate_review_note",
+                    "label": "Rate Review Note",
+                    "fieldtype": "Small Text",
+                    "insert_after": "custom_suggested_rate",
+                },
+                {
+                    "fieldname": "custom_rate_reviewed_by",
+                    "label": "Rate Reviewed By",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_rate_review_note",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_rate_reviewed_on",
+                    "label": "Rate Reviewed On",
+                    "fieldtype": "Datetime",
+                    "insert_after": "custom_rate_reviewed_by",
+                    "read_only": 1,
+                },
             ],
             "Buying Settings": [
                 {
@@ -487,6 +550,69 @@ def after_migrate():
                     "insert_after": "purchase_receipt_no",
                     "read_only": 1,
                 },
+                {
+                    "fieldname": "custom_stock_rate_status",
+                    "label": "Stock Rate Status",
+                    "fieldtype": "Select",
+                    "options": "Not Required\nMissing Rate\nProvisional Rate\nApproved Rate",
+                    "insert_after": "custom_source_pr",
+                    "read_only": 1,
+                    "in_list_view": 1,
+                    "in_standard_filter": 1,
+                },
+            ],
+            "Stock Entry Detail": [
+                {
+                    "fieldname": "custom_stock_rate_status",
+                    "label": "Rate Status",
+                    "fieldtype": "Select",
+                    "options": "Not Required\nMissing Rate\nProvisional Rate\nApproved Rate",
+                    "insert_after": "valuation_rate",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_stock_rate_source",
+                    "label": "Rate Source",
+                    "fieldtype": "Select",
+                    "options": "Not Required\nMissing\nPurchase Order\nBuying Price List\nLast Purchase\nManual",
+                    "insert_after": "custom_stock_rate_status",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_stock_rate_source_detail",
+                    "label": "Rate Source Detail",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_stock_rate_source",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_suggested_rate",
+                    "label": "Suggested Rate",
+                    "fieldtype": "Currency",
+                    "options": "Company:company:default_currency",
+                    "insert_after": "custom_stock_rate_source_detail",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_rate_review_note",
+                    "label": "Rate Review Note",
+                    "fieldtype": "Small Text",
+                    "insert_after": "custom_suggested_rate",
+                },
+                {
+                    "fieldname": "custom_rate_reviewed_by",
+                    "label": "Rate Reviewed By",
+                    "fieldtype": "Data",
+                    "insert_after": "custom_rate_review_note",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_rate_reviewed_on",
+                    "label": "Rate Reviewed On",
+                    "fieldtype": "Datetime",
+                    "insert_after": "custom_rate_reviewed_by",
+                    "read_only": 1,
+                },
             ],
             # ── Delivery Trip: scenario classification + forecast plan link ──
             "Delivery Trip": [
@@ -524,17 +650,28 @@ def after_migrate():
     seed_item_specification_attributes()
     seed_douane_materials_from_items()
     enforce_item_price_child_table_fields()
+    enforce_material_request_without_price_list()
+    repair_stale_global_buying_price_list()
+    clear_draft_material_request_price_lists()
     arrange_item_specification_fields()
     label_item_specifications_section()
+    label_bin_reservation_fields()
+    disable_native_purchase_price_auto_insert()
     apply_item_field_order()
 
     frappe.clear_cache(doctype="Item")
+    frappe.clear_cache(doctype="Bin")
+    frappe.clear_cache(doctype="Stock Settings")
     frappe.clear_cache(doctype="Buying Settings")
     frappe.clear_cache(doctype="Purchase Order")
+    frappe.clear_cache(doctype="Material Request")
+    frappe.clear_cache(doctype="Material Request Item")
     frappe.clear_cache(doctype="Sales Order")
     frappe.clear_cache(doctype="Delivery Note")
     frappe.clear_cache(doctype="Purchase Receipt")
+    frappe.clear_cache(doctype="Purchase Receipt Item")
     frappe.clear_cache(doctype="Stock Entry")
+    frappe.clear_cache(doctype="Stock Entry Detail")
     frappe.clear_cache(doctype="Delivery Trip")
     retire_logistics_workspace()
 
@@ -629,6 +766,42 @@ def enforce_item_price_child_table_fields():
             frappe.db.set_value("DocField", field_name, "fieldtype", "Float", update_modified=False)
         _upsert_property_setter(doctype, "price_list_rate", "fieldtype", "Float", "Data")
         frappe.clear_cache(doctype=doctype)
+
+
+def enforce_material_request_without_price_list():
+    if frappe.get_meta("Material Request").get_field("buying_price_list"):
+        _upsert_property_setter("Material Request", "buying_price_list", "hidden", "1", "Check")
+    if frappe.get_meta("Material Request Item").get_field("price_list_rate"):
+        _upsert_property_setter("Material Request Item", "price_list_rate", "hidden", "1", "Check")
+
+
+def repair_stale_global_buying_price_list():
+    current = (frappe.defaults.get_global_default("buying_price_list") or "").strip()
+    if not current or frappe.db.exists("Price List", current):
+        return
+    replacement = (frappe.db.get_single_value("Buying Settings", "buying_price_list") or "").strip()
+    if replacement and frappe.db.exists("Price List", replacement):
+        frappe.defaults.set_global_default("buying_price_list", replacement)
+    else:
+        frappe.defaults.clear_default("buying_price_list", parent="__default")
+
+
+def clear_draft_material_request_price_lists():
+    drafts = frappe.get_all(
+        "Material Request",
+        filters={"docstatus": 0, "buying_price_list": ["!=", ""]},
+        pluck="name",
+        limit_page_length=0,
+    )
+    for name in drafts:
+        frappe.db.set_value("Material Request", name, "buying_price_list", "", update_modified=False)
+        for item_name in frappe.get_all(
+            "Material Request Item",
+            filters={"parent": name, "price_list_rate": ["!=", 0]},
+            pluck="name",
+            limit_page_length=0,
+        ):
+            frappe.db.set_value("Material Request Item", item_name, "price_list_rate", 0, update_modified=False)
 
 
 def arrange_item_specification_fields():
@@ -848,6 +1021,32 @@ def _delete_property_setter(doctype: str, fieldname: str, property_name: str):
     )
     if existing:
         frappe.delete_doc("Property Setter", existing, ignore_permissions=True, force=True)
+
+
+def label_bin_reservation_fields():
+    _upsert_property_setter("Bin", "reserved_qty", "label", "Open Sales Order Qty", "Data")
+    _upsert_property_setter(
+        "Bin",
+        "reserved_qty",
+        "description",
+        "Undelivered submitted Sales Order quantity. This is demand, not a Stock Reservation Entry allocation.",
+        "Text",
+    )
+    _upsert_property_setter("Bin", "reserved_stock", "label", "Physically Reserved Qty", "Data")
+    _upsert_property_setter(
+        "Bin",
+        "reserved_stock",
+        "description",
+        "Quantity allocated through submitted Stock Reservation Entries.",
+        "Text",
+    )
+
+
+def disable_native_purchase_price_auto_insert():
+    current = int(frappe.db.get_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing") or 0)
+    if current == 0:
+        return
+    frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", 0)
 
 
 def _upsert_doctype_property_setter(doctype: str, property_name: str, value, property_type: str):

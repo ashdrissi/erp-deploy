@@ -24,7 +24,7 @@ class Row(dict):
         self[key] = value
 
     def precision(self, fieldname):
-        return 2
+        return 9
 
 
 class Quotation(dict):
@@ -64,6 +64,9 @@ class Quotation(dict):
             "commission_sales_person": self._before_sales_person,
             "items": self._before_items,
         }
+
+    def set(self, fieldname, value):
+        self[fieldname] = value
 
 
 class DbStub:
@@ -112,6 +115,25 @@ def load_quotation_hooks():
 
     utils = types.ModuleType("frappe.utils")
     utils.flt = lambda value=0, *args, **kwargs: float(value or 0)
+    utils.nowdate = lambda: "2026-07-26"
+    utils.add_days = lambda _date, days: "2026-08-10" if days == 15 else ""
+
+    def calculate_agent_commission(**kwargs):
+        list_rate = float(kwargs.get("price_list_unit_price") or 0)
+        actual_rate = float(kwargs.get("actual_unit_price") or 0)
+        qty = float(kwargs.get("qty") or 0)
+        max_discount = float(kwargs.get("max_discount_percent") or 0)
+        commission_rate = float(kwargs.get("commission_rate") or 0)
+        discount = max((list_rate - actual_rate) / list_rate * 100, 0) if list_rate else 0
+        if kwargs.get("enforce_discount_cap", True) and discount > max_discount + 1e-9:
+            raise ValueError("Discount cap exceeded")
+        unused_discount = max(max_discount - discount, 0)
+        return {
+            "commission_amount": actual_rate
+            * qty
+            * (unused_discount / 100)
+            * (commission_rate / 100)
+        }
 
     dependencies = {
         "frappe": frappe,
@@ -128,8 +150,13 @@ def load_quotation_hooks():
             apply_quotation_sales_tax_template=lambda *args, **kwargs: None,
             sync_quotation_item_tax_inclusive_fields=lambda *args, **kwargs: None,
         ),
+        "orderlift.role_capabilities": types.SimpleNamespace(
+            CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT="commission_assignment_management",
+            user_has_capability=lambda capability, user=None, roles=None: "Sales Manager"
+            in set(roles or frappe.get_roles(user)),
+        ),
         "orderlift.sales.utils.pricing_projection": types.SimpleNamespace(
-            calculate_agent_commission=lambda **kwargs: {"commission_amount": 0}
+            calculate_agent_commission=calculate_agent_commission
         ),
     }
     previous = {name: sys.modules.get(name) for name in dependencies}
@@ -154,7 +181,19 @@ class TestQuotationCommissionAssignment(unittest.TestCase):
     def quotation(self, **values):
         values.setdefault("source_pricing_sheet", "")
         values.setdefault("commission_sales_person", "")
-        values.setdefault("items", [Row(source_sales_person="", source_commission_rate=0, price_list_rate=100)])
+        values.setdefault(
+            "items",
+            [
+                Row(
+                    source_sales_person="",
+                    source_commission_rate=0,
+                    source_price_list_sell_rate=100,
+                    price_list_rate=100,
+                    rate=100,
+                    amount=100,
+                )
+            ],
+        )
         return Quotation(**values)
 
     def test_sales_user_is_forced_to_their_own_sales_person(self):
@@ -249,20 +288,78 @@ class TestQuotationCommissionAssignment(unittest.TestCase):
 
         self.assertEqual(quotation.custom_customer_tax_id, "ICE-001122334455667")
 
+    def test_new_quotation_defaults_validity_to_today_plus_fifteen_days(self):
+        quotation = self.quotation(
+            docstatus=0,
+            quotation_to="Customer",
+            party_name="CUST-001",
+            valid_till="",
+        )
+
+        self.hooks.apply_quotation_party_defaults(quotation)
+
+        self.assertEqual(quotation.valid_till, "2026-08-10")
+
+    def test_existing_validity_is_not_overwritten(self):
+        quotation = self.quotation(
+            docstatus=0,
+            quotation_to="Customer",
+            party_name="CUST-001",
+            valid_till="2026-09-30",
+        )
+
+        self.hooks.apply_quotation_party_defaults(quotation)
+
+        self.assertEqual(quotation.valid_till, "2026-09-30")
+
+    def test_draft_quotation_uses_distinct_billing_and_shipping_defaults(self):
+        quotation = self.quotation(
+            docstatus=0,
+            quotation_to="Customer",
+            party_name="CUST-001",
+        )
+        self.hooks.resolve_party_context = lambda *args, **kwargs: {
+            "billing_address_name": "ADDR-BILL",
+            "billing_address_display": "Billing display",
+            "shipping_address_name": "ADDR-SHIP",
+            "shipping_address_display": "Shipping display",
+        }
+
+        self.hooks.apply_quotation_party_defaults(quotation)
+
+        self.assertEqual(quotation.customer_address, "ADDR-BILL")
+        self.assertEqual(quotation.address_display, "Billing display")
+        self.assertEqual(quotation.shipping_address_name, "ADDR-SHIP")
+        self.assertEqual(quotation.shipping_address, "Shipping display")
+
+    def test_submitted_quotation_party_defaults_are_noop(self):
+        quotation = self.quotation(
+            docstatus=1,
+            quotation_to="Customer",
+            party_name="CUST-001",
+            customer_address="ORIGINAL",
+        )
+        self.hooks.resolve_party_context = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("submitted quotation must not fetch party defaults")
+        )
+
+        self.hooks.apply_quotation_party_defaults(quotation)
+
+        self.assertEqual(quotation.customer_address, "ORIGINAL")
+
     def test_server_applies_inline_pu_ht_change_to_authoritative_rate(self):
         before = Row(
             name="ROW-1",
             qty=33,
-            source_gross_sell_rate=53.37,
+            source_price_list_sell_rate=53.37,
             source_discount_percent=0,
             source_discount_amount=0,
-            source_discounted_sell_rate=53.37,
             custom_pu_ttc=64.04,
             rate=53.37,
             amount=1761.21,
         )
         current = Row(**before)
-        current.source_gross_sell_rate = 2
+        current.rate = 2
         quotation = self.quotation(
             is_new=False,
             before_items=[before],
@@ -272,35 +369,73 @@ class TestQuotationCommissionAssignment(unittest.TestCase):
         self.hooks.sync_quotation_item_price_input_fields(quotation)
 
         self.assertEqual(current.rate, 2)
-        self.assertEqual(current.source_discounted_sell_rate, 2)
         self.assertEqual(current.amount, 66)
+        self.assertEqual(current.source_price_list_sell_rate, 53.37)
+        self.assertEqual(current.source_discount_amount, 51.37)
+        self.assertAlmostEqual(current.source_discount_percent, 51.37 / 53.37 * 100, places=9)
 
-    def test_server_applies_inline_pu_ttc_change_to_authoritative_rate(self):
+    def test_server_applies_inline_discount_amount_per_unit_to_authoritative_rate(self):
         before = Row(
             name="ROW-1",
             qty=33,
-            source_gross_sell_rate=53.37,
+            source_price_list_sell_rate=53.37,
             source_discount_percent=0,
             source_discount_amount=0,
-            source_discounted_sell_rate=53.37,
+            source_max_discount_percent=100,
+            source_commission_rate=25,
+            source_commission_amount=0,
             custom_pu_ttc=64.04,
             rate=53.37,
             amount=1761.21,
         )
         current = Row(**before)
-        current.custom_pu_ttc = 3
+        current.source_discount_amount = 50.87
         quotation = self.quotation(
             is_new=False,
             before_items=[before],
             items=[current],
-            taxes=[Row(charge_type="On Net Total", rate=20)],
         )
 
         self.hooks.sync_quotation_item_price_input_fields(quotation)
 
         self.assertEqual(current.rate, 2.5)
-        self.assertEqual(current.source_discounted_sell_rate, 2.5)
         self.assertEqual(current.amount, 82.5)
+        self.assertEqual(current.source_price_list_sell_rate, 53.37)
+        self.assertEqual(current.source_discount_amount, 50.87)
+        self.assertAlmostEqual(current.source_discount_percent, 50.87 / 53.37 * 100, places=9)
+        self.assertAlmostEqual(
+            current.source_commission_amount,
+            current.rate
+            * current.qty
+            * ((100 - current.source_discount_percent) / 100)
+            * (current.source_commission_rate / 100),
+            places=9,
+        )
+
+    def test_server_price_above_list_has_zero_discount_and_uses_actual_price_for_commission(self):
+        row = Row(
+            name="ROW-1",
+            qty=2,
+            source_price_list_sell_rate=100,
+            source_discount_percent=0,
+            source_discount_amount=0,
+            source_max_discount_percent=25,
+            source_commission_rate=25,
+            source_commission_amount=0,
+            price_list_rate=100,
+            rate=120,
+            amount=240,
+        )
+        quotation = self.quotation(items=[row])
+
+        self.hooks.sync_quotation_item_price_input_fields(quotation)
+
+        self.assertEqual(row.source_price_list_sell_rate, 100)
+        self.assertEqual(row.rate, 120)
+        self.assertEqual(row.amount, 240)
+        self.assertEqual(row.source_discount_percent, 0)
+        self.assertEqual(row.source_discount_amount, 0)
+        self.assertEqual(row.source_commission_amount, 15)
 
 
 if __name__ == "__main__":

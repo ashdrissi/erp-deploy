@@ -11,6 +11,7 @@ from orderlift.menu_access import (
     get_all_companies,
     get_allowed_business_types,
     get_allowed_companies,
+    has_interactive_company_session,
     resolve_current_company,
     user_can_access_all_business_types,
     user_can_access_all_companies,
@@ -23,7 +24,7 @@ from orderlift.orderlift_sales.utils.price_list_scope import (
     get_price_list_type,
     get_visible_price_lists,
 )
-from orderlift.startup_roles import COMMISSION_MANAGER_ROLE, SAV_TECHNICIAN_ROLE
+from orderlift.startup_roles import SAV_TECHNICIAN_ROLE
 
 
 SEGMENT_ASSIGNMENT_DOCTYPE = "CRM Segment Assignment"
@@ -39,6 +40,8 @@ COMPANY_SCOPED_DOCTYPES = [
     "Purchase Receipt",
     "Purchase Invoice",
     "Delivery Note",
+    "Pick List",
+    "Stock Reservation Entry",
     "Payment Entry",
     "Stock Entry",
     "Material Request",
@@ -49,6 +52,7 @@ COMPANY_SCOPED_DOCTYPES = [
     "Forecast Load Plan",
     # Company-owned masters / operational records (see orderlift.company_scope).
     "Customer",
+    "Supplier",
     "Price List",
     "Prospect",
     "Lead",
@@ -60,13 +64,16 @@ COMPANY_SCOPED_DOCTYPES = [
     "Partner Campaign",
     "Portal Customer Group Policy",
     "Portal Quote Request",
+    "Purchase Agent Rules",
+    "Stock Planning Settings",
+    "Stock Demand Plan",
 ]
 ORDERLIFT_MANAGED_PERMISSION_DOCTYPES = tuple(COMPANY_SCOPED_DOCTYPES)
 ORDERLIFT_MANAGED_SHARE_DISABLED_DOCTYPES = tuple(
     dict.fromkeys((*ORDERLIFT_MANAGED_PERMISSION_DOCTYPES, "Partner Campaign Target"))
 )
 
-READ_ONLY_PERMISSION_TYPES = {"read", "report", "print", "email"}
+READ_ONLY_PERMISSION_TYPES = {"read", "select", "report", "print", "email"}
 OWNED_ONLY_USER_FIELD = "custom_owned_documents_only"
 
 
@@ -92,7 +99,9 @@ def has_company_permission(
         if permission_type and permission_type not in READ_ONLY_PERMISSION_TYPES:
             return False
         salesperson = _sales_person_for_user(user)
-        if not salesperson or doc.get("salesperson") != salesperson:
+        if not salesperson or not _commission_enabled_for_salesperson(salesperson):
+            return False
+        if not _sales_commission_visible_to_salesperson(doc, salesperson):
             return False
 
     if getattr(doc, "doctype", None) == "SAV Ticket":
@@ -134,6 +143,8 @@ def normalize_company_filters_for_request() -> None:
     if not field or not _has_company_field(doctype, field):
         return
     user = getattr(getattr(frappe, "session", None), "user", None)
+    if not has_interactive_company_session(user):
+        return
     allowed_companies = get_allowed_companies(user)
     active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
     if not active_company:
@@ -163,6 +174,14 @@ def purchase_invoice_query(user: str | None = None) -> str | None:
 
 def delivery_note_query(user: str | None = None) -> str | None:
     return _company_query("Delivery Note", user=user)
+
+
+def pick_list_query(user: str | None = None) -> str | None:
+    return _company_query("Pick List", user=user)
+
+
+def stock_reservation_entry_query(user: str | None = None) -> str | None:
+    return _company_query("Stock Reservation Entry", user=user)
 
 
 def payment_entry_query(user: str | None = None) -> str | None:
@@ -195,14 +214,37 @@ def pricing_sheet_query(user: str | None = None) -> str | None:
     return _company_query("Pricing Sheet", user=user)
 
 
+def purchase_agent_rules_query(user: str | None = None) -> str | None:
+    from orderlift.orderlift_logistics.doctype.purchase_agent_rules.purchase_agent_rules import (
+        can_manage_purchase_agent_rules,
+    )
+
+    user = user or frappe.session.user
+    if not can_manage_purchase_agent_rules(user):
+        return f"{_table_name('Purchase Agent Rules')}.name is null"
+    return _company_query("Purchase Agent Rules", user=user)
+
+
+def stock_planning_settings_query(user: str | None = None) -> str | None:
+    return _company_query("Stock Planning Settings", user=user)
+
+
+def stock_demand_plan_query(user: str | None = None) -> str | None:
+    return _company_query("Stock Demand Plan", user=user)
+
+
 def customer_query(user: str | None = None) -> str | None:
     return _company_query("Customer", user=user)
+
+
+def supplier_query(user: str | None = None) -> str | None:
+    return _company_query("Supplier", user=user)
 
 
 def price_list_query(user: str | None = None) -> str | None:
     user = user or frappe.session.user
     table = _table_name("Price List")
-    visible = get_visible_price_lists(company=_active_company_for_query(user), user=user)
+    visible = _visible_price_lists_for_query(user)
     if not visible:
         return f"{table}.name is null"
     escaped = ", ".join(frappe.db.escape(name) for name in sorted(visible))
@@ -212,7 +254,7 @@ def price_list_query(user: str | None = None) -> str | None:
 def item_price_query(user: str | None = None) -> str | None:
     user = user or frappe.session.user
     table = _table_name("Item Price")
-    visible = get_visible_price_lists(company=_active_company_for_query(user), user=user)
+    visible = _visible_price_lists_for_query(user)
     if not visible:
         return f"{table}.name is null"
     escaped = ", ".join(frappe.db.escape(name) for name in sorted(visible))
@@ -231,7 +273,17 @@ def has_item_price_permission(
     price_list = (doc.get("price_list") if hasattr(doc, "get") else getattr(doc, "price_list", "")) or ""
     if not price_list:
         return None
-    visible = set(get_visible_price_lists(company=_active_company_for_query(user), user=user))
+    price_list_values = _price_list_permission_values({}, price_list)
+    company = (price_list_values.get("custom_company") or "").strip()
+    if company and company not in set(get_allowed_companies(user)) and not user_can_access_all_companies(user):
+        return False
+    kind = _price_list_kind(values=price_list_values)
+    focus_company = company or _active_company_for_query(user)
+    visible = set(
+        get_visible_price_lists(kind, company=focus_company, user=user)
+        if kind
+        else get_visible_price_lists(company=focus_company, user=user)
+    )
     if price_list not in visible:
         return False
     if permission_type and permission_type not in READ_ONLY_PERMISSION_TYPES:
@@ -284,11 +336,51 @@ def sales_commission_query(user: str | None = None) -> str | None:
 
     salesperson = _sales_person_for_user(user)
     table = _table_name("Sales Commission")
-    if not salesperson:
+    if not salesperson or not _commission_enabled_for_salesperson(salesperson):
         own_query = f"{table}.name is null"
     else:
         own_query = f"{table}.salesperson = {frappe.db.escape(salesperson)}"
+        db = getattr(frappe, "db", None)
+        if db and hasattr(db, "exists") and db.exists("DocType", "Orderlift Sales Team Member"):
+            team_table = _table_name("Orderlift Sales Team Member")
+            own_query = (
+                f"({own_query} or exists (select 1 from {team_table} _commission_team "
+                f"where _commission_team.parenttype = 'Sales Order' "
+                f"and _commission_team.parentfield = 'custom_sales_team' "
+                f"and _commission_team.parent = {table}.sales_order "
+                f"and _commission_team.sales_person = {frappe.db.escape(salesperson)}))"
+            )
     return f"({base_query}) and ({own_query})" if base_query else own_query
+
+
+def _commission_enabled_for_salesperson(salesperson: str) -> bool:
+    db = getattr(frappe, "db", None)
+    if not salesperson or not db or not hasattr(db, "exists"):
+        return True
+    if not db.exists("Agent Pricing Rules", {"sales_person": salesperson}):
+        return False
+    if not hasattr(db, "has_column") or not db.has_column("Agent Pricing Rules", "commission_enabled"):
+        return True
+    return bool(db.get_value("Agent Pricing Rules", {"sales_person": salesperson}, "commission_enabled"))
+
+
+def _sales_commission_visible_to_salesperson(doc, salesperson: str) -> bool:
+    if doc.get("salesperson") == salesperson:
+        return True
+    sales_order = doc.get("sales_order")
+    if not sales_order or not frappe.db.exists("DocType", "Orderlift Sales Team Member"):
+        return False
+    return bool(
+        frappe.db.exists(
+            "Orderlift Sales Team Member",
+            {
+                "parent": sales_order,
+                "parenttype": "Sales Order",
+                "parentfield": "custom_sales_team",
+                "sales_person": salesperson,
+            },
+        )
+    )
 
 
 def sav_ticket_query(user: str | None = None) -> str | None:
@@ -305,6 +397,12 @@ def project_workflow_case_query(user: str | None = None) -> str | None:
 
 def print_format_query(user: str | None = None) -> str | None:
     user = user or frappe.session.user
+    allowed_companies = get_allowed_companies(user)
+    if not allowed_companies:
+        return "`tabPrint Format`.name is null"
+    if not has_interactive_company_session(user):
+        escaped = ", ".join(frappe.db.escape(company) for company in allowed_companies)
+        return f"`tabPrint Format`.custom_company in ({escaped})"
     active_company = _active_company_for_query(user)
     if not active_company:
         return "`tabPrint Format`.name is null"
@@ -326,11 +424,14 @@ def _company_query(doctype: str, user: str | None = None) -> str | None:
     if not _has_company_field(doctype, field):
         return f"{table}.name is null"
 
-    active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
-    if not active_company:
-        return f"{table}.name is null"
-    _normalize_request_company_filter(doctype, field, active_company)
-    company_clause = f"{table}.{field} = {frappe.db.escape(active_company)}"
+    if has_interactive_company_session(user):
+        active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
+        if not active_company:
+            return f"{table}.name is null"
+        _normalize_request_company_filter(doctype, field, active_company)
+        company_clause = _company_clause_for_doctype(doctype, table, field, [active_company])
+    else:
+        company_clause = _company_clause_for_doctype(doctype, table, field, allowed_companies)
 
     bt_clause = _business_type_clause(doctype, user)
     owned_clause = _owned_only_clause(doctype, user)
@@ -350,10 +451,11 @@ def _sav_ticket_query(user: str | None = None) -> str | None:
         return f"{table}.name is null"
 
     active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
-    if not active_company:
+    if has_interactive_company_session(user) and not active_company:
         return f"{table}.name is null"
 
-    escaped = frappe.db.escape(active_company)
+    escaped = frappe.db.escape(active_company) if has_interactive_company_session(user) else None
+    allowed_sql = ", ".join(frappe.db.escape(company) for company in allowed_companies)
     company_checks = []
     for doctype, fieldname, company_field in (
         ("Customer", "customer", "custom_company"),
@@ -369,7 +471,11 @@ def _sav_ticket_query(user: str | None = None) -> str | None:
         company_checks.append(
             f"exists (select 1 from {_table_name(doctype)} {alias} "
             f"where {alias}.name = {table}.{fieldname} "
-            f"and {alias}.{company_field} = {escaped})"
+            + (
+                f"and {alias}.{company_field} = {escaped})"
+                if escaped is not None
+                else f"and {alias}.{company_field} in ({allowed_sql}))"
+            )
         )
     if not company_checks:
         return f"{table}.name is null"
@@ -608,9 +714,102 @@ def _company_from_doc(doc) -> str:
 
 def _doc_company_allowed(doc, user: str, permission_type: str | None = None) -> bool:
     company = _company_from_doc(doc)
+    allowed_companies = set(get_allowed_companies(user))
     if not company:
-        return _is_new_doc(doc)
-    return company in set(get_allowed_companies(user))
+        if not _is_new_doc(doc):
+            return False
+        if has_interactive_company_session(user):
+            return bool(_active_company_for_query(user, allowed_companies=list(allowed_companies)))
+        return True
+    if _internal_party_represents_active_company(doc, user):
+        return False
+    if company in allowed_companies:
+        return True
+    if getattr(doc, "doctype", None) in {"Lead", "Prospect", "Customer"}:
+        return any(
+            (row.get("company") or "") in allowed_companies
+            for row in (doc.get("custom_internal_company_access") or [])
+        )
+    return _internal_party_allowed_to_user_company(doc, allowed_companies)
+
+
+def _company_clause_for_doctype(doctype: str, table: str, field: str, companies: list[str]) -> str:
+    escaped = ", ".join(frappe.db.escape(company) for company in companies)
+    base_clause = f"{table}.{field} in ({escaped})"
+    if doctype in {"Lead", "Prospect", "Customer"} and _has_company_field(doctype, "custom_internal_company_access"):
+        access_clause = (
+            "exists (select 1 from `tabParty Internal Company Access` _party_company "
+            f"where _party_company.parenttype = {frappe.db.escape(doctype)} "
+            f"and _party_company.parentfield = 'custom_internal_company_access' "
+            f"and _party_company.parent = {table}.name "
+            f"and _party_company.company in ({escaped}))"
+        )
+        base_clause = f"({base_clause} or {access_clause})"
+    internal_field = {
+        "Customer": "is_internal_customer",
+        "Supplier": "is_internal_supplier",
+    }.get(doctype)
+    if not internal_field or not _has_company_field(doctype, internal_field):
+        return base_clause
+    base_clause = (
+        f"{table}.{field} in ({escaped}) and not "
+        f"({table}.{internal_field} = 1 and {table}.represents_company in ({escaped}))"
+    )
+    allowed_clause = (
+        "exists (select 1 from `tabAllowed To Transact With` atw "
+        f"where atw.parenttype = {frappe.db.escape(doctype)} "
+        f"and atw.parent = {table}.name "
+        f"and atw.company in ({escaped}))"
+    )
+    return f"({base_clause} or ({table}.{internal_field} = 1 and {allowed_clause}))"
+
+
+def _internal_party_represents_active_company(doc, user: str) -> bool:
+    doctype = getattr(doc, "doctype", None)
+    internal_field = {
+        "Customer": "is_internal_customer",
+        "Supplier": "is_internal_supplier",
+    }.get(doctype)
+    if not internal_field or not hasattr(doc, "get") or not doc.get(internal_field):
+        return False
+    if not has_interactive_company_session(user):
+        return False
+    active_company = _active_company_for_query(user, allowed_companies=get_allowed_companies(user))
+    return bool(active_company and (doc.get("represents_company") or "") == active_company)
+
+
+def _internal_party_allowed_to_user_company(doc, allowed_companies: set[str]) -> bool:
+    doctype = getattr(doc, "doctype", None)
+    internal_field = {
+        "Customer": "is_internal_customer",
+        "Supplier": "is_internal_supplier",
+    }.get(doctype)
+    if not internal_field or not hasattr(doc, "get") or not doc.get(internal_field):
+        return False
+    party = doc.get("name") or getattr(doc, "name", "")
+    if not party:
+        return False
+    rows = frappe.get_all(
+        "Allowed To Transact With",
+        filters={"parenttype": doctype, "parent": party},
+        pluck="company",
+        limit_page_length=0,
+    )
+    return bool(set(rows).intersection(allowed_companies))
+
+
+def _visible_price_lists_for_query(user: str) -> list[str]:
+    allowed_companies = get_allowed_companies(user)
+    if not allowed_companies:
+        return []
+    if has_interactive_company_session(user):
+        active_company = _active_company_for_query(user, allowed_companies=allowed_companies)
+        return get_visible_price_lists(company=active_company, user=user) if active_company else []
+
+    visible = set()
+    for company in allowed_companies:
+        visible.update(get_visible_price_lists(company=company, user=user))
+    return sorted(visible)
 
 
 def _sav_ticket_company_allowed(doc, user: str, permission_type: str | None = None) -> bool:
@@ -785,7 +984,7 @@ def _opportunity_user_clause(opportunity_ref: str, user: str) -> str:
 @frappe.whitelist()
 def normalize_managed_docperms(dry_run: int | bool = 0) -> dict:
     """Clear native owner/share bypass permissions for Orderlift-managed business doctypes."""
-    frappe.only_for(["System Manager", "Orderlift Admin"])
+    frappe.only_for("System Manager")
     dry_run = bool(cint(dry_run))
     doctypes = _existing_managed_permission_doctypes()
     result = {"dry_run": dry_run, "doctypes": doctypes, "updated": 0, "rows": []}
@@ -828,7 +1027,7 @@ def normalize_managed_docperms(dry_run: int | bool = 0) -> dict:
 @frappe.whitelist()
 def cleanup_managed_docshares(dry_run: int | bool = 0) -> dict:
     """Remove DocShare rows that would bypass the central Orderlift access model."""
-    frappe.only_for(["System Manager", "Orderlift Admin"])
+    frappe.only_for("System Manager")
     dry_run = bool(cint(dry_run))
     doctypes = _existing_managed_permission_doctypes()
     result = {"dry_run": dry_run, "doctypes": doctypes, "deleted": 0, "rows": []}
@@ -920,9 +1119,10 @@ def _delivery_note_user_clause(delivery_note_ref: str, user: str) -> str:
 def _customer_user_clause(customer_ref: str, user: str) -> str:
     escaped = frappe.db.escape(user)
     clauses = [f"{customer_ref}.owner = {escaped}"]
+    if _has_company_field("Customer", "account_manager"):
+        clauses.append(f"{customer_ref}.account_manager = {escaped}")
     sales_person = _sales_person_for_user(user)
-    if sales_person and _has_company_field("Customer", "account_manager"):
-        clauses.append(f"{customer_ref}.account_manager = {frappe.db.escape(sales_person)}")
+    if sales_person:
         clauses.append(_customer_sales_team_clause(customer_ref, sales_person))
     clauses.append(_open_todo_assignment_clause("Customer", user, table_ref=customer_ref))
     return _owned_or_opportunity_child_clause(
@@ -1303,7 +1503,7 @@ def _is_sav_technician_only(user: str) -> bool:
     roles = set(frappe.get_roles(user) or [])
     if SAV_TECHNICIAN_ROLE not in roles:
         return False
-    if {"Administrator", "System Manager", "Developer", "Orderlift Admin", "Service User"}.intersection(roles):
+    if {"Administrator", "System Manager", "Orderlift Admin", "Service User"}.intersection(roles):
         return False
     return True
 
@@ -1416,8 +1616,16 @@ def _is_new_doc(doc) -> bool:
 
 
 def _can_manage_sales_commissions(user: str) -> bool:
-    manager_roles = {"Orderlift Admin", "Sales Manager", "Orderlift Accountant", "System Manager", "Administrator", COMMISSION_MANAGER_ROLE}
-    return bool(manager_roles.intersection(set(frappe.get_roles(user))))
+    from orderlift.role_capabilities import (
+        CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT,
+        CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT,
+        user_has_capability,
+    )
+
+    return bool(
+        user_has_capability(CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT, user=user)
+        or user_has_capability(CAPABILITY_COMMISSION_PAYOUT_MANAGEMENT, user=user)
+    )
 
 
 def _sales_person_for_user(user: str) -> str:

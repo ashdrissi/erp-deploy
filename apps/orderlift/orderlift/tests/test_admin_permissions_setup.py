@@ -8,6 +8,10 @@ frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 sys.modules["frappe"] = frappe_stub
 
+utils_stub = types.ModuleType("frappe.utils")
+utils_stub.cint = lambda value=0: int(value or 0)
+sys.modules["frappe.utils"] = utils_stub
+
 
 from orderlift.scripts import ensure_orderlift_admin_permissions
 
@@ -27,7 +31,10 @@ class TestAdminPermissionsSetup(unittest.TestCase):
         self.assertEqual(permissions["write"], 1)
         self.assertEqual(permissions["create"], 1)
         self.assertEqual(permissions["report"], 1)
-        self.assertEqual(permissions["share"], 0)
+        self.assertEqual(
+            ensure_orderlift_admin_permissions._permission_flags_for_doctype("Partner Campaign", permissions)["share"],
+            0,
+        )
 
     def test_orderlift_admin_has_training_admin_access(self):
         for doctype in [
@@ -57,6 +64,10 @@ class TestAdminPermissionsSetup(unittest.TestCase):
             self.assertEqual(permissions["read"], 1)
             self.assertEqual(permissions["write"], 1)
             self.assertEqual(permissions["create"], 1)
+
+    def test_orderlift_admin_has_no_protected_system_grants(self):
+        for doctype in ensure_orderlift_admin_permissions.PROTECTED_DOCTYPES:
+            self.assertNotIn(doctype, ensure_orderlift_admin_permissions.ADMIN_DOCTYPE_PERMISSIONS)
 
     def test_orderlift_admin_has_pricing_catalog_access(self):
         for doctype in [

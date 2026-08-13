@@ -1,0 +1,56 @@
+{
+  "actions": [],
+  "creation": "2026-07-26 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "buying_price_list",
+    "is_active",
+    "is_default",
+    "priority"
+  ],
+  "fields": [
+    {
+      "fieldname": "buying_price_list",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Buying Price List",
+      "options": "Price List",
+      "reqd": 1
+    },
+    {
+      "default": "1",
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Active"
+    },
+    {
+      "default": "0",
+      "fieldname": "is_default",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Default"
+    },
+    {
+      "default": "10",
+      "fieldname": "priority",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Priority"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-07-26 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Purchase Agent Allowed Buying Price List",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "idx",
+  "sort_order": "ASC",
+  "states": []
+}

@@ -10,8 +10,6 @@ from orderlift.document_templates import is_supported_template_target, normalize
 
 class OrderliftDocumentTemplate(Document):
     def validate(self):
-        if not self.targets:
-            frappe.throw(_("Add at least one target document."))
         for row in self.targets:
             if not is_supported_template_target(row.target_doctype):
                 frappe.throw(_("Unsupported template target: {0}").format(row.target_doctype))

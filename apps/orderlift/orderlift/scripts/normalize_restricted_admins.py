@@ -4,7 +4,7 @@ import frappe
 
 
 TARGET_ROLE = "Orderlift Admin"
-BYPASS_ROLES = {"System Manager", "Developer"}
+BYPASS_ROLES = {"System Manager"}
 
 
 def run():

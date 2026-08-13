@@ -7,7 +7,7 @@ from frappe import _
 from frappe.model.rename_doc import rename_doc
 from frappe.utils import cint
 
-from orderlift.menu_access import get_company_access_payload, user_can_access_company
+from orderlift.menu_access import get_company_access_payload, user_can_access_company, user_can_access_menu_key
 from orderlift.orderlift_crm.status_config import STATUS_COLOR_OPTIONS
 from orderlift.orderlift_crm.status_config import (
     get_company_pipeline_quick_action_keys,
@@ -27,7 +27,10 @@ from orderlift.orderlift_crm.status_workflow import (
 
 @frappe.whitelist()
 def get_status_control_data(document_type: str, company: str | None = None) -> dict:
+    _ensure_status_control_access()
     meta = get_status_meta(document_type)
+    status_doctype = meta["status_doctype"]
+    frappe.has_permission(status_doctype, ptype="read", throw=True)
     company_context = _status_company_context(company)
     selected_company = company_context["selected_company"]
     usage = get_status_usage(document_type, company=selected_company) if selected_company else {}
@@ -48,12 +51,12 @@ def get_status_control_data(document_type: str, company: str | None = None) -> d
         "company_required": not bool(selected_company),
         "field_label": meta["field_label"],
         "page_title": meta["page_title"],
-        "status_doctype": meta["status_doctype"],
+        "status_doctype": status_doctype,
         "colors": STATUS_COLOR_OPTIONS,
         "todo_priorities": TODO_PRIORITY_OPTIONS,
         "show_flow_fields": meta.get("show_flow_fields", True),
-        "allow_create": meta.get("allow_create", True),
-        "allow_delete": meta.get("allow_delete", True),
+        "allow_create": bool(meta.get("allow_create", True) and frappe.has_permission(status_doctype, ptype="create")),
+        "allow_delete": bool(meta.get("allow_delete", True) and frappe.has_permission(status_doctype, ptype="delete")),
         "allow_rename": meta.get("allow_rename", True),
         "show_auto_close_opportunity": bool(meta.get("auto_close_opportunity_field")),
         "available_quick_actions": pipeline_quick_action_catalog(document_type),
@@ -67,9 +70,11 @@ def get_status_control_data(document_type: str, company: str | None = None) -> d
 
 @frappe.whitelist()
 def save_status(document_type: str, payload: str | dict, company: str | None = None) -> dict:
+    _ensure_status_control_access()
     data = _loads(payload)
     meta = get_status_meta(document_type)
     status_doctype = meta["status_doctype"]
+    frappe.has_permission(status_doctype, ptype="read", throw=True)
     label_field = meta["label_field"]
     company = _require_status_company(data.get("company") or company)
     label = (data.get("label") or "").strip()
@@ -89,11 +94,18 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
         _ensure_doc_company(doc, meta, company)
         if not meta.get("fixed_status_values") and status_value != current_name:
             if not meta.get("allow_rename", True):
-                frappe.throw(_("Status {0} cannot be renamed.").format(current_name))
-            if frappe.db.exists(status_doctype, internal_label):
-                frappe.throw(_("Status {0} already exists for {1}.").format(label, company))
-            renamed_name = rename_doc(status_doctype, current_name, internal_label, force=False, merge=False)
-            doc = frappe.get_doc(status_doctype, renamed_name)
+                internal_label = doc.get(label_field) or doc.name
+                label = (
+                    doc.get(meta.get("display_label_field"))
+                    if meta.get("display_label_field") and doc.meta.get_field(meta.get("display_label_field"))
+                    else ""
+                ) or internal_label
+                status_value = internal_label
+            else:
+                if frappe.db.exists(status_doctype, internal_label):
+                    frappe.throw(_("Status {0} already exists for {1}.").format(label, company))
+                renamed_name = rename_doc(status_doctype, current_name, internal_label, force=False, merge=False)
+                doc = frappe.get_doc(status_doctype, renamed_name)
     else:
         if not meta.get("allow_create", True):
             frappe.throw(_("New statuses cannot be created for {0}.").format(document_type))
@@ -101,13 +113,19 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
             frappe.throw(_("Status {0} already exists for {1}.").format(label, company))
         doc = frappe.new_doc(status_doctype)
 
+    is_new_status = doc.is_new()
+    is_active = cint(data.get("is_active", 1))
+    is_default = cint(data.get("is_default", 0))
+    if is_new_status and is_active and not _has_active_default_status(document_type, company):
+        is_default = 1
+
     setattr(doc, label_field, internal_label)
     _set_if_field(doc, meta.get("display_label_field"), label)
     _set_if_field(doc, meta.get("company_field"), company)
     _set_if_field(doc, meta["sequence_field"], cint(data.get("sequence") or 100))
     _set_if_field(doc, meta["color_field"], data.get("color") or "Blue")
-    _set_if_field(doc, meta["active_field"], cint(data.get("is_active", 1)))
-    _set_if_field(doc, meta["default_field"], cint(data.get("is_default", 0)))
+    _set_if_field(doc, meta["active_field"], is_active)
+    _set_if_field(doc, meta["default_field"], is_default)
     _set_if_field(doc, meta.get("distribution_field"), cint(data.get("applies_distribution", 1)))
     _set_if_field(doc, meta.get("installation_field"), cint(data.get("applies_installation", 1)))
     assigned_user = (data.get("assigned_user") or "").strip()
@@ -143,7 +161,7 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
     _set_db_column_if_available(status_doctype, doc.name, meta.get("display_label_field"), label)
     _set_db_column_if_available(status_doctype, doc.name, meta.get("company_field"), company)
 
-    if cint(data.get("is_default", 0)):
+    if is_default:
         _clear_default_flag(document_type, doc.name, company)
 
     _validate_status_safety(document_type, company)
@@ -154,8 +172,10 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
 
 @frappe.whitelist()
 def delete_status(document_type: str, status_name: str, company: str | None = None) -> dict:
+    _ensure_status_control_access()
     meta = get_status_meta(document_type)
     status_doctype = meta["status_doctype"]
+    frappe.has_permission(status_doctype, ptype="delete", throw=True)
     company = _require_status_company(company)
     if not meta.get("allow_delete", True):
         frappe.throw(_("Statuses cannot be deleted for {0}.").format(document_type))
@@ -179,6 +199,9 @@ def delete_status(document_type: str, status_name: str, company: str | None = No
 
 @frappe.whitelist()
 def save_quick_actions(document_type: str, actions: str | list[str] | tuple[str, ...], company: str | None = None) -> dict:
+    _ensure_status_control_access()
+    meta = get_status_meta(document_type)
+    frappe.has_permission(meta["status_doctype"], ptype="read", throw=True)
     company = _require_status_company(company)
     parsed = _loads(actions)
     if not isinstance(parsed, list):
@@ -186,6 +209,11 @@ def save_quick_actions(document_type: str, actions: str | list[str] | tuple[str,
     save_company_pipeline_quick_action_keys(document_type, company, parsed)
     frappe.db.commit()
     return get_status_control_data(document_type, company=company)
+
+
+def _ensure_status_control_access() -> None:
+    if not user_can_access_menu_key("administration.status_control", user=frappe.session.user):
+        frappe.throw(_("You do not have access to Status Control."), frappe.PermissionError)
 
 
 def _clear_default_flag(document_type: str, keep_name: str, company: str):
@@ -204,6 +232,11 @@ def _clear_default_flag(document_type: str, keep_name: str, company: str):
         doc = frappe.get_doc(meta["status_doctype"], row.name)
         setattr(doc, default_field, 0)
         doc.save(ignore_permissions=True)
+
+
+def _has_active_default_status(document_type: str, company: str) -> bool:
+    statuses = list_editable_statuses(document_type, include_inactive=True, company=company)
+    return any(cint(status.get("is_active")) and cint(status.get("is_default")) for status in statuses)
 
 
 def _validate_status_safety(document_type: str, company: str) -> None:

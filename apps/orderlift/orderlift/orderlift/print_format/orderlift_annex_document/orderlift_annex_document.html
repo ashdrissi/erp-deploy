@@ -1,59 +1,120 @@
 {%- set template = frappe.get_doc("Orderlift Document Template", doc.template) -%}
-{%- set source = frappe.get_doc(doc.reference_doctype, doc.reference_name) -%}
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 820px; margin: 0 auto; color: #172033;">
-    <div style="border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; gap: 24px;">
-        <div>
-            <div style="font-size: 11px; font-weight: 800; color: #2563eb; letter-spacing: .08em; text-transform: uppercase;">Annexed Document</div>
-            <h1 style="margin: 5px 0 0; font-size: 24px; line-height: 1.15;">{{ template.print_title or doc.template_name }}</h1>
-            <div style="font-size: 12px; color: #64748b; margin-top: 4px;">{{ doc.name }}</div>
+{%- set company = frappe.get_doc("Company", doc.company) if doc.company else None -%}
+{%- set company_logo = company.company_logo if company else "" -%}
+{%- set company_address = get_company_address(doc.company) if doc.company else "" -%}
+{%- macro value_for(field_key) -%}
+    {%- for row in doc.values -%}
+        {%- if row.field_key == field_key -%}{{ row.value or "" }}{%- endif -%}
+    {%- endfor -%}
+{%- endmacro -%}
+
+<style>
+@page { size: A4; margin: 10mm 10mm 12mm; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #fff; color: #1f2937; font-family: Arial, Helvetica, sans-serif; font-size: 10.5px; }
+.ol-annex-page { max-width: 190mm; margin: 0 auto; border: 1.3px solid #4b5563; padding: 8px 10px 10px; }
+.ol-annex-header { display: grid; grid-template-columns: 46mm 1fr; min-height: 25mm; border: 1px solid #6b7280; }
+.ol-annex-brand { display: grid; align-content: center; justify-items: center; gap: 3px; padding: 5px; border-right: 1px solid #6b7280; text-align: center; }
+.ol-annex-brand img { max-width: 36mm; max-height: 13mm; object-fit: contain; }
+.ol-annex-brand strong { font-size: 14px; line-height: 1.1; }
+.ol-annex-brand small { color: #6b7280; font-size: 8.5px; }
+.ol-annex-title-box { display: grid; align-content: center; padding: 7px 10px; }
+.ol-annex-title { margin: 0; text-align: center; color: #374151; font-family: Georgia, "Times New Roman", serif; font-size: 21px; }
+.ol-annex-print-header, .ol-annex-print-footer { margin: 7px 0; font-size: 10px; line-height: 1.45; }
+.ol-annex-section { margin-top: 8px; page-break-inside: avoid; }
+.ol-annex-section-title { margin: 0 0 4px; text-align: center; }
+.ol-annex-section-title span { display: inline-block; min-width: 40mm; padding: 2px 8px; border: 1px solid #6b7280; background: #f3f4f6; font-weight: 700; }
+.ol-annex-section-description { margin: 0 0 5px; color: #6b7280; font-size: 9px; text-align: center; }
+.ol-annex-columns { display: flex; align-items: flex-start; gap: 8px; padding: 7px; border: 1px solid #6b7280; }
+.ol-annex-column { display: grid; flex: 1 1 0; gap: 5px; min-width: 0; }
+.ol-annex-field { display: grid; grid-template-columns: 38% 1fr; align-items: start; gap: 5px; min-height: 17px; page-break-inside: avoid; }
+.ol-annex-label { color: #374151; font-weight: 700; }
+.ol-annex-value { min-height: 15px; padding-left: 3px; border-bottom: 1px dotted #9ca3af; white-space: pre-wrap; }
+.ol-annex-text { min-height: 34px; padding: 4px; border: 1px dotted #9ca3af; white-space: pre-wrap; }
+.ol-annex-html { padding: 5px; border: 1px solid #d1d5db; }
+.ol-annex-check { display: flex; align-items: center; gap: 12px; min-height: 17px; }
+.ol-annex-check-option { display: inline-flex; align-items: center; gap: 4px; }
+.ol-annex-box { position: relative; display: inline-block; width: 10px; height: 10px; border: 1px solid #374151; }
+.ol-annex-box.checked:after { content: ""; position: absolute; top: 0; left: 2px; width: 4px; height: 7px; border: solid #111827; border-width: 0 1.4px 1.4px 0; transform: rotate(45deg); }
+.ol-annex-image { display: grid; justify-items: center; gap: 4px; }
+.ol-annex-image img { display: block; max-width: 100%; max-height: 92mm; object-fit: contain; border: 1px solid #d1d5db; }
+.ol-annex-file a { color: #1d4ed8; text-decoration: underline; word-break: break-all; }
+.ol-annex-signature-field { display: grid; grid-template-rows: auto 1fr; min-height: 27mm; border: 1px solid #6b7280; page-break-inside: avoid; }
+.ol-annex-signature-field .ol-annex-label { padding: 4px; border-bottom: 1px solid #d1d5db; text-align: center; }
+.ol-annex-signature-value { display: grid; place-items: center; min-height: 21mm; padding: 4px; }
+.ol-annex-signature-value img { max-width: 100%; max-height: 20mm; object-fit: contain; }
+.ol-annex-footer { margin-top: 8px; color: #374151; font-size: 9px; line-height: 1.4; text-align: center; }
+.ol-annex-footer strong { display: block; font-size: 10px; }
+</style>
+
+<div class="ol-annex-page">
+    <header class="ol-annex-header">
+        <div class="ol-annex-brand">
+            {% if company_logo %}<img src="{{ company_logo }}" alt="{{ company.company_name }}">{% elif company %}<strong>{{ company.company_name }}</strong>{% endif %}
+            {% if company and company.email %}<small>{{ company.email }}</small>{% endif %}
         </div>
-        <div style="text-align: right; font-size: 12px; color: #334155;">
-            <div><strong>Status:</strong> {{ doc.status or "Draft" }}</div>
-            <div><strong>Source:</strong> {{ doc.reference_doctype }} {{ doc.reference_name }}</div>
-            {% if doc.company %}<div><strong>Company:</strong> {{ doc.company }}</div>{% endif %}
-        </div>
-    </div>
+        <div class="ol-annex-title-box"><h1 class="ol-annex-title">{{ template.print_title or template.template_name }}</h1></div>
+    </header>
 
-    {% if template.print_header %}
-    <div style="margin-bottom: 18px; padding: 12px 14px; border: 1px solid #dbe5ef; border-radius: 10px; background: #f8fafc; font-size: 12px;">
-        {{ template.print_header }}
-    </div>
-    {% endif %}
+    {% if template.print_header %}<div class="ol-annex-print-header">{{ template.print_header }}</div>{% endif %}
 
-    <div style="margin-bottom: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; font-size: 12px;">
-        {% if source.get("customer_name") or source.get("customer") %}<div><strong>Customer:</strong> {{ source.get("customer_name") or source.get("customer") }}</div>{% endif %}
-        {% if source.get("party_name") %}<div><strong>Party:</strong> {{ source.get("party_name") }}</div>{% endif %}
-        {% if source.get("transaction_date") %}<div><strong>Date:</strong> {{ frappe.format(source.get("transaction_date"), {"fieldtype": "Date"}) }}</div>{% endif %}
-        {% if source.get("project_name") %}<div><strong>Project:</strong> {{ source.get("project_name") }}</div>{% endif %}
-    </div>
+    {% set ns = namespace(section_open=false, column_open=false, column_count=0) %}
+    {% for field in template.fields %}
+        {% if field.fieldtype == "Section Break" %}
+            {% if ns.column_open %}</div>{% set ns.column_open = false %}{% endif %}
+            {% if ns.section_open %}</div></section>{% set ns.section_open = false %}{% endif %}
+            <section class="ol-annex-section">
+                <div class="ol-annex-section-title"><span>{{ field.field_label }}</span></div>
+                {% if field.options %}<p class="ol-annex-section-description">{{ field.options }}</p>{% endif %}
+                <div class="ol-annex-columns"><div class="ol-annex-column">
+                {% set ns.section_open = true %}{% set ns.column_open = true %}{% set ns.column_count = 1 %}
+        {% elif field.fieldtype == "Column Break" %}
+            {% if not ns.section_open %}<section class="ol-annex-section"><div class="ol-annex-columns"><div class="ol-annex-column">{% set ns.section_open = true %}{% set ns.column_open = true %}{% set ns.column_count = 1 %}{% endif %}
+            {% if ns.column_count < 2 %}</div><div class="ol-annex-column">{% set ns.column_count = 2 %}{% endif %}
+        {% else %}
+            {% if not ns.section_open %}<section class="ol-annex-section"><div class="ol-annex-columns"><div class="ol-annex-column">{% set ns.section_open = true %}{% set ns.column_open = true %}{% set ns.column_count = 1 %}{% endif %}
+            {% if field.fieldtype == "HTML" %}
+                <div class="ol-annex-html">{{ field.options or field.default_value or "" }}</div>
+            {% else %}
+                {% set value = value_for(field.field_key) | trim %}
+                {% if field.fieldtype == "Signature" %}
+                    <div class="ol-annex-signature-field">
+                        <div class="ol-annex-label">{{ field.field_label }}</div>
+                        <div class="ol-annex-signature-value">{% if value %}<img src="{{ value }}" alt="{{ field.field_label }}">{% endif %}</div>
+                    </div>
+                {% else %}
+                    <div class="ol-annex-field">
+                        <div class="ol-annex-label">{{ field.field_label }} :</div>
+                        {% if field.fieldtype == "Check" %}
+                            {% set yes = value in ["1", "true", "True", "Yes", "Oui"] %}
+                            {% set no = value in ["0", "false", "False", "No", "Non"] %}
+                            <div class="ol-annex-check">
+                                <span class="ol-annex-check-option"><span class="ol-annex-box{% if yes %} checked{% endif %}"></span>{{ _("Yes") }}</span>
+                                <span class="ol-annex-check-option"><span class="ol-annex-box{% if no %} checked{% endif %}"></span>{{ _("No") }}</span>
+                            </div>
+                        {% elif field.fieldtype == "Attach Image" %}
+                            <div class="ol-annex-image">{% if value %}<img src="{{ value }}" alt="{{ field.field_label }}">{% else %}<div class="ol-annex-value"></div>{% endif %}</div>
+                        {% elif field.fieldtype == "Attach" %}
+                            <div class="ol-annex-file">{% if value %}<a href="{{ value }}">{{ value.split("/")[-1] or value }}</a>{% else %}<div class="ol-annex-value"></div>{% endif %}</div>
+                        {% elif field.fieldtype in ["Small Text", "Text", "Text Editor"] %}
+                            <div class="ol-annex-text">{{ value }}</div>
+                        {% else %}
+                            <div class="ol-annex-value">{{ value }}</div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+    {% if ns.column_open %}</div>{% endif %}
+    {% if ns.section_open %}</div></section>{% endif %}
 
-    <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;">
-        <thead>
-            <tr style="background: #eff6ff; color: #1e3a8a;">
-                <th style="text-align: left; padding: 9px 10px; border: 1px solid #dbeafe; width: 34%;">Field</th>
-                <th style="text-align: left; padding: 9px 10px; border: 1px solid #dbeafe;">Value</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in doc.values %}
-            <tr>
-                <td style="padding: 8px 10px; border: 1px solid #e2e8f0; font-weight: 700; color: #334155;">{{ row.field_label }}</td>
-                <td style="padding: 8px 10px; border: 1px solid #e2e8f0; white-space: pre-wrap;">{{ "Yes" if row.fieldtype == "Check" and row.value in ["1", "true", "True"] else ("No" if row.fieldtype == "Check" else (row.value or "")) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    {% if template.print_footer %}
-    <div style="margin-top: 18px; padding: 12px 14px; border: 1px solid #dbe5ef; border-radius: 10px; background: #f8fafc; font-size: 12px;">
-        {{ template.print_footer }}
-    </div>
-    {% endif %}
-
-    {% if template.show_signature_block %}
-    <div style="margin-top: 44px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 60px; font-size: 11px; color: #64748b;">
-        <div><div style="height: 48px;"></div><div style="border-top: 1px solid #94a3b8; padding-top: 6px;">Prepared by</div></div>
-        <div><div style="height: 48px;"></div><div style="border-top: 1px solid #94a3b8; padding-top: 6px;">Validated by</div></div>
-    </div>
+    {% if template.print_footer %}<div class="ol-annex-print-footer">{{ template.print_footer }}</div>{% endif %}
+    {% if company %}
+    <footer class="ol-annex-footer">
+        <strong>{{ company.company_name }}</strong>
+        {% if company_address %}<div>{{ company_address }}</div>{% endif %}
+        {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+    </footer>
     {% endif %}
 </div>

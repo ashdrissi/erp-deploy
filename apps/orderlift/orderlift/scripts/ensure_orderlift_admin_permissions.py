@@ -1,144 +1,91 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils import cint
 
 from orderlift.company_access import ORDERLIFT_MANAGED_SHARE_DISABLED_DOCTYPES
+from orderlift.scripts.setup_startup_roles import ORDERLIFT_ADMIN_PERMISSIONS
 
 
 ROLE = "Orderlift Admin"
 READ_ONLY_DOCTYPE_PERMISSION = {"read": 1, "report": 1, "print": 1, "email": 1}
-ADMIN_DOCTYPE_PERMISSIONS = {
-    "Company": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 1, "share": 0, "print": 1, "email": 1},
-    "Data Import": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 0, "import": 0, "share": 0, "print": 1, "email": 0},
-    "User": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 0, "email": 1},
-    "Role": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 0, "email": 0},
-    "User Permission": {"read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 0, "print": 1, "email": 0},
-    "Workflow": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 1, "share": 0, "print": 1, "email": 0},
-    "Workflow State": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 1, "share": 0, "print": 1, "email": 0},
-    "Assignment Rule": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 1, "share": 0, "print": 1, "email": 0},
-    "Orderlift Menu Access Rule": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 0},
-    "Item": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Item Price": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Price List": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Pricing Builder": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Pricing Sheet": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Pricing Scenario": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Pricing Customs Policy": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Pricing Benchmark Policy": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "CRM Business Type": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 0},
-    "CRM Segment": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 0},
-    "Partner Segment": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 0},
-    "Installation Stage": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 0},
-    "Item Category": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
-    "Partner Campaign": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 1, "email": 1},
-    "Partner Campaign Target": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 1, "email": 1},
-    "Partner Campaign Status": {"read": 1, "select": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 0},
-    "Performance Metric": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Performance Metric Snapshot": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Performance Profile": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Training Level": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Training Module": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Training Quiz": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Training Quiz Attempt": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
-    "Training Quiz Question": {"read": 1, "write": 1, "create": 1, "delete": 0, "report": 1, "export": 1, "import": 0, "share": 1, "print": 1, "email": 1},
+ADMIN_DOCTYPE_PERMISSIONS = ORDERLIFT_ADMIN_PERMISSIONS
+PROTECTED_DOCTYPES = {
+    "Assignment Rule",
+    "Custom DocPerm",
+    "DocPerm",
+    "DocType",
+    "Error Log",
+    "Role",
+    "User",
+    "User Permission",
+    "Workflow",
+    "Workflow State",
 }
-ADDITIONAL_DOCTYPE_PERMISSIONS = {
-    "Sales User": {
-        "Appraisal Cycle": READ_ONLY_DOCTYPE_PERMISSION,
-    },
-}
-FIELD_PROPERTY_SETTERS = [
-    {
-        "doctype": "Appraisal Cycle",
-        "fieldname": "company",
-        "property": "ignore_user_permissions",
-        "property_type": "Check",
-        "value": 1,
-    },
-]
-ADMIN_PAGES = ["status-control", "access-command-center", "permission-manager"]
 
 
 @frappe.whitelist()
-def run() -> dict:
+def run(dry_run: int = 1, exact_normalization: int = 0) -> dict:
     frappe.only_for("System Manager")
+    dry_run = cint(dry_run)
+    exact_normalization = cint(exact_normalization)
     results = {
+        "dry_run": bool(dry_run),
+        "exact_normalization": bool(exact_normalization),
         "custom_docperms": [],
-        "report_roles": [],
-        "property_setters": [],
     }
     if not frappe.db.exists("Role", ROLE):
         return {**results, "skipped": f"Role {ROLE} does not exist"}
 
-    if frappe.db.exists("DocType", "Item Reorder"):
-        _ensure_custom_docperm(
-            "Item Reorder",
-            ROLE,
-            {
-                "read": 1,
-                "write": 1,
-                "create": 1,
-                "delete": 0,
-                "report": 1,
-                "export": 1,
-                "import": 0,
-                "share": 0,
-                "print": 1,
-                "email": 0,
-                "submit": 0,
-                "cancel": 0,
-                "amend": 0,
-            },
-            results,
-        )
-
     for doctype, permissions in ADMIN_DOCTYPE_PERMISSIONS.items():
-        if frappe.db.exists("DocType", doctype):
-            _ensure_custom_docperm(doctype, ROLE, _permission_flags_for_doctype(doctype, permissions), results)
-
-    for role, doctype_permissions in ADDITIONAL_DOCTYPE_PERMISSIONS.items():
-        if not frappe.db.exists("Role", role):
+        if doctype in PROTECTED_DOCTYPES:
             continue
-        for doctype, permissions in doctype_permissions.items():
-            if frappe.db.exists("DocType", doctype):
-                _ensure_custom_docperm(doctype, role, _permission_flags_for_doctype(doctype, permissions), results)
+        if frappe.db.exists("DocType", doctype):
+            _ensure_custom_docperm(
+                doctype,
+                ROLE,
+                _permission_flags_for_doctype(doctype, permissions),
+                results,
+                dry_run=dry_run,
+                overwrite=exact_normalization,
+            )
 
-    for setter in FIELD_PROPERTY_SETTERS:
-        if frappe.db.exists("DocType", setter["doctype"]):
-            _ensure_field_property_setter(results=results, **setter)
-
-    for page in ADMIN_PAGES:
-        if frappe.db.exists("Page", page):
-            _ensure_has_role("Page", page, ROLE, results)
-
-    if frappe.db.exists("Report", "Sales Payment Summary"):
-        _ensure_has_role("Report", "Sales Payment Summary", ROLE, results)
-
-    frappe.db.commit()
-    frappe.clear_cache()
+    if not dry_run:
+        frappe.db.commit()
+        frappe.clear_cache()
     return results
 
 
-def _ensure_custom_docperm(doctype: str, role: str, values: dict, results: dict) -> None:
+def _ensure_custom_docperm(
+    doctype: str,
+    role: str,
+    values: dict,
+    results: dict,
+    *,
+    dry_run: int = 0,
+    overwrite: int = 0,
+) -> None:
     filters = {"parent": doctype, "role": role, "permlevel": 0}
     existing = frappe.db.exists("Custom DocPerm", filters)
     if existing:
-        frappe.db.set_value("Custom DocPerm", existing, values)
-        action = "updated"
+        action = "updated" if overwrite else "exists"
+        if overwrite and not dry_run:
+            frappe.db.set_value("Custom DocPerm", existing, values)
     else:
-        doc = frappe.get_doc(
-            {
-                "doctype": "Custom DocPerm",
-                "parent": doctype,
-                "parenttype": "DocType",
-                "parentfield": "permissions",
-                "role": role,
-                "permlevel": 0,
-                **values,
-            }
-        )
-        doc.insert(ignore_permissions=True)
         action = "created"
+        if not dry_run:
+            doc = frappe.get_doc(
+                {
+                    "doctype": "Custom DocPerm",
+                    "parent": doctype,
+                    "parenttype": "DocType",
+                    "parentfield": "permissions",
+                    "role": role,
+                    "permlevel": 0,
+                    **values,
+                }
+            )
+            doc.insert(ignore_permissions=True)
     results["custom_docperms"].append({"doctype": doctype, "role": role, "action": action})
 
 

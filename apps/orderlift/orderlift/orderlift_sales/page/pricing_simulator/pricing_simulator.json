@@ -10,17 +10,7 @@
     "name": "pricing-simulator",
     "owner": "Administrator",
     "page_name": "pricing-simulator",
-    "roles": [
-        {
-            "role": "Orderlift Admin"
-        },
-        {
-            "role": "Sales Manager"
-        },
-        {
-            "role": "Orderlift Commercial"
-        }
-    ],
+    "roles": [],
     "script": null,
     "standard": "Yes",
     "style": null,

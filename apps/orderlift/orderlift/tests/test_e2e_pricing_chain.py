@@ -35,6 +35,11 @@ class TESTE2EPricingChain:
         if not condition:
             raise AssertionError(f"{label}: {detail}")
 
+    def _assert_price(self, label, actual, expected):
+        actual = flt(actual)
+        expected = flt(expected)
+        self._assert(label, abs(actual - expected) <= 1e-9, f"expected={expected} actual={actual}")
+
     def report(self):
         passed = sum(1 for r in self.results if r["status"] == "PASS")
         failed = sum(1 for r in self.results if r["status"] == "FAIL")
@@ -42,6 +47,7 @@ class TESTE2EPricingChain:
 
     def run(self):
         original_user = frappe.session.user
+        original_admin_enabled = frappe.db.get_value("User", "Administrator", "enabled")
         frappe.db.set_value("User", "Administrator", "enabled", 1)
         frappe.db.commit()
         try:
@@ -52,7 +58,7 @@ class TESTE2EPricingChain:
             self._step_create_sales_order()
         finally:
             frappe.set_user(original_user)
-            frappe.db.set_value("User", "Administrator", "enabled", 0)
+            frappe.db.set_value("User", "Administrator", "enabled", original_admin_enabled)
             frappe.db.commit()
             self._rollback()
 
@@ -103,7 +109,8 @@ class TESTE2EPricingChain:
                 "display_group": "Test Group",
                 "show_in_detail": 1,
                 "line_type": "Standard",
-                "discount_percent": 10,
+                "discount_percent": 7.123456789,
+                "changed_field": "discount_percent",
             }],
         }
 
@@ -129,10 +136,15 @@ class TESTE2EPricingChain:
         self._assert("Pricing Sheet has lines", len(lines) > 0, len(lines))
 
         line = lines[0]
-        self._assert("PS line has sell price", flt(line.final_sell_unit_price) > 0,
-            f"sp={flt(line.static_list_price)} fu={flt(line.final_sell_unit_price)} dsu={flt(line.discounted_sell_unit_price)} comm={flt(line.commission_amount)}")
-        self._assert("PS line has discount", flt(line.discount_percent) == 10, line.discount_percent)
-        self._assert("PS line has discounted sell", flt(line.discounted_sell_unit_price) > 0)
+        self._assert("PS line has sell price", flt(line.sell_unit_price) > 0,
+            f"list={flt(line.static_list_price)} sell={flt(line.sell_unit_price)} total={flt(line.sell_total)} comm={flt(line.commission_amount)}")
+        self._assert_price("PS line preserves discount precision", line.discount_percent, 7.123456789)
+        self._assert_price("PS sell total matches PU HT x qty", line.sell_total, flt(line.sell_unit_price) * flt(line.qty))
+        self._assert_price(
+            "PS discount amount is per unit",
+            line.discount_amount_per_unit,
+            max(flt(line.static_list_price or line.projected_unit_price) - flt(line.sell_unit_price), 0),
+        )
         self._assert("PS line has commission", flt(line.commission_amount) >= 0, line.commission_amount)
 
     # -------------------------------------------------------
@@ -144,12 +156,11 @@ class TESTE2EPricingChain:
         self.sheet.reload()
 
         ps_line = self.sheet.lines[0]
-        gross = flt(ps_line.final_sell_unit_price)
-        discounted = flt(ps_line.discounted_sell_unit_price or gross)
-        static = flt(ps_line.static_list_price or ps_line.projected_unit_price or gross)
+        sell_unit_price = flt(ps_line.sell_unit_price)
+        list_reference = flt(ps_line.static_list_price or ps_line.projected_unit_price or sell_unit_price)
         qty = flt(ps_line.qty)
         disc_pct = flt(ps_line.discount_percent)
-        disc_amt = flt(ps_line.discount_amount)
+        disc_amt = flt(ps_line.discount_amount_per_unit)
         comm_rate = flt(ps_line.commission_rate)
         comm_amt = flt(ps_line.commission_amount)
 
@@ -167,18 +178,16 @@ class TESTE2EPricingChain:
         quotation.append("items", {
             "item_code": ps_line.item,
             "qty": qty,
-            "rate": discounted,
-            "amount": discounted * qty,
-            "price_list_rate": discounted,
-            "net_rate": discounted,
-            "net_amount": discounted * qty,
-            "discount_percentage": 0,
-            "source_price_list_sell_rate": static,
-            "source_gross_sell_rate": gross,
+            "rate": sell_unit_price,
+            "amount": sell_unit_price * qty,
+            "price_list_rate": list_reference,
+            "net_rate": sell_unit_price,
+            "net_amount": sell_unit_price * qty,
+            "discount_percentage": disc_pct,
+            "source_price_list_sell_rate": list_reference,
             "source_discount_percent": disc_pct,
             "source_max_discount_percent": flt(ps_line.max_discount_percent_allowed),
             "source_discount_amount": disc_amt,
-            "source_discounted_sell_rate": discounted,
             "source_selling_price_list": ps_line.get("resolved_selling_price_list") or "",
             "source_commission_rate": comm_rate,
             "source_commission_amount": comm_amt,
@@ -207,17 +216,27 @@ class TESTE2EPricingChain:
         ps_line = self.sheet.lines[0]
 
         self._assert("QTN rate > 0", flt(q_item.rate) > 0, q_item.rate)
-        self._assert("QTN source_gross_sell_rate > 0", flt(q_item.get("source_gross_sell_rate") or 0) > 0, q_item.get("source_gross_sell_rate"))
-        self._assert("QTN source_discounted_sell_rate > 0", flt(q_item.get("source_discounted_sell_rate") or 0) > 0)
+        self._assert("QTN source_price_list_sell_rate > 0", flt(q_item.get("source_price_list_sell_rate") or 0) > 0)
         self._assert("QTN source_discount_percent", flt(q_item.get("source_discount_percent") or 0) >= 0)
         self._assert("QTN source_commission_amount >= 0", flt(q_item.get("source_commission_amount") or 0) >= 0)
 
-        self._assert("PU List HT matches PS",
-            abs(flt(q_item.get("source_price_list_sell_rate") or 0) - flt(ps_line.static_list_price or 0)) < 0.02)
-        self._assert("PU HT matches PS",
-            abs(flt(q_item.get("source_gross_sell_rate") or 0) - flt(ps_line.final_sell_unit_price)) < 0.02)
-        self._assert("PU HT net matches PS",
-            abs(flt(q_item.get("source_discounted_sell_rate") or 0) - flt(ps_line.discounted_sell_unit_price or ps_line.final_sell_unit_price)) < 0.02)
+        self._assert_price(
+            "QTN PU List HT matches PS",
+            q_item.get("source_price_list_sell_rate"),
+            ps_line.static_list_price or ps_line.projected_unit_price,
+        )
+        self._assert_price("QTN native PU HT matches PS", q_item.rate, ps_line.sell_unit_price)
+        self._assert_price("QTN native PT HT matches PS", q_item.amount, ps_line.sell_total)
+        self._assert_price("QTN Remise % matches PS", q_item.get("source_discount_percent"), ps_line.discount_percent)
+        self._assert_price(
+            "QTN Remise PU HT matches PS",
+            q_item.get("source_discount_amount"),
+            ps_line.discount_amount_per_unit,
+        )
+        self._assert(
+            "QTN PU TTC is read-only",
+            bool(getattr(q_item.meta.get_field("custom_pu_ttc"), "read_only", 0)),
+        )
 
     # -------------------------------------------------------
     # Step 4: Create Sales Order from Quotation
@@ -268,8 +287,8 @@ class TESTE2EPricingChain:
                 "source_pricing_policy", "source_margin_percent", "source_margin_basis",
                 "source_scenario_rule", "source_margin_rule", "source_sales_person", "source_geography",
                 "source_customs_applied", "source_customs_basis", "source_selling_price_list",
-                "source_price_list_sell_rate", "source_gross_sell_rate", "source_discount_percent",
-                "source_max_discount_percent", "source_discount_amount", "source_discounted_sell_rate",
+                "source_price_list_sell_rate", "source_discount_percent",
+                "source_max_discount_percent", "source_discount_amount",
                 "source_commission_rate", "source_commission_amount"):
                 if hasattr(so_row, field) and hasattr(src, field):
                     setattr(so_row, field, getattr(src, field, None))
@@ -285,30 +304,25 @@ class TESTE2EPricingChain:
         so_item = so_items[0]
         q_ref = quotation.items[0]
 
-        self._assert("SO rate matches QTN", abs(flt(so_item.rate) - flt(q_ref.rate)) < 0.02)
-        self._assert("SO source_gross_sell_rate > 0", flt(so_item.get("source_gross_sell_rate") or 0) > 0)
+        self._assert_price("SO native PU HT matches QTN", so_item.rate, q_ref.rate)
+        self._assert_price("SO native PT HT matches QTN", so_item.amount, q_ref.amount)
+        self._assert_price("SO PU List HT matches QTN", so_item.get("source_price_list_sell_rate"), q_ref.get("source_price_list_sell_rate"))
+        self._assert_price("SO Remise % matches QTN", so_item.get("source_discount_percent"), q_ref.get("source_discount_percent"))
+        self._assert_price("SO Remise PU HT matches QTN", so_item.get("source_discount_amount"), q_ref.get("source_discount_amount"))
+        self._assert(
+            "SO PU TTC is read-only",
+            bool(getattr(so_item.meta.get_field("custom_pu_ttc"), "read_only", 0)),
+        )
 
-        self._assert("SO PU List HT matches QTN", abs(flt(so_item.get("source_price_list_sell_rate") or 0) - flt(q_ref.get("source_price_list_sell_rate") or 0)) < 0.02)
-        self._assert("SO PU HT matches QTN", abs(flt(so_item.get("source_gross_sell_rate") or 0) - flt(q_ref.get("source_gross_sell_rate") or 0)) < 0.02)
-        self._assert("SO PU HT net matches QTN", abs(flt(so_item.get("source_discounted_sell_rate") or 0) - flt(q_ref.get("source_discounted_sell_rate") or 0)) < 0.02)
-        self._assert("SO Remise % matches QTN", abs(flt(so_item.get("source_discount_percent") or 0) - flt(q_ref.get("source_discount_percent") or 0)) < 0.02)
-
-        from orderlift.sales.utils.pricing_projection import calculate_agent_commission
-        gross = flt(so_item.get("source_gross_sell_rate") or 0)
-        disc = flt(so_item.get("source_discounted_sell_rate") or 0)
+        actual_unit_price = flt(so_item.rate)
         qty = flt(so_item.qty)
         max_disc = flt(so_item.get("source_max_discount_percent") or 0)
+        used_disc = flt(so_item.get("source_discount_percent") or 0)
         comm_rate = flt(so_item.get("source_commission_rate") or 0)
-        expected = calculate_agent_commission(
-            price_list_unit_price=gross, actual_unit_price=disc, qty=qty,
-            max_discount_percent=max_disc, commission_rate=comm_rate,
-            enforce_discount_cap=False,
-        )
-        expected_amt = flt(expected.get("commission_amount") or 0)
+        unused_discount = max(max_disc - used_disc, 0)
+        expected_amt = actual_unit_price * qty * (unused_discount / 100) * (comm_rate / 100)
         actual_amt = flt(so_item.get("source_commission_amount") or 0)
-        self._assert("SO commission calculated correctly",
-            abs(actual_amt - expected_amt) < 0.05,
-            f"expected={expected_amt} actual={actual_amt}")
+        self._assert_price("SO commission calculated correctly", actual_amt, expected_amt)
 
 
 if __name__ == "__main__":

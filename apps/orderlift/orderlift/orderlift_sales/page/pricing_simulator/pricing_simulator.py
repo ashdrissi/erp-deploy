@@ -11,6 +11,8 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
     build_dynamic_context,
 )
 from orderlift.orderlift_sales.doctype.pricing_sheet.pricing_sheet import get_latest_item_prices
+from orderlift.orderlift_sales.utils.item_group import descendant_leaf_item_groups, is_item_group_node
+from orderlift.orderlift_sales.utils.pricing_simulator_retirement import deny_pricing_simulator_access
 
 
 STATIC_MODE = "Pick from Published Selling Price List"
@@ -18,6 +20,7 @@ STATIC_MODE = "Pick from Published Selling Price List"
 
 @frappe.whitelist()
 def get_simulation_defaults(sales_person=None, mode="Auto"):
+    deny_pricing_simulator_access()
     frappe.has_permission("Agent Pricing Rules", "read", throw=True)
     mode = (mode or "Auto").strip()
     sales_person = (sales_person or "").strip()
@@ -65,6 +68,7 @@ def get_simulation_defaults(sales_person=None, mode="Auto"):
 
 @frappe.whitelist()
 def run_pricing_simulation(payload=None):
+    deny_pricing_simulator_access()
     frappe.has_permission("Agent Pricing Rules", "read", throw=True)
     data = json.loads(payload) if isinstance(payload, str) else (payload or {})
     items, item_warnings = _resolve_items_for_simulation(data)
@@ -158,8 +162,8 @@ def _run_dynamic_simulation(data, items, agent_doc, resolved_mode):
             "customs_base_value": flt(getattr(line, "customs_base_value", 0)),
             "customs_value_per_kg": flt(getattr(line, "customs_value_per_kg", 0)),
             "customs_total_percent": flt(getattr(line, "customs_total_percent", 0)),
-            "final_sell_unit_price": flt(line.final_sell_unit_price),
-            "final_sell_total": flt(line.final_sell_total),
+            "sell_unit_price": flt(line.sell_unit_price),
+            "sell_total": flt(line.sell_total),
             "margin_pct": flt(line.margin_pct),
             "resolved_pricing_scenario": line.resolved_pricing_scenario or "",
             "benchmark_reference": flt(line.benchmark_reference),
@@ -340,8 +344,8 @@ def _resolve_items_for_simulation(data):
 
     warnings = []
     if item_group and item_group != "All Item Groups":
-        if _is_item_group_node(item_group):
-            descendants = _descendant_leaf_item_groups(item_group)
+        if is_item_group_node(item_group):
+            descendants = descendant_leaf_item_groups(item_group)
             if descendants:
                 filters["item_group"] = ["in", descendants]
             else:
@@ -433,8 +437,8 @@ def _load_static_items(selling_lists, item_group=None, max_items=0):
     filters = {"name": ["in", list(grouped.keys())], "disabled": 0}
     warnings = []
     if item_group and item_group != "All Item Groups":
-        if _is_item_group_node(item_group):
-            descendants = _descendant_leaf_item_groups(item_group)
+        if is_item_group_node(item_group):
+            descendants = descendant_leaf_item_groups(item_group)
             if descendants:
                 filters["item_group"] = ["in", descendants]
             else:
@@ -564,26 +568,3 @@ def _compute_global_margin_pct(doc):
     if total_sell <= 0:
         return 0.0
     return flt(((total_sell - total_buy) / total_sell) * 100)
-
-
-def _is_item_group_node(item_group_name):
-    return cint(frappe.db.get_value("Item Group", item_group_name, "is_group") or 0) == 1
-
-
-def _descendant_leaf_item_groups(item_group_name):
-    node = frappe.db.get_value("Item Group", item_group_name, ["lft", "rgt"], as_dict=True) or {}
-    lft = cint(node.get("lft") or 0)
-    rgt = cint(node.get("rgt") or 0)
-    if not lft or not rgt:
-        return []
-
-    return frappe.get_all(
-        "Item Group",
-        filters={
-            "lft": [">=", lft],
-            "rgt": ["<=", rgt],
-            "is_group": 0,
-        },
-        pluck="name",
-        limit_page_length=0,
-    )

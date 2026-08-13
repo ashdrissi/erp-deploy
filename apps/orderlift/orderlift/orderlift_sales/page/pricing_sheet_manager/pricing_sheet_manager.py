@@ -5,9 +5,7 @@ from frappe import _
 from frappe.utils import flt, get_first_day, nowdate
 
 from orderlift.menu_access import resolve_current_company
-
-
-PRIVILEGED_PRICING_ROLES = {"Administrator", "Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
+from orderlift.role_capabilities import CAPABILITY_PRIVILEGED_PRICING, user_has_capability
 
 
 @frappe.whitelist()
@@ -145,7 +143,7 @@ def _serialize_row(row):
         "total_buy": total_buy,
         "total_expenses": flt(row.total_expenses),
         "total_selling": total_selling,
-        "discounted_total": flt(line_totals.get("discounted_total") or total_selling),
+        "sell_total": flt(line_totals.get("sell_total") or total_selling),
         "discount_total": flt(line_totals.get("discount_total")),
         "commission_total": flt(line_totals.get("commission_total")),
         "line_count": int(line_totals.get("line_count") or 0),
@@ -163,8 +161,8 @@ def _get_line_totals(pricing_sheet):
         """
         SELECT
             COUNT(*) AS line_count,
-            COALESCE(SUM(discounted_sell_total), 0) AS discounted_total,
-            COALESCE(SUM(discount_amount), 0) AS discount_total,
+            COALESCE(SUM(sell_total), 0) AS sell_total,
+            COALESCE(SUM(discount_amount_per_unit * qty), 0) AS discount_total,
             COALESCE(SUM(commission_amount), 0) AS commission_total
         FROM `tabPricing Sheet Item`
         WHERE parent = %s
@@ -247,7 +245,7 @@ def _current_company():
 def _restricted_sales_person():
     if frappe.session.user == "Administrator":
         return None
-    if set(frappe.get_roles(frappe.session.user) or []) & PRIVILEGED_PRICING_ROLES:
+    if user_has_capability(CAPABILITY_PRIVILEGED_PRICING):
         return None
     if not frappe.db.exists("DocType", "Sales Person") or not frappe.db.has_column("Sales Person", "user"):
         return ""

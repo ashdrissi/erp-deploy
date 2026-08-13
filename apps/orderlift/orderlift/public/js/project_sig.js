@@ -573,7 +573,7 @@ function _load_project_status_colors() {
     if (PROJECT_STATUS_COLORS) return Promise.resolve(PROJECT_STATUS_COLORS);
     if (!PROJECT_STATUS_COLORS_PROMISE) {
         PROJECT_STATUS_COLORS_PROMISE = frappe.call({
-            method: "orderlift.orderlift_crm.api.status_control.get_status_control_data",
+            method: "orderlift.orderlift_crm.status_workflow.get_status_reference_data",
             args: { document_type: "Project" },
         }).then((res) => {
             PROJECT_STATUS_COLORS = {};

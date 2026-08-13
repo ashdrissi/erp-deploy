@@ -66,10 +66,15 @@ class PortalQuoteRequest(Document):
         if self.status not in {"Approved", "Submitted", "Under Review"}:
             frappe.throw(_("Only approved/submitted requests can be converted to quotation."))
 
+        company = (getattr(self, "custom_company", "") or "").strip()
+        if not company:
+            frappe.throw(_("Set the Company on this portal quote request before creating a Quotation."))
         quotation = frappe.new_doc("Quotation")
-        quotation.company = frappe.defaults.get_user_default("Company") or frappe.get_all("Company", pluck="name", limit_page_length=1)[0]
+        quotation.company = company
         quotation.quotation_to = "Customer"
         quotation.party_name = self.customer
+        if self.contact and quotation.meta.get_field("contact_person"):
+            quotation.contact_person = self.contact
         unique_lists = sorted({(row.source_price_list or "").strip() for row in self.items if (row.source_price_list or "").strip()})
         if len(unique_lists) == 1:
             quotation.selling_price_list = unique_lists[0]

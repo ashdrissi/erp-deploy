@@ -152,6 +152,47 @@ class TestPricingBuilderMetadata(unittest.TestCase):
 
         self.assertEqual(margin_pct, 25)
 
+    def test_blank_expenses_policy_uses_neutral_scenario_cache(self):
+        original_latest_prices = pricing_builder.get_latest_item_prices
+        calls = []
+
+        def latest_prices(item_codes, price_list, buying=None, target_currency=None):
+            calls.append((item_codes, price_list, buying, target_currency))
+            return {"ITEM-1": 100}
+
+        pricing_builder.get_latest_item_prices = latest_prices
+        try:
+            neutral_caches = {}
+            cache = pricing_builder._scenario_cache_for_builder_rule(
+                scenario_name="",
+                buying_list="Buy USD",
+                item_codes=["ITEM-1"],
+                scenario_caches={},
+                neutral_caches=neutral_caches,
+                target_currency="MAD",
+            )
+        finally:
+            pricing_builder.get_latest_item_prices = original_latest_prices
+
+        self.assertEqual(cache["buying_price_list"], "Buy USD")
+        self.assertEqual(cache["buy_prices"], {"ITEM-1": 100})
+        self.assertEqual(cache["line_expenses"], [])
+        self.assertEqual(cache["transport_config"], {})
+        self.assertEqual(cache["storage_config"], {})
+        self.assertEqual(calls, [(["ITEM-1"], "Buy USD", True, "MAD")])
+
+    def test_selected_expenses_policy_still_requires_valid_scenario(self):
+        self.assertIsNone(
+            pricing_builder._scenario_cache_for_builder_rule(
+                scenario_name="Missing Scenario",
+                buying_list="Buy USD",
+                item_codes=["ITEM-1"],
+                scenario_caches={},
+                neutral_caches={},
+                target_currency="MAD",
+            )
+        )
+
     def test_override_margin_percent_can_be_negative(self):
         margin_pct = pricing_builder._override_margin_percent(
             override_price=110,
@@ -1857,6 +1898,33 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         self.assertIn("await save(page, { silent: true, freeze: false })", page_js)
         self.assertIn('if (event.type === "change") scheduleAutoPrice(page);', page_js)
         self.assertIn("scheduleAutoPrice(page);\n            }, getLineLinkQuery(field, line));", page_js)
+
+    def test_pricing_sheet_builder_has_selected_or_all_bulk_discount_with_override_report(self):
+        app_root = Path(__file__).resolve().parents[2]
+        page_js = (
+            app_root
+            / "orderlift"
+            / "orderlift_sales"
+            / "page"
+            / "pricing_sheet_builder"
+            / "pricing_sheet_builder.js"
+        ).read_text()
+
+        for token in [
+            "data-bulk-discount",
+            "Bulk Discount",
+            "openBulkDiscountDialog",
+            "applyBulkLineDiscount",
+            "selected.size",
+            "allLines.slice()",
+            "discount > maxDiscount + 0.000001",
+            "orderlift_capabilities?.quotation_override",
+            "Skipped below-cap lines",
+            "Admin override applied above max",
+            "applyLineDiscountPercent",
+            "scheduleAutoPrice(page)",
+        ]:
+            self.assertIn(token, page_js)
 
     def test_price_list_scope_supports_benchmark_type_and_attributed_visibility(self):
         app_root = Path(__file__).resolve().parents[2]

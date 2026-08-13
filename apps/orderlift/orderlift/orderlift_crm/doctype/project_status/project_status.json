@@ -1,6 +1,7 @@
 {
   "actions": [],
   "allow_import": 1,
+  "allow_rename": 1,
   "autoname": "field:status_label",
   "creation": "2026-04-25 00:00:00",
   "doctype": "DocType",

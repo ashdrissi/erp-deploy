@@ -1,0 +1,32 @@
+{
+  "actions": [],
+  "creation": "2026-08-09 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["block_key", "block_label", "block_type", "source_field", "annex_template", "annex_field_key", "default_value", "options", "is_required", "allow_manual_override", "display_order"],
+  "fields": [
+    {"fieldname": "block_key", "fieldtype": "Data", "label": "Block Key", "in_list_view": 1},
+    {"fieldname": "block_label", "fieldtype": "Data", "label": "Label", "reqd": 1, "in_list_view": 1},
+    {"fieldname": "block_type", "fieldtype": "Select", "label": "Block Type", "options": "Page Break\nHeading\nParagraph\nKey Value\nList\nManual Area\nQuotation Field\nAnnex Field", "default": "Paragraph", "reqd": 1, "in_list_view": 1},
+    {"fieldname": "source_field", "fieldtype": "Data", "label": "Quotation Field", "description": "Direct or dotted Quotation field, for example customer_name or party_name."},
+    {"fieldname": "annex_template", "fieldtype": "Link", "label": "Annex Template", "options": "Orderlift Document Template"},
+    {"fieldname": "annex_field_key", "fieldtype": "Data", "label": "Annex Field Key"},
+    {"fieldname": "default_value", "fieldtype": "Text Editor", "label": "Default Value"},
+    {"fieldname": "options", "fieldtype": "Small Text", "label": "Options", "description": "One list item per line for List blocks, or helper text for manual areas."},
+    {"fieldname": "is_required", "fieldtype": "Check", "label": "Required"},
+    {"fieldname": "allow_manual_override", "fieldtype": "Check", "label": "Allow Manual Override", "default": "1"},
+    {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100"}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-08-09 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift",
+  "name": "Orderlift Quotation Detail Template Block",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "display_order",
+  "sort_order": "ASC",
+  "states": []
+}

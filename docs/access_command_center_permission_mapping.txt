@@ -1,0 +1,255 @@
+ACCESS COMMAND CENTER PERMISSION MAPPING
+========================================
+
+Purpose
+-------
+This file is the operator-facing contract for Access Command Center. A checked
+business permission must produce all access needed to use that feature, without
+requiring hidden Role Permission Manager changes.
+
+Role creation baseline
+----------------------
+Every Orderlift-managed custom role receives this technical Desk baseline. It
+does not grant access to a business document, business menu, Page, or Report.
+
+Address: read, report, print, email
+Communication: read, report, print, email
+Contact: read, report, print, email
+Country: read, report, print, email
+Currency: select
+Email Template: read, report, print, email
+Event: read, write, create, report, print, email
+File: read, write, create, delete
+Gender: read, report, print, email
+Language: read, report, print, email
+Notification Log: read, report, print, email
+Payment Term: select
+Payment Terms Template: read, report, print, email
+Salutation: read, report, print, email
+Tag: read, write, create
+Tag Link: read, write, create
+ToDo: select, read, write, create, delete
+UOM: read, report, print, email
+
+Business action mapping
+-----------------------
+Use in Fields: select
+View: read, report, print
+Create / Edit: read, write, create, report, print
+Approve / Cancel: read, write, submit, cancel, amend
+Delete: read, delete
+Import: read, create, import
+Export: read, export
+
+Import tool dependency
+----------------------
+Import is a single Business Permissions action. In addition to the target
+DocType mapping above, the compiler grants the minimum native tool access to
+roles with at least one effective Import target:
+
+Data Import: read, write, create
+Data Import Log: read
+
+These supporting DocTypes are runtime dependencies, not separate business
+controls. They are hidden from the technical permission matrix and are
+removed when the role has no remaining Import target.
+
+General behavior for every row
+------------------------------
+1. Enabling an action also shows the corresponding Main Dashboard menu item.
+2. A Page action adds the native Page role and all listed backing access.
+3. A Report action adds the native Report role and reference DocType access.
+4. A DocType row applies the action mapping to permlevel 0.
+5. Child tables are included through their parent and are not exposed as
+   misleading standalone business grants.
+6. Curated reference dependencies receive only read or select access.
+7. Runtime server capabilities listed below are included in the same action.
+8. Disabling the final action removes the menu role, native target role, and
+   grants owned by that feature while preserving grants required by other rows.
+9. All changes clear DocType, role, user, menu, and boot caches as applicable.
+
+There is intentionally no separate Menu Access tab. Orderlift Menu Access Rule
+records remain compiled backend storage and a server-side safety check. They are
+not an independent administrator control that can disagree with this matrix.
+
+Feature registry
+----------------
+Format:
+  key | UI label | target | included backing/runtime access
+
+[Home]
+home.dashboard | Dashboard | Page: home-page | Page role; menu visibility
+
+[My Work]
+my_work.todo | My ToDos | Page: my-todos | ToDo
+my_work.calendar | Calendar | DocType: Event | Event child data
+
+[Administration]
+administration.access_command_center | Access Command Center | Page: access-command-center | high-access roles only; Open/View -> User read/select; Create/Edit -> User write/create; Delete -> User delete; Export -> User export; Page role; menu visibility
+administration.status_control | Status Control | Page: status-control | Sales Stage; Project Status; Orderlift Order Status; Logistics Pipeline Status
+administration.document_templates | Document Templates | Page: document-template-manager | Orderlift Document Template
+administration.business_delivery | Business Delivery | Page: business-delivery | read-only page contract
+administration.companies | Companies | DocType: Company | Company references
+administration.currency | Currency List | DocType: Currency | Currency references
+administration.currency_exchange | Currency Exchange | DocType: Currency Exchange | Currency; Company
+administration.currency_exchange_settings | Currency Exchange Settings | DocType: Currency Exchange Settings | Currency; view and create/edit only
+
+Access Command Center remains protected by its server-side Orderlift Admin and
+superadmin gate in addition to the business permission bundle. Menu Editor is
+not editable from Business Permissions.
+
+[CRM & Customers]
+crm.crm_dashboard | CRM Dashboard | Page: crm-dashboard | Opportunity read access
+crm.projects_list | Projects List | DocType: Project | Project child tables and status references
+crm.campaign_manager | Campaign Manager | Page: campaign-manager | Partner Campaign and Partner Campaign Target
+crm.campaign_builder | Campaign Builder | Page: campaign-editor | Partner Campaign and Partner Campaign Target
+crm.opportunity_pipeline | Opportunity Pipeline | Page: opportunity-pipeline | Opportunity; Opportunity-only manual assignment; ToDo assignment storage; eligible User lookup
+crm.lead | Lead | DocType: Lead | CRM Business Type; CRM Segment; Address; Contact
+crm.opportunity | Opportunity | DocType: Opportunity | Opportunity Item; Sales Stage; CRM Business Type; CRM Segment; Customer; Prospect; Lead
+crm.prospect | Prospect | DocType: Prospect | CRM Segment Assignment; Address; Contact
+crm.customer | Customer | DocType: Customer | CRM Segment Assignment; Address; Contact
+crm.communication | Communication | DocType: Communication | Communication Link; File
+crm.appointment | Appointment | DocType: Appointment | Event Participants; User lookup
+
+[Sales]
+sales.pricing_sheets | Pricing Sheets | Page: pricing-sheet-manager | Pricing Sheet and Pricing Sheet Item
+sales.pricing_dashboard | Pricing Dashboard | Page: pricing-dashboard | Pricing Sheet read access
+sales.sales_order_pipeline | Sales Order Pipeline | Page: sales-order-pipeline | Sales Order; Sales-Order-only manual assignment; ToDo assignment storage; eligible User lookup
+sales.project_pipeline | Project Pipeline | Page: project-pipeline | Project; Project-only manual assignment; ToDo assignment storage; eligible User lookup
+sales.quotation | Quotation | DocType: Quotation | Quotation Item; taxes; payment schedule; Pricing Sheet; Customer; Item; UOM
+sales.sales_order | Sales Orders | DocType: Sales Order | Sales Order Item; taxes; payment schedule; Customer; Item; Warehouse; Project
+sales.commission_dashboard | Commissions Dashboard | Page: commission-dashboard | Sales Commission
+sales.commissions | Commissions | DocType: Sales Commission | Sales Order; Sales Person; Employee
+
+[Policies & Configs]
+policies.customs_policy | Customs Policy | DocType: Pricing Customs Policy | policy child rows and reference values
+policies.expenses_policy | Expenses Policy | DocType: Pricing Scenario | scenario child rows and reference values
+policies.margin_benchmark | Margin & Benchmark Policy | DocType: Pricing Benchmark Policy | benchmark child rows and reference values
+policies.customer_segmentation | Customer Segmentation Engine | Page: customer-segmentation-workspace | Customer Segmentation Engine
+policies.pricing_tiers | Pricing Tiers | DocType: Pricing Tier | tier references
+policies.agent_rules | Sales Agent Rules | DocType: Agent Pricing Rules | Agent Allowed Payment Terms; User; Company; Price List
+policies.purchase_agent_rules | Purchase Agent Rules | DocType: Purchase Agent Rules | Purchase Agent Allowed Buying Price List; capability purchase_agent_rules_management
+
+[SAV]
+sav.dashboard | SAV Dashboard | Page: sav-dashboard | SAV Ticket
+sav.tickets | SAV Tickets | DocType: SAV Ticket | ticket child data; Customer; Item; Project; User
+
+[Items & Price Lists]
+items.item | Item | DocType: Item | Item defaults; UOM Conversion Detail; Item Tax; Item Barcode; Item Reorder
+items.item_category | Item Category | DocType: Item Category | category references
+items.item_group | Item Group | DocType: Item Group | parent Item Group
+items.product_bundle | Product Bundle | DocType: Product Bundle | Product Bundle Item; Item; UOM
+items.dimensioning_sets | Dimensioning Sets | Page: dimensioning-set-manager | Dimensioning Set and its rule child tables; Use in Fields remains separately selectable
+items.item_price | Item Price | DocType: Item Price | Item; Price List; UOM; Currency
+items.price_list | Price List | DocType: Price List | Currency; Company
+items.catalogue_prix_articles | Catalogue Prix Articles | Page: catalogue-prix-articles | Item read access
+items.buying_price_builder | Buying Price Builder | Page: buying-price-builder | Buying Price Formula Rule; Item; Item Price; Price List
+items.static_pricing_builder | Selling Price Builder | Page: pricing-builder-manager | Pricing Builder; Item; Item Price; Price List
+
+[Finance]
+finance.sale_financial_dashboard | Sale Financial Dashboard | Page: sale-financial-dashboard | Sales Order read access
+finance.sales_payment_follow_up | Sales Payment Follow Up | Report | Report role; report reference DocType read/report/print/export
+finance.sales_invoices | Sales Invoices | DocType: Sales Invoice | Sales Invoice Item; taxes; payment schedule; Customer; Account references remain backend-protected
+finance.purchase_invoices | Purchase Invoices | DocType: Purchase Invoice | Purchase Invoice Item; taxes; Supplier; Account references remain backend-protected
+finance.payments | Payments | DocType: Payment Entry | Payment Entry Reference; party references; Account references remain backend-protected
+
+[Purchasing]
+purchasing.suppliers | Supplier List | DocType: Supplier | Supplier Group; Address; Contact
+purchasing.material_request | Material Request | DocType: Material Request | Material Request Item; Item; UOM; Warehouse; Project
+purchasing.rfq | Request for Quotation | DocType: Request for Quotation | RFQ Item; RFQ Supplier; Supplier; Item
+purchasing.purchase_order | Purchase Order | DocType: Purchase Order | Purchase Order Item; taxes; payment schedule; Supplier; Item; Warehouse; Project
+purchasing.purchase_receipt | Purchase Receipt | DocType: Purchase Receipt | Purchase Receipt Item; taxes; Supplier; Item; Warehouse; Project
+purchasing.delivery_note | Delivery Note | DocType: Delivery Note | Delivery Note Item; taxes; Customer; Item; Warehouse; Project
+purchasing.pick_list | Pick List | DocType: Pick List | Pick List Item; Item; Warehouse
+
+[HR & Performance]
+hr.dashboard | HR Dashboard | Page: hr-dashboard | Employee read access
+hr.payroll_dashboard | Payroll Dashboard | Dashboard: Payroll | Dashboard access; Salary Slip; Payroll Entry
+hr.employees | Employees | DocType: Employee | Department; Designation; Company; User
+hr.salary_slip | Salary Slip | DocType: Salary Slip | earnings/deductions child rows; Employee; Payroll Entry
+hr.payrolls | Payrolls | DocType: Payroll Entry | Employee; Salary Slip; Company
+training.performance_leaderboard | Performance Leaderboard | Page: performance-leaderboard | Performance Metric Snapshot read access
+training.cycle_dashboard | Performance Cycle Dashboard | Page: performance-cycle-dashboard | Appraisal Cycle
+training.performance_metrics | Performance Metrics | DocType: Performance Metric | metric references
+training.performance_profiles | Performance Profiles | DocType: Performance Profile | profile child rows
+training.performance_snapshots | Performance Snapshots | DocType: Performance Metric Snapshot | Employee; metric references
+training.appraisals | Appraisals | DocType: Appraisal | appraisal child rows; Employee; Appraisal Cycle
+training.appraisal_cycles | Appraisal Cycles | DocType: Appraisal Cycle | Employee; Company
+training.goals | Goals | DocType: Goal | Employee; Appraisal Cycle
+
+[Training]
+training.center | Training Center | Page: training-center | Training Program
+training.leaderboard | Training Leaderboard | Page: training-leaderboard | Employee Training Progress
+training.programs | Training Programs | DocType: Training Program | Training Program Content; Training Level; Training Module
+training.levels | Training Levels | DocType: Training Level | level references
+training.modules | Training Modules | DocType: Training Module | module content and quiz references
+training.quizzes | Quizzes | DocType: Training Quiz | Training Quiz Question
+training.quiz_questions | Quiz Questions | DocType: Training Quiz Question | question options
+training.quiz_attempts | Quiz Attempts | DocType: Training Quiz Attempt | User; Training Quiz
+
+[Gestion de Projets]
+projects.project_pipeline | Project Pipeline | Page: project-pipeline | Project; Project-only manual assignment; ToDo assignment storage; eligible User lookup
+projects.sales_order_pipeline | Sales Order Pipeline | Page: sales-order-pipeline | Sales Order; Sales-Order-only manual assignment; ToDo assignment storage; eligible User lookup
+projects.contract | Contract | DocType: Contract | Contract Fulfilment Checklist; party and Project references
+projects.tasks | Tasks | DocType: Task | Task Depends On; Project; User
+projects.timesheet | Timesheet | DocType: Timesheet | Timesheet Detail; Employee; Project; Task
+projects.maintenance_schedule | Maintenance Schedule | DocType: Maintenance Schedule | schedule child rows; Customer; Item; Sales Order
+
+[Warehouse & Stock]
+stock.dashboard | Stock Dashboard | Page: stock-dashboard | Bin read access
+stock.stock_entry | Stock Entry | DocType: Stock Entry | Stock Entry Detail; Item; UOM; Warehouse; Project
+stock.delivery_note | Delivery Note | DocType: Delivery Note | Delivery Note Item; Item; Warehouse; Project
+stock.purchase_receipt | Purchase Receipt | DocType: Purchase Receipt | Purchase Receipt Item; Item; Warehouse; Project
+stock.rate_review | Stock Rate Review | Page: stock-rate-review | Purchase Receipt; Stock Entry; purchasing or privileged-pricing capability remains required for rate editing
+stock.pick_list | Pick List | DocType: Pick List | Pick List Item; Item; Warehouse
+stock.warehouse_tree | Warehouse Tree | DocType: Warehouse | Company; parent Warehouse
+stock.bins | Bins | DocType: Bin | Item; Warehouse; view/export only
+stock.stock_settings | Stock Settings | DocType: Stock Settings | view/create-edit only; curated Link fields ignore user permissions
+stock.warehouse_report | Warehouse Report | Report: Warehouse Wise Stock Balance | report role; reference DocType read/report/print/export
+stock.balance | Stock Balance | Report: Stock Balance | report role; reference DocType read/report/print/export
+stock.ledger | Stock Ledger | Report: Stock Ledger | report role; reference DocType read/report/print/export
+stock.quality_inspection | Quality Inspection | DocType: Quality Inspection | readings; Item; inspection template
+stock.qi_templates | QI Templates | DocType: Quality Inspection Template | template readings; Item
+
+[Logistics]
+logistics.pipeline | Logistics Pipeline | Page: logistics-pipeline | Forecast Load Plan
+logistics.container_planning | Container Planning | Page: logistics-dashboard | Forecast Load Plan read access
+logistics.container_profiles | Container Profiles | DocType: Container Profile | packaging/profile child rows
+
+[B2B Portal]
+b2b.dashboard | B2B Portal Dashboard | Page: b2b-portal-dashboard | Portal Customer Group Policy
+b2b.portal_policies | Portal Policies | DocType: Portal Customer Group Policy | Customer Group; Price List; Company
+b2b.quote_requests | Portal Quote Requests | DocType: Portal Quote Request | request items; Customer; Item
+b2b.review_board | Portal Review Board | Page: portal-review-board | Portal Quote Request
+
+[SIG]
+sig.dashboard | SIG Dashboard | Page: sig-dashboard | Project read access
+sig.project_map | Project Map | Page: project-map | Project read access
+sig.mobile_qc | Mobile QC | Page: sig-qc | Project; QC Checklist Template
+sig.qc_templates | QC Templates | DocType: QC Checklist Template | checklist child rows
+sig.projects | Projects | DocType: Project | Project child tables; status and company references
+
+Role-level capabilities
+-----------------------
+Capabilities remain explicit role-level privileges except where a business row
+lists one as part of its feature contract.
+
+Privileged Pricing: broad pricing, cost, margin, and benchmark visibility.
+Pricing Override: quotation and pricing-sheet price/discount override.
+Manage Saved Other Charges: maintain reusable Other Charge records.
+Purchasing Access: supplier costs, buying price lists, and purchasing workflows.
+All ToDos Access: access ToDos beyond the user's own work.
+Stock Rate Management: approve missing/provisional stock rates.
+Commission Assignment Management: assign commission beneficiaries.
+Commission Payout Management: approve and mark commission payouts.
+Opportunity Pipeline Assignment: assign/unassign Opportunity cards only.
+Project Pipeline Assignment: assign/unassign Project cards only.
+Sales Order Pipeline Assignment: assign/unassign Sales Order cards only.
+Manage Purchase Agent Rules: maintain company-scoped purchase-agent allowances.
+
+Acceptance rule
+---------------
+A role is delivery-ready only when a disposable user with only that role can:
+log in, load Desk without permission errors, see exactly the selected menus,
+open selected features, perform selected actions, receive/read notifications,
+and lose the access immediately after the corresponding toggle is disabled.

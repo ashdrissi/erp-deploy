@@ -1,7 +1,9 @@
 {% set co = get_company_info(doc.company) %}
 {% set co_addr = get_company_address(doc.company) %}
 {% set company_logo = frappe.db.get_value('Company', doc.company, 'company_logo') or '/files/logo.png' %}
-{% set items = doc.items %}
+{% set ol_commercial = get_commercial_print_context(doc, orderlift_force_without_details if orderlift_force_without_details is defined else false) %}
+{% set ol_detail = get_quotation_detail_print_context(doc) %}
+{% set items = ol_commercial['items'] %}
 {% set total_items = items | length %}
 {% set ol_price_mode = orderlift_price_display_mode if orderlift_price_display_mode is defined else 'HT' %}
 {% set ol_print_ttc = ol_price_mode in ('TTC', 'PRIX_UNITAIRE') %}
@@ -385,6 +387,21 @@ table.ol-items td {
   text-decoration: underline;
 }
 
+.ol-detail-proposal { margin: 8px 0 14px; border: 1px solid #9ca3af; background: #fff; }
+.ol-detail-title { padding: 7px 10px; border-bottom: 1px solid #9ca3af; background: #f3f4f6; color: #111827; font-size: 13px; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: .03em; }
+.ol-detail-title-continuation { font-size: 12px; }
+.ol-detail-block { font-size: 10px; line-height: 1.38; color: #1f2937; }
+.ol-detail-heading { margin: 9px 8px 5px; padding: 5px 8px; border: 1px solid #c7ccd4; background: #fbfbfb; color: #111827; font-size: 11px; font-weight: 800; text-align: center; }
+.ol-detail-paragraph { margin: 7px 9px; white-space: pre-line; }
+.ol-detail-kv { display: grid; grid-template-columns: 34% 1fr; border-top: 1px solid #e5e7eb; min-height: 24px; }
+.ol-detail-kv-label { padding: 5px 7px; border-right: 1px solid #e5e7eb; background: #f9fafb; font-weight: 800; color: #374151; }
+.ol-detail-kv-value { padding: 5px 8px; white-space: pre-line; }
+.ol-detail-list-block { margin: 7px 9px; padding: 6px 8px; border: 1px solid #e5e7eb; background: #fcfcfc; }
+.ol-detail-list { margin: 4px 0 0 18px; }
+.ol-detail-list li { margin: 2px 0; }
+.ol-detail-manual-block { margin: 7px 9px; }
+.ol-detail-manual { min-height: 38px; margin-top: 4px; padding: 6px 8px; border: 1px dotted #9ca3af; white-space: pre-line; }
+
 .tr { text-align: right; }
 .tc { text-align: center; }
 .tl { text-align: left; }
@@ -477,16 +494,18 @@ table.ol-items td {
       <th class="tl">{{ _("Description") }}</th>
       <th class="tc" style="width: 35px;">U</th>
       <th class="tc" style="width: 45px;">{{ _("Qty") }}</th>
-      <th class="tr" style="width: 105px;">{{ _("Unit Price") if ol_simple_ttc else _("Unit Price Incl. Tax") if ol_print_ttc else _("Unit Price Excl. Tax") }}</th>
-      <th class="tr" style="width: 105px;">{{ _("Total") if ol_simple_ttc else _("Amount Incl. Tax") if ol_print_ttc else _("Amount Excl. Tax") }}</th>
+      <th class="tr" style="width: 95px;">{{ _("PU") if ol_simple_ttc else (_("PU TTC") if ol_print_ttc else _("PU HT")) }}</th>
+      <th class="tr" style="width: 105px;">{{ _("PT") if ol_simple_ttc else (_("PT TTC") if ol_print_ttc else _("PT HT")) }}</th>
     </tr>
   </thead>
   <tbody>
     {%- for item in items_list %}
     {%- set item_image = frappe.db.get_value('Item', item.item_code, 'image') %}
     {%- set item_ttc = ol_ttc.rows_by_name.get(item.name) or ol_ttc.rows_by_idx.get((item.idx or loop.index) ~ '') or {} %}
-    {%- set display_unit = item_ttc.get('unit') if ol_print_ttc else item.rate %}
-    {%- set display_total = item_ttc.get('total') if ol_print_ttc else item.amount %}
+    {%- set unit_ht = item_ttc.get('unit_ht') or item.rate %}
+    {%- set unit_ttc = item.custom_pu_ttc if item.get('custom_is_commercial_summary') else (item_ttc.get('unit') or unit_ht) %}
+    {%- set display_unit = unit_ttc if ol_print_ttc else unit_ht %}
+    {%- set display_total = (item_ttc.get('total') or item.custom_pt_ttc or item.amount) if ol_print_ttc else (item_ttc.get('total_ht') or item.amount) %}
     <tr>
       <td class="tc">{{ start_idx + loop.index }}</td>
       <td class="ol-item-code">{{ item.item_code }}</td>
@@ -609,13 +628,61 @@ table.ol-items td {
 </table>
 {% endmacro %}
 
+{% macro render_quotation_detail_block(block) %}
+  {%- if block.type == "Heading" %}
+    <div class="ol-detail-block ol-detail-heading">{{ block.value or block.label }}</div>
+  {%- elif block.type == "Key Value" or block.type == "Quotation Field" or block.type == "Annex Field" %}
+    <div class="ol-detail-block ol-detail-kv"><div class="ol-detail-kv-label">{{ block.label }}</div><div class="ol-detail-kv-value">{{ block.value or "" }}</div></div>
+  {%- elif block.type == "List" %}
+    <div class="ol-detail-block ol-detail-list-block"><div class="ol-detail-kv-label">{{ block.label }}</div><ul class="ol-detail-list">{%- for item in block.items %}<li>{{ item }}</li>{%- endfor %}</ul></div>
+  {%- elif block.type == "Manual Area" %}
+    <div class="ol-detail-block ol-detail-manual-block"><div class="ol-detail-kv-label">{{ block.label }}</div><div class="ol-detail-manual">{{ block.value or "" }}</div></div>
+  {%- else %}
+    <div class="ol-detail-block ol-detail-paragraph">{{ block.value or block.label }}</div>
+  {%- endif %}
+{% endmacro %}
+
+{% macro render_quotation_detail_offer_pages() %}
+{%- if ol_detail.enabled -%}
+<div class="ol-page">
+  <div class="ol-page-inner">
+    {{ render_header() }}
+    {{ render_info_grid() }}
+    <div class="ol-detail-proposal">
+      <div class="ol-detail-title">{{ ol_detail.template_name or _("Commercial Presentation") }}</div>
+    {%- for block in ol_detail.blocks %}
+      {%- if block.type == "Page Break" %}
+    </div>
+  </div>
+  {{ render_footer() }}
+</div>
+<div class="ol-page">
+  <div class="ol-page-inner">
+    {{ render_header() }}
+    <div style="height: 15px;"></div>
+    <div class="ol-detail-proposal">
+      <div class="ol-detail-title ol-detail-title-continuation">{{ ol_detail.template_name or _("Commercial Presentation") }}</div>
+      {%- else %}
+        {{ render_quotation_detail_block(block) }}
+      {%- endif %}
+    {%- endfor %}
+    </div>
+    {{ render_totals_and_signatures() }}
+  </div>
+  {{ render_footer() }}
+</div>
+{%- endif -%}
+{% endmacro %}
+
 {# ==================== PAGES RENDERING ==================== #}
 {% set MAX_FIRST_TOTALS = 4 %}
 {% set MAX_FIRST = 7 %}
 {% set MAX_NORMAL = 11 %}
 {% set MAX_LAST = 4 %}
 
-{% if total_items <= MAX_FIRST_TOTALS %}
+{% if ol_detail.enabled %}
+  {{ render_quotation_detail_offer_pages() }}
+{% elif total_items <= MAX_FIRST_TOTALS %}
   {# Everything fits on one page #}
   <div class="ol-page">
     <div class="ol-page-inner">

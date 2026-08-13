@@ -1,0 +1,84 @@
+{
+  "actions": [],
+  "autoname": "format:PAR-{#####}",
+  "creation": "2026-07-26 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Document",
+  "engine": "InnoDB",
+  "field_order": [
+    "section_policy",
+    "purchase_user",
+    "company",
+    "enabled",
+    "section_price_lists",
+    "allowed_buying_price_lists",
+    "section_notes",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "section_policy",
+      "fieldtype": "Section Break",
+      "label": "Purchase Agent Policy"
+    },
+    {
+      "fieldname": "purchase_user",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Purchase User",
+      "options": "User",
+      "reqd": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "default": "1",
+      "fieldname": "enabled",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Enabled"
+    },
+    {
+      "fieldname": "section_price_lists",
+      "fieldtype": "Section Break",
+      "label": "Allowed Buying Price Lists"
+    },
+    {
+      "fieldname": "allowed_buying_price_lists",
+      "fieldtype": "Table",
+      "label": "Allowed Buying Price Lists",
+      "options": "Purchase Agent Allowed Buying Price List"
+    },
+    {
+      "fieldname": "section_notes",
+      "fieldtype": "Section Break",
+      "label": "Notes"
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "links": [],
+  "modified": "2026-07-26 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Purchase Agent Rules",
+  "owner": "Administrator",
+  "permissions": [],
+  "search_fields": "purchase_user,company",
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "purchase_user",
+  "track_changes": 1
+}

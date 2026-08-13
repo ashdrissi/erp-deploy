@@ -2,7 +2,7 @@
     if (window.__orderliftFinanceAccountGuardRegistered) return;
     window.__orderliftFinanceAccountGuardRegistered = true;
 
-    const SUPERADMIN_ROLES = new Set(["Administrator", "System Manager", "Developer"]);
+    const SUPERADMIN_ROLES = new Set(["Administrator", "System Manager"]);
     const ACCOUNT_FIELD_CONFIG = {
         "Sales Order": {
             tables: {

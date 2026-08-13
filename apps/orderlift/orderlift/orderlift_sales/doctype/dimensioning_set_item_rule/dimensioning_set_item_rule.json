@@ -9,6 +9,7 @@
     "sequence",
     "is_active",
     "rule_group",
+    "rule_group_title",
     "condition_section",
     "condition_mode",
     "question_key",
@@ -53,6 +54,11 @@
       "fieldtype": "Data",
       "label": "Groupe de Regle",
       "hidden": 1
+    },
+    {
+      "fieldname": "rule_group_title",
+      "fieldtype": "Data",
+      "label": "Rule Title"
     },
     {
       "fieldname": "condition_section",

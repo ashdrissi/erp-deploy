@@ -14,9 +14,15 @@ from orderlift.orderlift_sales.doctype.agent_pricing_rules.agent_pricing_rules i
 )
 from orderlift.menu_access import resolve_current_company
 from orderlift.orderlift_sales.utils.price_list_scope import get_price_list_names, validate_price_list_scope
+from orderlift.orderlift_sales.utils.sales_team import get_commission_visibility
+from orderlift.orderlift_sales.utils.sales_team import set_team_rows, team_rows
 from orderlift.orderlift_sales.utils.tax_inclusive import company_default_sales_taxes_template
+from orderlift.role_capabilities import (
+    CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT,
+    CAPABILITY_PRIVILEGED_PRICING,
+    user_has_capability,
+)
 
-PRIVILEGED_PRICING_ROLES = {"Administrator", "Orderlift Admin", "Orderlift Business Admin", "Pricing Manager", "Sales Manager", "System Manager"}
 SUPPORTED_PARTY_TYPES = {"Customer", "Lead", "Prospect"}
 
 
@@ -43,6 +49,7 @@ LINE_FIELDS = [
     "buy_price_message",
     "display_group",
     "show_in_detail",
+    "presentation_role",
     "base_amount",
     "expense_unit_price",
     "expense_total",
@@ -54,15 +61,12 @@ LINE_FIELDS = [
     "total_margin_total_amount",
     "projected_unit_price",
     "projected_total_price",
-    "manual_sell_unit_price",
+    "sell_unit_price",
     "is_manual_override",
-    "final_sell_unit_price",
-    "final_sell_total",
+    "sell_total",
     "max_discount_percent_allowed",
     "discount_percent",
-    "discount_amount",
-    "discounted_sell_unit_price",
-    "discounted_sell_total",
+    "discount_amount_per_unit",
     "custom_applied_taxes",
     "custom_pu_ttc",
     "custom_pt_ttc",
@@ -122,13 +126,11 @@ AGENT_VISIBLE_LINE_FIELDS = {
     "display_group",
     "qty",
     "resolved_selling_price_list",
-    "manual_sell_unit_price",
-    "final_sell_unit_price",
-    "final_sell_total",
+    "sell_unit_price",
+    "sell_total",
     "max_discount_percent_allowed",
     "discount_percent",
-    "discounted_sell_unit_price",
-    "discounted_sell_total",
+    "discount_amount_per_unit",
     "custom_applied_taxes",
     "custom_pu_ttc",
     "custom_pt_ttc",
@@ -149,8 +151,10 @@ EDITABLE_LINE_FIELDS = [
     "buy_price",
     "display_group",
     "show_in_detail",
-    "manual_sell_unit_price",
+    "presentation_role",
+    "sell_unit_price",
     "discount_percent",
+    "discount_amount_per_unit",
 ]
 
 SHEET_FIELDS = [
@@ -162,6 +166,7 @@ SHEET_FIELDS = [
     "customer",
     "opportunity",
     "sales_person",
+    "custom_sales_team",
     "crm_business_type",
     "crm_segment",
     "geography_territory",
@@ -171,7 +176,10 @@ SHEET_FIELDS = [
     "taxes_and_charges_template",
     "selected_price_list",
     "output_mode",
+    "commercial_designation",
+    "commercial_total",
     "dimensioning_set",
+    "dimensioning_multiplier",
     "dimensioning_inputs_json",
     "resolved_mode",
     "total_buy",
@@ -250,7 +258,14 @@ def add_bundle_to_pricing_sheet(pricing_sheet, options=None):
 
 
 @frappe.whitelist()
-def add_dimensioning_to_pricing_sheet(pricing_sheet, dimensioning_set=None, input_values_json=None, replace_existing_generated=1, pricing_mode=None):
+def add_dimensioning_to_pricing_sheet(
+    pricing_sheet,
+    dimensioning_set=None,
+    input_values_json=None,
+    replace_existing_generated=1,
+    pricing_mode=None,
+    dimensioning_multiplier=None,
+):
     doc = _get_writable_sheet(pricing_sheet)
     _apply_builder_mode_flag(doc, pricing_mode)
     if dimensioning_set:
@@ -258,6 +273,7 @@ def add_dimensioning_to_pricing_sheet(pricing_sheet, dimensioning_set=None, inpu
     doc.add_dimensioning_items(
         input_values_json=input_values_json,
         replace_existing_generated=replace_existing_generated,
+        dimensioning_multiplier=dimensioning_multiplier,
     )
     doc.reload()
     return {"sheet": _serialize_sheet(doc)}
@@ -276,12 +292,20 @@ def get_quotation_pricing_sheet_source(quotation):
 
     doc = frappe.get_doc("Quotation", quotation)
     doc.check_permission("read")
+    company = (doc.get("company") or "").strip()
+    current_company = _current_company()
+    if company and current_company and company != current_company:
+        frappe.throw(
+            _("Quotation {0} belongs to company {1}, not the active company {2}.").format(
+                doc.name, company, current_company
+            )
+        )
     party_type = (doc.get("quotation_to") or "Customer").strip()
     if party_type not in SUPPORTED_PARTY_TYPES:
         party_type = "Customer"
     return {
         "quotation": doc.name,
-        "company": doc.get("company") or "",
+        "company": company,
         "party_type": party_type,
         "party_name": doc.get("party_name") or "",
         "customer": (doc.get("party_name") or "") if party_type == "Customer" else "",
@@ -440,18 +464,14 @@ def _quotation_line_rows(doc) -> list[dict]:
         item = (row.get("item_code") or "").strip()
         if not item:
             continue
-        gross_rate = flt(
-            row.get("source_gross_sell_rate")
-            or row.get("price_list_rate")
-            or row.get("rate")
-            or 0
-        )
+        sell_unit_price = flt(row.get("rate") or row.get("source_price_list_sell_rate") or 0)
         line = {
             "item": item,
             "item_name": row.get("item_name") or item,
             "qty": flt(row.get("qty") or 1) or 1,
-            "manual_sell_unit_price": gross_rate,
+            "sell_unit_price": sell_unit_price,
             "discount_percent": flt(row.get("source_discount_percent") or row.get("discount_percentage") or 0),
+            "discount_amount_per_unit": flt(row.get("source_discount_amount") or 0),
             "display_group": row.get("item_group") or _("Quotation"),
             "show_in_detail": 1,
             "line_type": "Standard",
@@ -548,6 +568,10 @@ def _doc_from_payload(payload):
         doc.sales_person = locked_sales_person
     elif "sales_person" in payload:
         doc.sales_person = (payload.get("sales_person") or "").strip()
+    if "custom_sales_team" in payload and user_has_capability(
+        CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT
+    ):
+        set_team_rows(doc, payload.get("custom_sales_team") or [])
 
     if doc.flags.pricing_builder_mode == "Dynamic":
         doc.selected_price_list = ""
@@ -564,8 +588,12 @@ def _doc_from_payload(payload):
     doc.pricing_scenario = ""
     doc.customs_policy = ""
 
-    doc.output_mode = "Avec details"
+    doc.output_mode = payload.get("output_mode") or "Avec details"
+    if doc.meta.get_field("commercial_designation"):
+        doc.commercial_designation = (payload.get("commercial_designation") or "").strip()
     doc.dimensioning_inputs_json = payload.get("dimensioning_inputs_json") or ""
+    if "dimensioning_multiplier" in payload:
+        doc.dimensioning_multiplier = payload.get("dimensioning_multiplier")
 
     doc.set("scenario_mappings", [])
     for mapping in payload.get("scenario_mappings") or []:
@@ -582,17 +610,23 @@ def _doc_from_payload(payload):
         if source_buying_price_list:
             validate_price_list_scope(source_buying_price_list, kind="buying", required=True)
         row["qty"] = flt(row.get("qty") or 1) or 1
-        row["show_in_detail"] = 1
+        row["presentation_role"] = row.get("presentation_role") or "Include in commercial summary"
         row["line_type"] = row.get("line_type") or "Standard"
-        doc.append("lines", row)
+        child = doc.append("lines", row)
+        changed_field = (line.get("changed_field") or line.get("_changed_field") or "").strip()
+        if changed_field in {"sell_unit_price", "discount_percent", "discount_amount_per_unit"}:
+            child.flags.pricing_changed_field = changed_field
     _validate_builder_party_scope(doc)
     return doc
 
 
 def _serialize_sheet(doc):
     user_context = _get_user_context(getattr(doc, "sales_person", ""))
+    visibility = get_commission_visibility("Pricing Sheet", getattr(doc, "name", ""))
+    user_context["can_view_commission"] = bool(visibility.get("can_view"))
     _sync_builder_party_fields(doc)
     data = {fieldname: getattr(doc, fieldname, None) for fieldname in SHEET_FIELDS}
+    data["custom_sales_team"] = team_rows(doc)
     data["is_new"] = 0
     data["pricing_mode"] = "Static" if data.get("resolved_mode") == "Static" else "Dynamic"
     data["user_context"] = user_context
@@ -642,6 +676,7 @@ def _get_opportunity_source_payload(opportunity):
         "crm_segment": doc.get("custom_crm_segment") or "",
         "geography_territory": doc.get("territory") or "",
         "items": _opportunity_item_rows(doc),
+        "custom_sales_team": team_rows(doc),
     }
 
 
@@ -680,11 +715,14 @@ def _apply_opportunity_source_to_doc(doc, source):
         doc.crm_segment = source.get("crm_segment")
     if source.get("geography_territory"):
         doc.geography_territory = source.get("geography_territory")
+    if source.get("custom_sales_team") and frappe.get_meta("Pricing Sheet").get_field("custom_sales_team"):
+        set_team_rows(doc, source["custom_sales_team"])
 
 
 def _get_user_context(sales_person=None):
     roles = set(frappe.get_roles(frappe.session.user) or [])
-    is_privileged = bool(roles & PRIVILEGED_PRICING_ROLES)
+    is_privileged = user_has_capability(CAPABILITY_PRIVILEGED_PRICING, roles=roles)
+    can_assign_commission = user_has_capability(CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT, roles=roles)
     is_restricted = not is_privileged
     sales_person = (sales_person or _get_current_user_sales_person() or "").strip()
     agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name") if sales_person else ""
@@ -701,6 +739,7 @@ def _get_user_context(sales_person=None):
     )
     all_selling_price_lists = [] if is_restricted else scoped_selling_price_lists
     agent_mode = agent_values.get("pricing_mode") or ""
+    commission_visible = bool(agent_values.get("commission_enabled", 1))
     return {
         "current_company": current_company,
         "sales_person": sales_person,
@@ -710,8 +749,9 @@ def _get_user_context(sales_person=None):
         "can_view_sensitive_pricing": not is_restricted,
         "can_edit_pricing_source": (not is_restricted) or (agent_mode == STATIC_MODE and bool(selling_price_lists)),
         "can_edit_pricing_mode": not is_restricted,
-        "can_edit_sales_person": is_privileged,
-        "commission_rate": flt(agent_values.get("commission_rate") or 0),
+        "can_edit_sales_person": can_assign_commission,
+        "commission_rate": flt(agent_values.get("commission_rate") or 0) if commission_visible else 0,
+        "can_view_commission": commission_visible,
         "static_pricing_mode": STATIC_MODE,
         "dynamic_pricing_mode": DYNAMIC_MODE,
         "selling_price_lists": selling_price_lists,
@@ -732,14 +772,14 @@ def _get_current_user_sales_person():
 
 def _locked_current_user_sales_person():
     roles = set(frappe.get_roles(frappe.session.user) or [])
-    if roles & PRIVILEGED_PRICING_ROLES:
+    if user_has_capability(CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT, roles=roles):
         return None
     return _get_current_user_sales_person()
 
 
 def _locked_current_user_agent_pricing_mode():
     roles = set(frappe.get_roles(frappe.session.user) or [])
-    if roles & PRIVILEGED_PRICING_ROLES:
+    if user_has_capability(CAPABILITY_PRIVILEGED_PRICING, roles=roles):
         return ""
     sales_person = _get_current_user_sales_person()
     agent_name = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name") if sales_person else ""
@@ -750,12 +790,14 @@ def _locked_current_user_agent_pricing_mode():
 def _get_agent_context(agent_name):
     if not agent_name:
         return {}
-    values = frappe.db.get_value(
-        "Agent Pricing Rules",
-        agent_name,
-        ["pricing_mode", "commission_rate"],
-        as_dict=True,
-    ) or {}
+    values = {
+        "pricing_mode": frappe.db.get_value("Agent Pricing Rules", agent_name, "pricing_mode") or "",
+        "commission_rate": frappe.db.get_value("Agent Pricing Rules", agent_name, "commission_rate") or 0,
+    }
+    if frappe.db.has_column("Agent Pricing Rules", "commission_enabled"):
+        values["commission_enabled"] = frappe.db.get_value(
+            "Agent Pricing Rules", agent_name, "commission_enabled"
+        )
     return values
 
 
@@ -842,14 +884,11 @@ def _serialize_line(row, user_context=None):
         "total_margin_total_amount",
         "projected_unit_price",
         "projected_total_price",
-        "manual_sell_unit_price",
-        "final_sell_unit_price",
-        "final_sell_total",
+        "sell_unit_price",
+        "sell_total",
         "max_discount_percent_allowed",
         "discount_percent",
-        "discount_amount",
-        "discounted_sell_unit_price",
-        "discounted_sell_total",
+        "discount_amount_per_unit",
         "custom_applied_taxes",
         "custom_pu_ttc",
         "custom_pt_ttc",
@@ -891,7 +930,10 @@ def _serialize_line(row, user_context=None):
     data["builder_price_overridden"] = 1 if cint(data.get("builder_price_overridden")) else 0
     data["price_floor_violation"] = 1 if cint(data.get("price_floor_violation")) else 0
     if user_context.get("is_restricted_agent"):
-        data = {fieldname: data.get(fieldname) for fieldname in AGENT_VISIBLE_LINE_FIELDS}
+        visible_fields = set(AGENT_VISIBLE_LINE_FIELDS)
+        if not user_context.get("can_view_commission"):
+            visible_fields -= {"commission_rate", "commission_amount"}
+        data = {fieldname: data.get(fieldname) for fieldname in visible_fields}
     return data
 
 
@@ -908,6 +950,7 @@ def _new_sheet_payload():
         "customer": "",
         "opportunity": "",
         "sales_person": user_context.get("sales_person") or "",
+        "custom_sales_team": [],
         "crm_business_type": "",
         "crm_segment": "",
         "geography_territory": "",
@@ -919,7 +962,10 @@ def _new_sheet_payload():
         "selected_selling_price_lists": [],
         "pricing_mode": "Dynamic",
         "output_mode": "Avec details",
+        "commercial_designation": "",
+        "commercial_total": 0,
         "dimensioning_set": "",
+        "dimensioning_multiplier": 1,
         "dimensioning_inputs_json": "",
         "resolved_mode": "Draft",
         "total_buy": 0,

@@ -25,11 +25,11 @@
         { key: "quotation", label: "Quotation", step: "04" },
     ];
 
-    const COLUMN_STORAGE_KEY_PREFIX = "orderlift.pricingSheetBuilder.columns.v4";
-    const DEFAULT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "buy_price", "expense_unit_price", "customs_unit_amount", "projected_unit_price", "projected_total_price", "margin_unit_amount", "margin_source", "margin_basis", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "actions"];
-    const AGENT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
-    const ADMIN_STATIC_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "resolved_selling_price_list", "static_list_price", "final_sell_unit_price", "manual_sell_unit_price", "final_sell_total", "max_discount_percent_allowed", "discount_percent", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "builder_margin_percent", "target_margin_percent", "margin_source", "margin_basis", "resolved_margin_rule", "builder_price_overridden", "pricing_builder", "builder_source_buying_price_list", "resolved_benchmark_rule", "actions"];
-    const HIGHLIGHT_COLUMNS = new Set(["projected_unit_price", "projected_total_price", "final_sell_unit_price", "final_sell_total", "discounted_sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc"]);
+    const COLUMN_STORAGE_KEY_PREFIX = "orderlift.pricingSheetBuilder.columns.v5";
+    const AGENT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "custom_current_company_stock_qty", "resolved_selling_price_list", "static_list_price", "sell_unit_price", "max_discount_percent_allowed", "discount_percent", "discount_amount_per_unit", "sell_total", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
+    const DEFAULT_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "custom_current_company_stock_qty", "resolved_selling_price_list", "static_list_price", "buy_price", "expense_unit_price", "customs_unit_amount", "projected_unit_price", "target_margin_percent", "margin_pct", "sell_unit_price", "max_discount_percent_allowed", "discount_percent", "discount_amount_per_unit", "sell_total", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
+    const ADMIN_STATIC_LINE_COLUMNS = ["__select", "item", "item_name", "qty", "custom_current_company_stock_qty", "resolved_selling_price_list", "static_list_price", "projected_unit_price", "builder_margin_percent", "target_margin_percent", "sell_unit_price", "max_discount_percent_allowed", "discount_percent", "discount_amount_per_unit", "sell_total", "custom_pu_ttc", "custom_pt_ttc", "commission_rate", "commission_amount", "actions"];
+    const HIGHLIGHT_COLUMNS = new Set(["projected_unit_price", "projected_total_price", "sell_unit_price", "sell_total", "custom_applied_taxes", "custom_pu_ttc", "custom_pt_ttc"]);
     const STATIC_MODE_HIDDEN_COLUMNS = new Set(["customs_unit_amount", "margin_unit_amount"]);
     const SENSITIVE_PRICING_COLUMNS = new Set(["margin_unit_amount", "margin_total_amount", "margin_pct", "margin_basis", "margin_source", "total_margin_unit_amount", "total_margin_total_amount", "total_margin_pct", "resolved_margin_rule", "target_margin_percent", "builder_margin_percent", "buy_price", "source_buying_price_list", "pricing_scenario", "resolved_pricing_scenario", "resolved_scenario_rule", "resolved_benchmark_rule", "scenario_source", "expense_unit_price", "expense_total", "customs_unit_amount", "customs_total_percent", "projected_unit_price", "projected_total_price"]);
     const LINE_COLUMNS = [
@@ -50,10 +50,12 @@
         { key: "line_type", label: "Line Type" },
         { key: "bundle_group_id", label: "Bundle Group ID" },
         { key: "qty", label: "Qty", type: "Float", editable: true },
+        { key: "custom_current_company_stock_qty", label: "Stock", type: "Float" },
         { key: "buy_price", label: "Base PU", type: "Currency", editable: true, sensitive: true },
         { key: "buy_price_missing", label: "Base Price Missing", type: "Check" },
         { key: "buy_price_message", label: "Base Price Message" },
         { key: "display_group", label: "Display Group", editable: true },
+        { key: "presentation_role", label: "Presentation Role", editable: true },
         { key: "base_amount", label: "Base PT HT", type: "Currency" },
         { key: "expense_unit_price", label: "Expenses U", type: "Currency", sensitive: true },
         { key: "expense_total", label: "Charges PT HT", type: "Currency" },
@@ -64,18 +66,14 @@
         { key: "total_margin_total_amount", label: "Total Margin Total", type: "Currency" },
         { key: "projected_unit_price", label: "Total Cost U", type: "Currency", sensitive: true },
         { key: "projected_total_price", label: "Total Cost", type: "Currency", sensitive: true },
-        { key: "manual_sell_unit_price", label: "Manual Unit Override", type: "Currency", editable: true },
-        { key: "is_manual_override", label: "Is Manual Override", type: "Check" },
-        { key: "final_sell_unit_price", label: "PU HT", type: "Currency" },
-        { key: "final_sell_total", label: "PT HT", type: "Currency" },
+        { key: "sell_unit_price", label: "PU HT", type: "Currency", editable: true },
+        { key: "sell_total", label: "PT HT", type: "Currency" },
         { key: "max_discount_percent_allowed", label: "Max Discount %", type: "Percent" },
         { key: "discount_percent", label: "Remise %", type: "Percent", editable: true },
-        { key: "discount_amount", label: "Remise HT", type: "Currency" },
-        { key: "discounted_sell_unit_price", label: "PU HT net", type: "Currency" },
-        { key: "discounted_sell_total", label: "PT HT net", type: "Currency" },
+        { key: "discount_amount_per_unit", label: "Remise PU HT", type: "Currency", editable: true },
         { key: "custom_applied_taxes", label: "Applied Taxes", type: "Currency" },
-        { key: "custom_pu_ttc", label: "PU TTC net", type: "Currency" },
-        { key: "custom_pt_ttc", label: "PT TTC net", type: "Currency" },
+        { key: "custom_pu_ttc", label: "PU TTC", type: "Currency" },
+        { key: "custom_pt_ttc", label: "PT TTC", type: "Currency" },
         { key: "commission_rate", label: "Commission %", type: "Percent" },
         { key: "commission_amount", label: "Commission Amount", type: "Currency" },
         { key: "margin_pct", label: "Margin Pct", type: "Percent" },
@@ -168,7 +166,10 @@
             selected_selling_price_lists: [],
             pricing_mode: "Dynamic",
             output_mode: "Avec details",
+            commercial_designation: "",
+            commercial_total: 0,
             dimensioning_set: "",
+            dimensioning_multiplier: 1,
             dimensioning_inputs_json: "",
             resolved_mode: "Draft",
             total_buy: 0,
@@ -352,6 +353,7 @@
                     <span class="current">${__("Builder")}</span>
                 </nav>
                 ${hero(sheet)}
+                ${salesTeamPanel(sheet)}
                 ${canViewSensitivePricing() ? marginBasisInfo(sheet) : ""}
                 ${STATE.error ? `<div class="psb-error">${escapeHtml(STATE.error)}</div>` : ""}
                 <section class="psb-tabs">${NAV.map(navItem).join("")}</section>
@@ -365,15 +367,18 @@
 
     function hero(sheet) {
         const lines = sheet.lines || [];
-        const finalTotal = Number(sheet.total_selling || 0);
+        const finalTotal = lines.reduce((total, row) => total + Number(row.sell_total || 0), 0) || Number(sheet.total_selling || 0);
         const totalBuy = lines.reduce((t, r) => t + Number(r.buy_price || 0) * Number(r.qty || 1), 0);
         const totalExpenses = lines.reduce((t, r) => t + Number(r.expense_total || 0), 0);
         const totalCustoms = lines.reduce((t, r) => t + Number(r.customs_applied || 0), 0);
         const totalCost = totalBuy + totalExpenses + totalCustoms;
-        const discountedTotal = lines.reduce((total, row) => total + Number(row.discounted_sell_total || row.final_sell_total || 0), 0);
+        const totalDiscount = lines.reduce(
+            (total, row) => total + Number(row.discount_amount_per_unit || 0) * (Number(row.qty || 0) || 1),
+            0
+        );
         const totalTax = lines.reduce((total, row) => total + Number(row.custom_applied_taxes || 0), 0);
-        const totalTtc = lines.reduce((total, row) => total + Number(row.custom_pt_ttc || row.discounted_sell_total || row.final_sell_total || 0), 0);
-        const commissionTotal = lines.reduce((total, row) => total + Number(row.commission_amount || 0), 0);
+        const totalTtc = lines.reduce((total, row) => total + Number(row.custom_pt_ttc || row.sell_total || 0), 0);
+        const commissionTotal = lines.reduce((total, row) => total + commissionPreview(row), 0);
         const marginPct = sheetTotalMarginPct(sheet);
         const warnings = String(sheet.projection_warnings || "").split("\n").filter(Boolean).length;
         return `
@@ -390,12 +395,11 @@
                     ${canViewSensitivePricing() ? metric(__("Customs"), formatCurrency(totalCustoms)) : ""}
                     ${canViewSensitivePricing() ? metric(__("Cost HT"), formatCurrency(totalCost), "accent") : ""}
                     ${metric(__("PT HT"), formatCurrency(finalTotal), "accent")}
-                    ${metric(__("Remise HT"), formatCurrency(finalTotal - discountedTotal))}
-                    ${metric(__("PT HT net"), formatCurrency(discountedTotal), "accent")}
+                    ${metric(__("Remise HT"), formatCurrency(totalDiscount))}
                     ${canViewSensitivePricing() ? marginMetric(STATE.marginBasis, marginPct) : ""}
-                    ${metric(__("Commission"), formatCurrency(commissionTotal))}
+                    ${canViewCommission() ? metric(__("Commission"), formatCurrency(commissionTotal)) : ""}
                     ${metric(__("Taxes"), formatCurrency(totalTax))}
-                    ${metric(__("PT TTC net"), formatCurrency(totalTtc), "accent")}
+                    ${metric(__("PT TTC"), formatCurrency(totalTtc), "accent")}
                     ${metric(__("Warnings"), warnings)}
                 </div>
             </section>
@@ -403,7 +407,8 @@
     }
 
     function sheetTotalMarginPct(sheet) {
-        const totalSell = Number(sheet.total_selling || 0);
+        const totalSell = (sheet.lines || []).reduce((total, row) => total + Number(row.sell_total || 0), 0)
+            || Number(sheet.total_selling || 0);
         const totalBuy = (sheet.lines || []).reduce((t, r) => t + Number(r.buy_price || 0) * Number(r.qty || 1), 0);
         const totalExpenses = (sheet.lines || []).reduce((t, r) => t + Number(r.expense_total || 0), 0);
         const totalCustoms = (sheet.lines || []).reduce((t, r) => t + Number(r.customs_applied || 0), 0);
@@ -483,6 +488,8 @@
                     ${linkField("taxes_and_charges_template", __("Sales Taxes Template"), "Sales Taxes and Charges Template", sheet.taxes_and_charges_template)}
                     ${linkField("crm_business_type", __("Business Type"), "CRM Business Type", sheet.crm_business_type)}
                     ${linkField("crm_segment", __("CRM Segment"), "CRM Segment", sheet.crm_segment)}
+                    ${selectField("output_mode", __("Presentation"), sheet.output_mode || "Avec details", ["Avec details", "Sans details"])}
+                    ${sheet.output_mode === "Sans details" ? textField("commercial_designation", __("Commercial designation"), sheet.commercial_designation, true) : ""}
                 </div>
                 ${customerPricingContextNotice(sheet)}
             </section>
@@ -515,6 +522,7 @@
     }
 
     function agentPricingNotice(sheet) {
+        if (!canViewCommission()) return "";
         const commission = Number(sheet.user_context?.commission_rate || 0);
         return `
             <section class="psb-card psb-agent-card">
@@ -523,9 +531,33 @@
                     <span class="psb-badge">${escapeHtml(sheet.user_context?.sales_person || __("Agent"))}</span>
                 </div>
                 <div class="psb-agent-limits">
-                    ${metric(__("Commission"), `${commission.toFixed(1)}%`)}
+                    ${metric(__("Commission"), `${formatDisplayNumber(commission)}%`)}
                 </div>
             </section>`;
+    }
+
+    function salesTeamPanel(sheet) {
+        const rows = sheet.custom_sales_team || [];
+        const editable = Boolean(sheet.user_context?.can_edit_sales_person);
+        return `
+            <section class="psb-card psb-team-card">
+                <div class="psb-section-head">
+                    <div><h2>${__("Sales Team")}</h2><p>${__("The Opportunity team is propagated to this Pricing Sheet and its downstream documents.")}</p></div>
+                    ${editable ? `<button type="button" class="psb-btn ghost" data-add-team>${__("Add Sales Person")}</button>` : ""}
+                </div>
+                <div class="psb-team-rows">
+                    ${rows.length ? rows.map((row, index) => `
+                        <div class="psb-team-row">
+                            <div class="psb-team-person" data-team-link data-link-field="sales_person" data-team-index="${index}" data-options="Sales Person"></div>
+                            <label>${__("Contribution %")}<input type="number" min="0" max="100" step="0.000000001" data-team-field="allocated_percentage" data-team-index="${index}" value="${Number(row.allocated_percentage || 0)}" ${editable ? "" : "disabled"}></label>
+                            <label class="psb-team-primary"><input type="radio" name="orderlift-team-primary" data-team-field="is_primary" data-team-index="${index}" ${Number(row.is_primary) ? "checked" : ""} ${editable ? "" : "disabled"}> ${__("Primary")}</label>
+                            ${canViewCommission() ? `<span>${formatDisplayNumber(row.commission_rate || 0)}%</span><strong>${formatCurrency(row.commission_amount || 0)}</strong>` : ""}
+                            ${editable && rows.length > 1 ? `<button type="button" class="psb-btn danger" data-delete-team="${index}">${__("Remove")}</button>` : ""}
+                        </div>
+                    `).join("") : `<div class="psb-muted">${__("No Sales Team assigned yet.")}</div>`}
+                </div>
+            </section>
+        `;
     }
 
     function customerPricingContextNotice(sheet) {
@@ -700,6 +732,7 @@
                     <div class="psb-actions">
                         <button type="button" class="psb-btn ghost" data-columns>${__("Columns")}</button>
                         <button type="button" class="psb-btn ghost" data-bulk-quantity ${selectedLineCount() ? "" : "disabled"}>${__("Bulk Quantity")}</button>
+                        <button type="button" class="psb-btn ghost" data-bulk-discount ${lines.length ? "" : "disabled"}>${__("Bulk Discount")}</button>
                         <button type="button" class="psb-btn danger" data-delete-selected-lines ${selectedLineCount() ? "" : "disabled"}>${__("Delete Selected")} ${selectedLineCount() ? `(${selectedLineCount()})` : ""}</button>
                         <button type="button" class="psb-btn ghost" data-load-opportunity-items>${__("Load Opportunity Items")}</button>
                         <button type="button" class="psb-btn ghost" data-add-multiple>${__("Add Multiple")}</button>
@@ -721,7 +754,10 @@
             <div class="psb-dim-panel">
                 <div class="psb-dim-head">
                     <div><span>${__("Dimensioning")}</span><strong>${__("Generate technical articles")}</strong>${cfg ? dimensioningSummary(cfg) : ""}</div>
-                    ${linkField("dimensioning_set", __("Dimensioning Set"), "Dimensioning Set", STATE.sheet.dimensioning_set)}
+                    <div class="psb-dim-selector" style="display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:10px;align-items:end">
+                        ${linkField("dimensioning_set", __("Dimensioning Set"), "Dimensioning Set", STATE.sheet.dimensioning_set)}
+                        <label class="psb-field"><span>${__("Number of Sets")}</span><input type="number" min="1" step="1" data-sheet-field="dimensioning_multiplier" value="${escapeHtml(String(STATE.sheet.dimensioning_multiplier || 1))}"></label>
+                    </div>
                 </div>
                 ${STATE.sheet.dimensioning_set ? dimensioningInputs() : `<div class="psb-muted">${__("Select a Dimensioning Set to show guided inputs here.")}</div>`}
             </div>
@@ -861,23 +897,41 @@
         if (key === "__select") return `<td class="psb-col-select"><input type="checkbox" data-select-line="${escapeHtml(lineKey(row, index))}" ${STATE.selectedLineKeys.has(lineKey(row, index)) ? "checked" : ""} aria-label="${escapeHtml(__("Select line"))}"></td>`;
         if (key === "item") return `<td class="psb-line-item"><div data-line-link="item" data-line-index="${index}" data-options="Item"></div>${row.buy_price_missing ? `<small class="psb-danger">${escapeHtml(row.buy_price_message || __("Missing buy price"))}</small>` : ""}</td>`;
         if (key === "item_name") return `<td class="psb-item-name">${escapeHtml(row.item_name || "-")}</td>`;
-        if (key === "qty") return `<td><input type="number" step="any" data-line-field="qty" data-line-index="${index}" value="${escapeHtml(row.qty || 1)}"></td>`;
+        if (key === "qty") return editableLineNumberCell("qty", row.qty ?? 1, index);
         if (key === "display_group") return `<td><input type="text" data-line-field="display_group" data-line-index="${index}" value="${escapeHtml(row.display_group || "")}"></td>`;
+        if (key === "presentation_role") return `<td><select data-line-field="presentation_role" data-line-index="${index}"><option value="Include in commercial summary" ${(row.presentation_role || "Include in commercial summary") === "Include in commercial summary" ? "selected" : ""}>${__("Include in commercial summary")}</option><option value="Print separately" ${row.presentation_role === "Print separately" ? "selected" : ""}>${__("Print separately")}</option></select></td>`;
         if (key === "source_buying_price_list") return `<td><div data-line-link="source_buying_price_list" data-line-index="${index}" data-options="Price List"></div></td>`;
         if (key === "pricing_scenario") return `<td><div data-line-link="pricing_scenario" data-line-index="${index}" data-options="Pricing Scenario"></div></td>`;
         if (key === "buy_price" && isStaticPricingMode()) return money(staticBaseUnit(row));
         if (key === "base_amount" && isStaticPricingMode()) return money(staticBaseTotal(row));
         if (key === "expense_unit_price" && isStaticPricingMode()) return money(staticModifierUnit(row));
         if (key === "expense_total" && isStaticPricingMode()) return money(staticModifierTotal(row));
-        if (key === "buy_price") return `<td><input type="number" step="any" data-line-field="buy_price" data-line-index="${index}" value="${escapeHtml(row.buy_price || 0)}"></td>`;
-        if (key === "manual_sell_unit_price") return `<td><input type="number" step="any" data-line-field="manual_sell_unit_price" data-line-index="${index}" value="${escapeHtml(row.manual_sell_unit_price || 0)}"><small class="psb-discount-cap">${__("Min")} ${formatCurrency(manualOverrideFloor(row))}</small></td>`;
-        if (key === "discount_percent") return `<td><input type="number" step="any" min="0" max="${escapeHtml(resolveMaxDiscount(row))}" data-line-field="discount_percent" data-line-index="${index}" value="${escapeHtml(row.discount_percent || 0)}"><small class="psb-discount-cap">${__("Max")} ${Number(resolveMaxDiscount(row)).toFixed(1)}%</small></td>`;
+        if (key === "buy_price") return editableLineNumberCell("buy_price", row.buy_price || 0, index);
+        if (key === "sell_unit_price") {
+            return editableLineNumberCell("sell_unit_price", row.sell_unit_price || 0, index, {
+                caption: `${__("Min")} ${formatCurrency(sellPriceFloor(row))}`,
+            });
+        }
+        if (key === "discount_percent") {
+            return editableLineNumberCell("discount_percent", row.discount_percent || 0, index, {
+                min: 0,
+                max: resolveMaxDiscount(row),
+                caption: `${__("Max")} ${formatDisplayNumber(resolveMaxDiscount(row))}%`,
+            });
+        }
+        if (key === "discount_amount_per_unit") {
+            return editableLineNumberCell("discount_amount_per_unit", row.discount_amount_per_unit || 0, index, {
+                min: 0,
+                caption: `${__("Max")} ${formatCurrency(maxDiscountAmountPerUnit(row))}`,
+            });
+        }
         if (key === "projected_unit_price") return money(lineCostUnit(row));
         if (key === "projected_total_price") return money(lineCostTotal(row));
+        if (key === "commission_amount") return money(commissionPreview(row));
         if (isStaticPricingMode() && ["builder_margin_percent", "target_margin_percent", "margin_pct"].includes(key) && !row.pricing_builder) return `<td class="psb-number">${__("N/A")}</td>`;
         if (column.type === "Currency") return money(row[key]);
-        if (column.type === "Percent") return `<td class="psb-number">${escapeHtml(`${Number(row[key] || 0).toFixed(1)}%`)}</td>`;
-        if (column.type === "Float") return `<td class="psb-number">${escapeHtml(frappe.format(row[key] || 0, { fieldtype: "Float" }))}</td>`;
+        if (column.type === "Percent") return `<td class="psb-number">${escapeHtml(`${formatDisplayNumber(row[key] || 0)}%`)}</td>`;
+        if (column.type === "Float") return `<td class="psb-number">${escapeHtml(formatDisplayNumber(row[key] || 0))}</td>`;
         if (column.type === "Int") return `<td class="psb-number">${escapeHtml(String(Number(row[key] || 0)))}</td>`;
         if (column.type === "Check") return `<td><span class="psb-mini-badge">${Number(row[key] || 0) ? __("Yes") : __("No")}</span></td>`;
         if (key === "benchmark_status") return `<td><span class="psb-mini-badge">${escapeHtml(row.benchmark_status || "-")}</span></td>`;
@@ -888,12 +942,28 @@
         `;
     }
 
+    function rawLineNumber(value) {
+        const number = Number(value || 0);
+        if (!Number.isFinite(number)) return "0";
+        return number.toFixed(9).replace(/\.?0+$/, "");
+    }
+
+    function formatDisplayNumber(value) {
+        return Number(value || 0).toFixed(2);
+    }
+
+    function editableLineNumberCell(fieldname, value, index, options = {}) {
+        const min = options.min == null ? "" : ` min="${escapeHtml(options.min)}"`;
+        const max = options.max == null ? "" : ` max="${escapeHtml(options.max)}"`;
+        return `<td><input type="number" step="any"${min}${max} data-raw-number="1" data-raw-value="${escapeHtml(rawLineNumber(value))}" data-line-field="${fieldname}" data-line-index="${index}" value="${escapeHtml(formatDisplayNumber(value))}">${options.caption ? `<small class="psb-discount-cap">${escapeHtml(options.caption)}</small>` : ""}</td>`;
+    }
+
     function breakdownSection() {
         const lines = STATE.sheet.lines || [];
         return `
             <section class="psb-card psb-breakdown-card">
                 <div class="psb-section-head">
-                    <div><h2>${__("Price breakdown")}</h2><p>${__("Review the per-item pricing build-up, discounts, and commission calculation. Commission = unused discount commission + 20% uplift above price list.")}</p></div>
+                    <div><h2>${__("Price breakdown")}</h2><p>${__("Review the per-item pricing build-up, discounts, and commission calculation. Commission = PU HT x quantity x unused discount % x agent rate.")}</p></div>
                 </div>
                 ${lines.length ? `<div class="psb-breakdown-list">${lines.map(breakdownCard).join("")}</div>` : `<div class="psb-muted">${__("Add quotation lines to see the price breakdown.")}</div>`}
             </section>`;
@@ -910,23 +980,22 @@
                     <em>${escapeHtml(frappe.format(row.qty || 0, { fieldtype: "Float" }))}</em>
                 </div>
                 <div class="psb-breakdown-metrics">
-                    ${breakdownMetric(__("PU HT"), formatCurrency(row.final_sell_unit_price), true)}
-                    ${breakdownMetric(__("Manual Override"), formatCurrency(row.manual_sell_unit_price))}
-                    ${breakdownMetric(__("PT HT"), formatCurrency(row.final_sell_total), true)}
-                    ${breakdownMetric(__("Allowed Discount"), `${Number(resolveMaxDiscount(row)).toFixed(1)}%`)}
-                    ${breakdownMetric(__("Remise"), `${Number(row.discount_percent || 0).toFixed(1)}%`)}
-                    ${breakdownMetric(__("Unused Discount"), `${unusedDiscountPercent(row).toFixed(1)}%`)}
-                    ${breakdownMetric(__("PT HT net"), formatCurrency(row.discounted_sell_total || row.final_sell_total), true)}
-                    ${breakdownMetric(__("Commission"), formatCurrency(row.commission_amount))}
+                    ${breakdownMetric(__("PU HT"), formatCurrency(row.sell_unit_price), true)}
+                    ${breakdownMetric(__("PT HT"), formatCurrency(row.sell_total), true)}
+                    ${breakdownMetric(__("Allowed Discount"), `${formatDisplayNumber(resolveMaxDiscount(row))}%`)}
+                    ${breakdownMetric(__("Remise"), `${formatDisplayNumber(row.discount_percent || 0)}%`)}
+                    ${breakdownMetric(__("Unused Discount"), `${formatDisplayNumber(unusedDiscountPercent(row))}%`)}
+                    ${breakdownMetric(__("Remise PU HT"), formatCurrency(row.discount_amount_per_unit))}
+                    ${canViewCommission() ? breakdownMetric(__("Commission"), formatCurrency(commissionPreview(row))) : ""}
                     ${isRestrictedAgent() ? "" : breakdownMetric(isStaticPricingMode() ? __("Modifiers U") : __("Expenses U"), formatCurrency(isStaticPricingMode() ? staticModifierUnit(row) : row.expense_unit_price))}
                     ${isRestrictedAgent() ? "" : breakdownMetric(isStaticPricingMode() ? __("Static Price U") : __("Total Cost U"), formatCurrency(lineCostUnit(row)), true)}
                     ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin U"), formatCurrency(row.margin_unit_amount))}
-                    ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin %"), `${Number(row.margin_pct || 0).toFixed(1)}%`)}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin %"), `${formatDisplayNumber(row.margin_pct || 0)}%`)}
                     ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Margin Basis"), escapeHtml(row.margin_basis || "Base Price"))}
-                    ${(!canViewSensitivePricing() || isRestrictedAgent() || !isStaticPricingMode()) ? "" : breakdownMetric(__("Margin %"), row.pricing_builder ? `${Number(row.builder_margin_percent || 0).toFixed(1)}%` : __("N/A"))}
-                    ${(!canViewSensitivePricing() || isRestrictedAgent() || !isStaticPricingMode()) ? "" : breakdownMetric(__("Target Margin %"), row.pricing_builder ? `${Number(row.target_margin_percent || 0).toFixed(1)}% ${__("on")} ${escapeHtml(row.margin_basis || "Base Price")}` : __("N/A"))}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || !isStaticPricingMode()) ? "" : breakdownMetric(__("Margin %"), row.pricing_builder ? `${formatDisplayNumber(row.builder_margin_percent || 0)}%` : __("N/A"))}
+                    ${(!canViewSensitivePricing() || isRestrictedAgent() || !isStaticPricingMode()) ? "" : breakdownMetric(__("Target Margin %"), row.pricing_builder ? `${formatDisplayNumber(row.target_margin_percent || 0)}% ${__("on")} ${escapeHtml(row.margin_basis || "Base Price")}` : __("N/A"))}
                     ${(!canViewSensitivePricing() || isRestrictedAgent() || isStaticPricingMode()) ? "" : breakdownMetric(__("Total Margin U"), formatCurrency(row.total_margin_unit_amount || totalMarginUnit(row)))}
-                    ${isRestrictedAgent() || isStaticPricingMode() ? "" : breakdownMetric(__("Total Margin %"), `${Number(row.total_margin_pct || row.margin_pct || 0).toFixed(1)}%`)}
+                    ${isRestrictedAgent() || isStaticPricingMode() ? "" : breakdownMetric(__("Total Margin %"), `${formatDisplayNumber(row.total_margin_pct || row.margin_pct || 0)}%`)}
                 </div>
                 ${details.length && canViewSensitivePricing() && !isRestrictedAgent() ? `<div class="psb-breakdown-detail-wrap"><table class="psb-breakdown-detail"><thead><tr><th>${__("Component")}</th><th>${__("Unit")}</th><th>${__("Line")}</th><th>${__("Source")}</th></tr></thead><tbody>${details.map(breakdownDetailRow).join("")}</tbody></table></div>` : ""}
                 ${steps.length && canViewSensitivePricing() && !isRestrictedAgent() ? `<div class="psb-sub-expenses"><strong>${__("Sub Expenses")}</strong><div class="psb-breakdown-steps">${steps.map(breakdownStep).join("")}</div></div>` : ""}
@@ -954,13 +1023,15 @@
             if (!lineAmount && !unitAmount) return;
             rows.push({ label: step.label || step.type || __("Expense"), unit: unitAmount, line: lineAmount, source: breakdownStepSource(step), tone: breakdownStepTone(step) });
         });
-        if (Number(row.discount_amount || 0)) {
-            rows.push({ label: __("Discount"), unit: -(Number(row.discount_amount || 0) / qty), line: -Number(row.discount_amount || 0), source: `${Number(row.discount_percent || 0).toFixed(1)}%`, tone: "discount" });
+        if (Number(row.discount_amount_per_unit || 0)) {
+            const lineDiscount = Number(row.discount_amount_per_unit || 0) * qty;
+            rows.push({ label: __("Discount"), unit: -Number(row.discount_amount_per_unit || 0), line: -lineDiscount, source: `${formatDisplayNumber(row.discount_percent || 0)}%`, tone: "discount" });
         }
-        if (Number(row.commission_amount || 0)) {
-            rows.push({ label: __("Commission"), unit: Number(row.commission_amount || 0) / qty, line: Number(row.commission_amount || 0), source: `${unusedDiscountPercent(row).toFixed(1)}% x ${Number(row.commission_rate || 0).toFixed(1)}%`, tone: "commission" });
+        const commission = commissionPreview(row);
+        if (commission && canViewCommission()) {
+            rows.push({ label: __("Commission"), unit: commission / qty, line: commission, source: `${formatDisplayNumber(unusedDiscountPercent(row))}% x ${formatDisplayNumber(row.commission_rate || 0)}%`, tone: "commission" });
         }
-        rows.push({ label: __("Final Sell"), unit: Number(row.final_sell_unit_price || 0), line: Number(row.final_sell_total || 0), source: row.is_manual_override ? __("Manual override") : __("Calculated"), tone: "final" });
+        rows.push({ label: __("Final Sell"), unit: Number(row.sell_unit_price || 0), line: Number(row.sell_total || 0), source: __("Canonical sell price"), tone: "final" });
         return rows;
     }
 
@@ -1110,6 +1181,29 @@
             render(page);
             scheduleAutoPrice(page);
         });
+        page.main.find("[data-add-team]").on("click", () => {
+            STATE.sheet.custom_sales_team = STATE.sheet.custom_sales_team || [];
+            STATE.sheet.custom_sales_team.push({ sales_person: "", allocated_percentage: 0, is_primary: 0 });
+            redistributeTeam();
+            render(page);
+        });
+        page.main.find("[data-delete-team]").on("click", function () {
+            STATE.sheet.custom_sales_team.splice(Number($(this).attr("data-delete-team")), 1);
+            redistributeTeam();
+            render(page);
+        });
+        page.main.find("[data-team-field]").on("input change", function () {
+            const index = Number($(this).attr("data-team-index"));
+            const row = (STATE.sheet.custom_sales_team || [])[index];
+            if (!row) return;
+            const field = $(this).attr("data-team-field");
+            row[field] = field === "is_primary" ? (this.checked ? 1 : 0) : Number($(this).val() || 0);
+            if (field === "is_primary" && this.checked) {
+                (STATE.sheet.custom_sales_team || []).forEach((member, memberIndex) => {
+                    member.is_primary = memberIndex === index ? 1 : 0;
+                });
+            }
+        });
         page.main.find("[data-selling-list-field]").on("input change", function (event) {
             const index = Number($(this).attr("data-selling-index"));
             const rows = selectedSellingPriceLists(STATE.sheet);
@@ -1141,6 +1235,7 @@
             scheduleAutoPrice(page);
         });
         page.main.find("[data-bulk-quantity]").on("click", () => openBulkQuantityDialog(page));
+        page.main.find("[data-bulk-discount]").on("click", () => openBulkDiscountDialog(page));
         page.main.find("[data-load-opportunity-items]").on("click", () => openOpportunityItemsDialog(page));
         page.main.find("[data-add-multiple]").on("click", () => openAddMultipleDialog(page));
         page.main.find("[data-delete-selected-lines]").on("click", () => confirmDeleteSelectedLines(page));
@@ -1175,6 +1270,12 @@
                 STATE.marginBasis = $(this).val();
                 render(page);
             }
+            if (field === "dimensioning_multiplier") {
+                const multiplier = Math.max(1, Math.trunc(Number($(this).val() || 1)));
+                STATE.sheet.dimensioning_multiplier = multiplier;
+                $(this).val(multiplier);
+                scheduleDimensioningPreview(page);
+            }
         });
         page.main.find("[data-line-field]").on("input change", function (event) {
             const field = $(this).attr("data-line-field");
@@ -1186,26 +1287,48 @@
             } else if (field === "discount_percent") {
                 const maxDiscount = resolveMaxDiscount(line);
                 const nextValue = Math.min(Math.max(Number($(this).val() || 0), 0), maxDiscount);
-                line[field] = nextValue;
+                applyLineDiscountPercent(line, nextValue);
                 if (nextValue !== Number($(this).val() || 0)) {
                     $(this).val(nextValue);
-                    frappe.show_alert({ message: __("Discount capped at {0}%", [maxDiscount.toFixed(1)]), indicator: "orange" });
+                    frappe.show_alert({ message: __("Discount capped at {0}%", [formatDisplayNumber(maxDiscount)]), indicator: "orange" });
                 }
-            } else if (field === "manual_sell_unit_price") {
+            } else if (field === "discount_amount_per_unit") {
                 const requested = Number($(this).val() || 0);
-                const floor = manualOverrideFloor(line);
-                const nextValue = requested > 0 && floor > 0 && requested < floor ? floor : requested;
-                line[field] = nextValue;
-                if (nextValue > manualOverrideReference(line)) line.discount_percent = 0;
+                const maxAmount = maxDiscountAmountPerUnit(line);
+                const nextValue = Math.min(Math.max(requested, 0), maxAmount);
+                applyLineDiscountAmount(line, nextValue);
                 if (nextValue !== requested) {
                     $(this).val(nextValue);
-                    frappe.show_alert({ message: __("Manual unit override raised to minimum {0}", [formatCurrency(floor)]), indicator: "orange" });
+                    frappe.show_alert({ message: __("Discount amount capped at {0}", [formatCurrency(maxAmount)]), indicator: "orange" });
                 }
+            } else if (field === "sell_unit_price") {
+                const requested = Math.max(Number($(this).val() || 0), 0);
+                const floor = sellPriceFloor(line);
+                const nextValue = requested > 0 && floor > 0 && requested < floor ? floor : requested;
+                applyLineSellUnitPrice(line, nextValue);
+                if (nextValue !== requested) {
+                    $(this).val(nextValue);
+                    frappe.show_alert({ message: __("PU HT raised to minimum {0}", [formatCurrency(floor)]), indicator: "orange" });
+                }
+            } else if (["qty", "buy_price"].includes(field)) {
+                line[field] = Number($(this).val() || 0);
+                if (field === "qty") line.sell_total = Number(line.sell_unit_price || 0) * Number(line.qty || 0);
             } else {
                 line[field] = $(this).val();
             }
+            if ($(this).is("[data-raw-number]")) {
+                $(this).attr("data-raw-value", rawLineNumber(line[field]));
+            }
             if (event.type === "change") scheduleAutoPrice(page);
         });
+        page.main.find("[data-raw-number]")
+            .on("focus", function () {
+                $(this).val($(this).attr("data-raw-value") || "0");
+                this.select();
+            })
+            .on("blur", function () {
+                $(this).val(formatDisplayNumber($(this).val()));
+            });
         page.main.find("[data-dim-key]").on("input change", function () {
             const key = $(this).attr("data-dim-key");
             STATE.dimensioningValues[key] = $(this).attr("type") === "checkbox" ? this.checked : $(this).val();
@@ -1221,7 +1344,17 @@
     }
 
     function mountLinkControls(page) {
-        page.main.find("[data-link-field]").each((_, host) => {
+        page.main.find("[data-team-link]").each((_, host) => {
+            const index = Number(host.getAttribute("data-team-index"));
+            const row = (STATE.sheet.custom_sales_team || [])[index];
+            if (!row) return;
+            mountLink(host, "Sales Person", row.sales_person || "", (value) => {
+                row.sales_person = value || "";
+                redistributeTeam();
+                render(page);
+            }, () => ({ filters: { enabled: 1, is_group: 0 } }), !Boolean(STATE.sheet.user_context?.can_edit_sales_person));
+        });
+        page.main.find("[data-link-field]:not([data-team-link])").each((_, host) => {
             const field = host.getAttribute("data-link-field");
             const options = host.getAttribute("data-options");
             const readOnly = host.getAttribute("data-read-only") === "1";
@@ -1409,6 +1542,16 @@
             };
         }
         return undefined;
+    }
+
+    function redistributeTeam() {
+        const rows = STATE.sheet.custom_sales_team || [];
+        if (!rows.length) return;
+        const share = Math.round((100 / rows.length) * 1e9) / 1e9;
+        rows.forEach((row, index) => {
+            row.allocated_percentage = index === rows.length - 1 ? 100 - share * (rows.length - 1) : share;
+            row.is_primary = index === 0 ? 1 : 0;
+        });
     }
 
     function getLineLinkQuery(field, line) {
@@ -1616,8 +1759,13 @@
         const sheet = { ...STATE.sheet };
         const mode = resolvePricingMode(sheet);
         sheet.pricing_mode = mode;
-        sheet.output_mode = "Avec details";
-        sheet.lines = (STATE.sheet.lines || []).map((line) => ({ ...line, show_in_detail: 1 }));
+        sheet.output_mode = sheet.output_mode || "Avec details";
+        sheet.dimensioning_multiplier = Math.max(1, Math.trunc(Number(sheet.dimensioning_multiplier || 1)));
+        sheet.lines = (STATE.sheet.lines || []).map((line) => ({
+            ...line,
+            show_in_detail: 1,
+            presentation_role: line.presentation_role || "Include in commercial summary",
+        }));
         sheet.pricing_scenario = "";
         sheet.customs_policy = "";
         sheet.user_context = undefined;
@@ -1783,29 +1931,27 @@
     }
 
     function activeLineColumns() {
-        if (isRestrictedAgent()) return AGENT_LINE_COLUMNS.map((key) => LINE_COLUMNS.find((column) => column.key === key)).filter(Boolean);
+        if (!canViewSensitivePricing()) return filterCommissionColumns(AGENT_LINE_COLUMNS).map((key) => LINE_COLUMNS.find((column) => column.key === key)).filter(Boolean);
         const columns = normalizeLineColumns(STATE.lineColumns || defaultLineColumns());
-        const modeColumns = isStaticPricingMode()
-            ? columns.map((key) => key === "buy_price" ? "static_list_price" : key)
-            : columns;
-        return modeColumns
+        return columns
             .filter((key) => !isStaticPricingMode() || !STATIC_MODE_HIDDEN_COLUMNS.has(key))
-            .filter((key) => canViewSensitivePricing() || !SENSITIVE_PRICING_COLUMNS.has(key))
-            .filter((key, index) => modeColumns.indexOf(key) === index)
+            .filter((key, index) => columns.indexOf(key) === index)
+            .filter((key) => canViewCommission() || !isCommissionColumn(key))
             .map((key) => LINE_COLUMNS.find((column) => column.key === key))
             .filter(Boolean);
     }
 
     function defaultLineColumns() {
-        if (isRestrictedAgent()) return AGENT_LINE_COLUMNS.slice();
-        if (isStaticPricingMode()) return ADMIN_STATIC_LINE_COLUMNS.slice();
-        return DEFAULT_LINE_COLUMNS.slice();
+        if (!canViewSensitivePricing()) return filterCommissionColumns(AGENT_LINE_COLUMNS.slice());
+        if (isStaticPricingMode()) return filterCommissionColumns(ADMIN_STATIC_LINE_COLUMNS.slice());
+        return filterCommissionColumns(DEFAULT_LINE_COLUMNS.slice());
     }
 
     function availableLineColumns() {
         return LINE_COLUMNS.filter((column) => {
-            if (isRestrictedAgent() && !AGENT_LINE_COLUMNS.includes(column.key)) return false;
+            if (!canViewSensitivePricing() && !AGENT_LINE_COLUMNS.includes(column.key)) return false;
             if (!canViewSensitivePricing() && SENSITIVE_PRICING_COLUMNS.has(column.key)) return false;
+            if (!canViewCommission() && isCommissionColumn(column.key)) return false;
             return true;
         });
     }
@@ -1815,7 +1961,24 @@
     }
 
     function canViewSensitivePricing() {
-        return Boolean(STATE.sheet?.user_context?.can_view_sensitive_pricing);
+        const privileged = Boolean(frappe.boot?.orderlift_capabilities?.privileged_pricing);
+        return privileged && Boolean(STATE.sheet?.user_context?.can_view_sensitive_pricing ?? true);
+    }
+
+    function canOverridePricing() {
+        return Boolean(frappe.boot?.orderlift_capabilities?.quotation_override);
+    }
+
+    function canViewCommission() {
+        return Boolean(STATE.sheet?.user_context?.can_view_commission);
+    }
+
+    function isCommissionColumn(key) {
+        return key === "commission_rate" || key === "commission_amount";
+    }
+
+    function filterCommissionColumns(columns) {
+        return canViewCommission() ? columns : columns.filter((key) => !isCommissionColumn(key));
     }
 
     function isStaticPricingMode() {
@@ -1830,20 +1993,65 @@
         return Math.max(resolveMaxDiscount(row) - Number(row.discount_percent || 0), 0);
     }
 
-    function manualOverrideFloor(row) {
-        const reference = manualOverrideReference(row);
+    function sellPriceFloor(row) {
+        const reference = sellPriceReference(row);
         if (!reference) return 0;
         return reference * (1 - (resolveMaxDiscount(row) / 100));
     }
 
-    function manualOverrideReference(row) {
-        return Number(row.projected_unit_price || row.static_list_price || 0);
+    function sellPriceReference(row) {
+        return Number(row.static_list_price || row.projected_unit_price || 0);
+    }
+
+    function maxDiscountAmountPerUnit(row) {
+        return sellPriceReference(row) * (resolveMaxDiscount(row) / 100);
+    }
+
+    function applyLineSellUnitPrice(row, value) {
+        const rate = Math.max(Number(value || 0), 0);
+        const listRate = sellPriceReference(row);
+        row.sell_unit_price = rate;
+        row.sell_total = rate * (Number(row.qty || 0) || 1);
+        if (!listRate || rate >= listRate) {
+            row.discount_percent = 0;
+            row.discount_amount_per_unit = 0;
+            return;
+        }
+        row.discount_amount_per_unit = listRate - rate;
+        row.discount_percent = (row.discount_amount_per_unit / listRate) * 100;
+    }
+
+    function applyLineDiscountPercent(row, value) {
+        const discount = Math.max(Number(value || 0), 0);
+        const listRate = sellPriceReference(row);
+        row.discount_percent = discount;
+        if (!listRate) return;
+        row.discount_amount_per_unit = listRate * (discount / 100);
+        row.sell_unit_price = listRate - row.discount_amount_per_unit;
+        row.sell_total = row.sell_unit_price * (Number(row.qty || 0) || 1);
+    }
+
+    function applyLineDiscountAmount(row, value) {
+        const discountAmount = Math.max(Number(value || 0), 0);
+        const listRate = sellPriceReference(row);
+        row.discount_amount_per_unit = discountAmount;
+        if (!listRate) return;
+        row.sell_unit_price = listRate - discountAmount;
+        row.sell_total = row.sell_unit_price * (Number(row.qty || 0) || 1);
+        row.discount_percent = (discountAmount / listRate) * 100;
+    }
+
+    function commissionPreview(row) {
+        return Number(row.sell_unit_price || 0)
+            * (Number(row.qty || 0) || 1)
+            * (unusedDiscountPercent(row) / 100)
+            * (Number(row.commission_rate || 0) / 100);
     }
 
     function lineCostUnit(row) {
         if (isStaticPricingMode()) {
             const projected = Number(row.projected_unit_price || 0);
-            return projected || Number(row.final_sell_unit_price || 0) || staticBaseUnit(row);
+            return projected || Number(row.sell_unit_price || 0) || staticBaseUnit(row);
         }
         return Number(row.buy_price || 0)
             + Number(row.expense_unit_price || 0)
@@ -1884,7 +2092,7 @@
     }
 
     function openColumnDialog(page) {
-        const selected = new Set(isRestrictedAgent() ? AGENT_LINE_COLUMNS : (STATE.lineColumns || defaultLineColumns()));
+        const selected = new Set(canViewSensitivePricing() ? (STATE.lineColumns || defaultLineColumns()) : AGENT_LINE_COLUMNS);
         const dialog = new frappe.ui.Dialog({
             title: __("Line Table Columns"),
             fields: [{ fieldtype: "HTML", fieldname: "columns_html" }],
@@ -1980,6 +2188,93 @@
             },
         });
         dialog.show();
+    }
+
+    function openBulkDiscountDialog(page) {
+        pruneSelectedLineKeys();
+        const selected = new Set(STATE.selectedLineKeys || []);
+        const allLines = STATE.sheet.lines || [];
+        const targets = selected.size
+            ? allLines.filter((line, index) => selected.has(lineKey(line, index)))
+            : allLines.slice();
+        if (!targets.length) return;
+
+        const scope = selected.size
+            ? __("This will check {0} selected line(s).", [targets.length])
+            : __("No lines are selected, so this will check all {0} line(s).", [targets.length]);
+        const dialog = new frappe.ui.Dialog({
+            title: __("Apply Discount to Lines"),
+            fields: [
+                {
+                    fieldname: "discount_percent",
+                    fieldtype: "Percent",
+                    label: __("Discount %"),
+                    reqd: 1,
+                    default: 0,
+                    description: scope,
+                },
+            ],
+            primary_action_label: __("Apply Discount"),
+            primary_action(values) {
+                const discount = Number(values.discount_percent);
+                if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+                    frappe.msgprint({
+                        title: __("Invalid Discount"),
+                        message: __("Enter a discount from 0% to 100%."),
+                        indicator: "red",
+                    });
+                    return;
+                }
+                applyBulkLineDiscount(targets, discount);
+                STATE.selectedLineKeys.clear();
+                render(page);
+                scheduleAutoPrice(page);
+                dialog.hide();
+            },
+        });
+        dialog.show();
+    }
+
+    function applyBulkLineDiscount(lines, discount) {
+        const canOverride = canOverridePricing();
+        const applied = [];
+        const skipped = [];
+        const overrides = [];
+        const missingReferences = [];
+
+        lines.forEach((line) => {
+            const maxDiscount = Math.max(resolveMaxDiscount(line), 0);
+            const label = String(line.item || line.item_name || line.name || __("Unnamed item"));
+            if (!canOverride && discount > maxDiscount + 0.000001) {
+                skipped.push(`${label} (${__("max {0}%", [formatDisplayNumber(maxDiscount)])})`);
+                return;
+            }
+            if (!sellPriceReference(line)) {
+                missingReferences.push(label);
+                return;
+            }
+            if (canOverride && discount > maxDiscount + 0.000001) {
+                overrides.push(`${label} (${__("max {0}%", [formatDisplayNumber(maxDiscount)])})`);
+            }
+            applyLineDiscountPercent(line, discount);
+            applied.push(label);
+        });
+
+        const sections = [
+            `<p>${__("Applied {0}% to {1} line(s).", [formatDisplayNumber(discount), applied.length])}</p>`,
+        ];
+        if (skipped.length) sections.push(bulkLineDiscountResultList(__("Skipped below-cap lines"), skipped));
+        if (overrides.length) sections.push(bulkLineDiscountResultList(__("Admin override applied above max"), overrides));
+        if (missingReferences.length) sections.push(bulkLineDiscountResultList(__("Skipped lines without a reference price"), missingReferences));
+        frappe.msgprint({
+            title: __("Bulk Discount Result"),
+            message: sections.join(""),
+            indicator: skipped.length || missingReferences.length ? "orange" : "green",
+        });
+    }
+
+    function bulkLineDiscountResultList(title, rows) {
+        return `<p><b>${escapeHtml(title)}: ${rows.length}</b></p><ul>${rows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul>`;
     }
 
     function openOpportunityItemsDialog(page) {
@@ -2221,7 +2516,11 @@
         if (options.collect !== false) collectDimensioningValues(page);
         const res = await frappe.call({
             method: "orderlift.orderlift_sales.doctype.dimensioning_set.dimensioning_set.preview_dimensioning_set",
-            args: { set_name: STATE.sheet.dimensioning_set, input_values_json: JSON.stringify(STATE.dimensioningValues || {}) },
+            args: {
+                set_name: STATE.sheet.dimensioning_set,
+                input_values_json: JSON.stringify(STATE.dimensioningValues || {}),
+                multiplier: STATE.sheet.dimensioning_multiplier || 1,
+            },
             freeze: options.freeze !== false,
         });
         STATE.dimensioningPreview = (res.message || {}).items || [];
@@ -2253,6 +2552,7 @@
                 pricing_sheet: STATE.sheet.name,
                 dimensioning_set: STATE.sheet.dimensioning_set,
                 input_values_json: JSON.stringify(STATE.dimensioningValues || {}),
+                dimensioning_multiplier: STATE.sheet.dimensioning_multiplier || 1,
                 replace_existing_generated: 1,
                 pricing_mode: resolvePricingMode(STATE.sheet),
             },
@@ -2459,7 +2759,7 @@
             <select class="psb-margin-basis-select" data-sheet-field="margin_basis" style="font-size:11px;font-weight:500;border:none;background:transparent;cursor:pointer;color:var(--ink-1000);max-width:110px;">
                 ${options.map((opt) => `<option value="${escapeHtml(opt)}" ${opt === basis ? "selected" : ""}>${escapeHtml(opt)}</option>`).join("")}
             </select>
-            <span class="psb-margin-value">${escapeHtml(pct.toFixed(1))}%</span>
+            <span class="psb-margin-value">${escapeHtml(formatDisplayNumber(pct))}%</span>
         </strong></div>`;
     }
 
@@ -2473,9 +2773,15 @@
 
     function loadLineColumns() {
         try {
-            const raw = window.localStorage?.getItem(lineColumnStorageKey());
+            const storageKey = lineColumnStorageKey();
+            const raw = window.localStorage?.getItem(storageKey)
+                || window.localStorage?.getItem(storageKey.replace(".v5", ".v4"));
             const parsed = raw ? JSON.parse(raw) : null;
-            if (Array.isArray(parsed) && parsed.length) return normalizeLineColumns(parsed);
+            if (Array.isArray(parsed) && parsed.length) {
+                const normalized = normalizeLineColumns(parsed);
+                window.localStorage?.setItem(storageKey, JSON.stringify(normalized));
+                return normalized;
+            }
         } catch (error) {
             // Local preference only; ignore storage failures.
         }
@@ -2483,7 +2789,7 @@
     }
 
     function normalizeLineColumns(columns) {
-        const aliases = { final: "final_sell_total", detail: "" };
+        const aliases = { final: "sell_total", detail: "" };
         const available = new Set(availableLineColumns().map((column) => column.key));
         const normalized = [];
         (columns || []).forEach((key) => {
@@ -2505,12 +2811,12 @@
     }
 
     function lineColumnStorageKey() {
-        if (isRestrictedAgent()) return `${COLUMN_STORAGE_KEY_PREFIX}.agent`;
+        if (!canViewSensitivePricing()) return `${COLUMN_STORAGE_KEY_PREFIX}.agent`;
         return `${COLUMN_STORAGE_KEY_PREFIX}.admin.${isStaticPricingMode() ? "static" : "dynamic"}`;
     }
 
     function formatCurrency(value) {
-        return window.orderlift?.formatCurrency ? window.orderlift.formatCurrency(value) : textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency" }));
+        return textFromHtml(frappe.format(Number(value || 0), { fieldtype: "Currency", precision: 2 }));
     }
 
     function formatDateTime(value) {
@@ -2555,7 +2861,7 @@
             .psb-static-panel-lists{grid-template-columns:1fr;align-items:stretch}.psb-static-list-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.psb-static-list-head strong{display:block;color:var(--ink-1000);font-size:13px}.psb-static-list-head span{display:block;color:var(--ink-500);font-size:11px}.psb-selling-list-rows{display:grid;gap:8px}.psb-selling-list-row{display:grid;grid-template-columns:36px minmax(220px,1fr) 96px 92px 34px;gap:8px;align-items:end;border:1px solid var(--ink-100);border-radius:10px;background:var(--surface);padding:8px}.psb-selling-list-row>span{display:grid;place-items:center;height:32px;border-radius:8px;background:var(--primary-50);color:var(--primary-700);font-family:var(--font-mono);font-size:11px;font-weight:600}.psb-selling-list-row label{margin:0;color:var(--ink-500);font-size:10px}.psb-selling-list-row input[type='number']{width:100%;min-height:32px;border:1px solid var(--ink-200);border-radius:8px;background:var(--surface);padding:0 8px;font-size:12px}
             .psb-map-list{display:grid;gap:8px}.psb-map-card{display:grid;grid-template-columns:minmax(170px,.75fr) minmax(0,2.4fr) auto;gap:10px;align-items:end;border:1px solid var(--ink-100);border-radius:12px;background:linear-gradient(180deg,var(--surface),var(--surface-2));padding:10px;box-shadow:var(--shadow-xs)}.psb-map-row-head{align-self:stretch;display:grid;align-content:center;gap:3px;border-right:1px solid var(--ink-100);padding-right:10px}.psb-map-row-head span{width:max-content;border-radius:999px;background:var(--primary-50);border:1px solid var(--primary-100);color:var(--primary-700);padding:2px 7px;font-family:var(--font-mono);font-size:10px;font-weight:600}.psb-map-row-head strong{color:var(--ink-1000);font-size:13px;font-weight:600;line-height:1.25}.psb-map-row-head em{color:var(--ink-500);font-size:10px;font-style:normal}.psb-map-fields{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}.psb-map-field{display:grid;gap:4px;margin:0}.psb-map-field span,.psb-map-priority span{color:var(--ink-500);font-size:10px;font-weight:600}.psb-map-field .psb-link-input{min-height:32px;border-radius:8px;font-size:12px}.psb-map-controls{display:flex;align-items:end;gap:7px}.psb-map-priority{display:grid;gap:4px;margin:0}.psb-map-priority input{width:62px;min-height:32px;border:1px solid var(--ink-200);border-radius:8px;background:var(--surface);padding:0 8px;font-size:12px}.psb-map-controls .psb-check{min-height:32px;border:1px solid var(--ink-100);border-radius:8px;background:var(--surface);padding:0 8px}.psb-map-controls .psb-icon-btn{width:32px;height:32px}.psb-map-empty{border:1px dashed var(--ink-200);border-radius:12px;background:var(--surface-2);text-align:center;color:var(--ink-500);font-size:12px;font-weight:500;padding:18px}
             .psb-breakdown-list{display:grid;gap:10px}.psb-breakdown-row{display:grid;gap:10px;border:1px solid var(--ink-100);border-radius:12px;background:linear-gradient(180deg,var(--surface),var(--surface-2));padding:10px}.psb-breakdown-head{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center}.psb-breakdown-head>span{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--primary-50);border:1px solid var(--primary-100);color:var(--primary-700);font-family:var(--font-mono);font-size:11px;font-weight:600}.psb-breakdown-head strong{display:block;color:var(--ink-1000);font-size:13px;font-weight:600}.psb-breakdown-head p{margin:1px 0 0;color:var(--ink-500);font-size:11px}.psb-breakdown-head em{font-style:normal;color:var(--ink-700);font-family:var(--font-mono);font-size:12px}.psb-breakdown-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.psb-breakdown-metric{display:grid;gap:3px;border:1px solid var(--ink-100);border-radius:10px;background:var(--surface);padding:8px}.psb-breakdown-metric.highlight{border-color:var(--primary-100);background:var(--primary-50)}.psb-breakdown-metric em{font-style:normal;color:var(--ink-500);font-size:10px}.psb-breakdown-metric strong{color:var(--ink-1000);font-size:13px;font-weight:600}.psb-breakdown-steps{display:flex;flex-wrap:wrap;gap:6px}.psb-breakdown-step{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--ink-100);border-radius:999px;background:var(--surface);padding:5px 8px;font-size:11px}.psb-breakdown-step strong{color:var(--ink-600);font-weight:500}.psb-breakdown-step em{font-style:normal;color:var(--ink-900);font-family:var(--font-mono)}.psb-history-card{gap:8px;background:var(--surface-2);border-color:var(--ink-100);box-shadow:var(--shadow-xs)}.psb-history-card .psb-section-head h2{color:var(--ink-700);font-size:13px;font-weight:600}.psb-history-card .psb-section-head p{color:var(--ink-400);font-size:11px}.psb-history-toggle{display:inline-flex;align-items:center;gap:8px;min-height:28px;border:1px solid var(--ink-150);border-radius:999px;background:var(--surface);color:var(--ink-600);padding:0 10px;font-size:11px;font-weight:500}.psb-history-toggle span{color:var(--ink-400);font-family:var(--font-mono);font-size:10px}.psb-history-card.is-collapsed .psb-history-content{display:none}.psb-history-list{display:grid;gap:6px}.psb-history-event{display:grid;grid-template-columns:12px minmax(0,1fr) minmax(140px,.24fr);gap:8px;align-items:start;border:1px solid var(--ink-100);border-radius:10px;background:var(--surface-3);padding:8px;box-shadow:none}.psb-history-dot{width:6px;height:6px;margin-top:4px;border-radius:999px;background:var(--ink-300);box-shadow:none}.psb-history-event strong{display:block;color:var(--ink-700);font-size:11px;font-weight:500}.psb-history-event p{margin:1px 0 0;color:var(--ink-500);font-size:10px;line-height:1.3}.psb-history-event aside{display:grid;gap:1px;justify-items:end;color:var(--ink-400);font-size:10px;line-height:1.2}.psb-history-event time{font-family:var(--font-mono);color:var(--ink-400);font-size:9px}
-            .psb-shell,.psb-editor,.psb-card,.psb-items-body{min-width:0}.psb-line-table-wrap{max-width:100%;min-width:0;overflow-x:auto!important;overflow-y:hidden!important;position:relative;padding-bottom:0;transition:padding-bottom .18s var(--ease)}.psb-line-table-wrap:focus-within{overflow-x:auto!important;overflow-y:hidden!important;padding-bottom:340px}.psb-line-table{width:max-content;min-width:1800px;table-layout:fixed}.psb-line-table th{white-space:nowrap}.psb-line-table input{min-width:0}.psb-line-table col.psb-col-__select{width:44px}.psb-line-table col.psb-col-actions{width:54px}.psb-line-table col.psb-col-item{width:260px}.psb-line-table col.psb-col-item_name{width:300px}.psb-line-table col.psb-col-qty{width:86px}.psb-line-table col.psb-col-source_buying_price_list,.psb-line-table col.psb-col-pricing_scenario,.psb-line-table col.psb-col-resolved_pricing_scenario,.psb-line-table col.psb-col-resolved_scenario_rule,.psb-line-table col.psb-col-resolved_margin_rule{width:220px}.psb-line-table col.psb-col-display_group,.psb-line-table col.psb-col-benchmark_note,.psb-line-table col.psb-col-buy_price_message,.psb-line-table col.psb-col-breakdown_preview{width:220px}.psb-line-table col.psb-col-manual_sell_unit_price{width:150px}.psb-line-table col.psb-col-discount_percent,.psb-line-table col.psb-col-max_discount_percent_allowed{width:118px}.psb-line-table col.psb-col-line_type,.psb-line-table col.psb-col-scenario_source,.psb-line-table col.psb-col-benchmark_status,.psb-line-table col.psb-col-margin_source{width:150px}.psb-line-table col.psb-col-buy_price,.psb-line-table col.psb-col-base_amount,.psb-line-table col.psb-col-expense_unit_price,.psb-line-table col.psb-col-expense_total,.psb-line-table col.psb-col-customs_unit_amount,.psb-line-table col.psb-col-margin_unit_amount,.psb-line-table col.psb-col-margin_total_amount,.psb-line-table col.psb-col-projected_unit_price,.psb-line-table col.psb-col-projected_total_price,.psb-line-table col.psb-col-final_sell_unit_price,.psb-line-table col.psb-col-final_sell_total,.psb-line-table col.psb-col-discount_amount,.psb-line-table col.psb-col-discounted_sell_unit_price,.psb-line-table col.psb-col-discounted_sell_total,.psb-line-table col.psb-col-commission_amount,.psb-line-table col.psb-col-static_list_price,.psb-line-table col.psb-col-benchmark_price,.psb-line-table col.psb-col-benchmark_reference{width:135px}.psb-line-table col{width:140px}.psb-line-table td{overflow:hidden;text-overflow:ellipsis}.psb-line-table td:has(input),.psb-line-table td:has(.awesomplete){overflow:visible}
+            .psb-shell,.psb-editor,.psb-card,.psb-items-body{min-width:0}.psb-line-table-wrap{max-width:100%;min-width:0;overflow-x:auto!important;overflow-y:hidden!important;position:relative;padding-bottom:0;transition:padding-bottom .18s var(--ease)}.psb-line-table-wrap:focus-within{overflow-x:auto!important;overflow-y:hidden!important;padding-bottom:340px}.psb-line-table{width:max-content;min-width:1800px;table-layout:fixed}.psb-line-table th{white-space:nowrap}.psb-line-table input{min-width:0}.psb-line-table col.psb-col-__select{width:44px}.psb-line-table col.psb-col-actions{width:54px}.psb-line-table col.psb-col-item{width:260px}.psb-line-table col.psb-col-item_name{width:300px}.psb-line-table col.psb-col-qty{width:86px}.psb-line-table col.psb-col-source_buying_price_list,.psb-line-table col.psb-col-pricing_scenario,.psb-line-table col.psb-col-resolved_pricing_scenario,.psb-line-table col.psb-col-resolved_scenario_rule,.psb-line-table col.psb-col-resolved_margin_rule{width:220px}.psb-line-table col.psb-col-display_group,.psb-line-table col.psb-col-benchmark_note,.psb-line-table col.psb-col-buy_price_message,.psb-line-table col.psb-col-breakdown_preview{width:220px}.psb-line-table col.psb-col-sell_unit_price{width:150px}.psb-line-table col.psb-col-discount_percent,.psb-line-table col.psb-col-max_discount_percent_allowed{width:118px}.psb-line-table col.psb-col-line_type,.psb-line-table col.psb-col-scenario_source,.psb-line-table col.psb-col-benchmark_status,.psb-line-table col.psb-col-margin_source{width:150px}.psb-line-table col.psb-col-buy_price,.psb-line-table col.psb-col-base_amount,.psb-line-table col.psb-col-expense_unit_price,.psb-line-table col.psb-col-expense_total,.psb-line-table col.psb-col-customs_unit_amount,.psb-line-table col.psb-col-margin_unit_amount,.psb-line-table col.psb-col-margin_total_amount,.psb-line-table col.psb-col-projected_unit_price,.psb-line-table col.psb-col-projected_total_price,.psb-line-table col.psb-col-sell_unit_price,.psb-line-table col.psb-col-sell_total,.psb-line-table col.psb-col-discount_amount_per_unit,.psb-line-table col.psb-col-commission_amount,.psb-line-table col.psb-col-static_list_price,.psb-line-table col.psb-col-benchmark_price,.psb-line-table col.psb-col-benchmark_reference{width:135px}.psb-line-table col{width:140px}.psb-line-table td{overflow:hidden;text-overflow:ellipsis}.psb-line-table td:has(input),.psb-line-table td:has(.awesomplete){overflow:visible}
             .psb-preview-panel{display:grid;gap:8px}.psb-preview-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:34px;border:1px solid var(--ink-100);border-radius:10px;background:var(--surface);padding:0 11px;color:var(--ink-700);font-size:12px;font-weight:500}.psb-preview-toggle strong{color:var(--primary-700);font-size:12px}.psb-column-list{display:grid;gap:6px;max-height:60vh;overflow:auto;padding:4px}.psb-column-option{display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;gap:8px;border:1px solid var(--ink-100);border-radius:9px;background:var(--surface);padding:8px 10px;cursor:grab}.psb-column-option:active{cursor:grabbing}.psb-drag-handle{color:var(--ink-400);font-family:var(--font-mono);font-size:12px}.psb-column-option label{margin:0;color:var(--ink-800);font-size:13px;font-weight:500}
             .psb-breakdown-detail-wrap{overflow:auto;border:1px solid var(--ink-100);border-radius:12px;background:var(--surface)}.psb-breakdown-detail{width:100%;min-width:720px;border-collapse:separate;border-spacing:0}.psb-breakdown-detail th{background:var(--surface-2);border-bottom:1px solid var(--ink-100);color:var(--ink-500);font-size:10px;font-weight:600;text-align:left;padding:8px 10px;white-space:nowrap}.psb-breakdown-detail td{border-bottom:1px solid var(--ink-100);padding:8px 10px;color:var(--ink-800);font-size:12px;vertical-align:top}.psb-breakdown-detail tr:last-child td{border-bottom:0}.psb-breakdown-detail td:nth-child(2),.psb-breakdown-detail td:nth-child(3){font-family:var(--font-mono);text-align:right;white-space:nowrap;color:var(--ink-1000);font-weight:600}.psb-breakdown-detail tr.final td{background:var(--primary-50);color:var(--primary-800);font-weight:700}.psb-breakdown-detail tr.discount td{color:var(--rose-700)}.psb-sub-expenses{display:grid;gap:6px}.psb-sub-expenses>strong{color:var(--ink-700);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
             @media(max-width:1280px){.psb-hero{grid-template-columns:1fr}.psb-hero-kpis,.psb-quote-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.psb-dim-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.psb-form-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.psb-map-card{grid-template-columns:1fr}.psb-map-row-head{border-right:0;border-bottom:1px solid var(--ink-100);padding:0 0 8px}.psb-map-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.psb-map-controls{justify-content:flex-start}}@media(max-width:980px){.psb-shell{padding:12px 12px 96px}.psb-form-grid.two,.psb-dim-head,.psb-static-panel{grid-template-columns:1fr}.psb-hero-kpis,.psb-quote-grid,.psb-mode-switch{grid-template-columns:repeat(2,minmax(0,1fr))}.psb-section-head{flex-direction:column}.psb-actions{justify-content:flex-start}.psb-history-event{grid-template-columns:16px minmax(0,1fr)}.psb-history-event aside{grid-column:2;justify-items:start}.psb-bottom-bar{left:12px;right:12px;bottom:8px;transform:none;overflow-x:auto;justify-content:flex-start}}@media(max-width:640px){.psb-hero{padding:12px}.psb-hero-kpis,.psb-quote-grid,.psb-dim-grid,.psb-tabs,.psb-map-fields,.psb-mode-switch{grid-template-columns:1fr}.psb-map-controls{flex-wrap:wrap}.psb-bottom-bar .psb-btn{min-width:max-content}}

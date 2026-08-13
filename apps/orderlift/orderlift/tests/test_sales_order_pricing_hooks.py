@@ -6,6 +6,7 @@ import unittest
 frappe_stub = types.ModuleType("frappe")
 frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(ValueError(message))
+frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.session = types.SimpleNamespace(user="sales@example.com")
 frappe_stub.get_roles = lambda user=None: ["Sales User"]
 frappe_stub.conf = types.SimpleNamespace(orderlift_use_role_capabilities=0)
@@ -68,6 +69,7 @@ ALL_FIELDS = {
     "prevdoc_doctype",
     "prevdoc_docname",
     "prevdoc_detail_docname",
+    "quotation_item",
     "source_pricing_sheet_line",
     "source_pricing_scenario",
     "source_pricing_override",
@@ -80,11 +82,9 @@ ALL_FIELDS = {
     "source_customs_basis",
     "source_selling_price_list",
     "source_price_list_sell_rate",
-    "source_gross_sell_rate",
     "source_discount_percent",
     "source_max_discount_percent",
     "source_discount_amount",
-    "source_discounted_sell_rate",
     "source_margin_percent",
     "source_target_margin_percent",
     "source_base_buy_rate",
@@ -92,6 +92,7 @@ ALL_FIELDS = {
     "source_margin_basis",
     "source_commission_rate",
     "source_commission_amount",
+    "custom_orderlift_other_charge",
 }
 
 
@@ -101,9 +102,15 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
         self.original_get_roles = sales_order_pricing_hooks.frappe.get_roles
         self.original_user = sales_order_pricing_hooks.frappe.session.user
         self.original_price_scope_frappe = price_list_scope_mod.frappe
+        self.original_can_override = sales_order_pricing_hooks.can_override_quotation_pricing
         price_list_scope_mod.frappe = sales_order_pricing_hooks.frappe
         sales_order_pricing_hooks.frappe.get_roles = lambda user=None: ["Sales User"]
         sales_order_pricing_hooks.frappe.session.user = "sales@example.com"
+        sales_order_pricing_hooks.can_override_quotation_pricing = lambda: bool(
+            {"Orderlift Admin", "Sales Manager", "System Manager"}.intersection(
+                sales_order_pricing_hooks.frappe.get_roles()
+            )
+        )
 
     def tearDown(self):
         if self.original_get_doc is None:
@@ -114,6 +121,7 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
         sales_order_pricing_hooks.frappe.get_roles = self.original_get_roles
         sales_order_pricing_hooks.frappe.session.user = self.original_user
         price_list_scope_mod.frappe = self.original_price_scope_frappe
+        sales_order_pricing_hooks.can_override_quotation_pricing = self.original_can_override
 
     def test_normal_user_sales_order_inherits_submitted_quotation_pricing(self):
         quote = self._quotation(docstatus=1)
@@ -128,11 +136,52 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
         self.assertEqual(so["source_pricing_sheet"], "PS-001")
         self.assertEqual(row["rate"], 90)
         self.assertEqual(row["source_selling_price_list"], "Sell A")
-        self.assertEqual(row["source_price_list_sell_rate"], 95)
+        self.assertEqual(row["source_price_list_sell_rate"], 100)
         self.assertEqual(row["source_discount_percent"], 10)
         self.assertEqual(row["source_target_margin_percent"], 25)
         self.assertEqual(row["source_landed_cost"], 75)
         self.assertEqual(row["amount"], 270)
+
+    def test_normal_user_accepts_native_erpnext_quotation_item_source(self):
+        quote = self._quotation(docstatus=1)
+        so = self._sales_order()
+        row = so["items"][0]
+        row.pop("prevdoc_detail_docname", None)
+        row["quotation_item"] = "QTN-ITEM-1"
+        sales_order_pricing_hooks.frappe.get_doc = lambda doctype, name: quote
+
+        sales_order_pricing_hooks.validate_sales_order_source_lock(so)
+
+    def test_other_charge_marker_copies_from_quotation_to_sales_order(self):
+        quote = self._quotation(docstatus=1)
+        quote["items"][0]["custom_orderlift_other_charge"] = 1
+        so = self._sales_order(rate=1, qty=3)
+        sales_order_pricing_hooks.frappe.get_doc = lambda doctype, name: quote
+
+        sales_order_pricing_hooks.copy_quotation_pricing_snapshot(so)
+
+        self.assertEqual(so["items"][0]["custom_orderlift_other_charge"], 1)
+
+    def test_sales_invoice_inherits_sales_order_selling_price_lists_read_only(self):
+        sales_order = DocStub(
+            name="SO-001",
+            selected_selling_price_lists=[
+                DocStub(price_list="Sell A", is_active=1, sequence=10),
+                DocStub(price_list="Sell B", is_active=1, sequence=20),
+            ],
+        )
+        invoice = DocStub(
+            selected_selling_price_lists=[],
+            items=[DocStub(item_code="ITEM-001", sales_order="SO-001")],
+        )
+        sales_order_pricing_hooks.frappe.get_doc = lambda doctype, name: sales_order
+
+        sales_order_pricing_hooks.copy_sales_invoice_pricing_context(invoice)
+
+        self.assertEqual(
+            [row["price_list"] for row in invoice["selected_selling_price_lists"]],
+            ["Sell A", "Sell B"],
+        )
 
     def test_pricing_override_recalculates_actual_margin_from_frozen_quote_cost(self):
         sales_order_pricing_hooks.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
@@ -201,7 +250,7 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
     def test_normal_user_discount_cap_is_enforced(self):
         so = self._sales_order(rate=70, qty=1)
         row = so["items"][0]
-        row["source_gross_sell_rate"] = 100
+        row["source_price_list_sell_rate"] = 100
         row["source_discount_percent"] = 30
         row["source_max_discount_percent"] = 10
 
@@ -221,12 +270,10 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
             net_rate=90,
             net_amount=90 * qty,
             source_selling_price_list="Sell A",
-            source_price_list_sell_rate=95,
-            source_gross_sell_rate=100,
+            source_price_list_sell_rate=100,
             source_discount_percent=10,
             source_max_discount_percent=15,
             source_discount_amount=10,
-            source_discounted_sell_rate=90,
             source_margin_percent=20,
             source_target_margin_percent=25,
             source_base_buy_rate=60,
@@ -257,7 +304,7 @@ class TestSalesOrderPricingHooks(unittest.TestCase):
                     net_amount=rate * qty,
                     prevdoc_doctype="Quotation",
                     prevdoc_docname="QTN-001",
-                    prevdoc_detail_docname="QTN-ITEM-1",
+                    quotation_item="QTN-ITEM-1",
                 )
             ],
         )

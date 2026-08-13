@@ -54,12 +54,6 @@ const ICONS = {
     plus: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
         <line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/>
     </svg>`,
-    simulator: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="3" width="16" height="11" rx="2"/>
-        <line x1="7" y1="17" x2="13" y2="17"/>
-        <line x1="10" y1="14" x2="10" y2="17"/>
-        <polyline points="5,11 8,7 11,9 15,4"/>
-    </svg>`,
     builder: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="2" width="6" height="6" rx="1"/>
         <rect x="12" y="2" width="6" height="6" rx="1"/>
@@ -138,7 +132,6 @@ function renderSkeleton(page) {
             <!-- ── Shortcuts ── -->
             <div class="pdb-shortcuts-grid">
                 ${shortcut("plus", __("New Pricing Sheet"), "/app/pricing-sheet-builder", "primary")}
-                ${shortcut("simulator", __("Pricing Simulator"), "/app/pricing-simulator", "default")}
                 ${shortcut("builder", __("Sheet Builder"), "/app/pricing-sheet-builder", "default")}
                 ${shortcut("list", __("All Sheets"), "/app/pricing-sheet-manager", "default")}
                 ${shortcut("benchmark", __("Benchmark Policies"), "/app/pricing-benchmark-policy", "default")}

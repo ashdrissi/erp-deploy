@@ -19,7 +19,7 @@ class TestOpportunityVoiceComment(unittest.TestCase):
         self.assertIn('opportunity_doc.append("notes"', source)
 
     def test_opportunity_form_records_uploads_and_adds_voice_comment(self):
-        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification.js").read_text()
+        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification_20260723a.js").read_text()
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
 
         self.assertIn("Voice Comment", source)
@@ -36,10 +36,10 @@ class TestOpportunityVoiceComment(unittest.TestCase):
         self.assertIn("new MediaRecorder", source)
         self.assertIn('/api/method/upload_file', source)
         self.assertIn("orderlift.orderlift_crm.api.voice_comment.add_opportunity_voice_comment", source)
-        self.assertIn("crm_classification_20260628b.js", hooks)
+        self.assertIn("crm_classification_20260723a.js", hooks)
 
     def test_opportunity_items_hide_pricing_fields(self):
-        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification.js").read_text()
+        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification_20260723a.js").read_text()
         setup = (APP_ROOT / "orderlift" / "orderlift_crm" / "setup.py").read_text()
 
         self.assertIn("hideOpportunityItemPricingFields", source)
@@ -55,7 +55,7 @@ class TestOpportunityVoiceComment(unittest.TestCase):
         self.assertIn('grid.update_docfield_property(fieldname, "reqd", 0)', source)
 
     def test_opportunity_preform_company_scope_and_quick_actions_are_wired(self):
-        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification.js").read_text()
+        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification_20260723a.js").read_text()
         pipeline = (APP_ROOT / "orderlift" / "orderlift_crm" / "page" / "opportunity_pipeline" / "opportunity_pipeline.js").read_text()
         api = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "pipeline.py").read_text()
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
@@ -73,10 +73,11 @@ class TestOpportunityVoiceComment(unittest.TestCase):
         self.assertIn("def create_opportunity_from_preform", api)
         self.assertIn("def _create_preform_party", api)
         self.assertIn("def _create_preform_customer", api)
-        self.assertIn("assign_opportunity_name", hooks)
+        self.assertIn("prepare_deal_abbreviation_name", hooks)
+        self.assertIn("assign_opportunity_name", (APP_ROOT / "orderlift" / "orderlift_crm" / "deal_abbreviation.py").read_text())
 
     def test_opportunity_preform_loads_party_defaults(self):
-        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification.js").read_text()
+        source = (APP_ROOT / "orderlift" / "public" / "js" / "crm_classification_20260723a.js").read_text()
         api = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "pipeline.py").read_text()
 
         self.assertIn("setupPreFormPartyDefaults", source)
@@ -87,8 +88,8 @@ class TestOpportunityVoiceComment(unittest.TestCase):
         self.assertIn('dialog.set_query("tier", () => ({ filters: { is_active: 1 } }))', source)
         for fieldname in ["client_name", "phone", "tier", "business_type", "segment", "territory", "address"]:
             self.assertIn(fieldname, source)
-        self.assertIn("_primary_address_for_party", api)
-        self.assertIn('"address": address or ""', api)
+        self.assertIn("resolve_party_context", api)
+        self.assertIn('context["address_name"] = context.get("billing_address_name")', api)
 
     def test_opportunity_delete_unlinks_prospect_child_rows(self):
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
@@ -154,11 +155,16 @@ class TestOpportunityVoiceComment(unittest.TestCase):
             APP_ROOT / "orderlift" / "orderlift_crm" / "page" / "status_control" / "status_control.js"
         ).read_text()
         api = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "status_control.py").read_text()
+        config = (APP_ROOT / "orderlift" / "orderlift_crm" / "status_config.py").read_text()
 
         self.assertIn('const isNewRow = String(row.data("row") || "") === "new"', source)
         self.assertIn('const rowName = isNewRow ? ""', source)
         self.assertIn('const docname = isNewRow ? ""', source)
+        self.assertIn('const allowRename = data.allow_rename !== false || !row.name', source)
         self.assertIn('if current_name == "new":', api)
+        self.assertIn('if not meta.get("allow_rename", True):', api)
+        self.assertIn('internal_label = doc.get(label_field) or doc.name', api)
+        self.assertIn('"allow_rename": False', config)
 
     def test_opportunity_owner_sync_wires_pipeline_todo(self):
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()

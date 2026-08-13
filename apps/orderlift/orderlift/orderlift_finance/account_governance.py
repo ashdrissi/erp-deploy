@@ -6,7 +6,13 @@ import frappe
 from frappe import _
 
 
-SUPERADMIN_ROLES = frozenset({"Administrator", "System Manager", "Developer"})
+SUPERADMIN_ROLES = frozenset({"Administrator", "System Manager"})
+WIRE_TRANSFER_ACCOUNT_BY_COMPANY = {
+    "Orderlift": "Sortie - OL",
+    "Orderlift Maroc Distribution": "Sortie - OMD",
+    "Orderlift Maroc Installation": "Sortie - OMI",
+    "Orderlift Turkey": "Sortie - OTR",
+}
 
 
 @dataclass(frozen=True)
@@ -112,7 +118,11 @@ def ensure_company_finance_defaults(doc, method=None) -> dict:
 
 
 def after_migrate() -> dict:
-    return ensure_all_company_finance_defaults()
+    turkey_bank = _ensure_turkey_bank_currency()
+    result = ensure_all_company_finance_defaults()
+    result["turkey_bank"] = turkey_bank
+    result["wire_transfer"] = ensure_wire_transfer_accounts()
+    return result
 
 
 @frappe.whitelist()
@@ -136,6 +146,36 @@ def ensure_all_company_finance_defaults() -> dict:
         if result.get("updated_fields"):
             results["updated_fields"][company] = result.get("updated_fields")
     return results
+
+
+def ensure_wire_transfer_accounts() -> dict:
+    if not _doctype_exists("Mode of Payment") or not frappe.db.exists("Mode of Payment", "Wire Transfer"):
+        return {"skipped": True, "reason": "Wire Transfer does not exist"}
+
+    mode = frappe.get_doc("Mode of Payment", "Wire Transfer")
+    rows_by_company = {row.company: row for row in mode.get("accounts") or []}
+    mapped = {}
+    missing = {}
+    for company, account in WIRE_TRANSFER_ACCOUNT_BY_COMPANY.items():
+        if not frappe.db.exists("Company", company) or not frappe.db.exists("Account", account):
+            missing[company] = account
+            continue
+        if not _account_belongs_to_company(account, company):
+            missing[company] = account
+            continue
+        row = rows_by_company.get(company)
+        if row:
+            row.default_account = account
+        else:
+            mode.append("accounts", {"company": company, "default_account": account})
+        if _has_field("Company", "default_bank_account"):
+            frappe.db.set_value("Company", company, "default_bank_account", account, update_modified=False)
+        mapped[company] = account
+
+    mode.type = "Bank"
+    mode.enabled = 1
+    mode.save(ignore_permissions=True)
+    return {"mapped": mapped, "missing": missing}
 
 
 def get_company_account_map(company: str, create_missing: bool = False) -> dict[str, str]:
@@ -279,12 +319,12 @@ def _apply_payment_entry_defaults(doc, company: str, account_map: dict[str, str]
     cash_bank = _cash_or_bank_account(doc, account_map)
     if payment_type == "Receive":
         if party_type == "Customer":
-            _set_account_if_needed(doc, "paid_from", account_map.get("receivable"), company)
+            _set_transaction_party_account_if_needed(doc, "paid_from", account_map.get("receivable"), company)
         _set_account_if_needed(doc, "paid_to", cash_bank, company)
     elif payment_type == "Pay":
         _set_account_if_needed(doc, "paid_from", cash_bank, company)
         if party_type == "Supplier":
-            _set_account_if_needed(doc, "paid_to", account_map.get("payable"), company)
+            _set_transaction_party_account_if_needed(doc, "paid_to", account_map.get("payable"), company)
 
 
 def _apply_cost_center_defaults(doc, company: str) -> None:
@@ -369,6 +409,16 @@ def _set_account_if_needed(target, fieldname: str, account: str | None, company:
         setattr(target, fieldname, account)
 
 
+def _set_transaction_party_account_if_needed(
+    target, fieldname: str, account: str | None, company: str
+) -> None:
+    if not account or not _target_has_field(target, fieldname):
+        return
+    current = _value(target, fieldname)
+    if not current or not _account_belongs_to_company(current, company):
+        setattr(target, fieldname, account)
+
+
 def _set_cost_center_if_needed(target, fieldname: str, cost_center: str | None, company: str) -> None:
     if not cost_center or not _target_has_field(target, fieldname):
         return
@@ -379,10 +429,51 @@ def _set_cost_center_if_needed(target, fieldname: str, cost_center: str | None, 
 
 
 def _cash_or_bank_account(doc, account_map: dict[str, str]) -> str:
+    mode_account = _mode_of_payment_account(doc, _document_company(doc))
+    if mode_account:
+        return mode_account
     mode = (doc.get("mode_of_payment") or "").lower()
     if "cash" in mode or "espèce" in mode or "espece" in mode:
         return account_map.get("cash") or account_map.get("bank") or ""
     return account_map.get("bank") or account_map.get("cash") or ""
+
+
+def _mode_of_payment_account(doc, company: str) -> str:
+    mode = (doc.get("mode_of_payment") or "").strip()
+    if not mode or not company or not _doctype_exists("Mode of Payment Account"):
+        return ""
+    account = frappe.db.get_value(
+        "Mode of Payment Account",
+        {"parent": mode, "parenttype": "Mode of Payment", "company": company},
+        "default_account",
+    )
+    return account if account and _account_belongs_to_company(account, company) else ""
+
+
+def _ensure_turkey_bank_currency() -> dict:
+    company = "Orderlift Turkey"
+    account = WIRE_TRANSFER_ACCOUNT_BY_COMPANY[company]
+    if not frappe.db.exists("Company", company) or not frappe.db.exists("Account", account):
+        return {"skipped": True, "reason": "Turkey company or bank account does not exist"}
+    company_currency = frappe.db.get_value("Company", company, "default_currency") or ""
+    account_currency = frappe.db.get_value("Account", account, "account_currency") or ""
+    if account_currency == company_currency:
+        return {"account": account, "currency": company_currency, "updated": False}
+    if not company_currency:
+        return {"skipped": True, "reason": "Turkey company currency is not configured"}
+    if frappe.db.count("GL Entry", {"account": account}):
+        return {
+            "skipped": True,
+            "reason": _("{0} has ledger entries and cannot be changed from {1} to {2}.").format(
+                account,
+                account_currency,
+                company_currency,
+            ),
+        }
+    account_doc = frappe.get_doc("Account", account)
+    account_doc.account_currency = company_currency
+    account_doc.save(ignore_permissions=True)
+    return {"account": account, "currency": company_currency, "updated": True}
 
 
 def _company_default_account(company: str, key: str) -> str:

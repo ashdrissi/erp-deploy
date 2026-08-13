@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from orderlift.reference_access import get_reference_options
+
 
 PROTECTED_TIER = "New"
 
@@ -25,10 +27,9 @@ class PricingTier(Document):
 
 @frappe.whitelist()
 def get_active_pricing_tiers() -> list[str]:
-    return frappe.get_all(
+    return [row.name for row in get_reference_options(
         "Pricing Tier",
         filters={"is_active": 1},
-        pluck="name",
+        fields=["name"],
         order_by="sequence asc, name asc",
-        limit_page_length=0,
-    )
+    )]

@@ -7,6 +7,14 @@ from frappe.utils import cint, flt, nowdate
 from orderlift.company_scope import business_type_field_for
 from orderlift.menu_access import get_company_access_payload, user_can_access_business_type, user_can_access_company
 from orderlift.orderlift_crm.company_business_type import get_single_company_business_type
+from orderlift.orderlift_crm.party_propagation import (
+    apply_customer_ownership,
+    apply_party_context_to_customer,
+    apply_party_context_to_opportunity,
+    apply_party_context_to_quotation,
+    link_party_contacts_and_addresses,
+    resolve_party_context,
+)
 from orderlift.orderlift_crm.status_config import UNASSIGNED_STATUS, get_company_pipeline_quick_actions
 from orderlift.orderlift_crm.status_checks import StatusCheckBlockedError, validate_status_checks
 from orderlift.orderlift_crm.todo_priority import normalize_todo_priority
@@ -17,10 +25,20 @@ from orderlift.orderlift_crm.status_workflow import (
     make_company_status_name,
     resolve_status_column,
 )
-from orderlift.startup_roles import OPPORTUNITY_ASSIGNER_ROLE
+from orderlift.role_capabilities import (
+    CAPABILITY_OPPORTUNITY_PIPELINE_ASSIGNMENT,
+    CAPABILITY_PROJECT_PIPELINE_ASSIGNMENT,
+    CAPABILITY_SALES_ORDER_PIPELINE_ASSIGNMENT,
+    user_has_capability,
+)
 
 PIPELINE_ASSIGNMENT_MARKER = "[Orderlift Pipeline]"
 SUPPORTED_PIPELINE_DOCUMENT_TYPES = {"Opportunity", "Project", "Sales Order"}
+PIPELINE_ASSIGNMENT_CAPABILITIES = {
+    "Opportunity": CAPABILITY_OPPORTUNITY_PIPELINE_ASSIGNMENT,
+    "Project": CAPABILITY_PROJECT_PIPELINE_ASSIGNMENT,
+    "Sales Order": CAPABILITY_SALES_ORDER_PIPELINE_ASSIGNMENT,
+}
 DEFAULT_DRAFT_COMPANY = "Orderlift Maroc Installation"
 DEFAULT_DRAFT_PROSPECT = "Draft Unassigned Prospect"
 DEFAULT_INSTALLATION_BUSINESS_TYPE = "Installation"
@@ -253,13 +271,15 @@ def update_sales_order_stage(sales_order: str, stage: str) -> dict:
 
 @frappe.whitelist()
 def assign_pipeline_document(document_type: str, document_name: str, user: str | None = None) -> dict:
-    _require_pipeline_assignment_access()
     document_type = (document_type or "").strip()
     document_name = (document_name or "").strip()
     if document_type not in SUPPORTED_PIPELINE_DOCUMENT_TYPES:
         frappe.throw(_("Unsupported pipeline document type: {0}").format(document_type))
+    _require_pipeline_assignment_access(document_type)
     if not frappe.db.exists(document_type, document_name):
         frappe.throw(_("{0} {1} was not found.").format(document_type, document_name))
+    if not frappe.has_permission(document_type, "read", doc=document_name):
+        frappe.throw(_("You do not have permission to access {0} {1}.").format(document_type, document_name), frappe.PermissionError)
 
     user = (user or "").strip()
     if user:
@@ -274,12 +294,11 @@ def assign_pipeline_document(document_type: str, document_name: str, user: str |
     return {"card": card, "assignment": assignment}
 
 
-def _require_pipeline_assignment_access() -> None:
-    roles = set(frappe.get_roles(frappe.session.user) or [])
-    allowed_roles = {"Administrator", "System Manager", "Orderlift Admin", "Sales Manager", OPPORTUNITY_ASSIGNER_ROLE}
-    if roles.intersection(allowed_roles):
+def _require_pipeline_assignment_access(document_type: str) -> None:
+    capability = PIPELINE_ASSIGNMENT_CAPABILITIES.get((document_type or "").strip())
+    if capability and user_has_capability(capability):
         return
-    frappe.throw(_("You need the Opportunity Assigner role to assign pipeline cards."), frappe.PermissionError)
+    frappe.throw(_("You do not have permission to assign {0} pipeline cards.").format(document_type), frappe.PermissionError)
 
 
 @frappe.whitelist()
@@ -309,34 +328,11 @@ def get_party_defaults(party_type: str, party_name: str) -> dict:
     if not frappe.db.exists(party_type, party_name):
         frappe.throw(_("{0} {1} was not found.").format(party_type, party_name))
 
-    doc = frappe.get_doc(party_type, party_name)
-    classification = get_party_crm_classification(party_type, party_name)
-    contact = _primary_contact_for_party(party_type, party_name)
-    address_name = doc.get("primary_address") or doc.get("address") or _primary_address_name_for_party(party_type, party_name)
-    address = _address_display_for_name(address_name) if address_name else ""
-    return {
-        "party_type": party_type,
-        "party_name": party_name,
-        "display_name": _party_display_name(doc, party_type),
-        "business_type": classification.get("business_type") or "",
-        "crm_segment": classification.get("crm_segment") or "",
-        "segments": classification.get("segments") or [],
-        "tier": doc.get("manual_tier") or doc.get("tier") or "",
-        "company": doc.get("company") or "",
-        "industry": doc.get("industry") or "",
-        "territory": doc.get("territory") or "",
-        "city": doc.get("city") or "",
-        "website": doc.get("website") or "",
-        "customer_group": doc.get("customer_group") or "",
-        "source": doc.get("source") or doc.get("utm_source") or "",
-        "address_name": address_name or "",
-        "address": address or "",
-        "contact_name": contact.get("name") or "",
-        "contact_display": contact.get("display") or "",
-        "email": doc.get("email_id") or contact.get("email_id") or "",
-        "mobile": doc.get("mobile_no") or doc.get("whatsapp_no") or contact.get("mobile_no") or "",
-        "phone": doc.get("phone") or contact.get("phone") or contact.get("mobile_no") or "",
-    }
+    context = resolve_party_context(party_type, party_name)
+    # Keep the original aliases stable for existing Desk clients.
+    context["address_name"] = context.get("billing_address_name") or ""
+    context["address"] = context.get("billing_address_display") or ""
+    return context
 
 
 @frappe.whitelist()
@@ -416,8 +412,11 @@ def create_opportunity_from_preform(values: str | dict) -> dict:
     _set_if_field(doc, "custom_tier", tier or _tier_for_party(party_type, party_name))
     _set_if_field(doc, "custom_urgency", cint(values.get("urgency")))
     _set_if_field(doc, "custom_probability_level", values.get("probability_level") or "")
-    _set_if_field(doc, "phone", phone)
-    _set_if_field(doc, "contact_mobile", phone)
+    _set_if_field(doc, "custom_deal_abbreviation", values.get("deal_abbreviation") or "")
+    context = resolve_party_context(party_type, party_name)
+    apply_party_context_to_opportunity(doc, context)
+    _set_if_field(doc, "phone", phone or context.get("phone") or context.get("mobile"))
+    _set_if_field(doc, "contact_mobile", context.get("mobile") or context.get("phone") or phone)
     _set_if_field(doc, "territory", territory)
     _set_if_field(doc, "address_display", address)
     _set_if_field(doc, "custom_site_address", address)
@@ -470,6 +469,8 @@ def prepare_quotation_from_opportunity(opportunity: str):
     if target.meta.get_field("opportunity"):
         target.opportunity = doc.name
     _overlay_crm_classification(target, doc)
+    context = resolve_party_context("Customer", customer.name, source_doc=doc)
+    apply_party_context_to_quotation(target, context, overwrite=True)
     return target
 
 
@@ -533,7 +534,31 @@ def prepare_sales_order_from_quotation(quotation: str):
 
     target = make_sales_order(quotation_doc.name)
     _overlay_crm_classification(target, quotation_doc)
+    if target.meta.get_field("tax_id"):
+        target.tax_id = quotation_doc.get("custom_customer_tax_id") or quotation_doc.get("tax_id") or ""
+    if target.meta.get_field("custom_site_address_name"):
+        target.custom_site_address_name = quotation_doc.get("custom_site_address_name") or ""
     return target
+
+
+@frappe.whitelist()
+def prepare_project_from_opportunity(opportunity: str):
+    if not opportunity or not frappe.db.exists("Opportunity", opportunity):
+        frappe.throw(_("Opportunity {0} was not found.").format(opportunity or ""))
+    source = frappe.get_doc("Opportunity", opportunity)
+    source.check_permission("read")
+    customer = _customer_for_opportunity_party(source)
+    project = frappe.new_doc("Project")
+    project.project_name = source.get("title") or source.get("customer_name") or source.name
+    project.company = source.get("company") or ""
+    project.customer = customer.name
+    project.status = "Open"
+    if project.meta.get_field("custom_source_opportunity"):
+        project.custom_source_opportunity = source.name
+    from orderlift.orderlift_crm.project_linkage import _copy_source_context_to_project
+
+    _copy_source_context_to_project(source, project)
+    return project
 
 
 def _opportunity_cards(search=None, owner=None, source=None, company=None, business_type=None, segment=None, statuses=None) -> list[dict]:
@@ -1012,6 +1037,125 @@ def get_project_documents(project: str) -> dict:
     return {"opportunity": opportunity, "groups": groups, "total": total}
 
 
+@frappe.whitelist()
+def get_sales_order_documents(sales_order: str) -> dict:
+    if not sales_order or not frappe.db.exists("Sales Order", sales_order):
+        frappe.throw(_("Sales Order {0} was not found.").format(sales_order or ""))
+    if not frappe.has_permission("Sales Order", ptype="read", doc=sales_order):
+        frappe.throw(_("Not permitted to access Sales Order {0}.").format(sales_order), frappe.PermissionError)
+
+    groups: list[dict] = []
+
+    def _add(doctype: str, rows) -> None:
+        items = []
+        for row in rows or []:
+            if not frappe.has_permission(doctype, ptype="read", doc=row.get("name")):
+                continue
+            items.append({"name": row.get("name"), "status": row.get("status") or "-"})
+        if items:
+            groups.append({"doctype": doctype, "label": _(doctype), "items": items})
+
+    def _sql(query: str) -> list[dict]:
+        return frappe.db.sql(query, {"so": sales_order}, as_dict=True)
+
+    quotations = _sql(
+        "SELECT DISTINCT q.name, q.status FROM `tabQuotation` q "
+        "INNER JOIN `tabSales Order Item` soi ON soi.prevdoc_docname = q.name "
+        "WHERE soi.parent = %(so)s AND q.docstatus < 2 ORDER BY q.modified DESC"
+    )
+    _add("Quotation", quotations)
+
+    opportunity_name = _sales_order_source_opportunity(sales_order)
+    opportunity = None
+    if (
+        opportunity_name
+        and frappe.db.exists("Opportunity", opportunity_name)
+        and frappe.has_permission("Opportunity", ptype="read", doc=opportunity_name)
+    ):
+        row = frappe.db.get_value(
+            "Opportunity",
+            opportunity_name,
+            ["name", "status", "sales_stage", "opportunity_amount", "customer_name", "party_name"],
+            as_dict=True,
+        ) or {}
+        opportunity = {
+            "name": row.get("name"),
+            "status": row.get("sales_stage") or row.get("status") or "-",
+            "amount": flt(row.get("opportunity_amount") or 0),
+            "title": row.get("customer_name") or row.get("party_name") or row.get("name"),
+        }
+
+    sales_order_row = frappe.db.get_value(
+        "Sales Order",
+        sales_order,
+        ["project", "custom_installation_project"],
+        as_dict=True,
+    ) or {}
+    project_names = list(dict.fromkeys(filter(None, [
+        sales_order_row.get("project"),
+        sales_order_row.get("custom_installation_project"),
+    ])))
+    project_rows = []
+    for project_name in project_names:
+        row = frappe.db.get_value("Project", project_name, ["name", "status"], as_dict=True)
+        if row:
+            project_rows.append(row)
+    _add("Project", project_rows)
+
+    _add("Material Request", _sql(
+        "SELECT DISTINCT mr.name, mr.status FROM `tabMaterial Request` mr "
+        "INNER JOIN `tabMaterial Request Item` mri ON mri.parent = mr.name "
+        "WHERE mr.docstatus < 2 AND mri.sales_order = %(so)s ORDER BY mr.modified DESC LIMIT 20"
+    ))
+    _add("Purchase Order", _sql(
+        "SELECT DISTINCT po.name, po.status FROM `tabPurchase Order` po "
+        "INNER JOIN `tabPurchase Order Item` poi ON poi.parent = po.name "
+        "WHERE po.docstatus < 2 AND poi.sales_order = %(so)s ORDER BY po.modified DESC LIMIT 20"
+    ))
+    _add("Purchase Receipt", _sql(
+        "SELECT DISTINCT pr.name, pr.status FROM `tabPurchase Receipt` pr "
+        "INNER JOIN `tabPurchase Receipt Item` pri ON pri.parent = pr.name "
+        "INNER JOIN `tabPurchase Order Item` poi ON poi.parent = pri.purchase_order "
+        "WHERE pr.docstatus < 2 AND poi.sales_order = %(so)s ORDER BY pr.modified DESC LIMIT 20"
+    ))
+    _add("Purchase Invoice", _sql(
+        "SELECT DISTINCT pi.name, pi.status FROM `tabPurchase Invoice` pi "
+        "INNER JOIN `tabPurchase Invoice Item` pii ON pii.parent = pi.name "
+        "INNER JOIN `tabPurchase Order Item` poi ON poi.parent = pii.purchase_order "
+        "WHERE pi.docstatus < 2 AND poi.sales_order = %(so)s ORDER BY pi.modified DESC LIMIT 20"
+    ))
+    _add("Pick List", _sql(
+        "SELECT DISTINCT pl.name, pl.status FROM `tabPick List` pl "
+        "INNER JOIN `tabPick List Item` pli ON pli.parent = pl.name "
+        "WHERE pl.docstatus < 2 AND pli.sales_order = %(so)s ORDER BY pl.modified DESC LIMIT 20"
+    ))
+    _add("Delivery Note", _sql(
+        "SELECT DISTINCT dn.name, dn.status FROM `tabDelivery Note` dn "
+        "INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name "
+        "WHERE dn.docstatus < 2 AND dni.against_sales_order = %(so)s ORDER BY dn.modified DESC LIMIT 20"
+    ))
+    _add("Sales Invoice", _sql(
+        "SELECT DISTINCT si.name, si.status FROM `tabSales Invoice` si "
+        "INNER JOIN `tabSales Invoice Item` sii ON sii.parent = si.name "
+        "WHERE si.docstatus < 2 AND sii.sales_order = %(so)s ORDER BY si.modified DESC LIMIT 20"
+    ))
+    _add("Payment Entry", _sql(
+        "SELECT DISTINCT pe.name, "
+        "CASE pe.docstatus WHEN 0 THEN 'Draft' WHEN 1 THEN 'Submitted' ELSE 'Cancelled' END AS status "
+        "FROM `tabPayment Entry` pe INNER JOIN `tabPayment Entry Reference` per ON per.parent = pe.name "
+        "WHERE pe.docstatus < 2 AND per.reference_doctype = 'Sales Order' "
+        "AND per.reference_name = %(so)s ORDER BY pe.modified DESC LIMIT 20"
+    ))
+    if frappe.db.has_column("Work Order", "sales_order"):
+        _add("Work Order", _sql(
+            "SELECT name, status FROM `tabWork Order` WHERE docstatus < 2 "
+            "AND sales_order = %(so)s ORDER BY modified DESC LIMIT 20"
+        ))
+
+    total = sum(len(group["items"]) for group in groups) + (1 if opportunity else 0)
+    return {"opportunity": opportunity, "groups": groups, "total": total}
+
+
 def _sales_order_cards(
     search=None,
     company=None,
@@ -1093,10 +1237,26 @@ def _sales_order_card(row, statuses: list[dict]) -> dict:
 
 
 def _sales_order_title(row) -> str:
+    opportunity = _sales_order_source_opportunity(row.get("name"))
+    title = _opportunity_display_title(opportunity)
+    if title:
+        return title
+
     project_name = row.get("custom_installation_project") or row.get("project")
     if not project_name:
         return ""
+    project_opportunity = frappe.db.get_value("Project", project_name, "custom_source_opportunity") if _has_field("Project", "custom_source_opportunity") else None
+    title = _opportunity_display_title(project_opportunity)
+    if title:
+        return title
     return frappe.db.get_value("Project", project_name, "project_name") or ""
+
+
+def _opportunity_display_title(opportunity: str | None) -> str:
+    if not opportunity or not frappe.db.exists("Opportunity", opportunity):
+        return ""
+    values = frappe.db.get_value("Opportunity", opportunity, ["title", "customer_name", "party_name"], as_dict=True) or {}
+    return values.get("title") or values.get("customer_name") or values.get("party_name") or ""
 
 
 def _sales_order_related_docs(sales_order: str, project_name: str | None) -> list[dict]:
@@ -1267,53 +1427,53 @@ def _customer_for_opportunity_party(opportunity_doc):
     party_name = (opportunity_doc.get("party_name") or "").strip()
     if not party_type or not party_name:
         frappe.throw(_("Opportunity {0} does not have a party.").format(opportunity_doc.name))
+    from orderlift.orderlift_crm.party_propagation import ensure_customer_for_party
 
-    if party_type == "Customer":
-        if not frappe.db.exists("Customer", party_name):
-            frappe.throw(_("Customer {0} was not found.").format(party_name))
-        customer = frappe.get_doc("Customer", party_name)
-        _copy_party_segments_to_customer("Opportunity", opportunity_doc.name, customer)
-        return customer
+    customer = ensure_customer_for_party(party_type, party_name, source_doc=opportunity_doc)
+    _copy_party_segments_to_customer("Opportunity", opportunity_doc.name, customer)
+    if party_type in {"Lead", "Prospect"}:
+        source = frappe.get_doc(party_type, party_name)
+        apply_customer_ownership(customer, _customer_manager_user(source, opportunity_doc))
+    else:
+        apply_customer_ownership(customer, opportunity_doc.get("opportunity_owner"))
+    customer.save(ignore_permissions=False)
+    link_party_contacts_and_addresses("Opportunity", opportunity_doc.name, "Customer", customer.name)
+    _apply_linked_customer_defaults(customer)
+    return customer
 
-    if party_type not in {"Lead", "Prospect"}:
-        frappe.throw(_("Quotation from Opportunity is supported for Lead, Prospect, or Customer parties."))
-    if not frappe.db.exists(party_type, party_name):
-        frappe.throw(_("{0} {1} was not found.").format(party_type, party_name))
 
-    source = frappe.get_doc(party_type, party_name)
-    customer_name = _customer_name_for_party(source, party_type, opportunity_doc)
-    customer = _existing_customer_for_party(source, party_type, customer_name)
-    if customer:
-        customer_doc = frappe.get_doc("Customer", customer)
-        _copy_party_segments_to_customer(party_type, party_name, customer_doc)
-        _copy_party_segments_to_customer("Opportunity", opportunity_doc.name, customer_doc)
-        return customer_doc
+def _set_customer_lineage(customer_doc, party_type: str, party_name: str, opportunity_name: str) -> None:
+    fields = {"Lead": "lead_name", "Prospect": "prospect_name"}
+    source_field = fields.get(party_type)
+    if source_field and customer_doc.meta.get_field(source_field) and not customer_doc.get(source_field):
+        customer_doc.set(source_field, party_name)
+    if customer_doc.meta.get_field("opportunity_name") and not customer_doc.get("opportunity_name"):
+        customer_doc.opportunity_name = opportunity_name
 
-    customer_doc = frappe.new_doc("Customer")
-    customer_doc.customer_name = customer_name
-    customer_doc.customer_type = "Company" if party_type == "Prospect" or source.get("company_name") else "Individual"
-    customer_doc.customer_group = _default_customer_group()
-    source_company = (source.get("company") or opportunity_doc.get("company") or "").strip()
-    if source_company and customer_doc.meta.get_field("custom_company"):
-        customer_doc.custom_company = source_company
-    if source.get("territory"):
-        customer_doc.territory = source.get("territory")
-    if source_company and customer_doc.meta.get_field("represents_company"):
-        customer_doc.represents_company = source_company
-    source_owner = (source.get("lead_owner") or source.get("prospect_owner") or "").strip()
-    sales_person = _sales_person_for_user(source_owner)
-    if sales_person and customer_doc.meta.get_field("account_manager"):
-        customer_doc.account_manager = sales_person
 
-    _copy_party_segments_to_customer(party_type, party_name, customer_doc)
-    _copy_party_segments_to_customer("Opportunity", opportunity_doc.name, customer_doc)
-    customer_doc.insert(ignore_permissions=False)
-    customer_doc._orderlift_created = True
+def _customer_manager_user(source_doc, opportunity_doc) -> str:
+    return (
+        opportunity_doc.get("opportunity_owner")
+        or source_doc.get("lead_owner")
+        or source_doc.get("prospect_owner")
+        or frappe.session.user
+        or ""
+    ).strip()
 
-    if party_type == "Lead" and source.meta.get_field("customer"):
-        frappe.db.set_value("Lead", source.name, "customer", customer_doc.name, update_modified=False)
-    frappe.db.commit()
-    return customer_doc
+
+def _apply_linked_customer_defaults(customer_doc) -> None:
+    context = resolve_party_context("Customer", customer_doc.name)
+    before = (
+        customer_doc.get("customer_primary_contact") or "",
+        customer_doc.get("customer_primary_address") or "",
+    )
+    apply_party_context_to_customer(customer_doc, context)
+    after = (
+        customer_doc.get("customer_primary_contact") or "",
+        customer_doc.get("customer_primary_address") or "",
+    )
+    if after != before:
+        customer_doc.save(ignore_permissions=False)
 
 
 def _customer_name_for_party(source_doc, party_type: str, opportunity_doc) -> str:
@@ -1328,62 +1488,6 @@ def _party_display_name(doc, party_type: str) -> str:
     if party_type == "Lead":
         return doc.get("lead_name") or doc.get("company_name") or doc.name
     return doc.get("company_name") or doc.name
-
-
-def _primary_contact_for_party(party_type: str, party_name: str) -> dict:
-    if not frappe.db.exists("DocType", "Dynamic Link") or not frappe.db.exists("DocType", "Contact"):
-        return {}
-    link = frappe.get_all(
-        "Dynamic Link",
-        filters={"link_doctype": party_type, "link_name": party_name, "parenttype": "Contact"},
-        fields=["parent"],
-        order_by="idx asc, modified desc",
-        limit=1,
-    )
-    if not link:
-        return {}
-    fields = [field for field in ["first_name", "last_name", "email_id", "mobile_no", "phone"] if _has_field("Contact", field)]
-    if not fields:
-        return {}
-    contact = frappe.db.get_value("Contact", link[0].parent, fields, as_dict=True) or {}
-    first_name = (contact.get("first_name") or "").strip()
-    last_name = (contact.get("last_name") or "").strip()
-    display = " ".join(part for part in [first_name, last_name] if part).strip() or link[0].parent
-    contact["name"] = link[0].parent
-    contact["display"] = display
-    return contact
-
-
-def _primary_address_name_for_party(party_type: str, party_name: str) -> str:
-    if not frappe.db.exists("DocType", "Dynamic Link") or not frappe.db.exists("DocType", "Address"):
-        return ""
-    link = frappe.get_all(
-        "Dynamic Link",
-        filters={"link_doctype": party_type, "link_name": party_name, "parenttype": "Address"},
-        fields=["parent"],
-        order_by="idx asc, modified desc",
-        limit=1,
-    )
-    return link[0].parent if link else ""
-
-
-def _address_display_for_name(address_name: str) -> str:
-    address_name = (address_name or "").strip()
-    if not address_name or not frappe.db.exists("Address", address_name):
-        return ""
-    fields = [
-        field
-        for field in ["address_line1", "address_line2", "city", "state", "country"]
-        if _has_field("Address", field)
-    ]
-    if not fields:
-        return ""
-    address = frappe.db.get_value("Address", address_name, fields, as_dict=True) or {}
-    return ", ".join(address.get(field) for field in fields if address.get(field))
-
-
-def _primary_address_for_party(party_type: str, party_name: str) -> str:
-    return _address_display_for_name(_primary_address_name_for_party(party_type, party_name))
 
 
 def _resolve_draft_company(company: str | None = None) -> str:
@@ -1435,6 +1539,8 @@ def _create_preform_prospect(
     prospect = frappe.new_doc("Prospect")
     prospect.company_name = client_name
     _set_if_field(prospect, "company", company)
+    _set_if_field(prospect, "custom_general_phone", phone)
+    _set_if_field(prospect, "custom_general_mobile", phone)
     _set_if_field(prospect, "phone", phone)
     _set_if_field(prospect, "mobile_no", phone)
     _set_if_field(prospect, "territory", territory)
@@ -1483,6 +1589,8 @@ def _create_preform_customer(
     customer.customer_group = _default_customer_group()
     _set_if_field(customer, "custom_company", company)
     _set_if_field(customer, "company", company)
+    _set_if_field(customer, "custom_general_phone", phone)
+    _set_if_field(customer, "custom_general_mobile", phone)
     _set_if_field(customer, "mobile_no", phone)
     _set_if_field(customer, "phone", phone)
     _set_if_field(customer, "territory", territory or _default_territory())
@@ -1514,16 +1622,6 @@ def _default_territory() -> str:
     if frappe.db.exists("Territory", "Morocco"):
         return "Morocco"
     return frappe.db.get_value("Territory", {}, "name") or ""
-
-
-def _sales_person_for_user(user: str) -> str:
-    user = (user or "").strip()
-    if not user or not frappe.db.exists("DocType", "Sales Person") or not frappe.db.has_column("Sales Person", "user"):
-        return ""
-    filters = {"user": user}
-    if frappe.db.has_column("Sales Person", "enabled"):
-        filters["enabled"] = 1
-    return frappe.db.get_value("Sales Person", filters, "name") or ""
 
 
 def _tier_for_party(party_type: str, party_name: str) -> str:
@@ -1685,18 +1783,16 @@ def _sales_order_source_opportunity(sales_order: str | None) -> str | None:
         return None
     rows = frappe.db.sql(
         """
-        SELECT q.opportunity
+        SELECT DISTINCT q.opportunity
         FROM `tabSales Order Item` soi
         INNER JOIN `tabQuotation` q ON q.name = soi.prevdoc_docname
         WHERE soi.parent = %s
           AND COALESCE(q.opportunity, '') != ''
-        ORDER BY soi.idx ASC
-        LIMIT 1
         """,
         (sales_order,),
         as_dict=True,
     )
-    return rows[0].opportunity if rows else None
+    return rows[0].opportunity if len(rows) == 1 else None
 
 
 def _linked_status_rows(doctype: str, query: str, params: tuple) -> list[dict]:
@@ -1841,6 +1937,7 @@ def _assign_pipeline_document(
         todo.description = description
         todo.status = "Open"
         todo.priority = todo_priority
+        todo.assigned_by = frappe.session.user
         todo.date = nowdate()
         todo.save(ignore_permissions=True)
         todo_name = todo.name
@@ -1854,6 +1951,7 @@ def _assign_pipeline_document(
                 "description": description,
                 "status": "Open",
                 "priority": todo_priority,
+                "assigned_by": frappe.session.user,
                 "date": nowdate(),
             }
         ).insert(ignore_permissions=True)

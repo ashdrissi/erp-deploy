@@ -50,8 +50,6 @@ def get_selected_warehouses(user: str | None = None) -> list[str]:
 
 def user_can_access_all_warehouses(user: str | None = None) -> bool:
     user = user or frappe.session.user
-    if user_can_access_all_companies(user):
-        return True
     # Opt-in: no selected warehouses means current company-scoped behavior.
     return not get_selected_warehouses(user)
 

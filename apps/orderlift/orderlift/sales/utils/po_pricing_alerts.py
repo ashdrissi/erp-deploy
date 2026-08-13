@@ -22,10 +22,17 @@ def get_pricing_alerts(doc=None, items=None):
 
     settings = _get_alert_settings()
     buying_price_list = (payload.get("buying_price_list") or "").strip()
+    source_price_lists = sorted(
+        {
+            (row.get("custom_source_buying_price_list") or buying_price_list or "").strip()
+            for row in item_rows
+            if (row.get("custom_source_buying_price_list") or buying_price_list or "").strip()
+        }
+    )
 
     summary = {
         "price_list_count": 0,
-        "price_list_name": buying_price_list,
+        "price_list_name": ", ".join(source_price_lists),
         "last_purchase_count": 0,
         "manual_count": 0,
         "total_items": len(item_rows),
@@ -161,7 +168,8 @@ def _analyze_item(*, row, buying_price_list, supplier, company, conversion_rate,
     stock_uom = (row.get("stock_uom") or uom).strip()
     qty = flt(row.get("qty") or 0)
     current_rate = flt(row.get("rate") or 0)
-    price_list_rate = flt(row.get("price_list_rate") or 0)
+    row_buying_price_list = (row.get("custom_source_buying_price_list") or buying_price_list or "").strip()
+    price_list_rate = flt(row.get("custom_loaded_buying_rate") or row.get("price_list_rate") or 0)
     last_purchase_rate = flt(row.get("last_purchase_rate") or 0)
     discount_percentage = flt(row.get("discount_percentage") or 0)
     discount_amount = flt(row.get("discount_amount") or 0)
@@ -170,7 +178,7 @@ def _analyze_item(*, row, buying_price_list, supplier, company, conversion_rate,
 
     price_context = _get_price_list_context(
         item_code=item_code,
-        buying_price_list=buying_price_list,
+        buying_price_list=row_buying_price_list,
         supplier=supplier,
         uom=uom,
         stock_uom=stock_uom,
@@ -200,10 +208,11 @@ def _analyze_item(*, row, buying_price_list, supplier, company, conversion_rate,
                 alert_type="expired_price_list",
                 source=source,
                 message=_("Item Price from {0} expired on {1}.").format(
-                    buying_price_list or _("the selected price list"), expired.get("valid_upto") or _("unknown date")
+                    row_buying_price_list or _("the selected price list"),
+                    expired.get("valid_upto") or _("unknown date"),
                 ),
                 extra={
-                    "price_list": buying_price_list,
+                    "price_list": row_buying_price_list,
                     "valid_upto": expired.get("valid_upto"),
                 },
             )
@@ -287,6 +296,8 @@ def _analyze_item(*, row, buying_price_list, supplier, company, conversion_rate,
         min_savings_percent=settings["better_supplier_min_savings_percent"],
     )
     if better_supplier:
+        company_currency = frappe.db.get_value("Company", company, "default_currency") or ""
+        better_supplier["currency"] = company_currency
         alerts.append(
             _build_alert(
                 item_code=item_code,
@@ -299,7 +310,10 @@ def _analyze_item(*, row, buying_price_list, supplier, company, conversion_rate,
                     company or _("Another buyer"),
                     better_supplier["supplier"],
                     _format_percent(better_supplier["savings_percent"]),
-                    frappe.format_value(better_supplier["base_rate_per_stock"] * conversion_factor, {"fieldtype": "Currency"}),
+                    frappe.format_value(
+                        better_supplier["base_rate_per_stock"] * conversion_factor,
+                        {"fieldtype": "Currency", "options": company_currency},
+                    ),
                     better_supplier["transaction_date"],
                 ),
                 extra=better_supplier,

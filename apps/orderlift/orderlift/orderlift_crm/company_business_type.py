@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import frappe
 
+from orderlift.reference_access import get_reference_options, require_reference_use
+
 
 def business_type_abbreviation(type_name: str | None) -> str:
     return "".join(ch for ch in (type_name or "").strip().lower() if ch.isalnum())[:4] or "type"
@@ -64,8 +66,17 @@ def is_business_type_allowed_for_company(company: str | None, business_type: str
 
 @frappe.whitelist()
 def get_company_business_type_payload(company: str | None = None) -> dict:
+    company = require_reference_use("Company", company, label="Company") if company else ""
     rows = get_company_business_types(company)
     configured_names = get_company_business_type_names(company)
+    allowed_names = {row.name for row in get_reference_options(
+        "CRM Business Type",
+        fields=["name"],
+        filters={"is_active": 1},
+        order_by="sequence asc, name asc",
+    )}
+    rows = [row for row in rows if row["name"] in allowed_names]
+    configured_names = [name for name in configured_names if name in allowed_names]
     return {
         "business_types": rows,
         "configured_business_types": configured_names,

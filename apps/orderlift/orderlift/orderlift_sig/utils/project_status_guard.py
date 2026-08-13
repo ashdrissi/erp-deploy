@@ -115,17 +115,9 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
         if opportunity:
             project.custom_source_opportunity = opportunity
 
-    # Copy delivery address if available
-    if so.shipping_address_name:
-        addr = frappe.db.get_value(
-            "Address",
-            so.shipping_address_name,
-            ["address_line1", "city"],
-            as_dict=True,
-        )
-        if addr:
-            project.custom_site_address = addr.get("address_line1", "")
-            project.custom_city = addr.get("city", "")
+    from orderlift.orderlift_crm.project_linkage import _copy_source_context_to_project
+
+    _copy_source_context_to_project(so, project)
 
     project.insert(ignore_permissions=False)
 

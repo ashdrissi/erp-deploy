@@ -1,6 +1,26 @@
 from __future__ import annotations
 
 
+CANONICAL_BUSINESS_ROLES = [
+    "Orderlift Admin",
+    "Sales User",
+    "Sales Manager",
+    "Purchase User",
+    "Purchase Manager",
+    "Stock User",
+    "Stock Manager",
+    "Finance User",
+    "Finance Admin",
+    "Pricing Configuration",
+    "Installation User",
+    "Service User",
+    "Logistics User",
+]
+
+ORDERLIFT_MANAGED_ROLE_FIELD = "custom_orderlift_managed_role"
+ORDERLIFT_BUSINESS_GRANTS_FIELD = "custom_orderlift_business_grants_json"
+
+
 COMMERCIAL_AGENT_ROLE = "Commercial Agent"
 COMMERCIAL_AGENT_PARTNER_ROLE = "Commercial Agent - Partner"
 COMMERCIAL_AGENT_COORDINATOR_ROLE = "Commercial Agent - Coordinator"
@@ -14,14 +34,10 @@ FUNCTIONAL_STARTUP_ROLES = [
     COMMERCIAL_AGENT_PARTNER_ROLE,
     COMMERCIAL_AGENT_COORDINATOR_ROLE,
     COMMERCIAL_AGENT_POINT_OF_SALE_ROLE,
-    "Purchase User",
-    "Purchase Manager",
-    "Stock Manager",
     "Project Manager",
     "Pricing Import Manager",
     "Logistics Manager",
     "BET Technical User",
-    "Finance Admin",
     "HR Training Manager",
 ]
 
@@ -52,6 +68,7 @@ CAPABILITY_STARTUP_ROLES = [
 ]
 
 STARTUP_ROLES = FUNCTIONAL_STARTUP_ROLES + CAPABILITY_STARTUP_ROLES
+RETIRED_BUSINESS_ROLES = set(STARTUP_ROLES) | {"Pricing Manager"}
 COMMERCIAL_STARTUP_ROLES = [
     COMMERCIAL_AGENT_ROLE,
     COMMERCIAL_AGENT_PARTNER_ROLE,

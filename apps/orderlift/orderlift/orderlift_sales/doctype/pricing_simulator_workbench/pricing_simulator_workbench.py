@@ -5,20 +5,24 @@ from orderlift.orderlift_sales.page.pricing_simulator.pricing_simulator import (
     get_simulation_defaults,
     run_pricing_simulation,
 )
+from orderlift.orderlift_sales.utils.pricing_simulator_retirement import deny_pricing_simulator_access
 
 
 class PricingSimulatorWorkbench(Document):
     @frappe.whitelist()
     def load_defaults(self):
+        deny_pricing_simulator_access()
         return get_simulation_defaults(sales_person="", mode="Auto")
 
     @frappe.whitelist()
     def run_simulation(self):
+        deny_pricing_simulator_access()
         return _run_simulation_for_payload(_payload_from_doc(self), self.view_mode)
 
 
 @frappe.whitelist()
 def load_defaults_doc(name):
+    deny_pricing_simulator_access()
     doc = frappe.get_doc("Pricing Simulator Workbench", name)
     doc.check_permission("write")
     return doc.load_defaults()
@@ -26,6 +30,7 @@ def load_defaults_doc(name):
 
 @frappe.whitelist()
 def run_simulation_doc(name):
+    deny_pricing_simulator_access()
     doc = frappe.get_doc("Pricing Simulator Workbench", name)
     doc.check_permission("write")
     return doc.run_simulation()
@@ -33,6 +38,7 @@ def run_simulation_doc(name):
 
 @frappe.whitelist()
 def run_simulation_preview(payload=None, view_mode="Compare"):
+    deny_pricing_simulator_access()
     data = frappe.parse_json(payload) if isinstance(payload, str) else (payload or {})
     return _run_simulation_for_payload(data, view_mode)
 

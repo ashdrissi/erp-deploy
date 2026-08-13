@@ -59,7 +59,7 @@ const IC = {
 // ─── Module gateway definitions ───────────────────────────────────────────────
 
 const GATEWAYS = [
-    { icon: "pricing", label: __("Pricing & Sales"), desc: __("Price sheets, policies, simulator"), url: "pricing-dashboard", color: "#6366f1" },
+    { icon: "pricing", label: __("Pricing & Sales"), desc: __("Price sheets, policies, builders"), url: "pricing-dashboard", color: "#6366f1" },
     { icon: "stock", label: __("Stock & Warehouses"), desc: __("Inventory, transfers, reorder queue"), url: "stock-dashboard", color: "#10b981" },
     { icon: "logistics", label: __("Logistics"), desc: __("Suppliers, purchase orders, delivery"), url: "logistics-dashboard", color: "#f59e0b" },
     { icon: "crm", label: __("CRM"), desc: __("Customers, pipeline, campaigns"), url: "crm-dashboard", color: "#3b82f6" },
@@ -117,7 +117,6 @@ function renderSkeleton(page) {
                     </div>
                     <div class="hdb-mc-actions">
                         ${mcBtn(__("New Sheet"), "pricing-dashboard", "primary")}
-                        ${mcBtn(__("Simulator"), "pricing-simulator", "ghost")}
                         ${mcBtn(__("Builder"), "pricing-sheet-builder", "ghost")}
                     </div>
                 </div>

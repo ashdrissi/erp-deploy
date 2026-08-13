@@ -174,6 +174,7 @@ class TestCompanyQueryCombination(unittest.TestCase):
             "all_co": company_access.user_can_access_all_companies,
             "allowed_co": company_access.get_allowed_companies,
             "active_co": company_access._active_company_for_query,
+            "interactive": company_access.has_interactive_company_session,
             "all_bt": company_access.user_can_access_all_business_types,
             "allowed_bt": company_access.get_allowed_business_types,
             "has_field": company_access._has_company_field,
@@ -181,6 +182,7 @@ class TestCompanyQueryCombination(unittest.TestCase):
         company_access.user_can_access_all_companies = lambda user=None: False
         company_access.get_allowed_companies = lambda user=None: ["Orderlift"]
         company_access._active_company_for_query = lambda user=None, allowed_companies=None: "Orderlift"
+        company_access.has_interactive_company_session = lambda user=None: True
         company_access._has_company_field = lambda doctype, field="company": True
         company_access.get_allowed_business_types = lambda user=None: ["Distribution"]
 
@@ -188,6 +190,7 @@ class TestCompanyQueryCombination(unittest.TestCase):
         company_access.user_can_access_all_companies = self._orig["all_co"]
         company_access.get_allowed_companies = self._orig["allowed_co"]
         company_access._active_company_for_query = self._orig["active_co"]
+        company_access.has_interactive_company_session = self._orig["interactive"]
         company_access.user_can_access_all_business_types = self._orig["all_bt"]
         company_access.get_allowed_business_types = self._orig["allowed_bt"]
         company_access._has_company_field = self._orig["has_field"]
@@ -271,7 +274,7 @@ class TestOwnedOnlyAssignmentClause(unittest.TestCase):
         clause = company_access._owned_only_clause("Customer", "demo@example.com")
 
         self.assertIn("`tabCustomer`.owner = 'demo@example.com'", clause)
-        self.assertIn("`tabCustomer`.account_manager = 'Sales Person A'", clause)
+        self.assertIn("`tabCustomer`.account_manager = 'demo@example.com'", clause)
         self.assertIn("`tabSales Team` _customer_sales_team", clause)
         self.assertIn("_customer_sales_team.sales_person = 'Sales Person A'", clause)
         self.assertIn("_todo_assignment.reference_type = 'Customer'", clause)
@@ -283,7 +286,8 @@ class TestOwnedOnlyAssignmentClause(unittest.TestCase):
         clause = company_access._owned_only_clause("Customer", "demo@example.com")
 
         self.assertIn("`tabCustomer`.owner = 'demo@example.com'", clause)
-        self.assertNotIn("account_manager", clause)
+        self.assertIn("`tabCustomer`.account_manager = 'demo@example.com'", clause)
+        self.assertNotIn("`tabSales Team` _customer_sales_team", clause)
         self.assertIn("_todo_assignment.reference_type = 'Customer'", clause)
         self.assertIn("_todo_assignment.allocated_to = 'demo@example.com'", clause)
 
@@ -556,8 +560,16 @@ class TestSpecialScopeQueries(unittest.TestCase):
             "company_query": company_access._company_query,
             "can_manage_commissions": company_access._can_manage_sales_commissions,
             "sales_person": company_access._sales_person_for_user,
+            "db_exists": frappe_stub.db.exists,
+            "db_get_value": frappe_stub.db.get_value,
+            "db_has_column": frappe_stub.db.has_column,
+            "allowed_companies": company_access.get_allowed_companies,
+            "all_companies": company_access.user_can_access_all_companies,
+            "interactive": company_access.has_interactive_company_session,
         }
         company_access._active_company_for_query = lambda user=None, allowed_companies=None: "Orderlift"
+        company_access.has_interactive_company_session = lambda user=None: True
+        company_access.get_allowed_companies = lambda user=None: ["Orderlift", "Orderlift Turkey"]
 
     def tearDown(self):
         company_access.get_visible_price_lists = self._orig["visible_price_lists"]
@@ -565,6 +577,12 @@ class TestSpecialScopeQueries(unittest.TestCase):
         company_access._company_query = self._orig["company_query"]
         company_access._can_manage_sales_commissions = self._orig["can_manage_commissions"]
         company_access._sales_person_for_user = self._orig["sales_person"]
+        frappe_stub.db.exists = self._orig["db_exists"]
+        frappe_stub.db.get_value = self._orig["db_get_value"]
+        frappe_stub.db.has_column = self._orig["db_has_column"]
+        company_access.get_allowed_companies = self._orig["allowed_companies"]
+        company_access.user_can_access_all_companies = self._orig["all_companies"]
+        company_access.has_interactive_company_session = self._orig["interactive"]
 
     def test_price_list_query_denies_when_no_visible_lists(self):
         company_access.get_visible_price_lists = lambda *args, **kwargs: []
@@ -590,6 +608,36 @@ class TestSpecialScopeQueries(unittest.TestCase):
 
         self.assertEqual(company_access.price_list_query("demo@example.com"), "`tabPrice List`.name in ('Sell TR')")
         self.assertEqual(calls, [{"company": "Orderlift Turkey", "user": "demo@example.com"}])
+
+    def test_price_list_query_uses_all_allowed_companies_without_browser_sid(self):
+        calls = []
+        company_access.has_interactive_company_session = lambda user=None: False
+        company_access.get_allowed_companies = lambda user=None: ["Orderlift", "Orderlift Turkey"]
+
+        def visible(*args, **kwargs):
+            calls.append(kwargs)
+            return ["Sell MA"] if kwargs.get("company") == "Orderlift" else ["Sell TR"]
+
+        company_access.get_visible_price_lists = visible
+        self.assertEqual(
+            company_access.price_list_query("demo@example.com"),
+            "`tabPrice List`.name in ('Sell MA', 'Sell TR')",
+        )
+        self.assertEqual(
+            calls,
+            [
+                {"company": "Orderlift", "user": "demo@example.com"},
+                {"company": "Orderlift Turkey", "user": "demo@example.com"},
+            ],
+        )
+
+    def test_item_price_query_denies_interactive_session_without_selection(self):
+        company_access._active_company_for_query = lambda user=None, allowed_companies=None: ""
+        company_access.get_visible_price_lists = lambda *args, **kwargs: self.fail(
+            "No broad price-list lookup is allowed without an active company"
+        )
+
+        self.assertEqual(company_access.item_price_query("demo@example.com"), "`tabItem Price`.name is null")
 
     def test_print_format_query_hides_shared_formats_for_turkey(self):
         company_access._active_company_for_query = lambda user=None, allowed_companies=None: "Orderlift Turkey"
@@ -625,17 +673,48 @@ class TestSpecialScopeQueries(unittest.TestCase):
         self.assertTrue(company_access.has_item_price_permission(AttrDict(price_list="Sell A"), user="demo@example.com"))
         self.assertFalse(company_access.has_item_price_permission(AttrDict(price_list="Buy A"), user="demo@example.com"))
 
-    def test_sales_commission_query_non_manager_is_limited_to_own_salesperson(self):
+    def test_item_price_doc_permission_uses_linked_price_list_company(self):
+        calls = []
+        company_access.get_allowed_companies = lambda user=None: ["Orderlift", "Orderlift Turkey"]
+        company_access.user_can_access_all_companies = lambda user=None: False
+        frappe_stub.db.exists = lambda doctype, name=None: doctype == "Price List" and name == "Sell TR"
+        frappe_stub.db.has_column = lambda doctype, fieldname: doctype == "Price List"
+        frappe_stub.db.get_value = lambda *args, **kwargs: AttrDict(
+            custom_company="Orderlift Turkey",
+            custom_price_list_type="Selling",
+            buying=0,
+            selling=1,
+        )
+
+        def visible(kind=None, company=None, user=None):
+            calls.append({"kind": kind, "company": company, "user": user})
+            return ["Sell TR"] if company == "Orderlift Turkey" else []
+
+        company_access.get_visible_price_lists = visible
+
+        self.assertTrue(
+            company_access.has_item_price_permission(
+                AttrDict(price_list="Sell TR"),
+                permission_type="delete",
+                user="demo@example.com",
+            )
+        )
+        self.assertEqual(
+            calls,
+            [{"kind": "selling", "company": "Orderlift Turkey", "user": "demo@example.com"}],
+        )
+
+    def test_sales_commission_query_non_manager_is_limited_to_own_team(self):
         company_access._company_query = lambda doctype, user=None: "`tabSales Commission`.company in ('Orderlift')"
         company_access._can_manage_sales_commissions = lambda user: False
         company_access._sales_person_for_user = lambda user: "Haitem"
 
         clause = company_access.sales_commission_query("demo@example.com")
 
-        self.assertEqual(
-            clause,
-            "(`tabSales Commission`.company in ('Orderlift')) and (`tabSales Commission`.salesperson = 'Haitem')",
-        )
+        self.assertIn("`tabSales Commission`.company in ('Orderlift')", clause)
+        self.assertIn("`tabSales Commission`.salesperson = 'Haitem'", clause)
+        self.assertIn("`tabOrderlift Sales Team Member`", clause)
+        self.assertIn("_commission_team.sales_person = 'Haitem'", clause)
 
     def test_sales_commission_query_without_salesperson_denies_rows(self):
         company_access._company_query = lambda doctype, user=None: "`tabSales Commission`.company in ('Orderlift')"

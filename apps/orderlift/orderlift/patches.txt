@@ -1,5 +1,6 @@
 # Patches are applied in order on bench migrate.
 # Format: orderlift.patches.<patch_module>
+[pre_model_sync]
 orderlift.patches.v1_0.migrate_pricing_scenarios_to_expenses
 orderlift.patches.v1_0.seed_logistics_example_scenarios
 orderlift.patches.v1_0.backfill_pricing_sheet_multi_scenario_fields
@@ -12,3 +13,13 @@ orderlift.patches.v1_0.remove_legacy_pricing_policy_and_market_price
 orderlift.patches.v1_0.backfill_clp_scenario_fields
 orderlift.patches.v1_0.company_scope_pipeline_statuses
 orderlift.patches.v1_0.add_pipeline_status_behavior_fields
+
+[post_model_sync]
+orderlift.patches.v1_0.backfill_canonical_pricing_sheet_item_prices
+orderlift.patches.v1_0.canonicalize_transaction_pricing_fields
+orderlift.patches.v1_0.recalculate_canonical_sales_commissions
+orderlift.patches.v1_0.widen_transaction_pricing_snapshot_precision
+orderlift.patches.v1_0.scope_suppliers_to_maroc_distribution
+orderlift.patches.v1_0.access_command_center_v2
+orderlift.patches.v1_0.backfill_session_company_context
+orderlift.patches.v1_0.migrate_dynamic_annex_signatures

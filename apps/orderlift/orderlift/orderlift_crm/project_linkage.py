@@ -20,6 +20,22 @@ from orderlift.orderlift_crm.api.pipeline import _sales_order_source_opportunity
 PROJECT_OPP_FIELD = "custom_source_opportunity"
 
 
+def sync_project_source_context(doc, method=None) -> None:
+    sales_order = (doc.get("sales_order") or "").strip()
+    opportunity = (doc.get(PROJECT_OPP_FIELD) or "").strip()
+    if sales_order and not opportunity:
+        opportunity = _sales_order_source_opportunity(sales_order) or ""
+        if opportunity and doc.meta.get_field(PROJECT_OPP_FIELD):
+            doc.set(PROJECT_OPP_FIELD, opportunity)
+
+    source = frappe.get_doc("Sales Order", sales_order) if sales_order and frappe.db.exists("Sales Order", sales_order) else None
+    if not source and opportunity and frappe.db.exists("Opportunity", opportunity):
+        source = frappe.get_doc("Opportunity", opportunity)
+    if not source:
+        return
+    _copy_source_context_to_project(source, doc)
+
+
 # ---------------------------------------------------------------------------
 # Doc event hooks — wired in hooks.py
 # ---------------------------------------------------------------------------
@@ -124,3 +140,44 @@ def _set_so_project_by_name(sales_order: str, project: str) -> None:
         updates["project"] = project
     if updates:
         frappe.db.set_value("Sales Order", sales_order, updates, update_modified=False)
+
+
+def _copy_source_context_to_project(source, project) -> None:
+    values = {
+        "customer": source.get("customer"),
+        "company": source.get("company"),
+        "custom_crm_business_type": source.get("custom_crm_business_type"),
+        "custom_crm_segment": source.get("custom_crm_segment"),
+        "custom_customer_tax_id": source.get("tax_id") or source.get("custom_customer_tax_id"),
+        "custom_site_address_name": source.get("custom_site_address_name"),
+        "custom_party_contact": source.get("contact_person"),
+        "custom_party_contact_email": source.get("contact_email"),
+        "custom_party_contact_mobile": source.get("contact_mobile"),
+        "custom_billing_address_name": source.get("customer_address"),
+        "custom_shipping_address_name": source.get("shipping_address_name"),
+    }
+    if source.doctype == "Opportunity":
+        from orderlift.orderlift_crm.api.pipeline import _customer_for_opportunity_party
+        from orderlift.orderlift_crm.party_propagation import resolve_party_context
+
+        customer = _customer_for_opportunity_party(source)
+        context = resolve_party_context("Customer", customer.name, source_doc=source)
+        values["customer"] = customer.name
+        values["custom_customer_tax_id"] = customer.get("tax_id") or source.get("custom_customer_tax_id")
+        values["custom_party_contact"] = context.get("contact_name")
+        values["custom_party_contact_email"] = context.get("email")
+        values["custom_party_contact_mobile"] = context.get("mobile") or context.get("phone")
+        values["custom_billing_address_name"] = context.get("billing_address_name")
+        values["custom_shipping_address_name"] = context.get("shipping_address_name")
+    for fieldname, value in values.items():
+        if value and project.meta.get_field(fieldname) and not project.get(fieldname):
+            project.set(fieldname, value)
+    address_name = values.get("custom_site_address_name") or source.get("shipping_address_name")
+    if address_name and frappe.db.exists("Address", address_name):
+        from frappe.contacts.doctype.address.address import get_address_display
+
+        address = frappe.get_doc("Address", address_name)
+        if project.meta.get_field("custom_site_address") and not project.get("custom_site_address"):
+            project.custom_site_address = get_address_display(address.as_dict()) or address.get("address_line1") or ""
+        if project.meta.get_field("custom_city") and not project.get("custom_city"):
+            project.custom_city = address.get("city") or ""

@@ -122,7 +122,7 @@
                     </div>
                 </div>
                 <div class="ol-annex-fields">
-                    ${(template.fields || []).map((field) => fieldMarkup(template, field, annex.values || {})).join("") || `<div class="ol-annex-empty">${esc(__("No fields configured for this template."))}</div>`}
+                    ${fieldsMarkup(template, annex.values || {}) || `<div class="ol-annex-empty">${esc(__("No fields configured for this template."))}</div>`}
                 </div>
             </article>
         `;
@@ -135,12 +135,6 @@
     }
 
     function fieldMarkup(template, field, values) {
-        if (field.fieldtype === "Section Break") {
-            return `<div class="ol-annex-section"><h4>${esc(__(field.field_label))}</h4>${field.options ? `<p>${esc(field.options)}</p>` : ""}</div>`;
-        }
-        if (field.fieldtype === "Column Break") {
-            return `<div class="ol-annex-column-break" aria-hidden="true"></div>`;
-        }
         if (field.fieldtype === "HTML") {
             return `<div class="ol-annex-html">${field.options || field.default_value || ""}</div>`;
         }
@@ -157,16 +151,68 @@
             control = `<label class="ol-annex-checkbox"><input type="checkbox" ${common} ${["1", "true", "True", true].includes(value) ? "checked" : ""} /> <span>${esc(__("Yes"))}</span></label>`;
         } else if (field.fieldtype === "Link") {
             control = `<input type="text" ${common} value="${esc(value)}" placeholder="${esc(field.options || __("Linked document name"))}" />`;
-        } else if (field.fieldtype === "Attach" || field.fieldtype === "Attach Image") {
-            control = `<input type="text" ${common} value="${esc(value)}" placeholder="${esc(__("File URL or attachment path"))}" />`;
+        } else if (["Attach", "Attach Image", "Signature"].includes(field.fieldtype)) {
+            control = fileControl(template, field, value, common);
         } else {
             const type = field.fieldtype === "Date" ? "date" : (field.fieldtype === "Datetime" ? "datetime-local" : (field.fieldtype === "Time" ? "time" : (["Int", "Float", "Currency"].includes(field.fieldtype) ? "number" : "text")));
             control = `<input type="${type}" ${common} value="${esc(value)}" />`;
         }
-        return `<label class="ol-annex-field"><span>${esc(__(field.field_label))}${required}</span>${control}</label>`;
+        const wide = ["Small Text", "Text", "Text Editor", "Attach", "Attach Image", "Signature", "HTML"].includes(field.fieldtype);
+        return `<label class="ol-annex-field ${wide ? "wide" : ""}"><span>${esc(__(field.field_label))}${required}</span>${control}</label>`;
+    }
+
+    function fieldsMarkup(template, values) {
+        return splitFieldLayout(template.fields || []).map((section) => `
+            <section class="ol-annex-dynamic-section">
+                ${section.label ? `<div class="ol-annex-section"><h4>${esc(__(section.label))}</h4>${section.description ? `<p>${esc(section.description)}</p>` : ""}</div>` : ""}
+                <div class="ol-annex-columns columns-${Math.min(section.columns.length, 2)}">
+                    ${section.columns.map((column) => `<div class="ol-annex-column">${column.map((field) => fieldMarkup(template, field, values)).join("")}</div>`).join("")}
+                </div>
+            </section>
+        `).join("");
+    }
+
+    function splitFieldLayout(fields) {
+        const sections = [];
+        let section = { label: "", description: "", columns: [[]] };
+        const push = () => {
+            if (section.label || section.columns.some((column) => column.length)) sections.push(section);
+        };
+        fields.forEach((field) => {
+            if (field.fieldtype === "Section Break") {
+                push();
+                section = { label: field.field_label || "", description: field.options || "", columns: [[]] };
+            } else if (field.fieldtype === "Column Break") {
+                if (section.columns.length < 2) section.columns.push([]);
+            } else {
+                section.columns[section.columns.length - 1].push(field);
+            }
+        });
+        push();
+        return sections;
+    }
+
+    function fileControl(template, field, value, common) {
+        const image = ["Attach Image", "Signature"].includes(field.fieldtype);
+        return `<div class="ol-annex-file-control" data-annex-file-control>
+            <input type="hidden" ${common} value="${esc(value)}" />
+            <div class="ol-annex-file-preview">${filePreviewMarkup(field, value)}</div>
+            <div class="ol-annex-file-actions">
+                <button type="button" class="btn btn-sm btn-default" data-annex-upload data-image-only="${image ? 1 : 0}">${esc(__(value ? "Replace" : "Upload"))}</button>
+                <button type="button" class="btn btn-sm btn-default" data-annex-clear-file ${value ? "" : "hidden"}>${esc(__("Clear"))}</button>
+            </div>
+        </div>`;
+    }
+
+    function filePreviewMarkup(field, value) {
+        if (!value) return `<span>${esc(__(field.fieldtype === "Signature" ? "No signature uploaded" : "No file uploaded"))}</span>`;
+        if (["Attach Image", "Signature"].includes(field.fieldtype)) return `<img src="${esc(value)}" alt="${esc(field.field_label)}" />`;
+        const name = String(value).split("/").pop() || value;
+        return `<a href="${esc(value)}" target="_blank" rel="noopener">${esc(name)}</a>`;
     }
 
     function bindTabs(frm, host, entries) {
+        bindFileControls(host, frm);
         host.find("[data-annex-save]").on("click", function () {
             saveAnnex(frm, host, entries, $(this).data("annex-save"));
         });
@@ -176,6 +222,37 @@
             const annexName = entry && entry.annex && entry.annex.name;
             if (!annexName) return;
             window.open(`/printview?doctype=Orderlift%20Annex%20Document&name=${encodeURIComponent(annexName)}&format=Orderlift%20Annex%20Document&no_letterhead=0`, "_blank");
+        });
+    }
+
+    function bindFileControls(root, frm) {
+        root.find("[data-annex-upload]").on("click", function (event) {
+            event.preventDefault();
+            const control = $(this).closest("[data-annex-file-control]");
+            const imageOnly = Number($(this).data("image-only")) === 1;
+            new frappe.ui.FileUploader({
+                doctype: frm.doctype,
+                docname: frm.doc.name,
+                restrictions: imageOnly ? { allowed_file_types: ["image/*"] } : {},
+                on_success(file) {
+                    const url = file.file_url || file.file_name || "";
+                    if (!url) return;
+                    const field = control.closest(".ol-annex-field").find("input[type=hidden]");
+                    field.val(url);
+                    const type = imageOnly ? "Attach Image" : "Attach";
+                    control.find(".ol-annex-file-preview").html(imageOnly ? `<img src="${esc(url)}" alt="" />` : `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(String(url).split("/").pop() || url)}</a>`);
+                    control.find("[data-annex-upload]").text(__("Replace"));
+                    control.find("[data-annex-clear-file]").prop("hidden", false);
+                },
+            });
+        });
+        root.find("[data-annex-clear-file]").on("click", function (event) {
+            event.preventDefault();
+            const control = $(this).closest("[data-annex-file-control]");
+            control.find("input[type=hidden]").val("");
+            control.find(".ol-annex-file-preview").html(`<span>${esc(__("No file uploaded"))}</span>`);
+            control.find("[data-annex-upload]").text(__("Upload"));
+            $(this).prop("hidden", true);
         });
     }
 
@@ -242,6 +319,9 @@
             .ol-annex-panel.active{min-height:0;}
             .ol-annex-fields{padding-bottom:18px;}
             @media (max-width: 767px){.ol-annex-shell{max-height:none}.ol-annex-panels{overflow:visible}}
+        `;
+        style.textContent += `
+            .ol-annex-fields{display:block}.ol-annex-dynamic-section+.ol-annex-dynamic-section{margin-top:14px}.ol-annex-columns{display:grid;grid-template-columns:1fr;gap:14px}.ol-annex-columns.columns-2{grid-template-columns:repeat(2,minmax(0,1fr))}.ol-annex-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start}.ol-annex-columns.columns-2 .ol-annex-column{grid-template-columns:1fr}.ol-annex-section{grid-column:auto}.ol-annex-file-control{display:grid;gap:7px;padding:8px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.ol-annex-file-preview{display:flex;align-items:center;justify-content:center;min-height:42px;color:#64748b;font-weight:600}.ol-annex-file-preview img{display:block;max-width:100%;max-height:130px;object-fit:contain}.ol-annex-file-actions{display:flex;gap:6px;justify-content:flex-end}.ol-annex-file-preview a{word-break:break-all}@media(max-width:767px){.ol-annex-columns.columns-2,.ol-annex-column{grid-template-columns:1fr}}
         `;
         document.head.appendChild(style);
     }

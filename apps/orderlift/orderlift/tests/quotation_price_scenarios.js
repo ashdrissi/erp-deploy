@@ -17,6 +17,8 @@ function jqueryStub() {
         append() { return api; },
         attr() { return api; },
         closest() { return api; },
+        data() { return undefined; },
+        each() { return api; },
         find() { return api; },
         first() { return api; },
         hide() { return api; },
@@ -69,8 +71,8 @@ const context = {
                 return Promise.resolve();
             },
         },
-        format(value) {
-            return String(Number(value || 0));
+        format(value, df) {
+            return Number(value || 0).toFixed(Number(df?.precision ?? 2));
         },
         show_alert() {},
         msgprint(payload) {
@@ -86,13 +88,14 @@ const context = {
 
 vm.runInNewContext(script, context, { filename: scriptPath });
 
-function assertClose(label, actual, expected, tolerance = 0.005) {
-    const diff = Math.abs(Number(actual || 0) - expected);
-    if (diff > tolerance) throw new Error(`${label}: expected ${expected}, got ${actual}`);
-}
-
 function assertEqual(label, actual, expected) {
     if (actual !== expected) throw new Error(`${label}: expected ${expected}, got ${actual}`);
+}
+
+function assertLinkedValues(label, row, expected) {
+    Object.entries(expected).forEach(([fieldname, value]) => {
+        assertEqual(`${label} -> ${fieldname}`, row[fieldname], value);
+    });
 }
 
 function makeRow() {
@@ -106,12 +109,10 @@ function makeRow() {
         amount: 200,
         discount_percentage: 0,
         source_price_list_sell_rate: 100,
-        source_gross_sell_rate: 100,
-        source_max_discount_percent: 100,
+        source_max_discount_percent: 25,
         source_discount_percent: 0,
         source_discount_amount: 0,
-        source_discounted_sell_rate: 100,
-        source_commission_rate: 0,
+        source_commission_rate: 25,
         source_commission_amount: 0,
         custom_applied_taxes: 40,
         custom_pu_ttc: 120,
@@ -141,44 +142,84 @@ async function runPricingScenarios() {
     const cdt = "Quotation Item";
     const cdn = row.name;
 
-    row.source_gross_sell_rate = 200;
-    await childHandlers.source_gross_sell_rate(frm, cdt, cdn);
-    assertClose("PU HT edit -> price_list_rate", row.price_list_rate, 200);
-    assertClose("PU HT edit -> PU HT net", row.source_discounted_sell_rate, 200);
-    assertClose("PU HT edit -> PT HT net", row.amount, 400);
-    assertClose("PU HT edit -> PU TTC net", row.custom_pu_ttc, 240);
-    assertClose("PU HT edit -> PT TTC net", row.custom_pt_ttc, 480);
+    row.rate = 120;
+    await childHandlers.rate(frm, cdt, cdn);
+    assertLinkedValues("PU HT above list", row, {
+        qty: 2,
+        price_list_rate: 100,
+        source_price_list_sell_rate: 100,
+        rate: 120,
+        amount: 240,
+        discount_percentage: 0,
+        source_max_discount_percent: 25,
+        source_discount_percent: 0,
+        source_discount_amount: 0,
+        source_commission_rate: 25,
+        source_commission_amount: 15,
+        custom_applied_taxes: 48,
+        custom_pu_ttc: 144,
+        custom_pt_ttc: 288,
+    });
 
-    row.source_discount_percent = 5;
+    row.source_discount_percent = 25;
     await childHandlers.source_discount_percent(frm, cdt, cdn);
-    assertClose("Remise % -> Remise HT", row.source_discount_amount, 10);
-    assertClose("Remise % -> PU HT net", row.source_discounted_sell_rate, 190);
-    assertClose("Remise % -> PT HT net", row.amount, 380);
-    assertClose("Remise % -> PU TTC net", row.custom_pu_ttc, 228);
-    assertClose("Remise % -> PT TTC net", row.custom_pt_ttc, 456);
+    assertLinkedValues("Remise %", row, {
+        qty: 2,
+        price_list_rate: 100,
+        source_price_list_sell_rate: 100,
+        rate: 75,
+        amount: 150,
+        discount_percentage: 25,
+        source_max_discount_percent: 25,
+        source_discount_percent: 25,
+        source_discount_amount: 25,
+        source_commission_rate: 25,
+        source_commission_amount: 0,
+        custom_applied_taxes: 30,
+        custom_pu_ttc: 90,
+        custom_pt_ttc: 180,
+    });
 
-    row.source_discount_amount = 50;
+    row.source_discount_amount = 12.5;
     await childHandlers.source_discount_amount(frm, cdt, cdn);
-    assertClose("Remise HT -> Remise %", row.source_discount_percent, 25);
-    assertClose("Remise HT -> PU HT net", row.source_discounted_sell_rate, 150);
-    assertClose("Remise HT -> PT HT net", row.amount, 300);
-    assertClose("Remise HT -> PU TTC net", row.custom_pu_ttc, 180);
-    assertClose("Remise HT -> PT TTC net", row.custom_pt_ttc, 360);
-
-    row.custom_pu_ttc = 210;
-    await childHandlers.custom_pu_ttc(frm, cdt, cdn);
-    assertClose("PU TTC net -> PU HT net", row.source_discounted_sell_rate, 175);
-    assertClose("PU TTC net -> Remise HT", row.source_discount_amount, 25);
-    assertClose("PU TTC net -> Remise %", row.source_discount_percent, 12.5);
-    assertClose("PU TTC net -> PT HT net", row.amount, 350);
-    assertClose("PU TTC net -> PT TTC net", row.custom_pt_ttc, 420);
+    assertLinkedValues("Remise PU HT", row, {
+        qty: 2,
+        price_list_rate: 100,
+        source_price_list_sell_rate: 100,
+        rate: 87.5,
+        amount: 175,
+        discount_percentage: 12.5,
+        source_max_discount_percent: 25,
+        source_discount_percent: 12.5,
+        source_discount_amount: 12.5,
+        source_commission_rate: 25,
+        source_commission_amount: 5.46875,
+        custom_applied_taxes: 35,
+        custom_pu_ttc: 105,
+        custom_pt_ttc: 210,
+    });
 
     row.qty = 3;
     childHandlers.qty(frm, cdt, cdn);
-    assertClose("Qty -> PU HT net unchanged", row.source_discounted_sell_rate, 175);
-    assertClose("Qty -> PT HT net", row.amount, 525);
-    assertClose("Qty -> PU TTC net unchanged", row.custom_pu_ttc, 210);
-    assertClose("Qty -> PT TTC net", row.custom_pt_ttc, 630);
+    assertLinkedValues("Qty", row, {
+        qty: 3,
+        price_list_rate: 100,
+        source_price_list_sell_rate: 100,
+        rate: 87.5,
+        amount: 262.5,
+        discount_percentage: 12.5,
+        source_max_discount_percent: 25,
+        source_discount_percent: 12.5,
+        source_discount_amount: 12.5,
+        source_commission_rate: 25,
+        source_commission_amount: 8.203125,
+        custom_applied_taxes: 52.5,
+        custom_pu_ttc: 105,
+        custom_pt_ttc: 315,
+    });
+    assertEqual("PU TTC has no price-input handler", typeof childHandlers.custom_pu_ttc, "undefined");
+    assertEqual("legacy gross snapshot absent", typeof row.source_gross_sell_rate, "undefined");
+    assertEqual("legacy discounted snapshot absent", typeof row.source_discounted_sell_rate, "undefined");
     return row;
 }
 
@@ -187,16 +228,21 @@ function makeGridFrm() {
         "item_code",
         "qty",
         "source_price_list_sell_rate",
-        "source_gross_sell_rate",
+        "rate",
         "source_max_discount_percent",
         "source_discount_percent",
         "source_discount_amount",
-        "source_discounted_sell_rate",
         "amount",
+        "source_commission_rate",
+        "source_commission_amount",
+        "custom_applied_taxes",
         "custom_pu_ttc",
         "custom_pt_ttc",
+        "source_target_margin_percent",
         "source_margin_percent",
         "source_margin_basis",
+        "source_base_buy_rate",
+        "source_landed_cost",
     ];
     const docfields = fieldnames.map((fieldname) => ({ fieldname }));
     const grid = {
@@ -261,9 +307,9 @@ async function runDraftTTCRecalculateScenario() {
         await frm.__orderlift_ttc_recalculation_queue;
     }
     assertEqual("automatic Draft TTC sync calls native totals", nativeCalculationCalls > 0, true);
-    assertClose("automatic Draft TTC sync -> applied tax", row.custom_applied_taxes, 40);
-    assertClose("automatic Draft TTC sync -> PU TTC", row.custom_pu_ttc, 120);
-    assertClose("automatic Draft TTC sync -> PT TTC", row.custom_pt_ttc, 240);
+    assertEqual("automatic Draft TTC sync -> applied tax", row.custom_applied_taxes, 40);
+    assertEqual("automatic Draft TTC sync -> PU TTC", row.custom_pu_ttc, 120);
+    assertEqual("automatic Draft TTC sync -> PT TTC", row.custom_pt_ttc, 240);
 
     row.custom_applied_taxes = 0;
     row.custom_pu_ttc = 0;
@@ -276,27 +322,26 @@ async function runDraftTTCRecalculateScenario() {
 
     await button.callback();
     assertEqual("manual TTC action calls native totals", nativeCalculationCalls > 0, true);
-    assertClose("manual TTC action -> applied tax", row.custom_applied_taxes, 40);
-    assertClose("manual TTC action -> PU TTC", row.custom_pu_ttc, 120);
-    assertClose("manual TTC action -> PT TTC", row.custom_pt_ttc, 240);
+    assertEqual("manual TTC action -> applied tax", row.custom_applied_taxes, 40);
+    assertEqual("manual TTC action -> PU TTC", row.custom_pu_ttc, 120);
+    assertEqual("manual TTC action -> PT TTC", row.custom_pt_ttc, 240);
 }
 
-function runLineTotalRoundingScenario() {
+function runLinePrecisionScenario() {
     const row = makeRow();
-    row.qty = 100;
-    row.rate = 60.83;
-    row.amount = 6083;
-    row.source_discounted_sell_rate = 60.83;
-    row.custom_applied_taxes = 1216.6;
-    row.custom_pu_ttc = 73;
-    row.custom_pt_ttc = 7299.6;
+    row.qty = 3;
+    row.rate = 100.123456789;
 
     const frm = makeFrm(row);
     childHandlers.qty(frm, "Quotation Item", row.name);
 
-    assertClose("rounded unit TTC stays display-friendly", row.custom_pu_ttc, 73);
-    assertClose("PT TTC follows ERPNext line amount plus tax", row.custom_pt_ttc, 7299.6);
-    assertClose("applied tax follows ERPNext line amount", row.custom_applied_taxes, 1216.6);
+    const expectedAmount = row.rate * row.qty;
+    const expectedPuTtc = row.rate * 1.2;
+    const expectedPtTtc = expectedAmount * 1.2;
+    assertEqual("amount retains canonical precision", row.amount, expectedAmount);
+    assertEqual("PU TTC is derived without hard rounding", row.custom_pu_ttc, expectedPuTtc);
+    assertEqual("PT TTC is derived without hard rounding", row.custom_pt_ttc, expectedPtTtc);
+    assertEqual("tax is derived without hard rounding", row.custom_applied_taxes, expectedPtTtc - expectedAmount);
 }
 
 function runGridScenario() {
@@ -310,13 +355,49 @@ function runGridScenario() {
     assertEqual("restricted user margin basis excluded", visible.includes("source_margin_basis"), false);
     assertEqual("margin percent hidden", grid.get_field("source_margin_percent").hidden, 1);
     assertEqual("margin basis hidden", grid.get_field("source_margin_basis").hidden, 1);
-    assertEqual("PU HT editable", grid.get_field("source_gross_sell_rate").read_only, 0);
-    assertEqual("PU HT net read-only", grid.get_field("source_discounted_sell_rate").read_only, 1);
+    assertEqual("native PU HT editable", grid.get_field("rate").read_only, 0);
+    assertEqual("native PT HT read-only", grid.get_field("amount").read_only, 1);
+    assertEqual("derived PU TTC read-only", grid.get_field("custom_pu_ttc").read_only, 1);
+    assertEqual("derived PU TTC precision", grid.get_field("custom_pu_ttc").precision, "9");
+    assertEqual("PU HT static display uses two decimals", grid.get_field("rate").formatter(12.3456789), "12.35");
+    assertEqual("quantity static display uses two decimals", grid.get_field("qty").formatter(12.3456789), "12.35");
+    assertEqual("max discount static display uses two decimals", grid.get_field("source_max_discount_percent").formatter(0), "0.00%");
+
+    const orderedVisible = grid.docfields
+        .filter((column) => column.in_list_view && Number(column.columns || 0) > 0)
+        .map((column) => column.fieldname);
+    const expectedOrder = [
+        "item_code",
+        "qty",
+        "source_price_list_sell_rate",
+        "rate",
+        "source_max_discount_percent",
+        "source_discount_percent",
+        "source_discount_amount",
+        "amount",
+        "custom_pu_ttc",
+        "custom_pt_ttc",
+        "source_commission_rate",
+        "source_commission_amount",
+    ];
+    expectedOrder.forEach((fieldname) => assertEqual(`${fieldname} visible`, orderedVisible.includes(fieldname), true));
+    assertEqual("derived PT TTC read-only", grid.get_field("custom_pt_ttc").read_only, 1);
+    assertEqual("derived PT TTC precision", grid.get_field("custom_pt_ttc").precision, "9");
+    [
+        "source_price_list_sell_rate",
+        "rate",
+        "source_discount_amount",
+        "amount",
+        "custom_applied_taxes",
+    ].forEach((fieldname) => {
+        assertEqual(`${fieldname} canonical precision`, grid.get_field(fieldname).precision, "9");
+    });
 }
 
 function runConfiguredMarginScenario() {
     context.frappe.user_roles = ["Orderlift Admin"];
     context.frappe.boot.user.roles = ["Orderlift Admin"];
+    context.frappe.boot.orderlift_capabilities = { privileged_pricing: true };
     const savedColumns = [
         { fieldname: "item_code", columns: 2, sticky: 0 },
         { fieldname: "source_margin_percent", columns: 1, sticky: 0 },
@@ -330,27 +411,53 @@ function runConfiguredMarginScenario() {
     const persisted = context.frappe.model.user_settings.Quotation.GridView["Quotation Item"];
     assertEqual("configured columns preserved", JSON.stringify(persisted), JSON.stringify(savedColumns));
     assertEqual("authorized margin visible", frm.fields_dict.items.grid.get_field("source_margin_percent").hidden, 0);
+    assertEqual("margin percent uses two decimals", frm.fields_dict.items.grid.get_field("source_margin_percent").formatter(12.3456789), "12.35%");
+    assertEqual("landed cost uses two decimals", frm.fields_dict.items.grid.get_field("source_landed_cost").formatter(12.3456789), "12.35");
+}
+
+async function runSubmittedLockScenario() {
+    const row = makeRow();
+    const frm = makeGridFrm();
+    frm.doc.docstatus = 1;
+    frm.doc.items = [row];
+    formHandlers.refresh(frm);
+
+    const grid = frm.fields_dict.items.grid;
+    assertEqual("submitted PU HT locked", grid.get_field("rate").read_only, 1);
+    assertEqual("submitted discount percent locked", grid.get_field("source_discount_percent").read_only, 1);
+    assertEqual("submitted discount amount locked", grid.get_field("source_discount_amount").read_only, 1);
+    assertEqual("submitted quantity locked", grid.get_field("qty").read_only, 1);
+    assertEqual("submitted inline editing disabled", grid.df.in_place_edit, 0);
+
+    const callsBefore = calls.length;
+    row.source_discount_percent = 5;
+    await childHandlers.source_discount_percent(frm, "Quotation Item", row.name);
+    assertEqual("submitted discount handler does not rewrite rate", row.rate, 100);
+    assertEqual("submitted discount handler does not rewrite amount", row.amount, 200);
+    assertEqual("submitted discount handler makes no model writes", calls.length, callsBefore);
 }
 
 async function main() {
     const finalRow = await runPricingScenarios();
-    runLineTotalRoundingScenario();
+    runLinePrecisionScenario();
     runGridScenario();
     runConfiguredMarginScenario();
     await runDraftTTCRecalculateScenario();
+    await runSubmittedLockScenario();
 
     console.log(JSON.stringify({
         ok: true,
         finalRow: {
             qty: finalRow.qty,
-            pu_ht: finalRow.source_gross_sell_rate,
+            pu_list_ht: finalRow.source_price_list_sell_rate,
+            pu_ht: finalRow.rate,
             remise_percent: finalRow.source_discount_percent,
-            remise_ht: finalRow.source_discount_amount,
-            pu_ht_net: finalRow.source_discounted_sell_rate,
-            pt_ht_net: finalRow.amount,
-            pu_ttc_net: finalRow.custom_pu_ttc,
-            pt_ttc_net: finalRow.custom_pt_ttc,
+            remise_pu_ht: finalRow.source_discount_amount,
+            pt_ht: finalRow.amount,
+            pu_ttc: finalRow.custom_pu_ttc,
+            pt_ttc: finalRow.custom_pt_ttc,
         },
+        submitted_locked: true,
         setValueCalls: calls.length,
     }, null, 2));
 }

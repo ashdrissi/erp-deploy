@@ -16,6 +16,7 @@ class _Doc(dict):
 def _load_jinja_helpers():
     fake_frappe = types.ModuleType("frappe")
     fake_frappe._ = lambda value: value
+    fake_frappe._dict = lambda value=None, **kwargs: _Doc(value or kwargs)
     fake_frappe.defaults = types.SimpleNamespace(get_global_default=lambda _key: "MAD")
     fake_frappe.db = types.SimpleNamespace()
 
@@ -77,6 +78,80 @@ class TestPrintPaymentTerms(unittest.TestCase):
             ],
         )
 
+    def test_without_details_uses_set_quantity_and_per_set_unit_price(self):
+        included = _Doc(
+            name="ROW-1",
+            idx=1,
+            qty=3,
+            rate=90,
+            amount=300,
+            net_amount=270,
+            custom_presentation_role="Include in commercial summary",
+        )
+        separate = _Doc(
+            name="ROW-2",
+            idx=2,
+            qty=1,
+            rate=20,
+            amount=20,
+            net_amount=20,
+            custom_presentation_role="Print separately",
+        )
+        doc = _Doc(
+            custom_presentation_mode="Without details",
+            custom_commercial_designation="3 electric elevators",
+            custom_dimensioning_multiplier=3,
+            items=[included, separate],
+            taxes=[],
+            taxes_and_charges="",
+            net_total=290,
+            total=320,
+            total_taxes_and_charges=0,
+            grand_total=290,
+        )
+
+        context = self.helpers.get_commercial_print_context(doc)
+        summary = context["items"][0]
+
+        self.assertEqual(summary.qty, 3)
+        self.assertEqual(summary.rate, 90)
+        self.assertEqual(summary.amount, 270)
+        self.assertEqual(summary.custom_pu_ttc, 90)
+        self.assertEqual(summary.custom_pt_ttc, 270)
+        self.assertIs(context["items"][1], separate)
+
+    def test_ttc_print_context_adds_template_tax_to_same_ht_unit_base(self):
+        row = _Doc(
+            name="ROW-1",
+            idx=1,
+            qty=2,
+            rate=50,
+            amount=100,
+            net_amount=100,
+            custom_applied_taxes=999,
+            custom_pu_ttc=999,
+            custom_pt_ttc=999,
+        )
+        doc = _Doc(
+            items=[row],
+            taxes_and_charges="VAT 20%",
+            taxes=[_Doc(charge_type="On Net Total", rate=20)],
+            net_total=100,
+            total=100,
+            total_taxes_and_charges=20,
+            grand_total=120,
+        )
+        original = self.helpers.quote_item_inclusive_totals
+        self.helpers.quote_item_inclusive_totals = lambda _doc: [{"tax_amount": 20}]
+        try:
+            context = self.helpers.get_ttc_print_context(doc)
+        finally:
+            self.helpers.quote_item_inclusive_totals = original
+
+        self.assertEqual(context["rows_by_name"]["ROW-1"]["unit_ht"], 50)
+        self.assertEqual(context["rows_by_name"]["ROW-1"]["unit"], 60)
+        self.assertEqual(context["rows_by_name"]["ROW-1"]["total"], 120)
+
     def test_implicit_erpnext_100_percent_schedule_is_not_printed_as_an_agreement(self):
         doc = _Doc(
             currency="MAD",
@@ -124,14 +199,15 @@ class TestPrintPaymentTerms(unittest.TestCase):
 
     def test_payment_schedule_amount_sync_is_loaded_on_commercial_documents(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        js = (APP_ROOT / "public" / "js" / "payment_schedule_sync_20260717a.js").read_text()
+        js = (APP_ROOT / "public" / "js" / "payment_schedule_sync_20260724a.js").read_text()
 
-        self.assertGreaterEqual(hooks.count("public/js/payment_schedule_sync_20260717a.js"), 3)
+        self.assertGreaterEqual(hooks.count("public/js/payment_schedule_sync_20260724a.js"), 3)
         self.assertIn('frappe.ui.form.on("Payment Schedule"', js)
         self.assertIn("invoice_portion(frm, cdt, cdn)", js)
         self.assertIn("payment_amount", js)
         self.assertIn("rounded_total", js)
         self.assertIn("Recalculate Payment Schedule", js)
+        self.assertIn('if (frm.doctype === "Sales Order") return;', js)
 
     def test_standard_payment_terms_template_avoids_duplicate_due_dates(self):
         hooks = (APP_ROOT / "hooks.py").read_text()

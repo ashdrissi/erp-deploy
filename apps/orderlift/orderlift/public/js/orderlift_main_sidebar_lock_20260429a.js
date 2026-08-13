@@ -20,7 +20,7 @@
         "Installation User",
         "Service User",
     ];
-    var BYPASS_ROLES = ["Administrator", "System Manager", "Developer"];
+    var BYPASS_ROLES = ["Administrator", "System Manager"];
     var forcing = false;
 
     function getRoles() {

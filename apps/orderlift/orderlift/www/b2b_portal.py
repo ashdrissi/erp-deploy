@@ -4,6 +4,12 @@ import frappe
 
 
 def get_context(context):
+    if (
+        frappe.session.user not in {"Guest", "Administrator"}
+        and frappe.db.get_value("User", frappe.session.user, "user_type") == "System User"
+    ):
+        frappe.redirect("/desk/home-page?sidebar=Main+Dashboard")
+
     context.no_cache = 1
     context.show_sidebar = False
     context.layout = "full-width"

@@ -10,7 +10,7 @@ from orderlift.menu_access import MENU_ACCESS_DOCTYPE, sync_menu_access_rules
 from orderlift.menu_registry import iter_menu_items
 
 
-ACCESS_ROLES = {"Orderlift Admin", "System Manager", "Administrator", "Developer"}
+ACCESS_ROLES = {"Orderlift Admin", "System Manager", "Administrator"}
 
 
 @frappe.whitelist()

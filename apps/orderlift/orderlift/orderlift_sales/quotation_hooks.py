@@ -1,29 +1,30 @@
 from __future__ import annotations
 
+from math import isfinite
+
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import add_days, flt, nowdate
 
-from orderlift.orderlift_crm.api.pipeline import get_party_defaults
+try:
+    from frappe.utils import cint
+except ImportError:  # Unit tests may provide only a minimal frappe.utils stub.
+    def cint(value=0):
+        return int(value or 0)
+
+from orderlift.orderlift_crm.party_propagation import apply_party_context_to_quotation, resolve_party_context
+from orderlift.orderlift_sales.utils.sales_team import primary_sales_person
 from orderlift.orderlift_sales.utils.price_list_usage_guard import reprice_quotation_items_from_selected_price_lists
 from orderlift.orderlift_sales.utils.price_list_scope import can_override_quotation_pricing, validate_visible_price_list
 from orderlift.orderlift_sales.utils.tax_inclusive import (
     apply_quotation_sales_tax_template,
     sync_quotation_item_tax_inclusive_fields,
 )
+from orderlift.role_capabilities import CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT, user_has_capability
 from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
 OTHER_CHARGE_ITEM_CODE = "OTHER-CHARGES"
-COMMISSION_ASSIGNMENT_MANAGER_ROLES = {
-    "Orderlift Admin",
-    "Orderlift Business Admin",
-    "Sales Manager",
-    "Pricing Manager",
-    "System Manager",
-}
-
-
 @frappe.whitelist()
 def get_other_charge_item(company: str | None = None) -> dict:
     if not frappe.has_permission("Quotation", "create") and not frappe.has_permission("Quotation", "write"):
@@ -54,6 +55,29 @@ def get_other_charge_item(company: str | None = None) -> dict:
         "item_name": values.get("item_name") or _("Other Charges"),
         "description": values.get("description") or _("Other Charges"),
         "uom": values.get("stock_uom") or _default_service_uom(),
+    }
+
+
+@frappe.whitelist()
+def get_other_charge_template(other_charge: str, company: str | None = None) -> dict:
+    if not frappe.has_permission("Quotation", "create") and not frappe.has_permission("Quotation", "write"):
+        frappe.throw(_("Not permitted to add other charges."), frappe.PermissionError)
+
+    other_charge = (other_charge or "").strip()
+    if not other_charge:
+        frappe.throw(_("Select an other charge."))
+    if not frappe.db.exists("Orderlift Other Charge", other_charge):
+        frappe.throw(_("Other charge {0} was not found.").format(other_charge))
+
+    template = _other_charge_template_values(other_charge)
+    item_defaults = get_other_charge_item(company=company)
+    return {
+        "other_charge": other_charge,
+        "description": template.get("description") or item_defaults.get("description") or other_charge,
+        "uom": template.get("uom") or item_defaults.get("uom") or _default_service_uom(),
+        "rate": flt(template.get("rate")),
+        "item_code": template.get("item_code") or item_defaults.get("item_code") or OTHER_CHARGE_ITEM_CODE,
+        "item_name": item_defaults.get("item_name") or _("Other Charges"),
     }
 
 
@@ -98,28 +122,93 @@ def _default_service_uom() -> str:
 
 
 def apply_quotation_party_defaults(doc, method=None) -> None:
+    if int(doc.get("docstatus") or 0) != 0:
+        return
+    if not doc.get("valid_till"):
+        doc.valid_till = add_days(nowdate(), 15)
+
     party_type = (doc.get("quotation_to") or "").strip()
     party_name = (doc.get("party_name") or "").strip()
     if party_type not in {"Customer", "Prospect", "Lead"} or not party_name:
         return
 
-    defaults = get_party_defaults(party_type, party_name) or {}
-    if doc.meta.get_field("customer_name") and not (doc.get("customer_name") or "").strip():
-        doc.customer_name = defaults.get("display_name") or doc.get("customer_name") or party_name
+    defaults = resolve_party_context(party_type, party_name, source_doc=doc) or {}
+    apply_party_context_to_quotation(doc, defaults)
     if doc.meta.get_field("custom_customer_tax_id"):
-        doc.custom_customer_tax_id = (
-            frappe.db.get_value("Customer", party_name, "tax_id") or ""
-            if party_type == "Customer"
-            else ""
+        doc.custom_customer_tax_id = defaults.get("tax_id") or ""
+
+
+def sync_quotation_opportunity_snapshot(doc, method=None) -> None:
+    if not doc or not getattr(doc, "meta", None):
+        return
+    if not doc.meta.get_field("custom_opportunity_title") and not doc.meta.get_field("custom_opportunity_owner"):
+        return
+
+    opportunity = (doc.get("opportunity") or "").strip()
+    values = {}
+    if opportunity and frappe.db.exists("Opportunity", opportunity):
+        values = frappe.db.get_value("Opportunity", opportunity, ["title", "opportunity_owner", "owner"], as_dict=True) or {}
+
+    if doc.meta.get_field("custom_opportunity_title"):
+        doc.custom_opportunity_title = values.get("title") or ""
+    if doc.meta.get_field("custom_opportunity_owner"):
+        doc.custom_opportunity_owner = values.get("opportunity_owner") or values.get("owner") or ""
+
+
+def sync_quotation_other_charges(doc, method=None) -> None:
+    if not doc or not getattr(doc, "meta", None) or not doc.meta.get_field("custom_other_charges"):
+        return
+    if not frappe.db.has_column("Quotation Item", "custom_orderlift_other_charge"):
+        return
+
+    charges = _normalized_other_charge_rows(doc)
+    items = [row for row in (doc.get("items") or []) if not flt(row.get("custom_orderlift_other_charge"))]
+    doc.set("items", items)
+    if not charges:
+        return
+
+    item_defaults = get_other_charge_item(company=doc.get("company"))
+    for charge in charges:
+        item_code = charge.get("item_code") or item_defaults.get("item_code") or OTHER_CHARGE_ITEM_CODE
+        description = charge.get("description") or item_defaults.get("description") or _("Other Charges")
+        qty = flt(charge.get("qty") or 1) or 1
+        rate = flt(charge.get("rate"))
+        amount = flt(qty * rate)
+        row = doc.append(
+            "items",
+            {
+                "item_code": item_code,
+                "item_name": description,
+                "description": description,
+                "qty": qty,
+                "stock_uom": charge.get("uom") or item_defaults.get("uom") or _default_service_uom(),
+                "uom": charge.get("uom") or item_defaults.get("uom") or _default_service_uom(),
+                "conversion_factor": 1,
+                "price_list_rate": rate,
+                "base_price_list_rate": rate,
+                "rate": rate,
+                "base_rate": rate,
+                "amount": amount,
+                "base_amount": amount,
+                "net_rate": rate,
+                "net_amount": amount,
+                "base_net_rate": rate,
+                "base_net_amount": amount,
+                "discount_percentage": 0,
+                "custom_presentation_role": "Print separately",
+                "custom_orderlift_other_charge": 1,
+            },
         )
-    _set_if_empty(doc, "territory", defaults.get("territory"))
-    _set_if_empty(doc, "customer_address", defaults.get("address_name"))
-    _set_if_empty(doc, "address_display", defaults.get("address"))
-    _set_if_empty(doc, "contact_person", defaults.get("contact_name"))
-    _set_if_empty(doc, "contact_display", defaults.get("contact_display") or defaults.get("email") or defaults.get("mobile"))
-    _set_if_empty(doc, "contact_mobile", defaults.get("mobile") or defaults.get("phone"))
-    _set_if_empty(doc, "contact_email", defaults.get("email"))
-    _set_if_empty(doc, "shipping_address_name", defaults.get("address_name"))
+        for fieldname, value in {
+            "source_price_list_sell_rate": rate,
+            "source_discount_percent": 0,
+            "source_max_discount_percent": 0,
+            "source_discount_amount": 0,
+        }.items():
+            if row.meta.get_field(fieldname):
+                row.set(fieldname, value)
+        if row.meta.get_field("ignore_pricing_rule"):
+            row.ignore_pricing_rule = 1
 
 
 def sync_quotation_pricing_snapshot_fields(doc, method=None) -> None:
@@ -131,17 +220,76 @@ def sync_quotation_pricing_snapshot_fields(doc, method=None) -> None:
     sync_quotation_item_tax_inclusive_fields(doc)
 
 
+def _normalized_other_charge_rows(doc) -> list[dict]:
+    rows = []
+    for charge in doc.get("custom_other_charges") or []:
+        template = _other_charge_template_values(charge.get("other_charge"))
+        description = (charge.get("description") or "").strip() or template.get("description") or _("Other Charges")
+        qty = flt(charge.get("qty") or 0)
+        rate = flt(charge.get("rate") if charge.get("rate") is not None else template.get("rate"))
+        uom = (charge.get("uom") or "").strip() or template.get("uom")
+        item_code = (charge.get("item_code") or "").strip() or template.get("item_code")
+        if qty <= 0:
+            frappe.throw(_("Other charge quantity must be greater than zero: {0}").format(description))
+        if rate < 0:
+            frappe.throw(_("Other charge amount cannot be negative: {0}").format(description))
+        amount = flt(qty * rate)
+        charge.description = description
+        charge.qty = qty
+        charge.uom = uom
+        charge.rate = rate
+        charge.amount = amount
+        charge.item_code = item_code
+        rows.append(
+            {
+                "other_charge": (charge.get("other_charge") or "").strip(),
+                "description": description,
+                "qty": qty,
+                "uom": uom,
+                "rate": rate,
+                "amount": amount,
+                "item_code": item_code,
+            }
+        )
+    return rows
+
+
+def _other_charge_template_values(other_charge: str | None) -> dict:
+    other_charge = (other_charge or "").strip()
+    if not other_charge or not frappe.db.exists("DocType", "Orderlift Other Charge"):
+        return {}
+    if not frappe.db.exists("Orderlift Other Charge", other_charge):
+        return {}
+    values = frappe.db.get_value(
+        "Orderlift Other Charge",
+        other_charge,
+        ["description", "default_uom", "default_rate", "item_code", "disabled"],
+        as_dict=True,
+    ) or {}
+    if values.get("disabled"):
+        frappe.throw(_("Other charge {0} is disabled.").format(other_charge))
+    return {
+        "description": values.get("description") or other_charge,
+        "uom": values.get("default_uom") or "",
+        "rate": flt(values.get("default_rate")),
+        "item_code": values.get("item_code") or "",
+    }
+
+
 def resolve_quotation_commission_context(doc, method=None) -> str:
     """Resolve one auditable salesperson/rate for Pricing Sheet and direct quotes."""
     source_pricing_sheet = (doc.get("source_pricing_sheet") or "").strip()
     selected = (doc.get("commission_sales_person") or "").strip()
+    team = doc.get("custom_sales_team") if doc.meta.get_field("custom_sales_team") else []
     snapshot_people = {
         (row.get("source_sales_person") or "").strip()
         for row in (doc.get("items") or [])
         if (row.get("source_sales_person") or "").strip()
     }
 
-    if source_pricing_sheet:
+    if team:
+        sales_person = primary_sales_person(team)
+    elif source_pricing_sheet:
         sheet_sales_person = frappe.db.get_value("Pricing Sheet", source_pricing_sheet, "sales_person") or ""
         sales_person = sheet_sales_person or (next(iter(snapshot_people)) if len(snapshot_people) == 1 else "")
     elif _can_assign_any_commission_salesperson():
@@ -197,62 +345,85 @@ def _agent_commission_rate(sales_person: str) -> float:
     if not sales_person:
         return 0.0
     rule = frappe.db.get_value("Agent Pricing Rules", {"sales_person": sales_person}, "name")
-    return flt(frappe.db.get_value("Agent Pricing Rules", rule, "commission_rate") or 0) if rule else 0.0
+    if not rule:
+        return 0.0
+    rate = frappe.db.get_value("Agent Pricing Rules", rule, "commission_rate") or 0
+    if frappe.db.has_column("Agent Pricing Rules", "commission_enabled") and not cint(
+        frappe.db.get_value("Agent Pricing Rules", rule, "commission_enabled")
+    ):
+        return 0.0
+    return flt(rate)
 
 
 def _can_assign_any_commission_salesperson() -> bool:
-    if frappe.session.user == "Administrator":
-        return True
-    return bool(COMMISSION_ASSIGNMENT_MANAGER_ROLES.intersection(set(frappe.get_roles(frappe.session.user) or [])))
+    return user_has_capability(CAPABILITY_COMMISSION_ASSIGNMENT_MANAGEMENT)
 
 
 def sync_quotation_item_price_input_fields(doc, method=None) -> None:
     """Keep direct Quotation price-input fields consistent before validation.
 
-    The browser lets users enter discount %, discount amount, PU HT, or PU TTC.
-    ERPNext accounting remains HT-based, so the saved rate is authoritative and
-    the helper fields are normalized from it server-side.
+    Native rate/amount are the canonical HT values. Discount inputs are accepted
+    on drafts and translated back to rate; TTC is always derived separately.
     """
     previous_rows = _quotation_item_rows_before_save(doc)
     for row in doc.get("items") or []:
-        gross_rate = flt(row.get("source_gross_sell_rate") or row.get("price_list_rate") or 0)
+        list_rate = flt(
+            row.get("source_price_list_sell_rate")
+            or row.get("price_list_rate")
+            or 0
+        )
         current_rate = flt(row.get("rate") or 0)
-        if gross_rate <= 0 or current_rate < 0:
+        if list_rate <= 0 and _is_valid_new_row_rate(row.get("rate")):
+            list_rate = current_rate
+        if list_rate <= 0:
             continue
+        if row.meta.get_field("source_price_list_sell_rate"):
+            list_rate = flt(list_rate, row.precision("source_price_list_sell_rate"))
+            row.source_price_list_sell_rate = list_rate
 
         previous_row = previous_rows.get((row.get("name") or "").strip())
-        current_rate, gross_rate_changed = _resolve_changed_quotation_price_input(
-            doc,
+        current_rate = _resolve_changed_quotation_price_input(
             row,
             previous_row,
-            gross_rate,
+            list_rate,
             current_rate,
         )
-        qty = flt(row.get("qty") or 1) or 1
-        discount = max((1 - (current_rate / gross_rate)) * 100, 0)
-        current_rate = flt(current_rate, row.precision("rate"))
+        qty = flt(row.get("qty") or 0)
+        current_rate = flt(max(current_rate, 0), row.precision("rate"))
+        if current_rate >= list_rate:
+            discount = 0.0
+            discount_amount = 0.0
+        else:
+            discount_amount = max(list_rate - current_rate, 0)
+            discount = (discount_amount / list_rate) * 100.0
+
+        conversion_rate = flt(doc.get("conversion_rate") or 1) or 1
         row.rate = current_rate
         row.amount = flt(current_rate * qty, row.precision("amount"))
-        if gross_rate_changed and row.meta.get_field("price_list_rate"):
-            row.price_list_rate = flt(gross_rate, row.precision("price_list_rate"))
+        _set_rounded_if_field(row, "price_list_rate", list_rate)
+        _set_rounded_if_field(row, "base_price_list_rate", list_rate * conversion_rate)
+        _set_rounded_if_field(row, "base_rate", current_rate * conversion_rate)
+        _set_rounded_if_field(row, "net_rate", current_rate)
+        _set_rounded_if_field(row, "base_net_rate", current_rate * conversion_rate)
+        _set_rounded_if_field(row, "net_amount", current_rate * qty)
+        _set_rounded_if_field(row, "base_amount", current_rate * qty * conversion_rate)
+        _set_rounded_if_field(row, "base_net_amount", current_rate * qty * conversion_rate)
+        _set_rounded_if_field(row, "discount_amount", discount_amount)
         if row.meta.get_field("discount_percentage"):
             row.discount_percentage = flt(discount, row.precision("discount_percentage"))
-        if row.meta.get_field("source_price_list_sell_rate") and not flt(row.get("source_price_list_sell_rate") or 0):
-            row.source_price_list_sell_rate = flt(gross_rate, row.precision("source_price_list_sell_rate"))
         if row.meta.get_field("source_discount_percent"):
             row.source_discount_percent = flt(discount, row.precision("source_discount_percent"))
         if row.meta.get_field("source_discount_amount"):
-            # Quotation input/display is a per-unit discount. Commission payout
-            # totals are derived separately from rates and ordered quantity.
-            row.source_discount_amount = flt(max(gross_rate - current_rate, 0), row.precision("source_discount_amount"))
-        if row.meta.get_field("source_discounted_sell_rate"):
-            row.source_discounted_sell_rate = flt(current_rate, row.precision("source_discounted_sell_rate"))
+            row.source_discount_amount = flt(
+                discount_amount,
+                row.precision("source_discount_amount"),
+            )
         if row.meta.get_field("source_commission_amount"):
             max_discount = flt(row.get("source_max_discount_percent") or 0)
             commission_rate = flt(row.get("source_commission_rate") or 0)
             try:
                 commission = calculate_agent_commission(
-                    price_list_unit_price=gross_rate,
+                    price_list_unit_price=list_rate,
                     actual_unit_price=current_rate,
                     qty=qty,
                     max_discount_percent=max_discount,
@@ -284,48 +455,76 @@ def _quotation_item_rows_before_save(doc) -> dict[str, object]:
     }
 
 
-def _resolve_changed_quotation_price_input(doc, row, previous_row, gross_rate: float, current_rate: float) -> tuple[float, bool]:
-    """Recover inline helper-field edits that did not reach ERPNext's rate field."""
+def _resolve_changed_quotation_price_input(row, previous_row, list_rate: float, current_rate: float) -> float:
+    """Resolve the last changed canonical/helper input into native rate."""
     if not previous_row:
-        discount = flt(row.get("source_discount_percent") or 0)
-        expected_rate = gross_rate * (1 - (discount / 100.0))
-        if abs(expected_rate - current_rate) > 0.000001:
-            return max(expected_rate, 0), True
-        return current_rate, False
-
-    previous_rate = flt(previous_row.get("rate") or 0)
-    if abs(current_rate - previous_rate) > 0.000001:
-        return current_rate, False
-
-    if _numeric_row_field_changed(row, previous_row, "custom_pu_ttc"):
-        pu_ttc = flt(row.get("custom_pu_ttc") or 0)
-        tax_multiplier = 1 + (_quotation_total_tax_rate(doc) / 100.0)
-        if pu_ttc > 0 and tax_multiplier > 0:
-            return max(pu_ttc / tax_multiplier, 0), False
-
-    if _numeric_row_field_changed(row, previous_row, "source_discount_amount"):
         discount_amount = max(flt(row.get("source_discount_amount") or 0), 0)
-        return max(gross_rate - discount_amount, 0), False
-
-    discount_changed = _numeric_row_field_changed(row, previous_row, "source_discount_percent")
-    gross_rate_changed = _numeric_row_field_changed(row, previous_row, "source_gross_sell_rate")
-    if discount_changed or gross_rate_changed:
+        if discount_amount > 0:
+            return max(list_rate - discount_amount, 0)
         discount = max(flt(row.get("source_discount_percent") or 0), 0)
-        return max(gross_rate * (1 - (discount / 100.0)), 0), gross_rate_changed
+        if discount > 0:
+            return max(list_rate * (1 - (discount / 100.0)), 0)
+        if _is_valid_new_row_rate(row.get("rate")):
+            return current_rate
+        return list_rate
 
-    return current_rate, False
+    changed_inputs = [
+        fieldname
+        for fieldname in ("rate", "source_discount_percent", "source_discount_amount")
+        if _numeric_row_field_changed(row, previous_row, fieldname)
+    ]
+    if not changed_inputs:
+        return current_rate
+    if "rate" in changed_inputs and current_rate >= list_rate:
+        return current_rate
+
+    last_changed = changed_inputs[-1]
+    if last_changed == "source_discount_amount":
+        discount_amount = max(flt(row.get("source_discount_amount") or 0), 0)
+        return max(list_rate - discount_amount, 0)
+    if last_changed == "source_discount_percent":
+        discount = max(flt(row.get("source_discount_percent") or 0), 0)
+        return max(list_rate * (1 - (discount / 100.0)), 0)
+    return max(current_rate, 0)
 
 
 def _numeric_row_field_changed(row, previous_row, fieldname: str) -> bool:
-    return abs(flt(row.get(fieldname) or 0) - flt(previous_row.get(fieldname) or 0)) > 0.000001
-
-
-def _quotation_total_tax_rate(doc) -> float:
-    return sum(
-        flt(row.get("rate") or 0)
-        for row in (doc.get("taxes") or [])
-        if (row.get("charge_type") or "") != "Actual"
+    return (
+        abs(flt(row.get(fieldname) or 0) - flt(previous_row.get(fieldname) or 0))
+        > _field_tolerance(fieldname, row, previous_row)
     )
+
+
+def _is_valid_new_row_rate(value) -> bool:
+    try:
+        return isfinite(float(value)) and float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _field_tolerance(fieldname: str, *rows) -> float:
+    precisions = []
+    for row in rows:
+        precision = getattr(row, "precision", None)
+        if not callable(precision):
+            continue
+        try:
+            precisions.append(int(precision(fieldname)))
+        except (TypeError, ValueError):
+            continue
+    precision = max(precisions or [9])
+    return min(1e-9, 10 ** (-precision))
+
+
+def _set_rounded_if_field(row, fieldname: str, value: float) -> None:
+    if not row.meta.get_field(fieldname):
+        return
+    rounded = flt(value, row.precision(fieldname))
+    setter = getattr(row, "set", None)
+    if callable(setter):
+        setter(fieldname, rounded)
+    else:
+        setattr(row, fieldname, rounded)
 
 
 def populate_quotation_stock_snapshot(doc, method=None) -> None:
@@ -408,7 +607,7 @@ def validate_quotation_item_discount_caps(doc, method=None) -> None:
             frappe.throw(
                 _("Pricing Discount % cannot be negative on row {0}.").format(row.get("idx") or "-"),
             )
-        if discount > max_discount + 0.000001:
+        if discount > max_discount + _field_tolerance("source_discount_percent", row):
             frappe.throw(
                 _("Pricing Discount % cannot exceed {0}% for {1} on row {2}.").format(
                     max_discount,
@@ -420,15 +619,15 @@ def validate_quotation_item_discount_caps(doc, method=None) -> None:
 
 
 def _validate_row_rate_against_policy_snapshot(row, discount: float) -> None:
-    gross_rate = flt(row.get("source_gross_sell_rate") or 0)
-    if gross_rate <= 0:
+    list_rate = flt(row.get("source_price_list_sell_rate") or 0)
+    if list_rate <= 0:
         return
-    expected_rate = gross_rate * (1 - (discount / 100.0))
+    expected_rate = list_rate * (1 - (discount / 100.0))
     current_rate = flt(row.get("rate") or 0)
-    if current_rate + 0.000001 >= expected_rate:
+    if current_rate + _field_tolerance("rate", row) >= expected_rate:
         return
     frappe.throw(
-        _("Rate for {0} on row {1} is below the pricing policy net rate {2}.").format(
+        _("Rate for {0} on row {1} is below the pricing policy rate {2}.").format(
             row.get("item_code") or row.get("item_name") or "item",
             row.get("idx") or "-",
             _format_rate(expected_rate),

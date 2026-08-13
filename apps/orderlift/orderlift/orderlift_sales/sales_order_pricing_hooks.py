@@ -5,12 +5,28 @@ from frappe import _
 from frappe.utils import flt
 
 from orderlift.orderlift_sales.utils.price_list_scope import can_override_quotation_pricing
+from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
-SOURCE_HEADER_FIELDS = ("source_pricing_sheet",)
+SOURCE_HEADER_FIELDS = (
+    "source_pricing_sheet",
+    "custom_delivery_lead_time",
+    "custom_opportunity_title",
+    "custom_opportunity_owner",
+    "custom_presentation_mode",
+    "custom_commercial_designation",
+    "custom_dimensioning_set",
+    "custom_dimensioning_multiplier",
+    "custom_dimensioning_inputs_json",
+    "custom_site_address_name",
+)
 SOURCE_TABLE_FIELDS = ("selected_selling_price_lists",)
 
 SOURCE_ITEM_FIELDS = (
+    "custom_presentation_role",
+    "custom_orderlift_other_charge",
+    "custom_dimensioning_set",
+    "custom_dimensioning_rule_label",
     "source_pricing_sheet_line",
     "source_pricing_scenario",
     "source_pricing_override",
@@ -23,11 +39,9 @@ SOURCE_ITEM_FIELDS = (
     "source_customs_basis",
     "source_selling_price_list",
     "source_price_list_sell_rate",
-    "source_gross_sell_rate",
     "source_discount_percent",
     "source_max_discount_percent",
     "source_discount_amount",
-    "source_discounted_sell_rate",
     "source_target_margin_percent",
     "source_margin_percent",
     "source_margin_basis",
@@ -35,14 +49,17 @@ SOURCE_ITEM_FIELDS = (
     "source_landed_cost",
     "source_commission_rate",
     "source_commission_amount",
+    "custom_applied_taxes",
+    "custom_pu_ttc",
+    "custom_pt_ttc",
 )
 
 NATIVE_PRICE_FIELDS = (
-    "item_code",
     "price_list_rate",
+    "base_price_list_rate",
     "rate",
+    "base_rate",
     "discount_percentage",
-    "net_rate",
 )
 
 
@@ -55,16 +72,43 @@ def copy_quotation_pricing_snapshot(doc, method=None) -> None:
         return
 
     override = can_override_quotation_pricing()
-    _copy_header_snapshot(doc, source_context.first_quotation, overwrite=not override)
+    _copy_header_snapshot(doc, source_context.first_quotation, overwrite=True)
 
     for row in _items(doc):
         source_row = source_context.source_row_for(row)
         if not source_row:
             continue
-        _copy_row_snapshot(row, source_row, overwrite=not override)
+        _copy_row_snapshot(row, source_row, overwrite=True)
         if not override:
             _restore_row_pricing_from_source(row, source_row)
         _refresh_actual_margin(row)
+        _refresh_commission(row, enforce_discount_cap=not override)
+
+
+def copy_sales_invoice_pricing_context(doc, method=None) -> None:
+    if not doc or not _has_field(doc, "selected_selling_price_lists"):
+        return
+
+    sales_orders = []
+    for row in _items(doc):
+        sales_order = (_get(row, "sales_order") or "").strip()
+        if sales_order and sales_order not in sales_orders:
+            sales_orders.append(sales_order)
+    if not sales_orders:
+        return
+
+    rows = []
+    seen = set()
+    for sales_order in sales_orders:
+        source_doc = frappe.get_doc("Sales Order", sales_order)
+        for source_row in source_doc.get("selected_selling_price_lists") or []:
+            price_list = (_get(source_row, "price_list") or "").strip()
+            if not price_list or price_list in seen:
+                continue
+            seen.add(price_list)
+            rows.append(source_row)
+
+    _set_table(doc, "selected_selling_price_lists", rows)
 
 
 def validate_sales_order_source_lock(doc, method=None) -> None:
@@ -88,7 +132,11 @@ def validate_sales_order_source_lock(doc, method=None) -> None:
         # Running this before the override return also replaces ERPNext's
         # rhetorical "Are you making another Sales Order?" limit message with an
         # actionable explanation.
-        if source_row and flt(_get(row, "qty")) > flt(_get(source_row, "qty")) + 0.000001:
+        if source_row and flt(_get(row, "qty")) > flt(_get(source_row, "qty")) + _field_tolerance(
+            "qty",
+            row,
+            source_row,
+        ):
             frappe.throw(
                 _(
                     "Sales Order row {0} requests {1} of {2}, but the linked Quotation allows {3}. "
@@ -128,15 +176,38 @@ def validate_sales_order_pricing_locked_to_quotation(doc, method=None) -> None:
         if not source_row:
             continue
         idx = _get(row, "idx") or "-"
-        for fieldname in ("price_list_rate", "rate", "discount_percentage", "net_rate"):
+        for fieldname in NATIVE_PRICE_FIELDS:
             if not _has_field(row, fieldname) or not _has_field(source_row, fieldname):
                 continue
-            if abs(flt(_get(row, fieldname)) - flt(_get(source_row, fieldname))) > 0.000001:
+            if abs(flt(_get(row, fieldname)) - flt(_get(source_row, fieldname))) > _field_tolerance(
+                fieldname,
+                row,
+                source_row,
+            ):
                 frappe.throw(_("Sales Order row {0} pricing is locked to its source Quotation.").format(idx))
-        expected_amount = flt(_get(row, "rate")) * (flt(_get(row, "qty")) or 1)
+        rate = flt(_get(row, "rate"))
+        expected_amount = rate * flt(_get(row, "qty"))
+        if _has_field(row, "net_rate") and abs(flt(_get(row, "net_rate")) - rate) > _field_tolerance(
+            "net_rate",
+            row,
+        ):
+            frappe.throw(_("Sales Order row {0} unit price must match its Quotation rate.").format(idx))
         for fieldname in ("amount", "net_amount"):
-            if _has_field(row, fieldname) and abs(flt(_get(row, fieldname)) - expected_amount) > 0.01:
+            if _has_field(row, fieldname) and abs(
+                flt(_get(row, fieldname)) - _round_for_field(row, fieldname, expected_amount)
+            ) > _field_tolerance(fieldname, row):
                 frappe.throw(_("Sales Order row {0} amount must match its source Quotation rate and Sales Order quantity.").format(idx))
+        base_rate = flt(_get(row, "base_rate"))
+        expected_base_amount = base_rate * flt(_get(row, "qty"))
+        if _has_field(row, "base_net_rate") and abs(
+            flt(_get(row, "base_net_rate")) - base_rate
+        ) > _field_tolerance("base_net_rate", row):
+            frappe.throw(_("Sales Order row {0} base unit price must match its Quotation rate.").format(idx))
+        for fieldname in ("base_amount", "base_net_amount"):
+            if _has_field(row, fieldname) and abs(
+                flt(_get(row, fieldname)) - _round_for_field(row, fieldname, expected_base_amount)
+            ) > _field_tolerance(fieldname, row):
+                frappe.throw(_("Sales Order row {0} base amount must match its source Quotation pricing.").format(idx))
 
 
 def validate_sales_order_item_discount_caps(doc, method=None) -> None:
@@ -151,7 +222,7 @@ def validate_sales_order_item_discount_caps(doc, method=None) -> None:
         idx = _get(row, "idx") or "-"
         if discount < 0:
             frappe.throw(_("Pricing Discount % cannot be negative on Sales Order row {0}.").format(idx))
-        if discount > max_discount + 0.000001:
+        if discount > max_discount + _field_tolerance("source_discount_percent", row):
             frappe.throw(
                 _("Pricing Discount % cannot exceed {0}% for {1} on Sales Order row {2}.").format(
                     max_discount,
@@ -163,14 +234,14 @@ def validate_sales_order_item_discount_caps(doc, method=None) -> None:
 
 
 def _validate_row_rate_against_snapshot(row, discount: float) -> None:
-    gross_rate = flt(_get(row, "source_gross_sell_rate"))
-    if gross_rate <= 0:
+    list_rate = flt(_get(row, "source_price_list_sell_rate"))
+    if list_rate <= 0:
         return
-    expected_rate = gross_rate * (1 - (discount / 100.0))
-    if flt(_get(row, "rate")) + 0.000001 >= expected_rate:
+    expected_rate = list_rate * (1 - (discount / 100.0))
+    if flt(_get(row, "rate")) + _field_tolerance("rate", row) >= expected_rate:
         return
     frappe.throw(
-        _("Rate for {0} on Sales Order row {1} is below the inherited pricing policy net rate {2}.").format(
+        _("Rate for {0} on Sales Order row {1} is below the inherited pricing policy rate {2}.").format(
             _get(row, "item_code") or _get(row, "item_name") or "item",
             _get(row, "idx") or "-",
             _format_rate(expected_rate),
@@ -216,6 +287,8 @@ def _copy_header_snapshot(doc, quotation, *, overwrite: bool) -> None:
         return
     for fieldname in SOURCE_HEADER_FIELDS:
         _copy_field(doc, quotation, fieldname, overwrite=overwrite)
+    if _has_field(doc, "tax_id") and _has_field(quotation, "custom_customer_tax_id"):
+        _set(doc, "tax_id", _get(quotation, "custom_customer_tax_id") or "")
     for fieldname in SOURCE_TABLE_FIELDS:
         if not _has_field(doc, fieldname) or not _has_field(quotation, fieldname):
             continue
@@ -232,11 +305,17 @@ def _copy_row_snapshot(row, source_row, *, overwrite: bool) -> None:
 def _restore_row_pricing_from_source(row, source_row) -> None:
     for fieldname in NATIVE_PRICE_FIELDS:
         _copy_field(row, source_row, fieldname, overwrite=True)
-    qty = flt(_get(row, "qty")) or 1
+    qty = flt(_get(row, "qty"))
     rate = flt(_get(row, "rate"))
+    base_rate = flt(_get(row, "base_rate"))
     amount = rate * qty
-    _set_if_field(row, "amount", amount)
-    _set_if_field(row, "net_amount", amount)
+    base_amount = base_rate * qty
+    _set_if_field(row, "net_rate", _round_for_field(row, "net_rate", rate))
+    _set_if_field(row, "base_net_rate", _round_for_field(row, "base_net_rate", base_rate))
+    _set_if_field(row, "amount", _round_for_field(row, "amount", amount))
+    _set_if_field(row, "net_amount", _round_for_field(row, "net_amount", amount))
+    _set_if_field(row, "base_amount", _round_for_field(row, "base_amount", base_amount))
+    _set_if_field(row, "base_net_amount", _round_for_field(row, "base_net_amount", base_amount))
 
 
 def _refresh_actual_margin(row) -> None:
@@ -254,6 +333,32 @@ def _refresh_actual_margin(row) -> None:
         denominator = landed_cost
     margin_percent = ((rate - landed_cost) / denominator * 100.0) if denominator > 0 else 0.0
     _set(row, "source_margin_percent", margin_percent)
+
+
+def _refresh_commission(row, *, enforce_discount_cap: bool) -> None:
+    if not _has_field(row, "source_commission_amount"):
+        return
+    try:
+        commission = calculate_agent_commission(
+            price_list_unit_price=flt(_get(row, "source_price_list_sell_rate")),
+            actual_unit_price=flt(_get(row, "rate")),
+            qty=flt(_get(row, "qty")),
+            max_discount_percent=flt(_get(row, "source_max_discount_percent")),
+            commission_rate=flt(_get(row, "source_commission_rate")),
+            enforce_discount_cap=enforce_discount_cap,
+        )
+    except ValueError:
+        _set(row, "source_commission_amount", 0)
+        return
+    _set(
+        row,
+        "source_commission_amount",
+        _round_for_field(
+            row,
+            "source_commission_amount",
+            flt(commission.get("commission_amount")),
+        ),
+    )
 
 
 def _copy_field(target, source, fieldname: str, *, overwrite: bool) -> None:
@@ -285,7 +390,7 @@ def _row_source_quotation(row) -> str:
 
 
 def _row_source_detail(row) -> str:
-    return (_get(row, "prevdoc_detail_docname") or "").strip()
+    return (_get(row, "quotation_item") or _get(row, "prevdoc_detail_docname") or "").strip()
 
 
 def _items(doc) -> list:
@@ -333,6 +438,30 @@ def _has_field(obj, fieldname: str) -> bool:
 
 def _has_value(value) -> bool:
     return value not in (None, "", [], {})
+
+
+def _field_tolerance(fieldname: str, *rows) -> float:
+    precisions = []
+    for row in rows:
+        precision = getattr(row, "precision", None)
+        if not callable(precision):
+            continue
+        try:
+            precisions.append(int(precision(fieldname)))
+        except (TypeError, ValueError):
+            continue
+    precision = max(precisions or [9])
+    return min(1e-9, 10 ** (-precision))
+
+
+def _round_for_field(row, fieldname: str, value: float) -> float:
+    precision = getattr(row, "precision", None)
+    if callable(precision):
+        try:
+            return flt(value, int(precision(fieldname)))
+        except (TypeError, ValueError):
+            pass
+    return flt(value, 9)
 
 
 def _as_dict(row) -> dict:

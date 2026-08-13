@@ -1,0 +1,44 @@
+{
+    "actions": [],
+    "doctype": "DocType",
+    "document_type": "Document",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "payment_terms_template",
+        "is_default",
+        "is_active"
+    ],
+    "fields": [
+        {
+            "fieldname": "payment_terms_template",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Payment Terms Template",
+            "options": "Payment Terms Template",
+            "reqd": 1
+        },
+        {
+            "default": "0",
+            "fieldname": "is_default",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Default"
+        },
+        {
+            "default": "1",
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Active"
+        }
+    ],
+    "istable": 1,
+    "links": [],
+    "module": "Orderlift Sales",
+    "name": "Agent Allowed Payment Terms",
+    "permissions": [],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

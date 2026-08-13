@@ -14,7 +14,7 @@ try {
 }
 
 var ORDERLIFT_CLIENT_SHELL_ROLE = "Orderlift Admin";
-var ORDERLIFT_INTERNAL_BYPASS_ROLES = ["System Manager", "Developer"];
+var ORDERLIFT_INTERNAL_BYPASS_ROLES = ["System Manager"];
 
 // ── Instant boot-flag check (no polling, no flash) ──
 // frappe.boot is available synchronously when app_include_js runs.
