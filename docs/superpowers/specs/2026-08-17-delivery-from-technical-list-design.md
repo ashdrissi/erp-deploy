@@ -129,6 +129,42 @@ The Sales Invoice is raised from the **Sales Order**, never from the Delivery No
 
 12. **Non-policy companies and pre-effective-date Sales Orders are untouched.**
 
+## Picking rules
+
+Agreed 2026-08-17, after the Delivery Note work landed. These extend rule 1 to the
+Pick List.
+
+13. **Picking follows the approved revision.** A Pick List is built from the current
+    approved revision's execution-relevant lines, and creating one natively from the
+    Sales Order is blocked in policy-covered companies. Without this, Bilal's report
+    is only half closed: the warehouse would still be shown commercial quantities,
+    and `reserve_submitted_pick_list` would commit stock reservations against them.
+
+14. **A Pick List carries stock rows only.** Services and non-stock lines cannot be
+    picked — there is nothing to take off a shelf, and `Pick List Item` has no
+    `is_stock_item` field. They reach delivery through the Delivery Note instead,
+    which is what rule 10's auto-close depends on.
+
+15. **Picking is capped by the approved execution qty, counted across Pick Lists
+    only.** Picking and delivery keep separate pools: a pick that later becomes its
+    own Delivery Note would otherwise consume the budget twice and make shipping the
+    full approved quantity impossible. This mirrors how the procurement and delivery
+    pools are already independent.
+
+16. **For policy-covered Sales Orders the technical cap replaces the Sales Order
+    cap.** `pick_list_override.validate_sales_order` currently caps picking at the
+    Sales Order's open quantity (`qty - delivered_qty`). That contradicts rule 4 the
+    moment engineering raises a quantity above what was sold, and rule 5 makes that
+    an engineering decision needing no commercial step — so the override must defer
+    to the technical cap for these Sales Orders. Non-policy companies keep today's
+    behaviour exactly.
+
+17. **The interim Pick List allowance is removed.** The Delivery Note validator
+    currently lets rows carrying `pick_list_item` through without lineage, because
+    Pick Lists had none. Once rule 13 holds, that skip goes, closing the interim gap
+    where Pick List deliveries did not count toward the delivery cap (spec rule 8
+    requires each route to enforce rule 1 independently).
+
 ## Out of scope
 
 Delivery Notes and Pick Lists created before this change keep their
@@ -149,6 +185,24 @@ Recorded so they are not reintroduced.
 - **The draft's `stamp_delivery_lineage` workaround is unnecessary** now that Pick
   List is revision-aware in the same change. It existed only to recover lineage for
   Delivery Notes derived from SO-based Pick Lists.
+
+  **Corrected 2026-08-17, after implementation.** The reasoning above was wrong. A
+  revision-aware Pick List does *not* pass its lineage to the Delivery Note for sold
+  lines: ERPNext's `map_pl_locations` sets `source_doc = sales_order_item or location`
+  (`pick_list.py`), so a location with a `sales_order_item` is mapped from the Sales
+  Order Item — which carries no `custom_technical_*` fields. Only engineering
+  additions, whose locations have no `sales_order_item`, inherit lineage through the
+  mapper. Without a copy step, every ordinary Pick-List-route delivery is rejected for
+  missing lineage.
+
+  What was rightly rejected was the *heuristic*: the draft recovered lineage by
+  matching a row's `sales_order_item` against the current approved revision, which can
+  select the wrong line and fails on substitutions and partials. The implemented
+  `stamp_pick_list_lineage` is a deterministic copy instead — `pick_list_item` names
+  the exact Pick List row, whose lineage was already validated when the Pick List was
+  saved. It runs on Delivery Note `before_validate` ahead of
+  `validate_procurement_document`, skips rows that already carry lineage, and skips
+  returns.
 - **`_validate_target_row` (lines 932-937) requires `custom_technical_procurement_route`
   and `custom_technical_procurement_action`** to be non-empty on any row carrying
   lineage. Any row-stamping path must set them, not just the revision fields.

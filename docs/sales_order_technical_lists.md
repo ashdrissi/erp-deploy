@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Sales Order Technical Lists separate the commercial Sales Order from the approved execution definition used for procurement. Each submitted Sales Order has one stable Technical List and any number of immutable submitted revisions.
+Sales Order Technical Lists separate the commercial Sales Order from the approved execution definition used for procurement and delivery. Each submitted Sales Order has one stable Technical List and any number of immutable submitted revisions.
 
-New procurement uses only the current submitted revision. Existing Material Requests and Purchase Orders keep their exact historical revision and line references.
+New procurement and delivery use only the current submitted revision. Existing Material Requests, Purchase Orders, and Delivery Notes keep their exact historical revision and line references.
 
 ## Activation
 
@@ -79,10 +79,12 @@ Safe adapter actions are installed for:
 
 - Technical Revision to Material Request
 - Technical Revision to Purchase Order
+- Technical Revision to Delivery Note
+- Technical Revision to Pick List
 
 Administrators assemble enabled `Technical Procurement Action` rows into ordered `Technical Procurement Route` records. Routes and labels are configurable; arbitrary Python methods are not accepted.
 
-Normal users do not configure routes. Every Company receives the internal Material Request route automatically. The native Sales Order Create menu stays visible, but scoped companies require a current submitted Technical List before operational documents can proceed. Material Requests are created from the approved revision; direct PO/RFQ creation is redirected to the MR-first flow. Native Pick List and Delivery Note creation is permitted only after approval. Sales Invoice and payment flows remain tied directly to the Sales Order and are not gated.
+Normal users do not configure routes. Every Company receives the internal Material Request route automatically, and the delivery and pick actions are seeded ungated onto every enabled route. The native Sales Order Create menu stays visible, but scoped companies require a current submitted Technical List before operational documents can proceed. Material Requests are created from the approved revision; direct PO/RFQ creation is redirected to the MR-first flow. Native Delivery-Note-from-Sales-Order is blocked; the approved revision's own Create Delivery Note action is used instead. Native Pick-List-from-Sales-Order is blocked as well; the approved revision's own Create Pick List action is used instead. Sales Invoice and payment flows remain tied directly to the Sales Order and are not gated.
 
 Generated transactions are always drafts. Native MR, RFQ, Supplier Quotation, and PO workflows remain responsible for their own approval and submission.
 
@@ -96,6 +98,26 @@ Every sourced procurement row carries:
 - Procurement Route and Action
 
 The same server guard validates Desk, API, Data Import, native mappings, and background inserts. Procurement outside an enabled Company's configured scope remains unchanged.
+
+## Delivery from the Technical List
+
+Delivery Notes are created from the approved revision, not from the commercial Sales Order. The delivered pool is anchored on the Technical List and counted per Sales Order line across the whole list, so approving a new revision does not reset what has already been delivered. Approved execution quantity is a hard cap; delivering more requires engineering to issue a new revision with a change reason.
+
+Billing is unaffected by this shift. The Sales Invoice is always raised from the Sales Order at full contract price, never from the Delivery Note. Reduced or excluded lines deliver only what engineering approved, while the client still pays the contract price, so the corresponding Sales Order lines stay short-delivered by design. Engineering additions have no Sales Order line to link to, so they deliver without a Sales Order reference and never reach an invoice. Commercial presentation (`With details` / `Without details`) still governs what the customer sees on the Sales Order and Sales Invoice; Delivery Note item rows are the internal execution record and are unaffected by that setting.
+
+Delivery is not gated on procurement: the route step ships with an empty `required_previous_action`, because stock may already be on hand. A Company can still gate its own route by setting that field. Partial deliveries are supported per line, the same way procurement adapters allow partial fulfillment.
+
+Every Delivery Note row is held to its lineage, including rows sourced from a Pick List.
+
+### Picking
+
+Pick Lists are created from the approved revision as well, and their location rows carry the same lineage fields. Only stock rows can be picked; services and non-stock lines reach delivery through the Delivery Note.
+
+Picking has its own pool, separate from delivery. A pick and the Delivery Note made from it do not consume the approved quantity twice, so the full approved quantity can still be shipped.
+
+For a scoped Sales Order the approved execution quantity replaces the Sales Order's open quantity as the picking cap. The two diverge whenever engineering raises a quantity above what was sold, which needs no commercial change. Pick List rows without technical lineage keep the Sales Order cap. Native Pick-List-from-Sales-Order is blocked; the approved revision's own Create Pick List action is used instead. The pick action is seeded ungated onto every enabled route, for the same reason as delivery.
+
+Delivering a picked engineering addition requires no Sales Order reference, because the addition has none. Every other requirement of that route still holds: the Pick List must be submitted, and the delivered quantity cannot exceed the picked or reserved quantity.
 
 ## User Interfaces
 

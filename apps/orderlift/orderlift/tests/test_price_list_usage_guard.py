@@ -612,6 +612,86 @@ class TestPriceListUsageGuard(unittest.TestCase):
 
         price_list_usage_guard.validate_delivery_note_price_list(doc)
 
+    def _technical_delivery_note(self, addition_row):
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
+        price_list_usage_guard.frappe.db = DbStub()
+        price_list_usage_guard.frappe.get_doc = lambda doctype, name: DocStub(
+            docstatus=1,
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Sell A",
+            items=[
+                {
+                    "name": "SO-ITEM-1",
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                }
+            ],
+        )
+        doc = DocStub(
+            company="Orderlift",
+            customer="CUST-001",
+            currency="MAD",
+            conversion_rate=1,
+            selling_price_list="Sell A",
+            items=[
+                {
+                    "item_code": "ITEM-001",
+                    "uom": "Nos",
+                    "conversion_factor": 1,
+                    "rate": 10,
+                    "against_sales_order": "SO-001",
+                    "so_detail": "SO-ITEM-1",
+                },
+                addition_row,
+            ],
+        )
+        doc.doctype = "Delivery Note"
+        return doc
+
+    def test_technical_addition_row_does_not_untrust_the_delivery_note(self):
+        """An engineering addition from the Technical List has no Sales Order line
+        by design (it is absorbed, never billed). It carries a revision stamp, so it
+        is a known source, not an untrusted row, and must not force the whole
+        document into the item-price guard."""
+        doc = self._technical_delivery_note(
+            {
+                "item_code": "ITEM-ADDED",
+                "uom": "Nos",
+                "conversion_factor": 1,
+                "rate": 0,
+                "against_sales_order": "",
+                "so_detail": "",
+                "custom_technical_revision": "TLR-1",
+                "custom_technical_revision_item": "TLRI-9",
+            }
+        )
+
+        result = price_list_usage_guard.validate_delivery_note_price_list(doc)
+
+        self.assertTrue(result.trusted)
+
+    def test_row_without_a_lineage_stamp_still_untrusts_the_delivery_note(self):
+        """The tolerance is scoped to lineage-stamped rows only: a hand-added row
+        with no Sales Order source stays untrusted."""
+        doc = self._technical_delivery_note(
+            {
+                "item_code": "ITEM-ADDED",
+                "uom": "Nos",
+                "conversion_factor": 1,
+                "rate": 0,
+                "against_sales_order": "",
+                "so_detail": "",
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
+            price_list_usage_guard.validate_delivery_note_price_list(doc)
+
     def test_commercial_sales_invoice_changed_rate_falls_back_to_min_rate_guard(self):
         price_list_usage_guard.frappe.get_roles = lambda user=None: ["Sales User"]
         price_list_usage_guard.frappe.db = DbStub()

@@ -332,6 +332,13 @@ def _trusted_sales_source(doc) -> TrustedPricingSourceResult:
             _value(row, "sales_order") or _value(row, "against_sales_order")
         )
         sales_order_detail = _text(_value(row, "so_detail"))
+        if not sales_order_detail and _text(_value(row, "custom_technical_revision")):
+            # An engineering addition from an approved Technical List revision has
+            # no Sales Order line by design: it is absorbed, never billed. The
+            # revision stamp is its source of truth, so skip this row's source
+            # validation rather than untrusting the whole document. Rows with no
+            # lineage stamp are still required to have a Sales Order source.
+            continue
         if not sales_order or not sales_order_detail:
             return _untrusted_source("A sales row has no Sales Order source.")
         if sales_order not in sales_orders:

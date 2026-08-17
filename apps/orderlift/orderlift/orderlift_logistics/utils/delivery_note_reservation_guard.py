@@ -39,7 +39,15 @@ def validate_delivery_note_pick_list_reservation(doc, method=None) -> None:
         if not against_pick_list or not pick_list_item:
             problems.append(_("{0}: both Pick List and Pick List Item references are required.").format(item_label))
             continue
-        if not row.get("against_sales_order") or not row.get("so_detail"):
+        # Spec rule 3: an engineering addition carries no Sales Order link, because
+        # that link is what would pull it onto an invoice. A row stamped with a
+        # technical revision is a deliberate addition, not a missing reference, so it
+        # may reach delivery without one. Every other check on this route — both Pick
+        # List references, a submitted Pick List, sufficient picked and reserved
+        # quantity — still applies to it below.
+        if not _carries_technical_lineage(row) and (
+            not row.get("against_sales_order") or not row.get("so_detail")
+        ):
             problems.append(_("{0}: Sales Order reference is required for reserved delivery.").format(item_label))
             continue
 
@@ -83,6 +91,10 @@ def validate_delivery_note_pick_list_reservation(doc, method=None) -> None:
 
     if problems:
         frappe.throw("<br>".join(problems), title=_("Delivery Stock Validation"))
+
+
+def _carries_technical_lineage(row) -> bool:
+    return bool(str(row.get("custom_technical_revision") or "").strip())
 
 
 def _requires_stock_reservation(row) -> bool:

@@ -100,6 +100,13 @@
         installNativeCreateGuard(frm, data, payload);
     }
 
+    const ADAPTER_METHODS = {
+        revision_to_material_request: "orderlift.orderlift_logistics.technical_procurement.create_material_request",
+        revision_to_purchase_order: "orderlift.orderlift_logistics.technical_procurement.create_purchase_order",
+        revision_to_delivery_note: "orderlift.orderlift_logistics.technical_procurement.create_delivery_note",
+        revision_to_pick_list: "orderlift.orderlift_logistics.technical_procurement.create_pick_list",
+    };
+
     async function runProcurementAction(action, payload) {
         const args = {
             revision: payload.revision,
@@ -110,10 +117,12 @@
             if (!values) return;
             args.supplier = values.supplier;
         }
-        const method = action.adapter_key === "revision_to_purchase_order"
-            ? `${PROCUREMENT}.create_purchase_order`
-            : `${PROCUREMENT}.create_material_request`;
-        const response = await frappe.call({ method, args, freeze: true, freeze_message: __("Creating procurement document...") });
+        const method = ADAPTER_METHODS[action.adapter_key];
+        if (!method) {
+            frappe.msgprint(__("Unsupported technical procurement action."));
+            return;
+        }
+        const response = await frappe.call({ method, args, freeze: true, freeze_message: __("Creating document...") });
         const result = response.message || {};
         if (result.doctype && result.name) frappe.set_route("Form", result.doctype, result.name);
     }
@@ -156,6 +165,22 @@
                 const action = (payload.actions || []).find((row) => row.adapter_key === "revision_to_material_request");
                 if (action) runProcurementAction(action, payload);
                 else frappe.msgprint(__("The approved Technical List has no remaining quantity for a Material Request."));
+                return;
+            }
+            if (label === "Delivery Note") {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const action = (payload.actions || []).find((row) => row.adapter_key === "revision_to_delivery_note");
+                if (action) runProcurementAction(action, payload);
+                else frappe.msgprint(__("The approved Technical List has no remaining quantity for a Delivery Note."));
+                return;
+            }
+            if (label === "Pick List") {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const action = (payload.actions || []).find((row) => row.adapter_key === "revision_to_pick_list");
+                if (action) runProcurementAction(action, payload);
+                else frappe.msgprint(__("The approved Technical List has no remaining stock quantity for a Pick List."));
                 return;
             }
             if (["Purchase Order", "Request for Quotation"].includes(label)) {

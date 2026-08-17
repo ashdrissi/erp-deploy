@@ -9,6 +9,19 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from orderlift.orderlift_logistics.technical_allocation import (
+    allocated_stock_qty,
+    allocation_key,
+    budget_by_key,
+    delivered_stock_qty,
+    is_root_allocation,
+    line_stock_qty,
+    picked_stock_qty,
+    remaining_for_adapter,
+    revision_lines,
+    row_stock_qty,
+)
+
 
 TECHNICAL_LIST_DOCTYPE = "Sales Order Technical List"
 REVISION_DOCTYPE = "Sales Order Technical List Revision"
@@ -17,6 +30,8 @@ REVISION_ITEM_DOCTYPE = "Sales Order Technical List Item"
 SAFE_ADAPTERS = {
     "revision_to_material_request": "Material Request",
     "revision_to_purchase_order": "Purchase Order",
+    "revision_to_delivery_note": "Delivery Note",
+    "revision_to_pick_list": "Pick List",
 }
 SUPPORTED_REFERENCES = {
     "Sales Order",
@@ -28,17 +43,29 @@ SUPPORTED_PROCUREMENT_DOCTYPES = (
     "Request for Quotation",
     "Supplier Quotation",
     "Purchase Order",
+    "Delivery Note",
+    "Pick List",
 )
 PROCUREMENT_ITEM_DOCTYPES = {
     "Material Request": "Material Request Item",
     "Request for Quotation": "Request for Quotation Item",
     "Supplier Quotation": "Supplier Quotation Item",
     "Purchase Order": "Purchase Order Item",
+    "Delivery Note": "Delivery Note Item",
+    "Pick List": "Pick List Item",
 }
-ROOT_TARGET_ITEM_DOCTYPES = {
-    "Material Request": "Material Request Item",
-    "Purchase Order": "Purchase Order Item",
+# Parent doctype -> child table fieldname. Pick List uses "locations", not "items".
+TARGET_CHILD_TABLES = {
+    "Material Request": "items",
+    "Purchase Order": "items",
+    "Delivery Note": "items",
+    "Pick List": "locations",
 }
+
+# Doctypes capped by a consumed-quantity pool rather than by procurement allowance.
+# Both draw on the approved execution qty but from independent pools, so a pick and
+# the Delivery Note it becomes do not double-consume it (spec rule 15).
+POOLED_DOCTYPES = frozenset({"Delivery Note", "Pick List"})
 
 COMPANY_ENABLED_FIELD = "custom_enable_sales_order_technical_lists"
 COMPANY_EFFECTIVE_FROM_FIELD = "custom_technical_list_effective_from"
@@ -147,12 +174,15 @@ def after_migrate() -> None:
     create_custom_fields(custom_fields, update=True)
     _ensure_safe_actions()
     _ensure_internal_material_request_route()
+    _ensure_ungated_route_steps()
 
 
 def _ensure_safe_actions() -> None:
     labels = {
         "revision_to_material_request": _("Create Material Request"),
         "revision_to_purchase_order": _("Create Purchase Order"),
+        "revision_to_delivery_note": _("Create Delivery Note"),
+        "revision_to_pick_list": _("Create Pick List"),
     }
     for sequence, (adapter_key, target_doctype) in enumerate(SAFE_ADAPTERS.items(), 10):
         name = frappe.db.get_value(
@@ -213,6 +243,46 @@ def _ensure_internal_material_request_route() -> str:
     return doc.name
 
 
+UNGATED_ADAPTERS = ("revision_to_delivery_note", "revision_to_pick_list")
+
+
+def _ensure_ungated_route_steps() -> None:
+    """Append the delivery and picking actions to every enabled route that lacks them.
+
+    Both are ungated by design (spec rule 7): stock may already be on hand, so
+    neither delivery nor picking must wait on a purchase. A company can set
+    required_previous_action on its own route later if it wants procurement first.
+    """
+    actions = []
+    for adapter_key in UNGATED_ADAPTERS:
+        action = frappe.db.get_value(
+            "Technical Procurement Action",
+            {"adapter_key": adapter_key},
+            "name",
+        )
+        if action:
+            actions.append(action)
+    if not actions:
+        return
+    routes = frappe.get_all(
+        "Technical Procurement Route", filters={"enabled": 1}, pluck="name"
+    )
+    for route_name in routes:
+        route = frappe.get_doc("Technical Procurement Route", route_name)
+        changed = False
+        for action in actions:
+            if any(_text(step.action) == action for step in route.steps or []):
+                continue
+            sequence = max([cint(step.sequence) for step in route.steps or []] or [0]) + 10
+            route.append(
+                "steps",
+                {"action": action, "sequence": sequence, "required_previous_action": ""},
+            )
+            changed = True
+        if changed:
+            route.save()
+
+
 @frappe.whitelist()
 def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
     reference, technical_list, revision = _resolve_current_revision(
@@ -227,15 +297,26 @@ def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
     if not _technical_policy_applies(sales_order):
         return _action_payload(reference, technical_list, revision, [])
 
-    remaining = _remaining_by_line(revision)
+    # Each action is filtered against the pool its own adapter consumes: a line can
+    # be fully procured and still undelivered, so filtering the whole payload
+    # against the procurement pool would drop procured lines from the delivery
+    # action as well. Each pool runs SQL, so both are computed lazily and cached.
+    pools = {}
+
     grouped = {}
     for line in revision.items or []:
-        if not cint(line.execution_relevant) or remaining.get(line.name, 0) <= 0:
+        if not cint(line.execution_relevant):
             continue
         route = _route_for_line(revision, line)
         if not route:
             continue
         for step, action in _route_actions(route):
+            if remaining_for_adapter(action.adapter_key, revision, pools).get(line.name, 0) <= 0:
+                continue
+            # A Pick List carries stock rows only (spec rule 14), so a services-only
+            # revision must offer no Create Pick List button at all.
+            if action.adapter_key == "revision_to_pick_list" and not _is_pickable_line(line):
+                continue
             required = _get(step, "required_previous_action")
             if required and not _previous_action_satisfied(revision.name, line.name, required):
                 continue
@@ -318,6 +399,82 @@ def create_purchase_order(
     )
 
 
+@frappe.whitelist()
+def create_delivery_note(revision, selected_row_ids=None, quantities=None) -> dict:
+    return _create_from_revision(
+        "revision_to_delivery_note",
+        revision,
+        selected_row_ids,
+        quantities,
+    )
+
+
+@frappe.whitelist()
+def create_pick_list(revision, selected_row_ids=None, quantities=None) -> dict:
+    return _create_from_revision(
+        "revision_to_pick_list",
+        revision,
+        selected_row_ids,
+        quantities,
+    )
+
+
+def stamp_pick_list_lineage(doc, method=None) -> None:
+    """Copy technical lineage from the Pick List row onto a Delivery Note row.
+
+    ERPNext's ``map_pl_locations`` builds each Delivery Note row from the *Sales Order
+    Item* whenever the picked location has one (``pick_list.py``: ``source_doc =
+    sales_order_item or location``). Sales Order Item carries no ``custom_technical_*``
+    fields, so the lineage stamped on the Pick List row never reaches the Delivery Note
+    for a sold line. It does reach it for an engineering addition, whose location has no
+    ``sales_order_item`` and is therefore mapped from the location itself.
+
+    This is a deterministic copy, not a guess: ``pick_list_item`` names the exact Pick
+    List row, and that row's lineage was already validated against the approved revision
+    when the Pick List was saved. It must run before ``validate_procurement_document``.
+    """
+    if not doc or _text(_get(doc, "doctype")) != "Delivery Note":
+        return
+    if cint(_get(doc, "is_return")):
+        return
+    target_meta = _meta("Delivery Note Item")
+    source_meta = _meta("Pick List Item")
+    if not target_meta or not source_meta:
+        return
+    fieldnames = [
+        fieldname
+        for fieldname in LINEAGE_FIELDS
+        if target_meta.get_field(fieldname) and source_meta.get_field(fieldname)
+    ]
+    if not fieldnames:
+        return
+    for row in _get(doc, "items") or []:
+        pick_list_item = _text(_get(row, "pick_list_item"))
+        if not pick_list_item or _has_technical_lineage(row):
+            continue
+        source = (
+            frappe.db.get_value("Pick List Item", pick_list_item, fieldnames, as_dict=True)
+            or {}
+        )
+        for fieldname in fieldnames:
+            value = _text(source.get(fieldname))
+            if value:
+                row.set(fieldname, value)
+
+
+def _consumed_stock_qty(doctype, technical_list, *, exclude_doctype="", exclude_name=""):
+    """Qty already consumed from the pool this doctype draws on.
+
+    Resolved per call rather than held in a lookup table: a table would capture the
+    function object at import time, so patching either pool in a test would no longer
+    reach this code path and a cap test could pass while capping nothing.
+    """
+    pool = delivered_stock_qty if doctype == "Delivery Note" else picked_stock_qty
+    return pool(
+        technical_list, exclude_doctype=exclude_doctype, exclude_name=exclude_name
+    )
+
+
 def validate_procurement_document(doc, method=None) -> None:
     """Validate technical lineage while leaving unrelated native procurement untouched."""
     doctype = _text(_get(doc, "doctype"))
@@ -325,8 +482,16 @@ def validate_procurement_document(doc, method=None) -> None:
         return
     if cint(_get(doc, "docstatus")) == 2:
         return
+    # A Sales Return copies the lineage fields (they are not no_copy) onto rows with
+    # negative qty, so _validate_target_row would reject every return ever made
+    # through this feature with "quantity must be greater than zero".
+    # delivery_note_reservation_guard bails on is_return for the same reason.
+    if cint(_get(doc, "is_return")):
+        return
 
-    rows = _get(doc, "items") or []
+    # Pick List keeps its rows in "locations": a hardcoded doc.items read would see
+    # an empty list and silently validate nothing at all.
+    rows = _get(doc, TARGET_CHILD_TABLES.get(doctype, "items")) or []
     linked_rows = []
     for row in rows:
         revision_name = _text(_get(row, "custom_technical_revision"))
@@ -366,7 +531,7 @@ def validate_procurement_document(doc, method=None) -> None:
         revision_item = _text(_get(row, "custom_technical_revision_item"))
         if revision_name or revision_item:
             revision = revisions[revision_name]
-            source_line = _revision_lines(revision).get(revision_item)
+            source_line = revision_lines(revision).get(revision_item)
             if not source_line:
                 frappe.throw(
                     _("Row {0}: the technical revision item does not exist.").format(
@@ -374,12 +539,12 @@ def validate_procurement_document(doc, method=None) -> None:
                     )
                 )
             _validate_target_row(doc, row, revision, source_line)
-            stock_qty = _row_stock_qty(row)
+            stock_qty = row_stock_qty(row)
             key = (revision_name, revision_item)
             line_totals[key] += stock_qty
-            if _is_root_allocation(doc, row):
+            if is_root_allocation(doc, row):
                 root_totals[key] += stock_qty
-            if line_totals[key] > _line_stock_qty(source_line) + 1e-9:
+            if line_totals[key] > line_stock_qty(source_line) + 1e-9:
                 frappe.throw(
                     _("Row {0}: quantity exceeds the technical revision item.").format(
                         _row_label(row)
@@ -396,15 +561,68 @@ def validate_procurement_document(doc, method=None) -> None:
                 ).format(_row_label(row), doctype)
             )
 
+    # Delivery and picking are each capped by their own pool, not the procurement
+    # pool: is_root_allocation is False for both, so the block below would leave
+    # them with no cumulative cap at all.
+    #
+    # Requested quantities are aggregated by allocation key rather than checked per
+    # revision line, because distinct lines can share one key: engineering additions
+    # collapse to "item::<item_code>". Checking each line separately against the same
+    # pool bucket would let one document ship that bucket's whole budget once per
+    # line. The budget is likewise the sum over the lines sharing the key -- taken
+    # from the whole revision, not from this document's rows, or splitting one
+    # delivery into two would shrink the shared bucket to a single line's quantity
+    # and block work the cap allows.
+    if doctype in POOLED_DOCTYPES:
+        consumed_by_list = {}
+        budget_by_revision = {}
+        requested = defaultdict(float)
+        labels = {}
+        for (revision_name, revision_item), total in line_totals.items():
+            revision = revisions[revision_name]
+            technical_list = _text(revision.technical_list)
+            if technical_list not in consumed_by_list:
+                consumed_by_list[technical_list] = _consumed_stock_qty(
+                    doctype,
+                    technical_list,
+                    exclude_doctype=doctype,
+                    exclude_name=_text(_get(doc, "name")),
+                )
+            if revision_name not in budget_by_revision:
+                budget_by_revision[revision_name] = budget_by_key(revision)
+            source_line = revision_lines(revision)[revision_item]
+            key = (technical_list, revision_name, allocation_key(source_line))
+            requested[key] += total
+            labels.setdefault(key, _row_label(source_line))
+        for key, total in requested.items():
+            technical_list, revision_name, alloc_key = key
+            existing = consumed_by_list[technical_list].get(alloc_key, 0)
+            allowed = budget_by_revision[revision_name].get(alloc_key, 0)
+            if existing + total > allowed + 1e-9:
+                # Kept as two literal _() calls so the translation extractor finds
+                # them; a message held in a table is invisible to it.
+                if doctype == "Delivery Note":
+                    frappe.throw(
+                        _("Row {0}: quantity exceeds the remaining delivery quantity.").format(
+                            labels[key]
+                        )
+                    )
+                frappe.throw(
+                    _("Row {0}: quantity exceeds the remaining pickable quantity.").format(
+                        labels[key]
+                    )
+                )
+        return
+
     allocated_by_revision = {}
     for revision_name, revision_item in root_totals:
         if revision_name not in allocated_by_revision:
-            allocated_by_revision[revision_name] = _allocated_stock_qty(
+            allocated_by_revision[revision_name] = allocated_stock_qty(
                 revision_name,
                 exclude_doctype=doctype,
                 exclude_name=_text(_get(doc, "name")),
             )
-        source_qty = _line_stock_qty(_revision_lines(revisions[revision_name])[revision_item])
+        source_qty = line_stock_qty(revision_lines(revisions[revision_name])[revision_item])
         existing = allocated_by_revision[revision_name].get(revision_item, 0)
         if existing + root_totals[(revision_name, revision_item)] > source_qty + 1e-9:
             frappe.throw(
@@ -443,14 +661,26 @@ def _create_from_revision(
     if not _technical_policy_applies(sales_order):
         frappe.throw(_("Technical lists do not apply to this Sales Order."))
 
-    lines = _revision_lines(revision)
+    lines = revision_lines(revision)
     missing = sorted(set(selection) - set(lines))
     if missing:
         frappe.throw(_("Unknown technical revision items: {0}.").format(", ".join(missing)))
 
     selected_lines = [lines[name] for name in selection]
+    if adapter_key == "revision_to_pick_list":
+        # Services cannot be picked and reach delivery through the Delivery Note
+        # instead (spec rule 14). A real revision mixes both, so a service line is
+        # dropped rather than rejected -- throwing would make Create Pick List
+        # unusable on any realistic revision.
+        selected_lines = [line for line in selected_lines if _is_pickable_line(line)]
+        if not selected_lines:
+            frappe.throw(
+                _("None of the selected rows can be picked: only stock items are pickable.")
+            )
     route_actions = _adapter_actions_for_lines(revision, selected_lines, adapter_key)
-    remaining = _remaining_by_line(revision)
+    # Delivery consumes its own pool: a line can be fully procured and still
+    # undelivered, and vice versa when stock was already on hand.
+    remaining = remaining_for_adapter(adapter_key, revision, {})
     prepared = []
     for line in selected_lines:
         _validate_source_line(revision, line)
@@ -764,7 +994,9 @@ def _previous_action_satisfied(revision_name, revision_item, action_name):
     target_doctype = SAFE_ADAPTERS.get(adapter_key)
     if not target_doctype:
         return False
-    child_doctype = ROOT_TARGET_ITEM_DOCTYPES[target_doctype]
+    child_doctype = PROCUREMENT_ITEM_DOCTYPES.get(target_doctype)
+    if not child_doctype:
+        return False
     meta = _meta(child_doctype)
     if not meta or not all(
         meta.get_field(fieldname)
@@ -823,11 +1055,24 @@ def _build_target(
             if supplier_company and supplier_company != revision.company:
                 frappe.throw(_("Supplier does not belong to the technical revision company."))
         values["supplier"] = supplier
+    if target_doctype == "Delivery Note":
+        customer = _text(_get(sales_order, "customer"))
+        if not customer:
+            frappe.throw(_("The Sales Order has no Customer."))
+        values["customer"] = customer
+        values["posting_date"] = nowdate()
+    if target_doctype == "Pick List":
+        customer = _text(_get(sales_order, "customer"))
+        if not customer:
+            frappe.throw(_("The Sales Order has no Customer."))
+        values["customer"] = customer
+        # pick_list_reservation and pick_list_override both early-return on any
+        # other purpose, so a technical Pick List must be a Delivery one.
+        values["purpose"] = "Delivery"
     _set_known_fields(target, values)
 
-    item_meta = _meta(ROOT_TARGET_ITEM_DOCTYPES[target_doctype])
+    item_meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(target_doctype))
     for line, stock_qty, route, action in prepared:
-        factor = flt(line.conversion_factor)
         lineage = {
             "technical_list": technical_list.name,
             "revision": revision.name,
@@ -837,24 +1082,119 @@ def _build_target(
             "route": route.name,
             "action": action.name,
         }
-        row_values = {
-            "item_code": line.item_code,
-            "item_name": line.item_name,
-            "description": line.description,
-            "qty": stock_qty / factor,
-            "stock_qty": stock_qty,
-            "uom": line.uom,
-            "conversion_factor": factor,
-            "stock_uom": line.stock_uom,
-            "warehouse": line.warehouse,
-            "schedule_date": _safe_schedule_date(line.required_date or schedule_date),
-            "project": revision.project,
-            "sales_order": revision.sales_order,
-            "sales_order_item": line.sales_order_item,
-        }
+        if target_doctype == "Delivery Note":
+            row_values = _delivery_row_values(revision, line, stock_qty)
+        elif target_doctype == "Pick List":
+            row_values = _pick_list_row_values(revision, line, stock_qty)
+        else:
+            row_values = _procurement_row_values(revision, line, stock_qty, schedule_date)
         row_values.update(_lineage_values(item_meta, lineage))
-        target.append("items", _filter_fields(item_meta, row_values))
+        target.append(TARGET_CHILD_TABLES[target_doctype], _filter_fields(item_meta, row_values))
     return target
+
+
+def _procurement_row_values(revision, line, stock_qty, schedule_date):
+    factor = flt(line.conversion_factor)
+    return {
+        "item_code": line.item_code,
+        "item_name": line.item_name,
+        "description": line.description,
+        "qty": stock_qty / factor,
+        "stock_qty": stock_qty,
+        "uom": line.uom,
+        "conversion_factor": factor,
+        "stock_uom": line.stock_uom,
+        "warehouse": line.warehouse,
+        "schedule_date": _safe_schedule_date(line.required_date or schedule_date),
+        "project": revision.project,
+        "sales_order": revision.sales_order,
+        "sales_order_item": line.sales_order_item,
+    }
+
+
+def _delivery_row_values(revision, line, stock_qty):
+    """Delivery Note Item row for one revision line.
+
+    against_sales_order/so_detail are the Delivery Note's equivalents of
+    sales_order/sales_order_item and are what native delivered-qty tracking reads.
+    Engineering additions have no Sales Order line, so both stay empty and the row
+    can never reach an invoice.
+
+    The contract rate is copied from the Sales Order Item rather than left for
+    ERPNext's set_missing_values to fetch: otherwise the bon de livraison prints the
+    current price list rate instead of what was actually sold, and any negotiated
+    discount reads as a rate mismatch to the price-list usage guard. Additions carry
+    zero -- they are absorbed, never billed, so any other value would mislead.
+    """
+    factor = flt(line.conversion_factor)
+    sales_order_item = _text(line.sales_order_item)
+    pricing = {"rate": 0, "price_list_rate": 0}
+    if sales_order_item:
+        source = frappe.db.get_value(
+            "Sales Order Item",
+            sales_order_item,
+            ["rate", "price_list_rate", "discount_percentage", "discount_amount"],
+            as_dict=True,
+        )
+        if source:
+            pricing = {
+                "rate": flt(_get(source, "rate")),
+                "price_list_rate": flt(_get(source, "price_list_rate")),
+                "discount_percentage": flt(_get(source, "discount_percentage")),
+                "discount_amount": flt(_get(source, "discount_amount")),
+            }
+    return {
+        "item_code": line.item_code,
+        "item_name": line.item_name,
+        "description": line.description,
+        "qty": stock_qty / factor,
+        "stock_qty": stock_qty,
+        "uom": line.uom,
+        "conversion_factor": factor,
+        "stock_uom": line.stock_uom,
+        "warehouse": line.warehouse,
+        "project": revision.project,
+        "against_sales_order": _text(revision.sales_order) if sales_order_item else "",
+        "so_detail": sales_order_item,
+        **pricing,
+    }
+
+
+def _pick_list_row_values(revision, line, stock_qty):
+    """Pick List Item row for one revision line.
+
+    Pick List Item uses sales_order/sales_order_item like the procurement doctypes,
+    and has no project field. Engineering additions carry no Sales Order line, so
+    both stay empty -- pick_list_override only caps rows that have one, which is
+    what lets an addition be picked at all.
+    """
+    factor = flt(line.conversion_factor)
+    sales_order_item = _text(line.sales_order_item)
+    return {
+        "item_code": line.item_code,
+        "item_name": line.item_name,
+        "description": line.description,
+        "qty": stock_qty / factor,
+        "stock_qty": stock_qty,
+        "uom": line.uom,
+        "conversion_factor": factor,
+        "stock_uom": line.stock_uom,
+        "warehouse": line.warehouse,
+        "sales_order": _text(revision.sales_order) if sales_order_item else "",
+        "sales_order_item": sales_order_item,
+    }
+
+
+def _is_pickable_line(line):
+    """Only stock items can be picked (spec rule 14).
+
+    Pick List Item has no is_stock_item field, so pickability comes from the revision
+    line, falling back to the Item master when the cached flag is unset.
+    """
+    value = _get(line, "is_stock_item")
+    if value is not None and value != "":
+        return bool(cint(value))
+    return bool(cint(frappe.db.get_value("Item", _text(line.item_code), "is_stock_item")))
 
 
 def _single_line_supplier(prepared):
@@ -950,7 +1290,7 @@ def _validate_target_row(doc, row, revision, source_line):
         )
     if _text(_get(row, "stock_uom")) != _text(source_line.stock_uom):
         frappe.throw(_("Row {0}: Stock UOM does not match the technical revision item.").format(_row_label(row)))
-    if _row_stock_qty(row) <= 0:
+    if row_stock_qty(row) <= 0:
         frappe.throw(_("Row {0}: quantity must be greater than zero.").format(_row_label(row)))
 
     is_stock_item = bool(cint(frappe.db.get_value("Item", source_line.item_code, "is_stock_item")))
@@ -965,11 +1305,27 @@ def _validate_target_row(doc, row, revision, source_line):
             )
         )
     project = _target_project(doc, row)
-    if revision.project and project != revision.project:
+    # Scoped to doctypes that actually have the field: skipping the check for any
+    # empty value would let a cleared project through on Material Request, Purchase
+    # Order and Delivery Note, which all carry it. Only a genuinely fieldless target
+    # is tolerated.
+    if revision.project and project != revision.project and _target_has_project_field(doc, row_meta):
         frappe.throw(_("Row {0}: Project does not match the technical revision.").format(_row_label(row)))
     sales_order = _target_sales_order(row)
     if sales_order and sales_order != revision.sales_order:
         frappe.throw(_("Row {0}: Sales Order does not match the technical revision.").format(_row_label(row)))
+
+
+def _target_has_project_field(doc, row_meta):
+    """Whether the target carries a project field on its row or its parent."""
+    if row_meta and row_meta.get_field("project"):
+        return True
+    doctype = _text(_get(doc, "doctype"))
+    parent_meta = getattr(doc, "meta", None) or _meta(doctype)
+    if parent_meta and parent_meta.get_field("project"):
+        return True
+    child_meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(doctype))
+    return bool(child_meta and child_meta.get_field("project"))
 
 
 def _validate_warehouse(warehouse, company, required, row):
@@ -998,12 +1354,14 @@ def _procurement_source(doc, row):
 
 
 def _target_sales_order(row):
-    sales_order = _text(_get(row, "sales_order"))
-    sales_order_item = _text(_get(row, "sales_order_item"))
-    if not sales_order and sales_order_item:
-        sales_order = _text(frappe.db.get_value("Sales Order Item", sales_order_item, "parent"))
+    # Delivery Note Item uses against_sales_order/so_detail; the procurement
+    # doctypes use sales_order/sales_order_item. _operational_sales_order already
+    # normalises both, so delegate rather than duplicating the fallbacks.
+    sales_order = _operational_sales_order(row)
+    if sales_order:
+        return sales_order
     material_request_item = _text(_get(row, "material_request_item"))
-    if not sales_order and material_request_item:
+    if material_request_item:
         meta = _meta("Material Request Item")
         fields = [name for name in ("sales_order", "sales_order_item") if meta and meta.get_field(name)]
         source = (
@@ -1037,78 +1395,6 @@ def _target_project(doc, row):
                 frappe.db.get_value("Material Request Item", material_request_item, "project")
             )
     return project
-
-
-def _revision_lines(revision):
-    return {line.name: line for line in (revision.items or []) if line.name}
-
-
-def _line_stock_qty(line):
-    return flt(line.execution_stock_qty)
-
-
-def _row_stock_qty(row):
-    return flt(_get(row, "stock_qty")) or flt(_get(row, "qty")) * (
-        flt(_get(row, "conversion_factor")) or 1
-    )
-
-
-def _allocation_key(row):
-    key = _text(_get(row, "sales_order_item"))
-    return key or f"item::{_text(_get(row, "item_code"))}"
-
-
-def _remaining_by_line(revision):
-    allocated = _allocated_stock_qty(revision.name)
-    result = {}
-    for line in revision.items or []:
-        if not cint(line.execution_relevant):
-            continue
-        result[line.name] = max(_line_stock_qty(line) - allocated.get(_allocation_key(line), 0), 0)
-    return result
-
-
-def _is_root_allocation(doc, row):
-    doctype = _text(_get(doc, "doctype"))
-    return doctype == "Material Request" or (
-        doctype == "Purchase Order" and not _text(_get(row, "material_request_item"))
-    )
-
-
-def _allocated_stock_qty(revision_name, *, exclude_doctype="", exclude_name=""):
-    revision = frappe.get_doc(REVISION_DOCTYPE, revision_name)
-    totals = defaultdict(float)
-    for parent_doctype, child_doctype in ROOT_TARGET_ITEM_DOCTYPES.items():
-        meta = _meta(child_doctype)
-        if not meta or not meta.get_field("sales_order_item"):
-            continue
-        fields = ["sales_order_item", "qty"]
-        for optional in ("stock_qty", "conversion_factor", "material_request_item", "item_code"):
-            if meta.get_field(optional):
-                fields.append(optional)
-        select = ", ".join(f"child.`{fieldname}`" for fieldname in fields)
-        conditions = []
-        parameters = [revision.sales_order]
-        if parent_doctype == "Purchase Order" and meta.get_field("material_request_item"):
-            conditions.append("COALESCE(child.material_request_item, '') = ''")
-        if parent_doctype == exclude_doctype and exclude_name:
-            conditions.append("parent_doc.name != %s")
-            parameters.append(exclude_name)
-        extra = "".join(f" AND {condition}" for condition in conditions)
-        rows = frappe.db.sql(
-            f"""
-            SELECT {select}
-              FROM `tab{child_doctype}` child
-              INNER JOIN `tab{parent_doctype}` parent_doc ON parent_doc.name = child.parent
-             WHERE parent_doc.docstatus < 2
-               AND child.sales_order = %s{extra}
-            """,
-            tuple(parameters),
-            as_dict=True,
-        )
-        for row in rows:
-            totals[_allocation_key(row)] += _row_stock_qty(row)
-    return totals
 
 
 def _normalise_selection(selected_row_ids, quantities=None):
@@ -1168,7 +1454,7 @@ def _lineage_values(meta, values):
 
 
 def _lineage_schema_ready(target_doctype):
-    meta = _meta(ROOT_TARGET_ITEM_DOCTYPES.get(target_doctype))
+    meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(target_doctype))
     return bool(
         meta
         and meta.get_field("custom_technical_revision")

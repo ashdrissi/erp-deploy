@@ -7,6 +7,10 @@ from frappe import _
 from frappe.utils import flt
 
 
+def _carries_technical_lineage(row) -> bool:
+    return bool(str(row.get("custom_technical_revision") or "").strip())
+
+
 class OrderliftPickListMixin:
     def validate_sales_order(self):
         """Allow multiple partial Pick Lists while preventing over-picking."""
@@ -14,8 +18,21 @@ class OrderliftPickListMixin:
             return
         current = defaultdict(float)
         for row in self.get("locations") or []:
-            if row.sales_order_item:
-                current[row.sales_order_item] += flt(row.stock_qty)
+            if not row.sales_order_item:
+                continue
+            # Spec rule 16: for policy-covered Sales Orders the approved execution
+            # quantity replaces the Sales Order cap applied below. The two caps
+            # legitimately disagree, because engineering may raise a quantity above
+            # what was sold (rule 4) and rule 5 makes that a purely engineering
+            # decision needing no commercial step. Capping at the Sales Order's open
+            # quantity would block a pick the approved revision permits.
+            #
+            # The stamp is the signal, not company membership: only a stamped row has
+            # passed validate_procurement_document, which caps it against the picking
+            # pool. Rows without a stamp keep today's Sales Order cap exactly.
+            if _carries_technical_lineage(row):
+                continue
+            current[row.sales_order_item] += flt(row.stock_qty)
         if not current:
             return
 

@@ -9,6 +9,8 @@ from frappe.utils import cint
 SAFE_ADAPTERS = {
     "revision_to_material_request": "Material Request",
     "revision_to_purchase_order": "Purchase Order",
+    "revision_to_delivery_note": "Delivery Note",
+    "revision_to_pick_list": "Pick List",
 }
 
 

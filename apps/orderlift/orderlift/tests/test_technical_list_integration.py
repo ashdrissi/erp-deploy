@@ -24,8 +24,26 @@ class TestTechnicalListIntegration(unittest.TestCase):
             hooks.doc_events["Supplier Quotation"]["before_validate"],
         )
         operational_guard = "orderlift.orderlift_logistics.technical_procurement.validate_operational_document"
-        self.assertEqual(hooks.doc_events["Pick List"]["before_validate"], operational_guard)
+        # Pick Lists now carry row-level lineage too, so they get the same pair of
+        # validators as Delivery Note, in the same order.
+        pick_list = hooks.doc_events["Pick List"]["before_validate"]
+        self.assertIn(guard, pick_list)
+        self.assertIn(operational_guard, pick_list)
+        self.assertLess(pick_list.index(guard), pick_list.index(operational_guard))
         self.assertIn(operational_guard, hooks.doc_events["Delivery Note"]["before_validate"])
+        # Delivery Note now carries row-level lineage validation, not just the
+        # "an approved revision must exist" gate.
+        delivery = hooks.doc_events["Delivery Note"]["before_validate"]
+        self.assertIn(guard, delivery)
+        self.assertIn(operational_guard, delivery)
+        # Row validation must run before company scoping rewrites the company.
+        self.assertLess(delivery.index(guard), delivery.index("orderlift.company_scope.apply_transaction_company_scope"))
+        # ERPNext maps a Pick List delivery row from the Sales Order Item for sold
+        # lines, so the Pick List row's lineage must be copied across before the
+        # validator looks for it -- otherwise every such delivery is rejected.
+        stamp = "orderlift.orderlift_logistics.technical_procurement.stamp_pick_list_lineage"
+        self.assertIn(stamp, delivery)
+        self.assertLess(delivery.index(stamp), delivery.index(guard))
         self.assertNotIn(
             "technical_procurement",
             json.dumps(hooks.doc_events.get("Sales Invoice", {})),
@@ -138,6 +156,40 @@ class TestTechnicalListIntegration(unittest.TestCase):
         self.assertIn("frappe.db.get_value(", transition_helper)
         self.assertIn('"Workflow"', transition_helper)
         self.assertIn("if not workflow:\n        return []", transition_helper)
+
+    def test_ui_dispatches_all_three_adapters(self):
+        page = (APP_ROOT / "public" / "js" / "sales_order_technical_list_20260815f.js").read_text()
+        form = (
+            APP_ROOT
+            / "orderlift_sig"
+            / "doctype"
+            / "sales_order_technical_list_revision"
+            / "sales_order_technical_list_revision.js"
+        ).read_text()
+        for source in (page, form):
+            self.assertIn("revision_to_delivery_note", source)
+            self.assertIn(
+                "orderlift.orderlift_logistics.technical_procurement.create_delivery_note",
+                source,
+            )
+
+    def test_ui_dispatches_the_pick_list_adapter(self):
+        page = (APP_ROOT / "public" / "js" / "sales_order_technical_list_20260815f.js").read_text()
+        form = (
+            APP_ROOT
+            / "orderlift_sig"
+            / "doctype"
+            / "sales_order_technical_list_revision"
+            / "sales_order_technical_list_revision.js"
+        ).read_text()
+        for source in (page, form):
+            self.assertIn("revision_to_pick_list", source)
+            self.assertIn(
+                "orderlift.orderlift_logistics.technical_procurement.create_pick_list",
+                source,
+            )
+        # The native Pick List entry must now be intercepted, not left to fall through.
+        self.assertIn('label === "Pick List"', page)
 
 
 if __name__ == "__main__":
