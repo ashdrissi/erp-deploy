@@ -555,6 +555,14 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn("allocated_by_revision = {}", body)
         self.assertLess(body.index('if doctype == "Delivery Note":'), body.index("allocated_by_revision = {}"))
 
+    def test_delivery_route_step_is_seeded_ungated(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        self.assertIn("_ensure_delivery_route_step()", source)
+        body = source.split("def _ensure_delivery_route_step", 1)[1].split("\ndef ", 1)[0]
+        # Spec rule 7: delivery is not gated on procurement.
+        self.assertIn('"required_previous_action": ""', body)
+        self.assertIn('"enabled": 1', body)
+
 
 if __name__ == "__main__":
     unittest.main()

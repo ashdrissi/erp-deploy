@@ -159,6 +159,7 @@ def after_migrate() -> None:
     create_custom_fields(custom_fields, update=True)
     _ensure_safe_actions()
     _ensure_internal_material_request_route()
+    _ensure_delivery_route_step()
 
 
 def _ensure_safe_actions() -> None:
@@ -224,6 +225,35 @@ def _ensure_internal_material_request_route() -> str:
                 update_modified=False,
             )
     return doc.name
+
+
+def _ensure_delivery_route_step() -> None:
+    """Append the delivery action to every enabled route that lacks it.
+
+    Ungated by design (spec rule 7): stock may already be on hand, so delivery
+    must not wait on a purchase. A company can set required_previous_action on its
+    own route later if it wants procurement-first delivery.
+    """
+    action = frappe.db.get_value(
+        "Technical Procurement Action",
+        {"adapter_key": "revision_to_delivery_note"},
+        "name",
+    )
+    if not action:
+        return
+    routes = frappe.get_all(
+        "Technical Procurement Route", filters={"enabled": 1}, pluck="name"
+    )
+    for route_name in routes:
+        route = frappe.get_doc("Technical Procurement Route", route_name)
+        if any(_text(step.action) == action for step in route.steps or []):
+            continue
+        sequence = max([cint(step.sequence) for step in route.steps or []] or [0]) + 10
+        route.append(
+            "steps",
+            {"action": action, "sequence": sequence, "required_previous_action": ""},
+        )
+        route.save()
 
 
 @frappe.whitelist()
