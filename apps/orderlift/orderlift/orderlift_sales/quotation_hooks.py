@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from math import isfinite
 
 import frappe
@@ -576,11 +577,21 @@ def populate_quotation_stock_snapshot(doc, method=None) -> None:
     warehouse stock for the items were affected), which hid the Submit button.
     Computing here means the snapshot is a point-in-time value stored on save and
     never re-dirties the form when a draft is reopened.
+
+    Works for any transaction with stock items (Quotation, Sales Order, Pricing
+    Sheet) that carries the stock snapshot fields. Per warehouse it exposes on
+    hand, Available After SO, and Projected Available; per item row it exposes
+    on hand, Available After SO, and the planner-based Projected Available.
     """
     has_table = bool(doc.meta.get_field("custom_warehouse_stock_snapshot"))
-    item_meta = frappe.get_meta("Quotation Item")
-    has_item_qty = bool(item_meta.get_field("custom_current_company_stock_qty"))
-    if not has_table and not has_item_qty:
+    has_shared_table = bool(doc.meta.get_field("custom_shared_company_stock"))
+    items_field = doc.meta.get_field("items")
+    item_doctype = items_field.options if items_field else ""
+    item_meta = frappe.get_meta(item_doctype) if item_doctype else None
+    has_item_qty = bool(item_meta and item_meta.get_field("custom_current_company_stock_qty"))
+    has_item_avail = bool(item_meta and item_meta.get_field("custom_available_after_so_qty"))
+    has_item_projected = bool(item_meta and item_meta.get_field("custom_projected_available_qty"))
+    if not has_table and not has_shared_table and not has_item_qty:
         return
 
     item_codes = sorted({
@@ -593,28 +604,66 @@ def populate_quotation_stock_snapshot(doc, method=None) -> None:
     if not item_codes or not company:
         if has_table:
             doc.set("custom_warehouse_stock_snapshot", [])
-        if has_item_qty:
+        if has_shared_table:
+            doc.set("custom_shared_company_stock", [])
+        if has_item_qty or has_item_avail or has_item_projected:
             for row in doc.get("items") or []:
-                row.custom_current_company_stock_qty = 0
+                if has_item_qty:
+                    row.custom_current_company_stock_qty = 0
+                if has_item_avail:
+                    row.custom_available_after_so_qty = 0
+                if has_item_projected:
+                    row.custom_projected_available_qty = 0
         return
 
     from orderlift.orderlift_sales.utils.item_price_tools import get_transaction_stock_snapshot
 
-    snapshot = get_transaction_stock_snapshot(item_codes, company) or {}
+    shared_companies = []
+    if has_shared_table:
+        try:
+            from orderlift.orderlift_sales.utils.price_list_sharing import resolve_shared_stock_companies
+
+            shared_companies = resolve_shared_stock_companies(doc)
+        except Exception:
+            frappe.log_error(
+                title="Shared company stock resolution failed",
+                message=frappe.get_traceback(),
+            )
+            shared_companies = []
+
+    snapshot = get_transaction_stock_snapshot(
+        item_codes,
+        company,
+        shared_companies=json.dumps(shared_companies) if shared_companies else None,
+    ) or {}
     rows = snapshot.get("rows") or []
     totals = snapshot.get("totals") or {}
+    item_totals = snapshot.get("item_totals") or {}
+    shared_rows = snapshot.get("shared_rows") or []
 
     if has_table:
         # IDEMPOTENT: only rebuild the child table when the stock data actually
         # changed. Rebuilding unconditionally assigns new child row names every
         # save, so the document is "modified" on every save and the form is
-        # perpetually "Not Saved". Compare (item_code, warehouse, actual_qty).
+        # perpetually "Not Saved". Compare the full visible row payload.
         desired = [
-            (r.get("item_code") or "", r.get("warehouse") or "", flt(r.get("actual_qty") or 0))
+            (
+                r.get("item_code") or "",
+                r.get("warehouse") or "",
+                flt(r.get("actual_qty") or 0),
+                flt(r.get("available_after_so_qty") or 0),
+                flt(r.get("projected_available_qty") or 0),
+            )
             for r in rows
         ]
         existing = [
-            ((er.item_code or ""), (er.warehouse or ""), flt(er.actual_qty or 0))
+            (
+                (er.item_code or ""),
+                (er.warehouse or ""),
+                flt(er.actual_qty or 0),
+                flt(er.get("available_after_so_qty") or 0),
+                flt(er.get("projected_available_qty") or 0),
+            )
             for er in (doc.get("custom_warehouse_stock_snapshot") or [])
         ]
         if desired != existing:
@@ -625,12 +674,66 @@ def populate_quotation_stock_snapshot(doc, method=None) -> None:
                     "item_name": row.get("item_name") or row.get("item_code") or "",
                     "warehouse": row.get("warehouse") or "",
                     "actual_qty": flt(row.get("actual_qty") or 0),
+                    "available_after_so_qty": flt(row.get("available_after_so_qty") or 0),
+                    "projected_available_qty": flt(row.get("projected_available_qty") or 0),
                 })
-    if has_item_qty:
+    if has_shared_table:
+        # IDEMPOTENT: same comparison pattern as the document-company table.
+        desired = [
+            (
+                r.get("company") or "",
+                r.get("item_code") or "",
+                r.get("warehouse") or "",
+                flt(r.get("actual_qty") or 0),
+                flt(r.get("available_after_so_qty") or 0),
+                flt(r.get("projected_available_qty") or 0),
+            )
+            for r in shared_rows
+        ]
+        existing = [
+            (
+                (er.company or ""),
+                (er.item_code or ""),
+                (er.warehouse or ""),
+                flt(er.actual_qty or 0),
+                flt(er.get("available_after_so_qty") or 0),
+                flt(er.get("projected_available_qty") or 0),
+            )
+            for er in (doc.get("custom_shared_company_stock") or [])
+        ]
+        if desired != existing:
+            doc.set("custom_shared_company_stock", [])
+            for row in shared_rows:
+                doc.append("custom_shared_company_stock", {
+                    "company": row.get("company") or "",
+                    "item_code": row.get("item_code") or "",
+                    "item_name": row.get("item_name") or row.get("item_code") or "",
+                    "warehouse": row.get("warehouse") or "",
+                    "actual_qty": flt(row.get("actual_qty") or 0),
+                    "available_after_so_qty": flt(row.get("available_after_so_qty") or 0),
+                    "projected_available_qty": flt(row.get("projected_available_qty") or 0),
+                })
+    if has_item_qty or has_item_avail or has_item_projected:
         for row in doc.get("items") or []:
-            new_qty = flt(totals.get((row.get("item_code") or "").strip(), 0))
-            if flt(row.get("custom_current_company_stock_qty") or 0) != new_qty:
-                row.custom_current_company_stock_qty = new_qty
+            item_code = (row.get("item_code") or "").strip()
+            outlook = item_totals.get(item_code) or {}
+            if has_item_qty:
+                new_qty = flt(totals.get(item_code, 0))
+                if flt(row.get("custom_current_company_stock_qty") or 0) != new_qty:
+                    row.custom_current_company_stock_qty = new_qty
+            if has_item_avail:
+                new_qty = flt(outlook.get("available_after_so") or 0)
+                if flt(row.get("custom_available_after_so_qty") or 0) != new_qty:
+                    row.custom_available_after_so_qty = new_qty
+            if has_item_projected:
+                new_qty = flt(outlook.get("projected_available") or 0)
+                if flt(row.get("custom_projected_available_qty") or 0) != new_qty:
+                    row.custom_projected_available_qty = new_qty
+
+
+def populate_transaction_stock_snapshot(doc, method=None) -> None:
+    """Alias for Sales Order and other transactions that expose the same preview."""
+    populate_quotation_stock_snapshot(doc, method=method)
 
 
 def validate_quotation_item_discount_caps(doc, method=None) -> None:

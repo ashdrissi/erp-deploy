@@ -5,6 +5,7 @@ Item Reorder, Stock Ledger Entry.
 """
 
 import json
+from collections import defaultdict
 
 import frappe
 from frappe import _
@@ -14,6 +15,7 @@ from orderlift.menu_access import resolve_current_company
 from orderlift.orderlift_logistics.effective_demand import (
     get_effective_demand_by_item,
     get_effective_demand_by_item_warehouse,
+    get_effective_demand_rows,
 )
 from orderlift.orderlift_logistics.utils.stock_rate_review import can_manage_stock_rates
 from orderlift.warehouse_access import get_allowed_warehouses
@@ -24,11 +26,36 @@ STOCK_OVERVIEW_SORTS = {
     "item_name": "item_name",
     "actual_qty": "actual_qty",
     "available_qty": "available_qty",
-    "reserved_qty": "sales_order_reserved_qty",
+    "reserved_qty": "reserved_qty",
     "physically_reserved_qty": "physically_reserved_qty",
     "ordered_qty": "ordered_qty",
     "warehouse_count": "warehouse_count",
     "stock_value": "stock_value",
+    "to_be_reserved": "to_be_reserved",
+    "usable_incoming": "usable_incoming",
+    "projected_available": "projected_available",
+    "shortage": "shortage",
+    "incoming_date": "incoming_date",
+    "earliest_delivery": "earliest_delivery",
+    "open_so_count": "open_so_count",
+    "lead_time_days": "lead_time_days",
+    "supplier": "supplier",
+}
+
+_NUMERIC_OVERVIEW_SORTS = {
+    "actual_qty",
+    "available_qty",
+    "reserved_qty",
+    "physically_reserved_qty",
+    "ordered_qty",
+    "warehouse_count",
+    "stock_value",
+    "to_be_reserved",
+    "usable_incoming",
+    "projected_available",
+    "shortage",
+    "open_so_count",
+    "lead_time_days",
 }
 
 MOVEMENT_SORTS = {
@@ -48,7 +75,7 @@ def get_dashboard_data(filters=None):
         "warehouses": _get_warehouse_cards(context),
         "item_groups": _get_item_groups(context),
         "kpis": _get_kpis(context),
-        "stock_overview": _get_stock_overview(context=context, limit=120),
+        "stock_overview": _get_stock_overview(context=context, limit=120)[0],
         "critical_stock": _get_critical_stock(context),
         "rotation_by_category": _get_rotation_by_category(context),
         "alerts": _get_live_alerts(context) + stock_planning.get("alerts", []),
@@ -76,7 +103,7 @@ def get_stock_overview(
     frappe.has_permission("Bin", "read", throw=True)
     parsed = _parse_filters(filters)
     context = _get_stock_context(parsed.get("company"))
-    rows = _get_stock_overview(
+    rows, total = _get_stock_overview(
         context=context,
         search=search if search is not None else parsed.get("search"),
         warehouse=warehouse if warehouse is not None else parsed.get("warehouse"),
@@ -88,7 +115,13 @@ def get_stock_overview(
         start=start,
         limit=limit,
     )
-    return {"context": _client_context(context), "rows": rows, "start": cint(start or 0), "limit": cint(limit or 80)}
+    return {
+        "context": _client_context(context),
+        "rows": rows,
+        "start": cint(start or 0),
+        "limit": cint(limit or 80),
+        "total": total,
+    }
 
 
 def _parse_filters(filters) -> dict:
@@ -178,11 +211,20 @@ def _clean_start(value) -> int:
     return max(cint(value or 0), 0)
 
 
-def _sort_clause(sort_by: str | None, sort_dir: str | None) -> str:
-    field = STOCK_OVERVIEW_SORTS.get((sort_by or "").strip()) or STOCK_OVERVIEW_SORTS["actual_qty"]
-    direction = "ASC" if (sort_dir or "").lower() == "asc" else "DESC"
-    tie_breaker = ", item_code ASC" if field != "item_code" else ""
-    return f"{field} {direction}{tie_breaker}"
+def _sort_overview_rows(rows: list[dict], sort_by: str | None, sort_dir: str | None) -> None:
+    sort_by = (sort_by or "").strip()
+    key = STOCK_OVERVIEW_SORTS.get(sort_by) or STOCK_OVERVIEW_SORTS["actual_qty"]
+    reverse = (sort_dir or "").lower() != "asc"
+    if key in _NUMERIC_OVERVIEW_SORTS:
+        rows.sort(
+            key=lambda row: (flt(row.get(key) or 0), row.get("item_code") or ""),
+            reverse=reverse,
+        )
+    else:
+        rows.sort(
+            key=lambda row: (str(row.get(key) or "").lower(), row.get("item_code") or ""),
+            reverse=reverse,
+        )
 
 
 def _stock_status_having(stock_status: str | None, only_in_stock=1) -> str:
@@ -230,15 +272,14 @@ def _get_stock_overview(
         warehouse_join = "AND b.warehouse = %(warehouse)s"
         params["warehouse"] = warehouse
     demand_warehouses = [warehouse] if warehouse else context.get("warehouses") or []
-    demand_by_item = get_effective_demand_by_item(
+    demand_by_item, earliest_delivery, open_so_by_item = _overview_demand_maps(
         context.get("company"),
-        warehouses=demand_warehouses,
+        demand_warehouses,
     )
 
     start = _clean_start(start)
     having = _stock_status_having(stock_status, only_in_stock=only_in_stock)
     valuation_columns = "SUM(COALESCE(b.actual_qty, 0) * COALESCE(b.valuation_rate, 0)) AS stock_value"
-    order_by = _sort_clause(sort_by, sort_dir)
     rows = frappe.db.sql(
         f"""
         SELECT * FROM (
@@ -247,6 +288,7 @@ def _get_stock_overview(
                 i.item_name,
                 i.item_group,
                 i.stock_uom,
+                i.lead_time_days,
                 SUM(COALESCE(b.actual_qty, 0)) AS actual_qty,
                 SUM(COALESCE(b.projected_qty, 0)) AS projected_qty,
                 SUM(COALESCE(b.reserved_qty, 0)) AS sales_order_reserved_qty,
@@ -268,21 +310,27 @@ def _get_stock_overview(
             LEFT JOIN `tabItem Reorder` ir ON ir.parent = i.name AND ir.warehouse = b.warehouse
             WHERE {' AND '.join(conditions)}
             {_stock_warehouse_condition("b.warehouse", params, context)}
-            GROUP BY i.name, i.item_name, i.item_group, i.stock_uom
+            GROUP BY i.name, i.item_name, i.item_group, i.stock_uom, i.lead_time_days
         ) item_stock
         {having}
-        ORDER BY {order_by}
-        LIMIT {limit} OFFSET {start}
         """,
         params,
         as_dict=True,
     )
+
+    item_codes = [row.item_code for row in rows]
+    outlook = _overview_outlook(context.get("company"), demand_warehouses, item_codes)
+    incoming_dates = _open_incoming_dates(context.get("company"), demand_warehouses, item_codes)
+    suppliers = _first_suppliers(item_codes)
 
     result = []
     for row in rows:
         actual_qty = flt(row.actual_qty)
         demand_qty = flt(demand_by_item.get(row.item_code))
         available_qty = actual_qty - demand_qty
+        simulation = outlook.get(row.item_code) or {}
+        to_be_reserved = flt(simulation.get("to_be_reserved"))
+        usable_incoming = flt(simulation.get("usable_incoming"))
         payload = {
             "item_code": row.item_code,
             "item_name": row.item_name,
@@ -295,6 +343,15 @@ def _get_stock_overview(
             "physically_reserved_qty": flt(row.physically_reserved_qty),
             "ordered_qty": flt(row.ordered_qty),
             "projected_qty": flt(row.projected_qty),
+            "to_be_reserved": to_be_reserved,
+            "usable_incoming": usable_incoming,
+            "projected_available": actual_qty - to_be_reserved + usable_incoming,
+            "shortage": flt(simulation.get("shortage")),
+            "incoming_date": incoming_dates.get(row.item_code) or "",
+            "earliest_delivery": earliest_delivery.get(row.item_code) or "",
+            "open_so_count": len(open_so_by_item.get(row.item_code) or ()),
+            "lead_time_days": cint(row.lead_time_days),
+            "supplier": suppliers.get(row.item_code) or "",
             "warehouse_count": cint(row.warehouse_count),
             "warehouse_summary": row.warehouse_summary or "",
             "status": _stock_row_status(actual_qty, available_qty),
@@ -303,6 +360,99 @@ def _get_stock_overview(
             payload["stock_value"] = flt(row.stock_value)
             payload["avg_valuation_rate"] = flt(row.stock_value) / actual_qty if actual_qty else 0
         result.append(payload)
+
+    _sort_overview_rows(result, sort_by, sort_dir)
+    total = len(result)
+    return result[start:start + limit], total
+
+
+def _overview_demand_maps(company: str | None, demand_warehouses: list[str]) -> tuple[dict, dict, dict]:
+    """Per-item open confirmed demand, earliest delivery date, and distinct open SOs."""
+    demand_by_item = defaultdict(float)
+    earliest_delivery = {}
+    open_so_by_item = defaultdict(set)
+    if not company:
+        return demand_by_item, earliest_delivery, open_so_by_item
+    for row in get_effective_demand_rows(company, warehouses=demand_warehouses):
+        item_code = row.get("item_code") or ""
+        if not item_code:
+            continue
+        demand_by_item[item_code] += flt(row.get("stock_qty"))
+        delivery = row.get("delivery_date")
+        if delivery and (item_code not in earliest_delivery or delivery < earliest_delivery[item_code]):
+            earliest_delivery[item_code] = delivery
+        if row.get("sales_order"):
+            open_so_by_item[item_code].add(row.get("sales_order"))
+    return demand_by_item, earliest_delivery, open_so_by_item
+
+
+def _overview_outlook(company: str | None, demand_warehouses: list[str], item_codes: list[str]) -> dict:
+    """Read-only planner reservation outlook for the overview rows. Never fails the page."""
+    if not company or not item_codes:
+        return {}
+    try:
+        from orderlift.orderlift_logistics.stock_planning import simulate_reservation_outcome
+
+        return simulate_reservation_outcome(
+            company,
+            warehouses=demand_warehouses,
+            item_codes=item_codes,
+        )
+    except Exception:
+        frappe.log_error(
+            title="Stock overview reservation outlook failed",
+            message=frappe.get_traceback(),
+        )
+        return {}
+
+
+def _open_incoming_dates(company: str | None, demand_warehouses: list[str], item_codes: list[str]) -> dict:
+    """Earliest pending submitted Purchase Order date per item, scoped to the active warehouses."""
+    if not company or not item_codes:
+        return {}
+    params = {"company": company, "item_codes": tuple(item_codes)}
+    warehouse_condition = ""
+    if demand_warehouses:
+        params["warehouses"] = tuple(demand_warehouses)
+        warehouse_condition = " AND poi.warehouse IN %(warehouses)s"
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            poi.item_code,
+            MIN(COALESCE(poi.schedule_date, po.schedule_date)) AS earliest_date
+        FROM `tabPurchase Order Item` poi
+        INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+        WHERE po.company = %(company)s
+          AND po.docstatus = 1
+          AND po.status NOT IN ('Closed', 'Completed', 'Cancelled')
+          AND poi.item_code IN %(item_codes)s
+          AND COALESCE(poi.stock_qty, 0) - COALESCE(poi.received_qty, 0) * COALESCE(poi.conversion_factor, 1) > 0
+          {warehouse_condition}
+        GROUP BY poi.item_code
+        """,
+        params,
+        as_dict=True,
+    )
+    return {row.item_code: row.earliest_date for row in rows if row.earliest_date}
+
+
+def _first_suppliers(item_codes: list[str]) -> dict:
+    """First Item Supplier per item (idx order), one batch query."""
+    if not item_codes:
+        return {}
+    rows = frappe.db.sql(
+        """
+        SELECT parent AS item_code, supplier, idx
+        FROM `tabItem Supplier`
+        WHERE parent IN %(item_codes)s
+        ORDER BY parent ASC, idx ASC
+        """,
+        {"item_codes": tuple(item_codes)},
+        as_dict=True,
+    )
+    result = {}
+    for row in rows:
+        result.setdefault(row.item_code, row.supplier)
     return result
 
 

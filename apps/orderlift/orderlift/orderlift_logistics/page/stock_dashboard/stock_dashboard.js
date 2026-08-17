@@ -392,14 +392,15 @@ function renderStockPlanning(page, planning) {
                 <th>${__("ORDER / ITEM")}</th>
                 <th>${__("DELIVERY")}</th>
                 <th>${__("STATUS")}</th>
-                <th class="sdb-num">${__("DEMAND")}</th>
-                <th class="sdb-num">${__("INCOMING")}</th>
-                <th class="sdb-num">${__("PICK LIST")}</th>
-                <th class="sdb-num">${__("SHORTAGE")}</th>
+                <th class="sdb-num" title="${frappe.utils.escape_html(__("Confirmed demand quantity still to protect."))}">${__("DEMAND")}</th>
+                <th class="sdb-num" title="${frappe.utils.escape_html(__("Incoming quantity safely allocated to this demand."))}">${__("INCOMING")}</th>
+                <th class="sdb-num" title="${frappe.utils.escape_html(__("Quantity protected by Pick Lists (draft or submitted)."))}">${__("PICK LIST")}</th>
+                <th class="sdb-num" title="${frappe.utils.escape_html(__("Demand not covered by physical stock, reservations, or safe incoming."))}">${__("SHORTAGE")}</th>
                 <th>${__("NEXT ACTION")}</th>
             </tr></thead>
             <tbody>${rows.map(planRowMarkup).join("")}</tbody>
         </table>
+        <div class="sdb-table-hint">${__("Hover a column header to see its definition.")}</div>
     `);
 }
 
@@ -613,7 +614,7 @@ async function loadStockOverview(page, options = {}) {
             SDB_STATE.stockRows = rows;
         }
         SDB_STATE.stockStart = SDB_STATE.stockRows.length;
-        SDB_STATE.stockHasMore = rows.length >= SDB_STATE.stockLimit;
+        SDB_STATE.stockHasMore = SDB_STATE.stockStart < (payload.total || SDB_STATE.stockRows.length);
         renderStockOverview(page, SDB_STATE.stockRows, { append: false });
     } catch (e) {
         console.warn("Stock Dashboard: failed to load stock overview", e);
@@ -621,10 +622,10 @@ async function loadStockOverview(page, options = {}) {
     }
 }
 
-function sortableStockHeader(label, field, numeric = false) {
+function sortableStockHeader(label, field, numeric = false, title = "") {
     const active = SDB_STATE.stockFilters.sort_by === field;
     const direction = SDB_STATE.stockFilters.sort_dir || "desc";
-    return `<th class="${numeric ? "sdb-num" : ""}">
+    return `<th class="${numeric ? "sdb-num" : ""}"${title ? ` title="${frappe.utils.escape_html(title)}"` : ""}>
         <button type="button" class="sdb-sort-head ${active ? "is-active" : ""}" data-stock-sort-column="${field}">
             <span>${label}</span>
             <span class="sdb-sort-arrows" aria-hidden="true">
@@ -655,17 +656,27 @@ function renderStockOverview(page, rows, options = {}) {
     el.html(`
         <table class="sdb-table sdb-stock-table">
             <thead><tr>
-                ${sortableStockHeader(__("Item"), "item_name")}
-                ${sortableStockHeader(__("On Hand"), "actual_qty", true)}
-                ${sortableStockHeader(__("Available After SO"), "available_qty", true)}
-                ${sortableStockHeader(__("Open SO Qty"), "reserved_qty", true)}
-                ${sortableStockHeader(__("Reserved Stock"), "physically_reserved_qty", true)}
-                ${sortableStockHeader(__("Incoming"), "ordered_qty", true)}
-                ${SDB_STATE.context.can_view_valuation ? sortableStockHeader(__("Value"), "stock_value", true) : ""}
-                ${sortableStockHeader(__("Warehouses"), "warehouse_count")}
+                ${sortableStockHeader(__("Item"), "item_name", false, __("Item code, name, and group."))}
+                ${sortableStockHeader(__("On Hand"), "actual_qty", true, __("Current physical quantity in the warehouses (Bin)."))}
+                ${sortableStockHeader(__("Available After SO"), "available_qty", true, __("On Hand minus Open SO Qty: what remains for new demand."))}
+                ${sortableStockHeader(__("Open SO Qty"), "reserved_qty", true, __("Open confirmed demand from submitted Sales Orders (Technical List quantities when a submitted revision exists)."))}
+                ${sortableStockHeader(__("To Reserve"), "to_be_reserved", true, __("What the planner would reserve today, computed from the current Stock Planning Settings."))}
+                ${sortableStockHeader(__("Usable Incoming"), "usable_incoming", true, __("Safely dated incoming Purchase Order quantity, based on the current Stock Planning Settings."))}
+                ${sortableStockHeader(__("Projected Available"), "projected_available", true, __("On Hand minus To Reserve plus Usable Incoming."))}
+                ${sortableStockHeader(__("Shortage"), "shortage", true, __("Open demand not covered by reservation or usable incoming."))}
+                ${sortableStockHeader(__("Reserved Stock"), "physically_reserved_qty", true, __("Physically reserved quantity (submitted Pick Lists)."))}
+                ${sortableStockHeader(__("Incoming"), "ordered_qty", true, __("Ordered quantity expected into stock from open Purchase Orders."))}
+                ${sortableStockHeader(__("Incoming Date"), "incoming_date", false, __("Earliest pending Purchase Order date."))}
+                ${sortableStockHeader(__("Earliest Delivery"), "earliest_delivery", false, __("Earliest delivery date of the open confirmed Sales Orders."))}
+                ${sortableStockHeader(__("Open SOs"), "open_so_count", true, __("Distinct open confirmed Sales Orders for this item."))}
+                ${sortableStockHeader(__("Lead Time"), "lead_time_days", true, __("Item procurement lead time in days."))}
+                ${sortableStockHeader(__("Supplier"), "supplier", false, __("First Item Supplier."))}
+                ${SDB_STATE.context.can_view_valuation ? sortableStockHeader(__("Value"), "stock_value", true, __("Total stock value at the warehouse valuation rate.")) : ""}
+                ${sortableStockHeader(__("Warehouses"), "warehouse_count", false, __("Number of warehouses with non-zero stock for this item."))}
             </tr></thead>
             <tbody>${rows.map((row) => renderStockOverviewRow(row)).join("")}</tbody>
         </table>
+        <div class="sdb-table-hint">${__("Hover a column header to see its definition.")}</div>
     `);
 
     el.find("[data-stock-sort-column]").on("click", function () {
@@ -696,6 +707,8 @@ function renderStockOverviewRow(row) {
     const valueCell = SDB_STATE.context.can_view_valuation
         ? `<td class="sdb-num">${formatMoney(row.stock_value || ((row.actual_qty || 0) * (row.avg_valuation_rate || 0)))}</td>`
         : "";
+    const toReserve = Number(row.to_be_reserved || 0);
+    const shortage = Number(row.shortage || 0);
     return `
         <tr class="sdb-row sdb-stock-row" data-item="${frappe.utils.escape_html(row.item_code || "")}">
             <td>
@@ -708,8 +721,17 @@ function renderStockOverviewRow(row) {
             <td class="sdb-num"><strong>${formatQty(row.actual_qty)}</strong> <span>${frappe.utils.escape_html(row.stock_uom || "")}</span></td>
             <td class="sdb-num"><span class="sdb-stock-status ${statusClass}">${formatQty(row.available_qty)}</span></td>
             <td class="sdb-num">${formatQty(row.sales_order_reserved_qty ?? row.reserved_qty)}</td>
+            <td class="sdb-num ${toReserve > 0 ? "sdb-qty-amber" : ""}">${formatQty(row.to_be_reserved)}</td>
+            <td class="sdb-num">${formatQty(row.usable_incoming)}</td>
+            <td class="sdb-num"><strong>${formatQty(row.projected_available)}</strong></td>
+            <td class="sdb-num ${shortage > 0 ? "sdb-qty-red" : ""}">${formatQty(row.shortage)}</td>
             <td class="sdb-num">${formatQty(row.physically_reserved_qty)}</td>
             <td class="sdb-num">${formatQty(row.ordered_qty)}</td>
+            <td class="sdb-nowrap">${planningDate(row.incoming_date)}</td>
+            <td class="sdb-nowrap">${planningDate(row.earliest_delivery)}</td>
+            <td class="sdb-num">${row.open_so_count || 0}</td>
+            <td class="sdb-num">${row.lead_time_days ? `${row.lead_time_days} ${__("d")}` : ""}</td>
+            <td>${row.supplier ? frappe.utils.escape_html(row.supplier) : ""}</td>
             ${valueCell}
             <td>
                 <div class="sdb-stock-wh-count">${row.warehouse_count || 0} ${__("warehouse(s)")}</div>
@@ -756,7 +778,7 @@ function dialogHtml(title, bodyHtml, extraClasses = "") {
 
 function statsMarkup(items) {
     return `<div class="sdb-modal-stats">${items.map((item) => `
-        <div class="sdb-modal-stat">
+        <div class="sdb-modal-stat"${item.help ? ` title="${frappe.utils.escape_html(item.help)}"` : ""}>
             <span>${frappe.utils.escape_html(item.label)}</span>
             <strong>${item.value}</strong>
         </div>
@@ -814,18 +836,18 @@ function renderItemDetailDialog(dialog, payload) {
                 </div>
             </div>
             ${statsMarkup([
-                { label: __("On hand"), value: formatQty(summary.actual_qty) },
-                { label: __("Available After SO"), value: formatQty(summary.available_qty) },
-                { label: __("Reserved SO"), value: formatQty(summary.sales_order_reserved_qty) },
-                { label: __("Reserved stock"), value: formatQty(summary.physically_reserved_qty) },
-                { label: __("Incoming"), value: formatQty(summary.ordered_qty) },
-                { label: __("Warehouses"), value: formatQty(summary.warehouse_count) },
-                ...(canView ? [{ label: __("Stock value"), value: formatMoney(summary.stock_value || 0) }] : []),
+                { label: __("On hand"), value: formatQty(summary.actual_qty), help: __("Current physical quantity in the warehouses.") },
+                { label: __("Available After SO"), value: formatQty(summary.available_qty), help: __("On hand minus open confirmed Sales Order demand.") },
+                { label: __("Reserved SO"), value: formatQty(summary.sales_order_reserved_qty), help: __("Open confirmed demand from submitted Sales Orders.") },
+                { label: __("Reserved stock"), value: formatQty(summary.physically_reserved_qty), help: __("Physically reserved quantity from submitted Pick Lists.") },
+                { label: __("Incoming"), value: formatQty(summary.ordered_qty), help: __("Ordered quantity expected into stock.") },
+                { label: __("Warehouses"), value: formatQty(summary.warehouse_count), help: __("Number of warehouses with non-zero stock.") },
+                ...(canView ? [{ label: __("Stock value"), value: formatMoney(summary.stock_value || 0), help: __("Total stock value at the valuation rate.") }] : []),
             ])}
             <div class="sdb-modal-grid">
                 <section class="sdb-modal-card">
                     <h4>${__("Warehouse Breakdown")}</h4>
-                    ${rows.length ? `<table class="sdb-table sdb-modal-table"><thead><tr><th>${__("Warehouse")}</th><th class="sdb-num">${__("On hand")}</th><th class="sdb-num">${__("Available After SO")}</th><th class="sdb-num">${__("Reserved SO")}</th><th class="sdb-num">${__("Incoming")}</th>${canView ? `<th class="sdb-num">${__("Value")}</th>` : ""}</tr></thead><tbody>${rows.map((row) => `<tr><td>${frappe.utils.escape_html(row.warehouse_name || row.warehouse || "")}</td><td class="sdb-num">${formatQty(row.actual_qty)}</td><td class="sdb-num">${formatQty(row.available_qty)}</td><td class="sdb-num">${formatQty(row.sales_order_reserved_qty)}</td><td class="sdb-num">${formatQty(row.ordered_qty)}</td>${canView ? `<td class="sdb-num">${formatMoney(row.stock_value || 0)}</td>` : ""}</tr>`).join("")}</tbody></table>` : `<div class="sdb-empty-inline">${__("No warehouse rows found.")}</div>`}
+                    ${rows.length ? `<table class="sdb-table sdb-modal-table"><thead><tr><th>${__("Warehouse")}</th><th class="sdb-num" title="${frappe.utils.escape_html(__("Current physical quantity in the warehouse."))}">${__("On hand")}</th><th class="sdb-num" title="${frappe.utils.escape_html(__("On hand minus open confirmed Sales Order demand for this warehouse."))}">${__("Available After SO")}</th><th class="sdb-num" title="${frappe.utils.escape_html(__("Open confirmed demand from submitted Sales Orders."))}">${__("Reserved SO")}</th><th class="sdb-num" title="${frappe.utils.escape_html(__("Ordered quantity expected into this warehouse."))}">${__("Incoming")}</th>${canView ? `<th class="sdb-num" title="${frappe.utils.escape_html(__("Stock value at the warehouse valuation rate."))}">${__("Value")}</th>` : ""}</tr></thead><tbody>${rows.map((row) => `<tr><td>${frappe.utils.escape_html(row.warehouse_name || row.warehouse || "")}</td><td class="sdb-num">${formatQty(row.actual_qty)}</td><td class="sdb-num">${formatQty(row.available_qty)}</td><td class="sdb-num">${formatQty(row.sales_order_reserved_qty)}</td><td class="sdb-num">${formatQty(row.ordered_qty)}</td>${canView ? `<td class="sdb-num">${formatMoney(row.stock_value || 0)}</td>` : ""}</tr>`).join("")}</tbody></table>` : `<div class="sdb-empty-inline">${__("No warehouse rows found.")}</div>`}
                 </section>
                 <section class="sdb-modal-card">
                     <div class="sdb-modal-card-head"><h4>${__("Recent Movements")}</h4><button type="button" class="sdb-hdr-btn sdb-hdr-btn--ghost" data-item-movements>${__("View all")}</button></div>
@@ -1484,6 +1506,7 @@ function injectStyles() {
 
 /* ── Table ── */
 .sdb-table-wrap { overflow-x:auto; }
+.sdb-table-hint { font-size:11px; color:var(--text-muted,#94a3b8); padding:2px 14px 10px; }
 .sdb-table { width:100%; border-collapse:collapse; font-size:13px; }
 .sdb-table thead tr { background:var(--subtle-bg,#f8fafc); }
 .sdb-table th {

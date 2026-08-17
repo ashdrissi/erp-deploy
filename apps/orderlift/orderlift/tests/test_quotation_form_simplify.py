@@ -528,24 +528,56 @@ class TestQuotationFormSimplify(unittest.TestCase):
         pricing_sheet_js = (APP_ROOT / "public" / "js" / "pricing_sheet_form_20260501_110.js").read_text()
         item_tools = (APP_ROOT / "orderlift_sales" / "utils" / "item_price_tools.py").read_text()
         stock_table = (APP_ROOT / "orderlift_sales" / "doctype" / "orderlift_transaction_warehouse_stock" / "orderlift_transaction_warehouse_stock.json").read_text()
+        shared_table = (APP_ROOT / "orderlift_sales" / "doctype" / "orderlift_shared_company_stock" / "orderlift_shared_company_stock.json").read_text()
+        sharing_utils = (APP_ROOT / "orderlift_sales" / "utils" / "price_list_sharing.py").read_text()
+        quotation_hooks = (APP_ROOT / "orderlift_sales" / "quotation_hooks.py").read_text()
 
         for token in [
             '"fieldname": "custom_stock_snapshot_section"',
             '"fieldname": "custom_warehouse_stock_snapshot"',
             '"options": "Orderlift Transaction Warehouse Stock"',
+            '"fieldname": "custom_shared_company_stock_section"',
+            '"fieldname": "custom_shared_company_stock"',
+            '"options": "Orderlift Shared Company Stock"',
             '"fieldname": "custom_current_company_stock_qty"',
+            '"fieldname": "custom_available_after_so_qty"',
+            '"fieldname": "custom_projected_available_qty"',
+            '"description": "On hand minus open confirmed Sales Order demand: what physically remains for new orders."',
+            '"description": "On hand minus what the stock planner would reserve today, plus safely usable incoming stock (same rules as the current Stock Planning Settings)."',
+            "Qty: on hand. Available After SO: on hand minus open confirmed Sales Order demand. Projected Available: Available After SO plus expected incoming Purchase Order quantity.",
         ]:
             self.assertIn(token, pricing_setup)
         self.assertIn("def get_transaction_stock_snapshot", item_tools)
         self.assertIn("stock_warehouse_condition(\"w.name\", params)", item_tools)
+        self.assertIn("_stock_snapshot_supplementary", item_tools)
+        self.assertIn("_simulation_totals", item_tools)
+        self.assertIn("_shared_company_snapshot", item_tools)
+        self.assertIn("def _shared_company_stock_rows", item_tools)
+        self.assertIn('"shared_rows": shared_rows', item_tools)
+        self.assertIn("def resolve_shared_companies_from_price_lists", sharing_utils)
+        self.assertIn("def resolve_shared_stock_companies", sharing_utils)
+        self.assertIn("resolve_shared_stock_companies(doc)", quotation_hooks)
+        self.assertIn("custom_shared_company_stock", quotation_hooks)
+        self.assertIn('"available_after_so_qty"', stock_table)
+        self.assertIn('"projected_available_qty"', stock_table)
+        self.assertIn('"description": "On hand: current physical quantity in this warehouse."', stock_table)
+        self.assertIn('"description": "On hand minus open confirmed Sales Order demand for this warehouse."', stock_table)
+        self.assertIn('"description": "Available After SO plus the Purchase Order quantity expected into this warehouse."', stock_table)
         self.assertIn("Orderlift Transaction Warehouse Stock", stock_table)
         self.assertIn('"ignore_user_permissions": 1', stock_table)
+        self.assertIn('"fieldname": "company"', shared_table)
+        self.assertIn('"fieldname": "available_after_so_qty"', shared_table)
+        self.assertIn('"fieldname": "projected_available_qty"', shared_table)
+        self.assertIn("Orderlift Shared Company Stock", shared_table)
         for token in [
             "get_transaction_stock_snapshot",
             "company: frm.doc.company",
             "scheduleQuotationStockSnapshotRefresh",
             "custom_warehouse_stock_snapshot",
             "custom_current_company_stock_qty",
+            "available_after_so_qty",
+            "projected_available_qty",
+            "item_totals",
             'frappe.model.clear_table(frm.doc, fieldname)',
             'frappe.model.add_child(frm.doc, "Orderlift Transaction Warehouse Stock", fieldname)',
             "syncQuotationStockSnapshotTable",
@@ -557,14 +589,62 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "company: frm.doc.custom_company",
             "schedulePricingSheetStockSnapshotRefresh",
             "custom_warehouse_stock_snapshot",
+            "custom_shared_company_stock",
             "custom_current_company_stock_qty",
+            "available_after_so_qty",
+            "projected_available_qty",
+            "item_totals",
+            "selling_price_lists: JSON.stringify(sellingPriceLists)",
             'frappe.model.clear_table(frm.doc, fieldname)',
             'frappe.model.add_child(frm.doc, "Orderlift Transaction Warehouse Stock", fieldname)',
+            'frappe.model.add_child(frm.doc, "Orderlift Shared Company Stock", fieldname)',
             "syncPricingSheetStockSnapshotTable",
+            "syncSharedCompanyStockTable",
+            "normalizeSharedCompanyStockRow",
             "orderlift.pricing-sheet.workspace-columns.v6",
         ]:
             self.assertIn(token, pricing_sheet_js)
         self.assertNotIn("frm.doc.custom_warehouse_stock_snapshot = (rows || []).map(", pricing_sheet_js)
+
+    def test_sales_order_and_purchase_order_live_stock_overview_wired(self):
+        hooks = (APP_ROOT / "hooks.py").read_text()
+        so_js = (APP_ROOT / "public" / "js" / "sales_order_stock_overview_20260817a.js").read_text()
+        po_js = (APP_ROOT / "public" / "js" / "purchase_order_stock_overview_20260817a.js").read_text()
+        pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
+
+        self.assertIn('"public/js/sales_order_stock_overview_20260817a.js"', hooks)
+        self.assertIn('"public/js/purchase_order_stock_overview_20260817a.js"', hooks)
+        self.assertNotIn("populate_transaction_stock_snapshot", hooks)
+        for token in (
+            "refreshSalesOrderStockOverview",
+            "get_transaction_stock_snapshot",
+            "selling_price_lists: JSON.stringify(sellingPriceLists)",
+            "buying_price_lists: JSON.stringify(buyingPriceLists)",
+            "custom_warehouse_stock_snapshot",
+            "custom_shared_company_stock",
+            "frm.doc.__unsaved = 0",
+            "Orderlift Shared Company Stock",
+        ):
+            self.assertIn(token, so_js)
+        for token in (
+            "refreshPurchaseOrderStockOverview",
+            "get_transaction_stock_snapshot",
+            "supplier: frm.doc.supplier",
+            "buying_price_lists: JSON.stringify(buyingPriceLists)",
+            "custom_warehouse_stock_snapshot",
+            "custom_shared_company_stock",
+            "frm.doc.__unsaved = 0",
+            "Orderlift Shared Company Stock",
+        ):
+            self.assertIn(token, po_js)
+        for token in (
+            '"Purchase Order": [',
+            '"fieldname": "custom_stock_snapshot_section"',
+            '"fieldname": "custom_shared_company_stock"',
+            '"label": "Supplier Company Stock"',
+            '"label": "Stock (Company)"',
+        ):
+            self.assertIn(token, pricing_setup)
 
     def test_direct_quotation_discount_editing_is_wired(self):
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260802a.js").read_text()

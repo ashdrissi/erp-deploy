@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
+from types import SimpleNamespace
 
 import frappe
 from frappe import _
@@ -568,9 +569,14 @@ def _pick_list_coverage(source_rows: dict) -> dict:
     return result
 
 
-def _physical_stock(company: str, settings) -> dict:
+def _physical_stock(company: str, settings, *, warehouses=None) -> dict:
+    warehouse_condition = ""
+    params = {"company": company}
+    if warehouses:
+        params["warehouses"] = tuple(warehouses)
+        warehouse_condition = " AND b.warehouse IN %(warehouses)s"
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT b.item_code,
                SUM(GREATEST(COALESCE(b.actual_qty, 0) - COALESCE(b.reserved_stock, 0), 0)) AS available_qty,
                SUM(COALESCE(b.reserved_stock, 0)) AS reserved_qty,
@@ -581,20 +587,27 @@ def _physical_stock(company: str, settings) -> dict:
         WHERE w.company = %(company)s
           AND COALESCE(w.disabled, 0) = 0
           AND COALESCE(w.is_group, 0) = 0
+          {warehouse_condition}
         GROUP BY b.item_code
         """,
-        {"company": company},
+        params,
         as_dict=True,
     )
+    draft_condition = ""
+    draft_params = {"company": company}
+    if warehouses:
+        draft_params["warehouses"] = tuple(warehouses)
+        draft_condition = " AND pli.warehouse IN %(warehouses)s"
     draft_rows = frappe.db.sql(
-        """
+        f"""
         SELECT pli.item_code, SUM(COALESCE(pli.stock_qty, 0)) AS draft_qty
         FROM `tabPick List Item` pli
         INNER JOIN `tabPick List` pl ON pl.name = pli.parent
         WHERE pl.company = %(company)s AND pl.docstatus = 0 AND pl.purpose = 'Delivery'
+          {draft_condition}
         GROUP BY pli.item_code
         """,
-        {"company": company},
+        draft_params,
         as_dict=True,
     )
     draft_by_item = {row.item_code: flt(row.draft_qty) for row in draft_rows}
@@ -791,6 +804,143 @@ def _plan_action(
     status = STATUS_PROCUREMENT if today == protection_date else STATUS_PROCUREMENT_LATE
     return 0, status, today, _(
         "No physical or safely dated incoming stock covers this confirmed demand."
+    )
+
+
+def simulate_reservation_outcome(
+    company: str,
+    *,
+    warehouses=None,
+    item_codes=None,
+    today=None,
+) -> dict:
+    """Read-only mirror of the automatic Pick List decision.
+
+    Used by dashboards and transaction stock previews to expose how much stock
+    the planner would reserve today and how much incoming stock is usable, even
+    when company stock planning is disabled. Saved company settings are honored;
+    built-in defaults apply when no settings record exists. Never writes
+    documents and never creates Pick Lists or Material Requests.
+
+    Returns {item_code: {"to_be_reserved": float, "usable_incoming": float, "shortage": float}}.
+    """
+    company = (company or "").strip()
+    if not company:
+        return {}
+
+    settings = get_company_settings(company) or SimpleNamespace(
+        enabled=0,
+        reservation_mode="Create Draft Pick List",
+        partial_pick_list=1,
+        reservation_buffer_days=15,
+        rely_on_incoming_stock=1,
+        incoming_safety_days=15,
+        procurement_safety_days=7,
+        default_procurement_delay_days=0,
+        protected_stock_floor_mode="None",
+        alert_days_before_action=3,
+        auto_create_material_request=0,
+        auto_submit_material_request=0,
+    )
+
+    warehouses = sorted({(w or "").strip() for w in (warehouses or []) if (w or "").strip()}) or None
+    item_codes = sorted({(c or "").strip() for c in (item_codes or []) if (c or "").strip()}) or None
+    today = getdate(today or nowdate())
+
+    rows = get_effective_demand_rows(company, warehouses=warehouses, item_codes=item_codes)
+    rows = [row for row in rows if row.get("delivery_date")]
+    if not rows:
+        return {}
+
+    source_rows = {source_key(row): row for row in rows}
+    pick_coverage = _pick_list_coverage(source_rows)
+    logistics_dates = _forecast_plan_dates(company)
+    incoming_by_item = _incoming_supply(company, logistics_dates)
+    stock_by_item = _physical_stock(company, settings, warehouses=warehouses)
+
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row["item_code"]].append(row)
+
+    result = {}
+    for item_code, item_rows in grouped.items():
+        item_rows.sort(key=_simulation_row_priority)
+        supply_pool = [dict(row) for row in incoming_by_item.get(item_code, [])]
+        physical_pool = flt(stock_by_item.get(item_code, {}).get("available_qty"))
+        to_be_reserved = 0.0
+        usable_incoming = 0.0
+        shortage_total = 0.0
+
+        for row in item_rows:
+            coverage = pick_coverage.get(row.get("sales_order_item") or "", {}) if row.get("sales_order_item") else {}
+            open_qty = _open_stock_qty(row)
+            pick_list_qty = min(flt(coverage.get("pick_list_qty")), open_qty)
+            reserved_qty = min(flt(coverage.get("reserved_qty")), open_qty)
+            demand_to_plan = max(open_qty - pick_list_qty, 0)
+
+            delivery_date = getdate(row["delivery_date"])
+            item_lead_time = cint(frappe.get_cached_value("Item", row["item_code"], "lead_time_days"))
+            procurement_delay = item_lead_time or cint(settings.default_procurement_delay_days)
+            protection_date = add_days(delivery_date, -(procurement_delay + cint(settings.procurement_safety_days)))
+            safe_incoming_date = add_days(delivery_date, -cint(settings.incoming_safety_days))
+
+            plan = SimpleNamespace(
+                latest_safe_incoming_date=safe_incoming_date,
+                stock_protection_date=protection_date,
+                incoming_date=None,
+                incoming_backup_check_date=None,
+                incoming_safety_days=cint(settings.incoming_safety_days),
+                delivery_date=delivery_date,
+            )
+
+            allocations = []
+            if cint(settings.rely_on_incoming_stock) and demand_to_plan > 0:
+                allocations = _allocate_safe_incoming(plan, demand_to_plan, supply_pool)
+            incoming_allocated = sum(flt(row["allocated_qty"]) for row in allocations)
+            incoming_date = _latest_allocation_date(allocations)
+            plan.incoming_date = incoming_date
+            plan.incoming_backup_check_date = (
+                add_days(incoming_date, -cint(plan.incoming_safety_days)) if incoming_date else None
+            )
+
+            action_qty, status, _next_date, _risk = _plan_action(
+                plan,
+                today=today,
+                demand_to_plan=demand_to_plan,
+                incoming_allocated=incoming_allocated,
+                physical_available=physical_pool,
+                reserved_qty=reserved_qty,
+                open_qty=open_qty,
+            )
+            action_need = demand_to_plan if status == STATUS_BACKUP_DUE else max(
+                demand_to_plan - incoming_allocated,
+                0,
+            )
+            if action_qty > 0 and not cint(settings.partial_pick_list) and action_qty + 1e-9 < action_need:
+                action_qty = 0
+
+            if action_qty > 0:
+                physical_pool = max(physical_pool - flt(action_qty), 0)
+
+            shortage = max(demand_to_plan - incoming_allocated - max(flt(action_qty), 0), 0)
+            to_be_reserved += flt(action_qty)
+            usable_incoming += flt(incoming_allocated)
+            shortage_total += flt(shortage)
+
+        result[item_code] = {
+            "to_be_reserved": to_be_reserved,
+            "usable_incoming": usable_incoming,
+            "shortage": shortage_total,
+        }
+
+    return result
+
+
+def _simulation_row_priority(row: dict) -> tuple:
+    return (
+        getdate(row.get("delivery_date")) if row.get("delivery_date") else date.max,
+        (row.get("sales_order") or "").strip(),
+        source_key(row),
     )
 
 

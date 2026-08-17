@@ -72,6 +72,20 @@ class TestCommercialPresentation(unittest.TestCase):
         self.assertIn('return doc.doctype != "Quotation"', source)
         self.assertIn("Opportunity only controls item-level presentation roles", source)
 
+    def test_downstream_docs_inherit_designation_from_quotation_snapshot(self):
+        source = (APP_ROOT / "orderlift_sales" / "utils" / "commercial_presentation.py").read_text()
+
+        self.assertIn("def resolve_commercial_designation", source)
+        self.assertIn("_inherit_designation_from_source(first_source, doc)", source)
+        self.assertIn('block.get("type") == "Heading"', source)
+        self.assertIn('return (snapshot.get("template_name") or "").strip()', source)
+
+    def test_sales_order_pricing_snapshot_keeps_derived_designation(self):
+        source = (APP_ROOT / "orderlift_sales" / "sales_order_pricing_hooks.py").read_text()
+
+        self.assertIn("resolve_commercial_designation", source)
+        self.assertIn("from orderlift.orderlift_sales.utils.commercial_presentation import resolve_commercial_designation", source)
+
     def test_opportunity_has_no_commercial_presentation_header_fields(self):
         source = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
         opportunity_block = source.split('"Opportunity": [', 1)[1].split('"Opportunity Item": [', 1)[0]

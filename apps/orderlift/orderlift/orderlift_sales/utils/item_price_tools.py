@@ -383,7 +383,14 @@ def get_item_list_stock_totals(item_codes=None) -> dict:
 
 
 @frappe.whitelist()
-def get_transaction_stock_snapshot(item_codes=None, company=None) -> dict:
+def get_transaction_stock_snapshot(
+    item_codes=None,
+    company=None,
+    shared_companies=None,
+    selling_price_lists=None,
+    buying_price_lists=None,
+    supplier=None,
+) -> dict:
     item_codes = _clean_list(_parse_json(item_codes, item_codes or []))
     company = (company or current_company() or "").strip()
     if not item_codes:
@@ -414,22 +421,238 @@ def get_transaction_stock_snapshot(item_codes=None, company=None) -> dict:
         params,
         as_dict=True,
     )
+    allowed_warehouses = params.get("allowed_warehouses")
+    allowed_warehouses = sorted(allowed_warehouses) if allowed_warehouses else None
+
+    demand_by_item, demand_by_warehouse, incoming_by_warehouse = _stock_snapshot_supplementary(
+        item_codes,
+        company,
+        allowed_warehouses,
+    )
+    simulation = _simulation_totals(company, allowed_warehouses, item_codes)
+
     totals = {item_code: 0.0 for item_code in item_codes}
+    item_totals = {item_code: {} for item_code in item_codes}
     out_rows = []
     for row in rows:
         item_code = row.get("item_code") or ""
+        warehouse = row.get("warehouse") or ""
         qty = flt(row.get("actual_qty") or 0)
         if item_code in totals:
             totals[item_code] += qty
+        available_after_so = qty - flt(demand_by_warehouse.get((item_code, warehouse)))
+        projected_available = available_after_so + flt(incoming_by_warehouse.get((item_code, warehouse)))
         out_rows.append(
             {
                 "item_code": item_code,
                 "item_name": row.get("item_name") or item_code,
-                "warehouse": row.get("warehouse") or "",
+                "warehouse": warehouse,
                 "actual_qty": qty,
+                "available_after_so_qty": available_after_so,
+                "projected_available_qty": projected_available,
             }
         )
-    return {"current_company": company, "rows": out_rows, "totals": totals}
+
+    for item_code in item_codes:
+        on_hand = flt(totals.get(item_code))
+        outlook = simulation.get(item_code) or {}
+        to_be_reserved = flt(outlook.get("to_be_reserved"))
+        usable_incoming = flt(outlook.get("usable_incoming"))
+        item_totals[item_code] = {
+            "on_hand": on_hand,
+            "available_after_so": on_hand - flt(demand_by_item.get(item_code)),
+            "projected_available": on_hand - to_be_reserved + usable_incoming,
+            "to_be_reserved": to_be_reserved,
+            "usable_incoming": usable_incoming,
+        }
+
+    resolved_shared, shared_rows = _shared_company_snapshot(
+        item_codes,
+        company,
+        shared_companies=shared_companies,
+        selling_price_lists=selling_price_lists,
+        buying_price_lists=buying_price_lists,
+        supplier=supplier,
+    )
+
+    return {
+        "current_company": company,
+        "rows": out_rows,
+        "totals": totals,
+        "item_totals": item_totals,
+        "shared_rows": shared_rows,
+        "shared_companies": resolved_shared,
+    }
+
+
+def _shared_company_snapshot(
+    item_codes,
+    company,
+    shared_companies=None,
+    selling_price_lists=None,
+    buying_price_lists=None,
+    supplier=None,
+) -> tuple[list[str], list[dict]]:
+    """Stock rows for the companies sharing-linked with the document.
+
+    Resolves: companies the selling price lists are shared to, owner companies
+    of selling lists mirrored into the buying price lists, and the company an
+    internal supplier represents. Returns (resolved_shared_companies, shared_rows).
+    Shared rows are computed for every sharing-linked company regardless of the
+    user's company access scope.
+    """
+    shared_companies = _clean_list(_parse_json(shared_companies, shared_companies or []))
+    if not shared_companies:
+        selling_price_lists = _clean_list(_parse_json(selling_price_lists, selling_price_lists or []))
+        buying_price_lists = _clean_list(_parse_json(buying_price_lists, buying_price_lists or []))
+        if not selling_price_lists and not buying_price_lists and not (supplier or "").strip():
+            return [], []
+        from orderlift.orderlift_sales.utils.price_list_sharing import (
+            resolve_shared_companies_from_buying_price_lists,
+            resolve_shared_companies_from_price_lists,
+        )
+
+        shared_companies = sorted(
+            set(
+                resolve_shared_companies_from_price_lists(company, selling_price_lists)
+                + resolve_shared_companies_from_buying_price_lists(company, buying_price_lists)
+            )
+        )
+    supplier = (supplier or "").strip()
+    if supplier:
+        values = frappe.db.get_value(
+            "Supplier",
+            supplier,
+            ["is_internal_supplier", "represents_company"],
+            as_dict=True,
+        ) or {}
+        represented = (values.get("represents_company") or "").strip()
+        if cint(values.get("is_internal_supplier")) and represented:
+            shared_companies = sorted(set(shared_companies + [represented]))
+    shared_companies = [name for name in shared_companies if name != company]
+
+    from orderlift.orderlift_logistics.effective_demand import get_effective_demand_by_item_warehouse
+
+    shared_rows = []
+    for shared_company in shared_companies:
+        demand_by_warehouse = get_effective_demand_by_item_warehouse(shared_company, item_codes=item_codes)
+        incoming_by_warehouse = _open_incoming_by_warehouse(item_codes, shared_company)
+        for row in _shared_company_stock_rows(item_codes, shared_company):
+            item_code = row.get("item_code") or ""
+            warehouse = row.get("warehouse") or ""
+            qty = flt(row.get("actual_qty") or 0)
+            available_after_so = qty - flt(demand_by_warehouse.get((item_code, warehouse)))
+            projected_available = available_after_so + flt(incoming_by_warehouse.get((item_code, warehouse)))
+            shared_rows.append(
+                {
+                    "company": shared_company,
+                    "item_code": item_code,
+                    "item_name": row.get("item_name") or item_code,
+                    "warehouse": warehouse,
+                    "actual_qty": qty,
+                    "available_after_so_qty": available_after_so,
+                    "projected_available_qty": projected_available,
+                }
+            )
+    return shared_companies, shared_rows
+
+
+def _shared_company_stock_rows(item_codes, company) -> list[dict]:
+    """Warehouse stock rows for one sharing-linked company (no user warehouse scope)."""
+    params = {"item_codes": tuple(item_codes), "company": company}
+    return frappe.db.sql(
+        f"""
+        SELECT
+            i.name AS item_code,
+            i.item_name AS item_name,
+            w.name AS warehouse,
+            COALESCE(SUM(b.actual_qty), 0) AS actual_qty
+        FROM `tabItem` i
+        INNER JOIN `tabWarehouse` w ON w.company = %(company)s
+        LEFT JOIN `tabBin` b ON b.item_code = i.name AND b.warehouse = w.name
+        WHERE i.name IN %(item_codes)s
+        {_warehouse_disabled_condition("w")}
+        {_warehouse_leaf_condition("w")}
+        GROUP BY i.name, i.item_name, w.name
+        ORDER BY i.name ASC, w.name ASC
+        """,
+        params,
+        as_dict=True,
+    )
+
+
+def _stock_snapshot_supplementary(item_codes, company, allowed_warehouses):
+    """Open confirmed demand and warehouse-level open PO incoming for the snapshot.
+
+    Returns (demand_by_item, demand_by_item_warehouse, incoming_by_item_warehouse).
+    """
+    from orderlift.orderlift_logistics.effective_demand import (
+        get_effective_demand_by_item,
+        get_effective_demand_by_item_warehouse,
+    )
+
+    demand_by_item = get_effective_demand_by_item(
+        company,
+        warehouses=allowed_warehouses,
+        item_codes=item_codes,
+    )
+    demand_by_warehouse = get_effective_demand_by_item_warehouse(
+        company,
+        warehouses=allowed_warehouses,
+        item_codes=item_codes,
+    )
+    incoming_by_warehouse = _open_incoming_by_warehouse(item_codes, company)
+    return demand_by_item, demand_by_warehouse, incoming_by_warehouse
+
+
+def _open_incoming_by_warehouse(item_codes, company) -> dict:
+    """Pending submitted Purchase Order quantity per (item, warehouse) for a company."""
+    params = {"item_codes": tuple(item_codes), "company": company}
+    rows = frappe.db.sql(
+        """
+        SELECT
+            poi.item_code,
+            poi.warehouse,
+            SUM(GREATEST(
+                COALESCE(poi.stock_qty, 0) - COALESCE(poi.received_qty, 0) * COALESCE(poi.conversion_factor, 1),
+                0
+            )) AS pending_qty
+        FROM `tabPurchase Order Item` poi
+        INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+        WHERE po.company = %(company)s
+          AND po.docstatus = 1
+          AND po.status NOT IN ('Closed', 'Completed', 'Cancelled')
+          AND poi.item_code IN %(item_codes)s
+          AND COALESCE(poi.warehouse, '') != ''
+        GROUP BY poi.item_code, poi.warehouse
+        """,
+        params,
+        as_dict=True,
+    )
+    result = {}
+    for row in rows:
+        pending = flt(row.get("pending_qty") or 0)
+        if pending > 0:
+            result[(row.get("item_code") or "", row.get("warehouse") or "")] = pending
+    return result
+
+
+def _simulation_totals(company, allowed_warehouses, item_codes) -> dict:
+    """Planner reservation outlook per item; never fails the caller on errors."""
+    try:
+        from orderlift.orderlift_logistics.stock_planning import simulate_reservation_outcome
+
+        return simulate_reservation_outcome(
+            company,
+            warehouses=allowed_warehouses,
+            item_codes=item_codes,
+        )
+    except Exception:
+        frappe.log_error(
+            title="Stock reservation outlook simulation failed",
+            message=frappe.get_traceback(),
+        )
+        return {}
 
 
 @frappe.whitelist()

@@ -73,10 +73,12 @@ class TestStockPlanningContract(unittest.TestCase):
             / "stock_planning_settings_control"
             / "stock_planning_settings_control.js"
         ).read_text()
+        planner = (APP_ROOT / "orderlift_logistics" / "stock_planning.py").read_text()
 
         self.assertIn("validate_sales_order_stock_dates", hooks)
         self.assertIn("sync_sales_order_demand_plans", hooks)
         self.assertIn("run_scheduled_planning", hooks)
+        self.assertIn("populate_quotation_stock_snapshot", hooks)
         self.assertIn('"Pick List": "orderlift.orderlift_logistics.pick_list_override.OrderliftPickListMixin"', hooks)
         self.assertIn('"stock.planning_settings"', menu)
         self.assertIn('"link_type": "Page", "link_to": "stock-planning-settings-control"', menu)
@@ -84,6 +86,7 @@ class TestStockPlanningContract(unittest.TestCase):
         self.assertIn('__("Confirmed Order Stock Planning")', dashboard)
         self.assertIn('/app/stock-planning-settings-control', dashboard)
         self.assertIn("renderStockPlanning", dashboard)
+        self.assertIn("def simulate_reservation_outcome", planner)
         self.assertIn('frappe.pages[PAGE_NAME].on_page_load', settings_page)
         self.assertIn('data-company', settings_page)
         self.assertIn('Backup check', settings_page)
@@ -304,6 +307,278 @@ class TestStockPlanningRules(unittest.TestCase):
 
         self.assertEqual(qty, 10)
         self.assertEqual(status, self.module.STATUS_PICK_DUE)
+
+
+class TestSimulateReservationOutcome(unittest.TestCase):
+    MODULE_NAMES = (
+        "frappe",
+        "frappe.utils",
+        "orderlift.orderlift_logistics.doctype.stock_planning_settings.stock_planning_settings",
+        "orderlift.orderlift_logistics.stock_planning",
+    )
+
+    def setUp(self):
+        self.original_modules = {name: sys.modules.get(name) for name in self.MODULE_NAMES}
+        frappe_stub = types.ModuleType("frappe")
+        frappe_stub._ = lambda message, *args, **kwargs: message
+        frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn) if not args else args[0]
+        frappe_stub.get_cached_value = lambda *args, **kwargs: None
+        sys.modules["frappe"] = frappe_stub
+
+        utils_stub = types.ModuleType("frappe.utils")
+        utils_stub.add_days = lambda value, days: self._getdate(value) + timedelta(days=int(days))
+        utils_stub.cint = lambda value=0: int(value or 0)
+        utils_stub.flt = lambda value=0: float(value or 0)
+        utils_stub.getdate = self._getdate
+        utils_stub.now_datetime = datetime.now
+        utils_stub.nowdate = lambda: "2026-08-09"
+        sys.modules["frappe.utils"] = utils_stub
+
+        settings_stub = types.ModuleType(
+            "orderlift.orderlift_logistics.doctype.stock_planning_settings.stock_planning_settings"
+        )
+        settings_stub.get_company_settings = lambda *args, **kwargs: None
+        sys.modules[
+            "orderlift.orderlift_logistics.doctype.stock_planning_settings.stock_planning_settings"
+        ] = settings_stub
+        sys.modules.pop("orderlift.orderlift_logistics.stock_planning", None)
+        self.module = importlib.import_module("orderlift.orderlift_logistics.stock_planning")
+
+    def tearDown(self):
+        for name, original in self.original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
+    @staticmethod
+    def _getdate(value=None):
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if value:
+            return datetime.strptime(str(value), "%Y-%m-%d").date()
+        return date.today()
+
+    @staticmethod
+    def _demand_row(**overrides):
+        values = {
+            "demand_source_key": "SOI:SOI-00001",
+            "source_type": "Sales Order",
+            "sales_order": "SO-00001",
+            "sales_order_item": "SOI-00001",
+            "customer": "CUST-001",
+            "item_code": "ITEM-001",
+            "warehouse": "Main",
+            "stock_uom": "Nos",
+            "uom": "Nos",
+            "stock_qty": 10,
+            "qty": 10,
+            "delivered_qty": 0,
+            "conversion_factor": 1,
+            "delivery_date": date(2026, 10, 15),
+            "docstatus": 1,
+        }
+        values.update(overrides)
+        return values
+
+    def _stub_engine(self, rows, physical, incoming=None, settings=None):
+        self.module.get_company_settings = lambda *args, **kwargs: settings
+        self.module._pick_list_coverage = lambda source_rows: {}
+        self.module._forecast_plan_dates = lambda company: {}
+
+        def fake_demand(company, *, warehouses=None, item_codes=None, sales_orders=None):
+            out = list(rows)
+            if item_codes:
+                out = [row for row in out if row["item_code"] in set(item_codes)]
+            return out
+
+        self.module.get_effective_demand_rows = fake_demand
+        self.module._incoming_supply = lambda company, logistics_dates: incoming or {}
+        self.module._physical_stock = lambda company, settings, *, warehouses=None: physical
+
+    def test_reserves_available_stock_at_protection_date(self):
+        rows = [self._demand_row()]
+        self._stub_engine(rows, physical={"ITEM-001": {"available_qty": 20, "reserved_qty": 0}})
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            today=date(2026, 10, 8),
+        )
+
+        self.assertEqual(outcome["ITEM-001"]["to_be_reserved"], 10)
+        self.assertEqual(outcome["ITEM-001"]["usable_incoming"], 0)
+        self.assertEqual(outcome["ITEM-001"]["shortage"], 0)
+
+    def test_not_due_before_protection_date(self):
+        rows = [self._demand_row()]
+        self._stub_engine(rows, physical={"ITEM-001": {"available_qty": 20, "reserved_qty": 0}})
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            today=date(2026, 9, 15),
+        )
+
+        self.assertEqual(outcome["ITEM-001"]["to_be_reserved"], 0)
+        self.assertEqual(outcome["ITEM-001"]["usable_incoming"], 0)
+        self.assertEqual(outcome["ITEM-001"]["shortage"], 10)
+
+    def test_partial_disabled_zeroes_action_and_flags_shortage(self):
+        rows = [self._demand_row()]
+        settings = types.SimpleNamespace(
+            enabled=0,
+            reservation_mode="Create Draft Pick List",
+            partial_pick_list=0,
+            reservation_buffer_days=15,
+            rely_on_incoming_stock=1,
+            incoming_safety_days=15,
+            procurement_safety_days=7,
+            default_procurement_delay_days=0,
+            protected_stock_floor_mode="None",
+            alert_days_before_action=3,
+            auto_create_material_request=0,
+            auto_submit_material_request=0,
+        )
+        self._stub_engine(
+            rows,
+            physical={"ITEM-001": {"available_qty": 6, "reserved_qty": 0}},
+            settings=settings,
+        )
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            today=date(2026, 10, 8),
+        )
+
+        self.assertEqual(outcome["ITEM-001"]["to_be_reserved"], 0)
+        self.assertEqual(outcome["ITEM-001"]["shortage"], 10)
+
+    def test_safe_incoming_is_usable_when_no_physical_backup(self):
+        rows = [self._demand_row()]
+        incoming = {
+            "ITEM-001": [
+                {
+                    "purchase_order": "PO-1",
+                    "purchase_order_item": "POI-1",
+                    "forecast_load_plan": "",
+                    "available_qty": 10,
+                    "expected_date": date(2026, 9, 29),
+                    "status": "Submitted Purchase Order",
+                }
+            ]
+        }
+        self._stub_engine(
+            rows,
+            physical={"ITEM-001": {"available_qty": 0, "reserved_qty": 0}},
+            incoming=incoming,
+        )
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            today=date(2026, 10, 8),
+        )
+
+        self.assertEqual(outcome["ITEM-001"]["usable_incoming"], 10)
+        self.assertEqual(outcome["ITEM-001"]["to_be_reserved"], 0)
+        self.assertEqual(outcome["ITEM-001"]["shortage"], 0)
+
+    def test_unsafe_incoming_is_not_usable(self):
+        rows = [self._demand_row()]
+        incoming = {
+            "ITEM-001": [
+                {
+                    "purchase_order": "PO-LATE",
+                    "purchase_order_item": "POI-LATE",
+                    "available_qty": 10,
+                    "expected_date": date(2026, 10, 10),
+                    "status": "Submitted Purchase Order",
+                }
+            ]
+        }
+        self._stub_engine(
+            rows,
+            physical={"ITEM-001": {"available_qty": 0, "reserved_qty": 0}},
+            incoming=incoming,
+        )
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            today=date(2026, 10, 8),
+        )
+
+        self.assertEqual(outcome["ITEM-001"]["usable_incoming"], 0)
+        self.assertEqual(outcome["ITEM-001"]["to_be_reserved"], 0)
+        self.assertEqual(outcome["ITEM-001"]["shortage"], 10)
+
+    def test_disabled_settings_still_apply(self):
+        rows = [self._demand_row()]
+        settings = types.SimpleNamespace(
+            enabled=0,
+            reservation_mode="Create Draft Pick List",
+            partial_pick_list=1,
+            reservation_buffer_days=15,
+            rely_on_incoming_stock=0,
+            incoming_safety_days=15,
+            procurement_safety_days=7,
+            default_procurement_delay_days=0,
+            protected_stock_floor_mode="None",
+            alert_days_before_action=3,
+            auto_create_material_request=0,
+            auto_submit_material_request=0,
+        )
+        incoming = {
+            "ITEM-001": [
+                {
+                    "purchase_order": "PO-1",
+                    "purchase_order_item": "POI-1",
+                    "available_qty": 10,
+                    "expected_date": date(2026, 9, 29),
+                    "status": "Submitted Purchase Order",
+                }
+            ]
+        }
+        self._stub_engine(
+            rows,
+            physical={"ITEM-001": {"available_qty": 0, "reserved_qty": 0}},
+            incoming=incoming,
+            settings=settings,
+        )
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            today=date(2026, 10, 8),
+        )
+
+        self.assertEqual(outcome["ITEM-001"]["usable_incoming"], 0)
+        self.assertEqual(outcome["ITEM-001"]["shortage"], 10)
+
+    def test_item_codes_scope_the_outcome(self):
+        rows = [
+            self._demand_row(),
+            self._demand_row(
+                demand_source_key="SOI:SOI-00002",
+                sales_order="SO-00002",
+                sales_order_item="SOI-00002",
+                item_code="ITEM-002",
+            ),
+        ]
+        self._stub_engine(
+            rows,
+            physical={
+                "ITEM-001": {"available_qty": 20, "reserved_qty": 0},
+                "ITEM-002": {"available_qty": 20, "reserved_qty": 0},
+            },
+        )
+
+        outcome = self.module.simulate_reservation_outcome(
+            "Orderlift",
+            item_codes=["ITEM-001"],
+            today=date(2026, 10, 8),
+        )
+
+        self.assertEqual(set(outcome), {"ITEM-001"})
+        self.assertEqual(outcome["ITEM-001"]["to_be_reserved"], 10)
 
 
 if __name__ == "__main__":

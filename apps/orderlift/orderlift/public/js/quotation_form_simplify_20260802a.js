@@ -1570,7 +1570,7 @@
         const itemCodes = quotationItemCodes(frm);
         if (!itemCodes.length) {
             if (!shouldApplyStockSnapshot(frm)) return;
-            setQuotationStockSnapshot(frm, [], {});
+            setQuotationStockSnapshot(frm, [], {}, {});
             return;
         }
         frm.__orderlift_refreshing_stock_snapshot = true;
@@ -1581,7 +1581,7 @@
             });
             const payload = response.message || {};
             if (!shouldApplyStockSnapshot(frm)) return;
-            setQuotationStockSnapshot(frm, payload.rows || [], payload.totals || {});
+            setQuotationStockSnapshot(frm, payload.rows || [], payload.totals || {}, payload.item_totals || {});
         } catch (error) {
             console.error("Orderlift Quotation stock snapshot failed", error);
         } finally {
@@ -1604,7 +1604,7 @@
         return out;
     }
 
-    function setQuotationStockSnapshot(frm, rows, totals) {
+    function setQuotationStockSnapshot(frm, rows, totals, itemTotals) {
         const wasUnsaved = frm.doc && frm.doc.__unsaved;
         var tableChanged = false;
         var itemsChanged = false;
@@ -1612,12 +1612,31 @@
             tableChanged = syncQuotationStockSnapshotTable(frm, rows || []);
         }
         if (hasQuotationItemStockField(frm)) {
+            const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+            const hasAvail = Boolean(grid && grid.get_field && grid.get_field("custom_available_after_so_qty"));
+            const hasProjected = Boolean(grid && grid.get_field && grid.get_field("custom_projected_available_qty"));
             (frm.doc.items || []).forEach((row) => {
                 const itemCode = String(row.item_code || "").trim();
+                const outlook = (itemTotals || {})[itemCode] || {};
                 const nextQty = Number((totals || {})[itemCode] || 0);
-                if (Math.abs(Number(row.custom_current_company_stock_qty || 0) - nextQty) < 0.000001) return;
-                row.custom_current_company_stock_qty = nextQty;
-                itemsChanged = true;
+                if (Math.abs(Number(row.custom_current_company_stock_qty || 0) - nextQty) >= 0.000001) {
+                    row.custom_current_company_stock_qty = nextQty;
+                    itemsChanged = true;
+                }
+                if (hasAvail) {
+                    const nextAvail = Number(outlook.available_after_so || 0);
+                    if (Math.abs(Number(row.custom_available_after_so_qty || 0) - nextAvail) >= 0.000001) {
+                        row.custom_available_after_so_qty = nextAvail;
+                        itemsChanged = true;
+                    }
+                }
+                if (hasProjected) {
+                    const nextProjected = Number(outlook.projected_available || 0);
+                    if (Math.abs(Number(row.custom_projected_available_qty || 0) - nextProjected) >= 0.000001) {
+                        row.custom_projected_available_qty = nextProjected;
+                        itemsChanged = true;
+                    }
+                }
             });
             if (itemsChanged) frm.refresh_field("items");
         }
@@ -1646,6 +1665,8 @@
             item_name: row.item_name || "",
             warehouse: row.warehouse || "",
             actual_qty: Number(row.actual_qty || 0),
+            available_after_so_qty: Number(row.available_after_so_qty || 0),
+            projected_available_qty: Number(row.projected_available_qty || 0),
         };
     }
 
@@ -1657,7 +1678,9 @@
             return row.item_code === next.item_code
                 && row.item_name === next.item_name
                 && row.warehouse === next.warehouse
-                && Math.abs(Number(row.actual_qty || 0) - Number(next.actual_qty || 0)) < 0.000001;
+                && Math.abs(Number(row.actual_qty || 0) - Number(next.actual_qty || 0)) < 0.000001
+                && Math.abs(Number(row.available_after_so_qty || 0) - Number(next.available_after_so_qty || 0)) < 0.000001
+                && Math.abs(Number(row.projected_available_qty || 0) - Number(next.projected_available_qty || 0)) < 0.000001;
         });
     }
 

@@ -71,6 +71,7 @@ _stub_module("orderlift.sales.utils.dimensioning", coerce_dimensioning_value=lam
 from orderlift.orderlift_sales.doctype.pricing_builder import pricing_builder
 from orderlift.orderlift_sales.page.pricing_builder_builder import pricing_builder_builder
 from orderlift.orderlift_sales.utils import item_price_tools, price_list_auto_rebuild, price_list_scope
+from orderlift.orderlift_logistics import effective_demand
 from orderlift.orderlift_logistics.utils import item_sequence
 from orderlift.scripts import backfill_pricing_builder_selling_list_stamps
 
@@ -929,6 +930,8 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         original_sql = getattr(frappe_stub.db, "sql", None)
         original_has_permission = getattr(frappe_stub, "has_permission", None)
         original_stock_condition = item_price_tools.stock_warehouse_condition
+        original_supplementary = item_price_tools._stock_snapshot_supplementary
+        original_simulation = item_price_tools._simulation_totals
 
         def fake_stock_condition(field_sql, params, user=None, key="allowed_warehouses"):
             self.assertEqual(field_sql, "w.name")
@@ -944,8 +947,24 @@ class TestPricingBuilderMetadata(unittest.TestCase):
                 AttrDict(item_code="ITEM-002", item_name="Door", warehouse="Main - OMD", actual_qty=0),
             ]
 
+        def fake_supplementary(item_codes, company, allowed_warehouses):
+            self.assertEqual(allowed_warehouses, ["Main - OMD", "Reserve - OMD"])
+            return (
+                {"ITEM-001": 3.0, "ITEM-002": 1.0},
+                {("ITEM-001", "Main - OMD"): 1.0, ("ITEM-001", "Reserve - OMD"): 2.0},
+                {("ITEM-001", "Reserve - OMD"): 4.0},
+            )
+
+        def fake_simulation(company, allowed_warehouses, item_codes):
+            return {
+                "ITEM-001": {"to_be_reserved": 1.5, "usable_incoming": 4.0, "shortage": 0.0},
+                "ITEM-002": {"to_be_reserved": 0.0, "usable_incoming": 0.0, "shortage": 1.0},
+            }
+
         item_price_tools.current_company = lambda: "Wrong Session Company"
         item_price_tools.stock_warehouse_condition = fake_stock_condition
+        item_price_tools._stock_snapshot_supplementary = fake_supplementary
+        item_price_tools._simulation_totals = fake_simulation
         frappe_stub.db.has_column = lambda doctype, fieldname: doctype == "Warehouse" and fieldname == "disabled"
         frappe_stub.db.sql = fake_sql
         frappe_stub.has_permission = lambda *args, **kwargs: True
@@ -957,6 +976,8 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         finally:
             item_price_tools.current_company = original_current_company
             item_price_tools.stock_warehouse_condition = original_stock_condition
+            item_price_tools._stock_snapshot_supplementary = original_supplementary
+            item_price_tools._simulation_totals = original_simulation
             frappe_stub.db.has_column = original_has_column
             if original_sql is None:
                 delattr(frappe_stub.db, "sql")
@@ -970,10 +991,73 @@ class TestPricingBuilderMetadata(unittest.TestCase):
         self.assertEqual(out["current_company"], "Orderlift Maroc Distribution")
         self.assertEqual(out["totals"], {"ITEM-001": 7.0, "ITEM-002": 0.0})
         self.assertEqual(len(out["rows"]), 3)
+        main_row = out["rows"][0]
+        self.assertEqual(main_row["actual_qty"], 2)
+        self.assertEqual(main_row["available_after_so_qty"], 1.0)
+        self.assertEqual(main_row["projected_available_qty"], 1.0)
+        reserve_row = out["rows"][1]
+        self.assertEqual(reserve_row["available_after_so_qty"], 3.0)
+        self.assertEqual(reserve_row["projected_available_qty"], 7.0)
+        door_row = out["rows"][2]
+        self.assertEqual(door_row["available_after_so_qty"], 0.0)
+        self.assertEqual(door_row["projected_available_qty"], 0.0)
+        self.assertEqual(
+            out["item_totals"]["ITEM-001"],
+            {
+                "on_hand": 7.0,
+                "available_after_so": 4.0,
+                "projected_available": 9.5,
+                "to_be_reserved": 1.5,
+                "usable_incoming": 4.0,
+            },
+        )
+        self.assertEqual(out["item_totals"]["ITEM-002"]["available_after_so"], -1.0)
+        self.assertEqual(out["item_totals"]["ITEM-002"]["projected_available"], 0.0)
+        self.assertEqual(out.get("shared_rows"), [])
+        self.assertEqual(out.get("shared_companies"), [])
         self.assertIn("INNER JOIN `tabWarehouse` w", calls["query"])
         self.assertIn("LEFT JOIN `tabBin` b", calls["query"])
         self.assertIn("w.name IN %(allowed_warehouses)s", calls["query"])
         self.assertEqual(calls["params"]["allowed_warehouses"], ("Main - OMD", "Reserve - OMD"))
+
+    def test_shared_company_snapshot_rows(self):
+        original_rows = item_price_tools._shared_company_stock_rows
+        original_incoming = item_price_tools._open_incoming_by_warehouse
+        original_demand = effective_demand.get_effective_demand_by_item_warehouse
+
+        item_price_tools._shared_company_stock_rows = lambda item_codes, company: [
+            AttrDict(item_code="ITEM-001", item_name="Motor", warehouse="Main - OMI", actual_qty=8),
+            AttrDict(item_code="ITEM-002", item_name="Door", warehouse="Main - OMI", actual_qty=0),
+        ]
+        item_price_tools._open_incoming_by_warehouse = lambda item_codes, company: {
+            ("ITEM-001", "Main - OMI"): 2.0,
+        }
+        effective_demand.get_effective_demand_by_item_warehouse = lambda company, **kwargs: {
+            ("ITEM-001", "Main - OMI"): 3.0,
+            ("ITEM-002", "Main - OMI"): 1.0,
+        }
+        try:
+            companies, rows = item_price_tools._shared_company_snapshot(
+                ["ITEM-001", "ITEM-002"],
+                "Orderlift Maroc Distribution",
+                shared_companies=json.dumps(["Orderlift Maroc Installation"]),
+            )
+        finally:
+            item_price_tools._shared_company_stock_rows = original_rows
+            item_price_tools._open_incoming_by_warehouse = original_incoming
+            effective_demand.get_effective_demand_by_item_warehouse = original_demand
+
+        self.assertEqual(companies, ["Orderlift Maroc Installation"])
+        self.assertEqual(len(rows), 2)
+        first = rows[0]
+        self.assertEqual(first["company"], "Orderlift Maroc Installation")
+        self.assertEqual(first["warehouse"], "Main - OMI")
+        self.assertEqual(first["actual_qty"], 8)
+        self.assertEqual(first["available_after_so_qty"], 5.0)
+        self.assertEqual(first["projected_available_qty"], 7.0)
+        second = rows[1]
+        self.assertEqual(second["available_after_so_qty"], -1.0)
+        self.assertEqual(second["projected_available_qty"], -1.0)
 
     def test_item_onload_populates_read_only_company_warehouse_stock_table(self):
         original_current_company = item_price_tools.current_company

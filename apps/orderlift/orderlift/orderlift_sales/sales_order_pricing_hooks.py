@@ -295,6 +295,12 @@ def _copy_header_snapshot(doc, quotation, *, overwrite: bool) -> None:
         if not overwrite and _get(doc, fieldname):
             continue
         _set_table(doc, fieldname, _get(quotation, fieldname) or [])
+    if _has_field(doc, "custom_commercial_designation") and not (_get(doc, "custom_commercial_designation") or "").strip():
+        from orderlift.orderlift_sales.utils.commercial_presentation import resolve_commercial_designation
+
+        designation = resolve_commercial_designation(quotation)
+        if designation:
+            _set(doc, "custom_commercial_designation", designation)
 
 
 def _copy_row_snapshot(row, source_row, *, overwrite: bool) -> None:

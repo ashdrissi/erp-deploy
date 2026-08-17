@@ -18,8 +18,16 @@ Use the toolbar to filter by warehouse, item group, and stock status, or to sort
 - `On Hand`: current physical quantity in Bin.
 - `Available After SO`: on-hand quantity minus open confirmed demand.
 - `Open SO Qty`: open confirmed demand. Submitted Sales Order rows are used until the Sales Order has a current submitted Technical List revision; after that, the approved Technical List execution quantities are used.
+- `To Reserve`: what the planner would reserve today, computed from the current Stock Planning Settings (works even when planning is disabled).
+- `Usable Incoming`: safely dated incoming Purchase Order quantity, based on the current Stock Planning Settings.
+- `Projected Available`: On Hand minus To Reserve plus Usable Incoming.
+- `Shortage`: open demand not covered by reservation or usable incoming.
 - `Reserved Stock`: physically reserved stock.
-- `Incoming`: ordered quantity expected into stock.
+- `Incoming`: ordered quantity expected into stock, with the earliest pending Purchase Order date.
+- `Earliest Delivery`: earliest delivery date of the open confirmed Sales Orders, plus the distinct open Sales Order count.
+- `Lead Time` and `Supplier`: item procurement data for manual purchase decisions.
+
+Hover any column header to see its definition. The same hover definitions appear on the planning card, the item detail dialog, and the Quotation/Sales Order/Pricing Sheet stock preview.
 
 Click an item row to open its quantity, warehouse breakdown, recent movement, and permitted valuation detail.
 

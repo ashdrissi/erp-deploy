@@ -96,6 +96,7 @@ def inherit_commercial_presentation(doc, method=None) -> None:
 
     if first_source and _should_copy_header_from_source(doc):
         _copy_fields(first_source, doc, HEADER_FIELDS)
+        _inherit_designation_from_source(first_source, doc)
 
 
 def calculate_commercial_total(doc) -> float:
@@ -135,6 +136,29 @@ def _has_commercial_presentation_snapshot(doc) -> bool:
     except Exception:
         return False
     return bool(snapshot.get("template") and snapshot.get("blocks"))
+
+
+def resolve_commercial_designation(doc) -> str:
+    designation = (_get(doc, "custom_commercial_designation") or "").strip()
+    if designation:
+        return designation
+    return _snapshot_summary_title(doc)
+
+
+def _snapshot_summary_title(doc) -> str:
+    raw = (_get(doc, "custom_commercial_presentation_snapshot") or "").strip()
+    if not raw:
+        return ""
+    try:
+        snapshot = json.loads(raw)
+    except Exception:
+        return ""
+    if not isinstance(snapshot, dict):
+        return ""
+    for block in snapshot.get("blocks") or []:
+        if isinstance(block, dict) and block.get("type") == "Heading" and (block.get("value") or "").strip():
+            return (block.get("value") or "").strip()
+    return (snapshot.get("template_name") or "").strip()
 
 
 def _source_reference(target_doc, row) -> tuple[str, str, str]:
@@ -177,6 +201,16 @@ def _copy_fields(source, target, fieldnames) -> None:
         value = _get(source, fieldname)
         if value not in (None, ""):
             target.set(fieldname, value)
+
+
+def _inherit_designation_from_source(source, target) -> None:
+    if not _has_field(target, "custom_commercial_designation"):
+        return
+    if (_get(target, "custom_commercial_designation") or "").strip():
+        return
+    designation = resolve_commercial_designation(source)
+    if designation:
+        target.set("custom_commercial_designation", designation)
 
 
 def _should_copy_header_from_source(doc) -> bool:

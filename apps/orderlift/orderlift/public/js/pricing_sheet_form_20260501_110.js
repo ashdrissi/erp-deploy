@@ -2644,17 +2644,24 @@ async function refreshPricingSheetStockSnapshot(frm) {
     if (!frm || frm.__orderlift_refreshing_stock_snapshot) return;
     const itemCodes = pricingSheetItemCodes(frm);
     if (!itemCodes.length) {
-        setPricingSheetStockSnapshot(frm, [], {});
+        setPricingSheetStockSnapshot(frm, [], {}, {}, []);
         return;
     }
     frm.__orderlift_refreshing_stock_snapshot = true;
     try {
+        const sellingPriceLists = (frm.doc.selected_selling_price_lists || [])
+            .map((row) => String(row.price_list || "").trim())
+            .filter(Boolean);
         const response = await frappe.call({
             method: PRICING_SHEET_STOCK_SNAPSHOT_METHOD,
-            args: { item_codes: JSON.stringify(itemCodes), company: frm.doc.custom_company || frm.doc.company || "" },
+            args: {
+                item_codes: JSON.stringify(itemCodes),
+                company: frm.doc.custom_company || frm.doc.company || "",
+                selling_price_lists: JSON.stringify(sellingPriceLists),
+            },
         });
         const payload = response.message || {};
-        setPricingSheetStockSnapshot(frm, payload.rows || [], payload.totals || {});
+        setPricingSheetStockSnapshot(frm, payload.rows || [], payload.totals || {}, payload.item_totals || {}, payload.shared_rows || []);
     } catch (error) {
         console.error("Orderlift Pricing Sheet stock snapshot failed", error);
     } finally {
@@ -2671,18 +2678,40 @@ function pricingSheetItemCodes(frm) {
     return out;
 }
 
-function setPricingSheetStockSnapshot(frm, rows, totals) {
+function setPricingSheetStockSnapshot(frm, rows, totals, itemTotals, sharedRows) {
     if (frm.fields_dict.custom_warehouse_stock_snapshot) {
         syncPricingSheetStockSnapshotTable(frm, rows || []);
     }
+    if (frm.fields_dict.custom_shared_company_stock) {
+        syncSharedCompanyStockTable(frm, sharedRows || []);
+    }
     if (hasPricingSheetLineStockField(frm)) {
+        const grid = frm.fields_dict.lines && frm.fields_dict.lines.grid;
+        const hasAvail = Boolean(grid && grid.get_field && grid.get_field("custom_available_after_so_qty"));
+        const hasProjected = Boolean(grid && grid.get_field && grid.get_field("custom_projected_available_qty"));
         let changed = false;
         (frm.doc.lines || []).forEach((row) => {
             const itemCode = String(row.item || "").trim();
+            const outlook = (itemTotals || {})[itemCode] || {};
             const nextQty = Number((totals || {})[itemCode] || 0);
-            if (Math.abs(Number(row.custom_current_company_stock_qty || 0) - nextQty) < 0.000001) return;
-            row.custom_current_company_stock_qty = nextQty;
-            changed = true;
+            if (Math.abs(Number(row.custom_current_company_stock_qty || 0) - nextQty) >= 0.000001) {
+                row.custom_current_company_stock_qty = nextQty;
+                changed = true;
+            }
+            if (hasAvail) {
+                const nextAvail = Number(outlook.available_after_so || 0);
+                if (Math.abs(Number(row.custom_available_after_so_qty || 0) - nextAvail) >= 0.000001) {
+                    row.custom_available_after_so_qty = nextAvail;
+                    changed = true;
+                }
+            }
+            if (hasProjected) {
+                const nextProjected = Number(outlook.projected_available || 0);
+                if (Math.abs(Number(row.custom_projected_available_qty || 0) - nextProjected) >= 0.000001) {
+                    row.custom_projected_available_qty = nextProjected;
+                    changed = true;
+                }
+            }
         });
         if (changed) {
             frm.refresh_field("lines");
@@ -2714,6 +2743,8 @@ function normalizeStockSnapshotRow(row) {
         item_name: row.item_name || "",
         warehouse: row.warehouse || "",
         actual_qty: Number(row.actual_qty || 0),
+        available_after_so_qty: Number(row.available_after_so_qty || 0),
+        projected_available_qty: Number(row.projected_available_qty || 0),
     };
 }
 
@@ -2725,13 +2756,58 @@ function stockSnapshotRowsMatch(currentRows, nextRows) {
         return row.item_code === next.item_code
             && row.item_name === next.item_name
             && row.warehouse === next.warehouse
-            && Math.abs(Number(row.actual_qty || 0) - Number(next.actual_qty || 0)) < 0.000001;
+            && Math.abs(Number(row.actual_qty || 0) - Number(next.actual_qty || 0)) < 0.000001
+            && Math.abs(Number(row.available_after_so_qty || 0) - Number(next.available_after_so_qty || 0)) < 0.000001
+            && Math.abs(Number(row.projected_available_qty || 0) - Number(next.projected_available_qty || 0)) < 0.000001;
     });
 }
 
 function hasPricingSheetLineStockField(frm) {
     const grid = frm.fields_dict.lines && frm.fields_dict.lines.grid;
     return Boolean(grid && grid.get_field && grid.get_field("custom_current_company_stock_qty"));
+}
+
+function syncSharedCompanyStockTable(frm, rows) {
+    const fieldname = "custom_shared_company_stock";
+    const nextRows = (rows || []).map(normalizeSharedCompanyStockRow);
+    if (sharedCompanyStockRowsMatch(frm.doc[fieldname] || [], nextRows)) return;
+    const wasUnsaved = frm.doc && frm.doc.__unsaved;
+    frappe.model.clear_table(frm.doc, fieldname);
+    nextRows.forEach((values) => {
+        const child = frappe.model.add_child(frm.doc, "Orderlift Shared Company Stock", fieldname);
+        Object.assign(child, values);
+    });
+    frm.refresh_field(fieldname);
+    if (!wasUnsaved && frm.doc) {
+        frm.doc.__unsaved = 0;
+        frm.wrapper && $(frm.wrapper).find(".indicator-pill.red, .indicator-pill.orange").remove();
+    }
+}
+
+function normalizeSharedCompanyStockRow(row) {
+    return {
+        company: row.company || "",
+        item_code: row.item_code || "",
+        item_name: row.item_name || "",
+        warehouse: row.warehouse || "",
+        actual_qty: Number(row.actual_qty || 0),
+        available_after_so_qty: Number(row.available_after_so_qty || 0),
+        projected_available_qty: Number(row.projected_available_qty || 0),
+    };
+}
+
+function sharedCompanyStockRowsMatch(currentRows, nextRows) {
+    const current = (currentRows || []).map(normalizeSharedCompanyStockRow);
+    if (current.length !== nextRows.length) return false;
+    return current.every((row, index) => {
+        const next = nextRows[index] || {};
+        return row.company === next.company
+            && row.item_code === next.item_code
+            && row.warehouse === next.warehouse
+            && Math.abs(Number(row.actual_qty || 0) - Number(next.actual_qty || 0)) < 0.000001
+            && Math.abs(Number(row.available_after_so_qty || 0) - Number(next.available_after_so_qty || 0)) < 0.000001
+            && Math.abs(Number(row.projected_available_qty || 0) - Number(next.projected_available_qty || 0)) < 0.000001;
+    });
 }
 
 frappe.ui.form.on("Pricing Sheet", {

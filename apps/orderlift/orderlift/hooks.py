@@ -624,6 +624,7 @@ doctype_js = {
         "public/js/procurement_source_chain_20260726a.js",
         "public/js/generic_ttc_field_sync_20260805b.js",
         "public/js/submitted_print_guard_20260728a.js",
+        "public/js/purchase_order_stock_overview_20260817a.js",
     ],
     "Purchase Receipt": [
         "public/js/purchase_receipt_logistics.js",
@@ -655,6 +656,7 @@ doctype_js = {
         "public/js/sales_order_connected_documents_20260724a.js",
         "public/js/submitted_print_guard_20260728a.js",
         "public/js/sales_order_technical_list_20260815f.js",
+        "public/js/sales_order_stock_overview_20260817a.js",
     ],
     "Stock Entry": [
         "public/js/stock_rate_guard_20260721c.js",

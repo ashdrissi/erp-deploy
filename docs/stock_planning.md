@@ -84,6 +84,29 @@ The hourly scheduler recalculates enabled companies. Recalculation is also queue
 
 Submitted Sales Orders create one `Stock Demand Plan` per stock item row. Cancellation marks plans cancelled; it does not silently cancel submitted downstream documents.
 
+## Quotation and Sales Order Stock Preview
+
+The Stock by Warehouse table and the item-grid stock columns on Quotation, Sales Order, and Pricing Sheet now include planner-aware columns:
+
+- `Available After SO`: per warehouse, on hand minus open confirmed demand for that warehouse; per item row, total on hand minus open confirmed demand.
+- `Projected Available`: per warehouse, Available After SO plus open Purchase Order quantity expected into that warehouse; per item row, On Hand minus `To Reserve` plus `Usable Incoming`.
+
+`To Reserve` and `Usable Incoming` come from the read-only `simulate_reservation_outcome` mirror of the automatic Pick List decision. It uses the saved company `Stock Planning Settings` even when planning is disabled (built-in defaults when no record exists) and never writes documents. The simulation follows the same protection date, incoming safety, delivery priority, partial-Pick-List, and protected-floor rules as the planner.
+
+## Shared Company Stock
+
+The `Shared Company Stock` table on Quotation, Sales Order, Pricing Sheet, and Purchase Order shows warehouse stock in sharing-linked companies. Both directions resolve:
+
+- Active `Price List Sharing` targets of selling price lists owned by the document company.
+- Owner companies of the selling lists mirrored into the buying lists used on the document, including the stamped `custom_source_buying_price_lists` of the selling lists themselves (internal supplier side).
+- On Purchase Orders, the internal supplier's `represents_company` is also included.
+
+Rows include the company, warehouse, on hand, Available After SO, and Projected Available, using the same per-warehouse formulas as the document-company table.
+
+Visibility is by design not restricted to the user's company access: anyone who can open the document sees stock quantities of the sharing-linked companies.
+
+Quotation stores these values at save time (historical). Sales Order and Purchase Order do not store them: a live form script refreshes the Stock by Warehouse, Shared Company Stock, and item-grid stock columns on form load and on item/price-list/supplier changes, so the preview always reflects current reality, including after submission.
+
 ## Activation Checklist
 
 1. Review the company settings and collapsible examples.

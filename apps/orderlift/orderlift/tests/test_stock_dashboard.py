@@ -94,6 +94,39 @@ class TestStockDashboard(unittest.TestCase):
         self.assertIn('/app/stock-planning-settings-control', JS_SOURCE)
         self.assertIn("renderStockPlanning(page, d.stock_planning || {})", JS_SOURCE)
 
+    def test_manual_reservation_outlook_columns_are_wired(self):
+        for token in (
+            '"to_be_reserved": "to_be_reserved"',
+            '"usable_incoming": "usable_incoming"',
+            '"projected_available": "projected_available"',
+            '"shortage": "shortage"',
+            '"incoming_date": "incoming_date"',
+            '"earliest_delivery": "earliest_delivery"',
+            '"open_so_count": "open_so_count"',
+            '"lead_time_days": "lead_time_days"',
+            '"supplier": "supplier"',
+            "def _overview_outlook",
+            "simulate_reservation_outcome",
+            "def _open_incoming_dates",
+            "def _first_suppliers",
+        ):
+            self.assertIn(token, PY_SOURCE)
+
+    def test_column_definition_helpers_are_wired(self):
+        for token in (
+            'title="${frappe.utils.escape_html(__(',
+            '__("Hover a column header to see its definition.")',
+            'class="sdb-table-hint"',
+            '__("On Hand minus Open SO Qty: what remains for new demand.")',
+            '__("What the planner would reserve today, computed from the current Stock Planning Settings.")',
+            '__("On Hand minus To Reserve plus Usable Incoming.")',
+            '__("Open demand not covered by reservation or usable incoming.")',
+            '__("Physically reserved quantity (submitted Pick Lists).")',
+            '__("Quantity protected by Pick Lists (draft or submitted).")',
+            '__("Demand not covered by physical stock, reservations, or safe incoming.")',
+        ):
+            self.assertIn(token, JS_SOURCE)
+
 
 if __name__ == "__main__":
     unittest.main()

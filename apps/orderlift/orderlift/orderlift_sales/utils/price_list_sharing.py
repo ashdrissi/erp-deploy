@@ -404,3 +404,140 @@ def on_sharing_row_trash(doc, method=None):
     shared_list = (getattr(doc, "shared_price_list", "") or "").strip()
     if shared_list and frappe.db.exists("Price List", shared_list):
         disable_shared_price_list(shared_list)
+
+
+def resolve_shared_companies_from_price_lists(doc_company: str, selling_price_lists) -> list[str]:
+    """Companies linked to the given selling price lists.
+
+    Resolves both directions: companies the selling lists are actively shared to,
+    and owner companies of the selling lists mirrored into the stamped source
+    buying lists of these selling lists (internal suppliers). Returns the
+    deduplicated, sorted companies, excluding the document company.
+    """
+    doc_company = (doc_company or "").strip()
+    price_lists = _clean_names(selling_price_lists)
+    if not doc_company or not price_lists:
+        return []
+    if not _has_column("Price List", "custom_company"):
+        return []
+
+    targets = set()
+    source_buying = set()
+    if frappe.db.exists and frappe.db.exists("DocType", "Price List Sharing"):
+        for price_list in price_lists:
+            owner = (frappe.db.get_value("Price List", price_list, "custom_company") or "").strip()
+            if owner != doc_company:
+                continue
+            rows = frappe.get_all(
+                "Price List Sharing",
+                filters={"parent": price_list, "is_active": 1},
+                fields=["company"],
+                limit_page_length=0,
+            )
+            for row in rows:
+                target = (row.get("company") or "").strip()
+                if target and target != doc_company:
+                    targets.add(target)
+    for price_list in price_lists:
+        owner = (frappe.db.get_value("Price List", price_list, "custom_company") or "").strip()
+        if owner != doc_company:
+            continue
+        raw = (frappe.db.get_value("Price List", price_list, "custom_source_buying_price_lists") or "").strip()
+        for name in _clean_names(raw.split(",")):
+            source_buying.add(name)
+    suppliers = resolve_shared_companies_from_buying_price_lists(doc_company, sorted(source_buying))
+    return sorted(set(targets) | set(suppliers))
+
+
+def resolve_shared_companies_from_buying_price_lists(doc_company: str, buying_price_lists) -> list[str]:
+    """Owner companies of the selling price lists shared into the buying lists.
+
+    A buying price list owned by doc_company with `custom_is_shared_from` set
+    mirrors a selling price list owned by another company — the internal
+    supplier. Returns the deduplicated, sorted supplier companies.
+    """
+    doc_company = (doc_company or "").strip()
+    price_lists = _clean_names(buying_price_lists)
+    if not doc_company or not price_lists:
+        return []
+    if not _has_column("Price List", "custom_company") or not _has_column("Price List", SHARED_FROM_FIELD):
+        return []
+
+    suppliers = set()
+    for price_list in price_lists:
+        values = frappe.db.get_value(
+            "Price List",
+            price_list,
+            ["custom_company", SHARED_FROM_FIELD],
+            as_dict=True,
+        ) or {}
+        if (values.get("custom_company") or "").strip() != doc_company:
+            continue
+        source_list = (values.get(SHARED_FROM_FIELD) or "").strip()
+        if not source_list:
+            continue
+        owner = (frappe.db.get_value("Price List", source_list, "custom_company") or "").strip()
+        if owner and owner != doc_company:
+            suppliers.add(owner)
+    return sorted(suppliers)
+
+
+def resolve_shared_stock_companies(doc) -> list[str]:
+    """Sharing-linked companies whose stock appears in the shared-company preview.
+
+    Collects selling price lists (targets of sharing rows) and buying price lists
+    (owner companies of the mirrored selling lists) from the document, then
+    returns the union of both directions.
+    """
+    if not doc:
+        return []
+    company = (doc.get("company") if hasattr(doc, "get") else getattr(doc, "company", "")) or ""
+    company = (company or "").strip()
+    selling_lists = set()
+    buying_lists = set()
+    selection = doc.get("selected_selling_price_lists") if hasattr(doc, "get") else getattr(doc, "selected_selling_price_lists", [])
+    for row in selection or []:
+        name = (row.get("price_list") if hasattr(row, "get") else getattr(row, "price_list", "")) or ""
+        if (name or "").strip():
+            selling_lists.add(name.strip())
+    primary = doc.get("selling_price_list") if hasattr(doc, "get") else getattr(doc, "selling_price_list", "")
+    if (primary or "").strip():
+        selling_lists.add(primary.strip())
+    buying_selection = doc.get("selected_buying_price_lists") if hasattr(doc, "get") else getattr(doc, "selected_buying_price_lists", [])
+    for row in buying_selection or []:
+        name = (row.get("price_list") if hasattr(row, "get") else getattr(row, "price_list", "")) or ""
+        if (name or "").strip():
+            buying_lists.add(name.strip())
+    doc_buying = doc.get("buying_price_list") if hasattr(doc, "get") else getattr(doc, "buying_price_list", "")
+    if (doc_buying or "").strip():
+        buying_lists.add(doc_buying.strip())
+    doc_buying_rows = doc.get("custom_source_buying_price_lists") if hasattr(doc, "get") else getattr(doc, "custom_source_buying_price_lists", [])
+    for row in doc_buying_rows or []:
+        name = (row.get("price_list") if hasattr(row, "get") else getattr(row, "price_list", "")) or ""
+        if (name or "").strip():
+            buying_lists.add(name.strip())
+    items = doc.get("items") if hasattr(doc, "get") else getattr(doc, "items", [])
+    if not items:
+        items = doc.get("lines") if hasattr(doc, "get") else getattr(doc, "lines", [])
+    for row in items or []:
+        sell_name = (row.get("source_selling_price_list") if hasattr(row, "get") else getattr(row, "source_selling_price_list", "")) or ""
+        if (sell_name or "").strip():
+            selling_lists.add(sell_name.strip())
+        buy_name = (row.get("custom_source_buying_price_list") if hasattr(row, "get") else getattr(row, "custom_source_buying_price_list", "")) or ""
+        if (buy_name or "").strip():
+            buying_lists.add(buy_name.strip())
+
+    companies = set(
+        resolve_shared_companies_from_price_lists(company, sorted(selling_lists))
+        + resolve_shared_companies_from_buying_price_lists(company, sorted(buying_lists))
+    )
+    return sorted(companies)
+
+
+def _clean_names(values) -> list[str]:
+    result = []
+    for value in values or []:
+        clean = str(value or "").strip()
+        if clean and clean not in result:
+            result.append(clean)
+    return result
