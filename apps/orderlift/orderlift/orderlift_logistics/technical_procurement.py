@@ -490,14 +490,19 @@ def validate_procurement_document(doc, method=None) -> None:
         # additions collapse to "item::<item_code>". Checking each line separately
         # against the same pool bucket would let one document ship that bucket's
         # whole budget once per line. The budget is likewise the sum over the lines
-        # sharing the key.
+        # sharing the key -- taken from the whole revision, not from this document's
+        # rows, or splitting one delivery into two would shrink the shared bucket to
+        # a single line's quantity and block work the cap allows.
         delivered_by_list = {}
+        budget_by_revision = {}
         requested = defaultdict(float)
-        budget = defaultdict(float)
+        budget = {}
         labels = {}
         for (revision_name, revision_item), total in line_totals.items():
             revision = revisions[revision_name]
             technical_list = _text(revision.technical_list)
+            if revision_name not in budget_by_revision:
+                budget_by_revision[revision_name] = _delivery_budget_by_key(revision)
             if technical_list not in delivered_by_list:
                 delivered_by_list[technical_list] = _delivered_stock_qty(
                     technical_list,
@@ -505,9 +510,10 @@ def validate_procurement_document(doc, method=None) -> None:
                     exclude_name=_text(_get(doc, "name")),
                 )
             source_line = _revision_lines(revision)[revision_item]
-            key = (technical_list, _allocation_key(source_line))
+            allocation_key = _allocation_key(source_line)
+            key = (technical_list, allocation_key)
             requested[key] += total
-            budget[key] += _line_stock_qty(source_line)
+            budget[key] = budget_by_revision[revision_name].get(allocation_key, 0)
             labels.setdefault(key, _row_label(source_line))
         for key, total in requested.items():
             technical_list, allocation_key = key
@@ -1353,16 +1359,45 @@ def _delivered_stock_qty(technical_list, *, exclude_doctype="", exclude_name="")
     return totals
 
 
+def _delivery_budget_by_key(revision):
+    """Approved deliverable stock qty per allocation key.
+
+    Summed over the whole revision, not over one document's rows: distinct lines
+    can share a key (additions collapse to "item::<item_code>") and the delivered
+    pool is keyed the same way, so a per-document budget would shrink the shared
+    bucket to a single line's quantity.
+    """
+    budget = defaultdict(float)
+    for line in revision.items or []:
+        if not cint(line.execution_relevant):
+            continue
+        budget[_allocation_key(line)] += _line_stock_qty(line)
+    return budget
+
+
 def _delivery_remaining_by_line(revision):
-    """Remaining deliverable stock qty per execution-relevant revision line."""
+    """Remaining deliverable stock qty per execution-relevant revision line.
+
+    Both the budget and the delivered pool are keyed by allocation key, and distinct
+    lines can share one key, so the shared remainder is apportioned rather than
+    subtracted from every line. Apportionment walks the revision's
+    execution-relevant lines in order and gives each line up to its own
+    execution_stock_qty out of what is left of the bucket: earlier lines fill first,
+    and the total handed out for a key equals that key's remainder exactly.
+    """
     delivered = _delivered_stock_qty(revision.technical_list)
+    available = {
+        key: max(total - delivered.get(key, 0), 0)
+        for key, total in _delivery_budget_by_key(revision).items()
+    }
     result = {}
     for line in revision.items or []:
         if not cint(line.execution_relevant):
             continue
-        result[line.name] = max(
-            _line_stock_qty(line) - delivered.get(_allocation_key(line), 0), 0
-        )
+        key = _allocation_key(line)
+        share = min(_line_stock_qty(line), available.get(key, 0))
+        available[key] = available.get(key, 0) - share
+        result[line.name] = share
     return result
 
 

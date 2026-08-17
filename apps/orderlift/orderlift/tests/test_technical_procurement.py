@@ -558,7 +558,8 @@ class TestTechnicalProcurement(unittest.TestCase):
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
         delivery = body.split('if doctype == "Delivery Note":', 1)[1]
         self.assertIn("requested[key] += total", delivery)
-        self.assertIn("budget[key] += _line_stock_qty(source_line)", delivery)
+        # The budget comes from the whole revision, not from this document's rows.
+        self.assertIn("_delivery_budget_by_key(revision)", delivery)
         # The cap must be evaluated once per key, after aggregation -- not inside
         # the loop that walks revision lines.
         self.assertLess(
@@ -767,6 +768,151 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertNotIn("parent_doc.is_return", delivered)
         self.assertNotIn("child.is_return", delivered)
         self.assertIn("credits the quantity back", delivered)
+
+    def _shared_key_revision(self):
+        """Two engineering additions of the same item, 3 each. No sales_order_item,
+        so both collapse to the single allocation key "item::I-2"."""
+        def line(name):
+            return AttrDict(
+                name=name,
+                line_key=name,
+                sales_order_item="",
+                item_code="I-2",
+                uom="Nos",
+                conversion_factor=1,
+                stock_uom="Nos",
+                warehouse="WH - O",
+                execution_relevant=1,
+                execution_stock_qty=3,
+            )
+
+        return revision_stub(
+            name="TLR-1",
+            technical_list="TL-1",
+            company="Orderlift",
+            project="PROJ-1",
+            sales_order="SO-1",
+            approval_hash="abc",
+            check_permission=lambda *args: None,
+            items=[line("R1"), line("R2")],
+        )
+
+    def _delivery_note_for(self, revision, revision_items):
+        rows = [
+            AttrDict(
+                item_code="I-2",
+                qty=3,
+                stock_qty=3,
+                conversion_factor=1,
+                uom="Nos",
+                stock_uom="Nos",
+                warehouse="WH - O",
+                project="PROJ-1",
+                custom_technical_list="TL-1",
+                custom_technical_revision=revision.name,
+                custom_technical_revision_item=revision_item,
+                custom_technical_line_key=revision_item,
+                custom_technical_approval_hash="abc",
+                custom_technical_procurement_route="ROUTE-1",
+                custom_technical_procurement_action="ACT-DN",
+            )
+            for revision_item in revision_items
+        ]
+        return AttrDict(
+            doctype="Delivery Note",
+            docstatus=0,
+            is_return=0,
+            name="DN-1",
+            company="Orderlift",
+            project="PROJ-1",
+            items=rows,
+        )
+
+    def _run_delivery_validation(self, revision, doc, delivered):
+        documents = {
+            (technical_procurement.REVISION_DOCTYPE, revision.name): revision,
+            (technical_procurement.TECHNICAL_LIST_DOCTYPE, "TL-1"): AttrDict(
+                name="TL-1", check_permission=lambda *args: None
+            ),
+        }
+        with patch.object(
+            technical_procurement, "_technical_schema_ready", return_value=True
+        ), patch.object(
+            frappe_stub,
+            "get_doc",
+            side_effect=lambda doctype, name: documents[(doctype, name)],
+            create=True,
+        ), patch.object(technical_procurement, "_lock_document"), patch.object(
+            technical_procurement, "_validate_revision"
+        ), patch.object(
+            technical_procurement, "_validate_source_line"
+        ), patch.object(
+            technical_procurement, "_delivered_stock_qty", return_value=delivered
+        ):
+            technical_procurement.validate_procurement_document(doc)
+
+    def test_shared_key_budget_does_not_shrink_when_deliveries_are_split(self):
+        """Two additions of 3 approve 6 deliverable units. Summing the budget only
+        over the rows present on this document made the second delivery see a budget
+        of 3 against 3 already delivered, so splitting the delivery in two turned 6
+        approved units into 3 deliverable ones."""
+        revision = self._shared_key_revision()
+        # First document: both lines together, nothing delivered yet.
+        self._run_delivery_validation(
+            revision, self._delivery_note_for(revision, ["R1", "R2"]), {}
+        )
+        # Second scenario: the same two lines delivered one document at a time.
+        self._run_delivery_validation(
+            revision, self._delivery_note_for(revision, ["R1"]), {}
+        )
+        self._run_delivery_validation(
+            revision, self._delivery_note_for(revision, ["R2"]), {"item::I-2": 3}
+        )
+
+    def test_shared_key_budget_is_still_capped_at_the_approved_total(self):
+        revision = self._shared_key_revision()
+        with self.assertRaisesRegex(ValueError, "remaining delivery quantity"):
+            self._run_delivery_validation(
+                revision,
+                self._delivery_note_for(revision, ["R2"]),
+                {"item::I-2": 6},
+            )
+
+    def test_delivery_remaining_apportions_a_shared_bucket_across_its_lines(self):
+        """The shared remainder must be handed out once, in revision order, not
+        subtracted in full from every line sharing the key."""
+        revision = self._shared_key_revision()
+        with patch.object(
+            technical_procurement, "_delivered_stock_qty", return_value={"item::I-2": 3}
+        ):
+            remaining = technical_procurement._delivery_remaining_by_line(revision)
+
+        self.assertEqual(remaining["R1"], 3)
+        self.assertEqual(remaining["R2"], 0)
+        self.assertEqual(sum(remaining.values()), 3)
+
+        with patch.object(
+            technical_procurement, "_delivered_stock_qty", return_value={"item::I-2": 4}
+        ):
+            remaining = technical_procurement._delivery_remaining_by_line(revision)
+        self.assertEqual(remaining["R1"], 2)
+        self.assertEqual(remaining["R2"], 0)
+
+    def test_delivery_budget_is_summed_over_the_whole_revision(self):
+        revision = self._shared_key_revision()
+        revision.items.append(
+            AttrDict(
+                name="R3",
+                sales_order_item="",
+                item_code="I-2",
+                execution_relevant=0,
+                execution_stock_qty=99,
+            )
+        )
+        self.assertEqual(
+            dict(technical_procurement._delivery_budget_by_key(revision)),
+            {"item::I-2": 6},
+        )
 
     def test_native_delivery_note_from_sales_order_is_blocked(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
