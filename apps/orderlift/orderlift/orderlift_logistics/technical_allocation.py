@@ -2,8 +2,10 @@
 
 One question, answered per pool: how much of an approved revision line remains?
 There are independent pools -- procurement allowance (Material Requests and direct
-Purchase Orders) and delivery allowance (Delivery Notes) -- and each adapter in
-``technical_procurement`` consumes exactly one of them.
+Purchase Orders), delivery allowance (Delivery Notes) and picking allowance (Pick
+Lists) -- and each adapter in ``technical_procurement`` consumes exactly one of
+them. Picking is kept apart from delivery on purpose: a pick that later becomes
+its own Delivery Note must not consume the approved quantity twice.
 
 This module must NOT import from ``technical_procurement``: that module imports
 from here, and the reverse would be a cycle. ``REVISION_DOCTYPE`` and the small
@@ -154,13 +156,56 @@ def delivered_stock_qty(technical_list, *, exclude_doctype="", exclude_name=""):
     return totals
 
 
-def delivery_budget_by_key(revision):
-    """Approved deliverable stock qty per allocation key.
+def picked_stock_qty(technical_list, *, exclude_doctype="", exclude_name=""):
+    """Stock qty already picked per allocation key for a whole Technical List.
+
+    Anchored on custom_technical_list for the same reasons as delivered_stock_qty:
+    the Technical List is stable for the life of the Sales Order while revisions are
+    immutable snapshots, so counting per revision would reset picked totals every
+    time engineering approves a new one -- and approving a revision is the sanctioned
+    way to raise a quantity, which would make the cap trivially bypassable.
+
+    Pick List Item stores the Sales Order line in sales_order_item directly (unlike
+    Delivery Note Item, which uses so_detail), so no aliasing is needed.
+    """
+    totals = defaultdict(float)
+    meta = _meta("Pick List Item")
+    if not meta or not meta.get_field("custom_technical_list"):
+        return totals
+    conditions = []
+    parameters = [technical_list]
+    if exclude_doctype == "Pick List" and exclude_name:
+        conditions.append("parent_doc.name != %s")
+        parameters.append(exclude_name)
+    extra = "".join(f" AND {condition}" for condition in conditions)
+    rows = frappe.db.sql(
+        f"""
+        SELECT child.sales_order_item,
+               child.item_code,
+               child.qty,
+               child.stock_qty,
+               child.conversion_factor
+          FROM `tabPick List Item` child
+          INNER JOIN `tabPick List` parent_doc ON parent_doc.name = child.parent
+         WHERE parent_doc.docstatus < 2
+           AND child.custom_technical_list = %s{extra}
+        """,
+        tuple(parameters),
+        as_dict=True,
+    )
+    for row in rows:
+        totals[allocation_key(row)] += row_stock_qty(row)
+    return totals
+
+
+def budget_by_key(revision):
+    """Approved executable stock qty per allocation key.
 
     Summed over the whole revision, not over one document's rows: distinct lines
-    can share a key (additions collapse to "item::<item_code>") and the delivered
-    pool is keyed the same way, so a per-document budget would shrink the shared
-    bucket to a single line's quantity.
+    can share a key (additions collapse to "item::<item_code>") and the consumed
+    pools are keyed the same way, so a per-document budget would shrink the shared
+    bucket to a single line's quantity. Shared by the delivery and picking pools --
+    both are capped by the same approved execution qty.
     """
     budget = defaultdict(float)
     for line in revision.items or []:
@@ -170,20 +215,17 @@ def delivery_budget_by_key(revision):
     return budget
 
 
-def delivery_remaining_by_line(revision):
-    """Remaining deliverable stock qty per execution-relevant revision line.
+def _remaining_against(revision, consumed):
+    """Apportion each key's unconsumed budget across the lines that share it.
 
-    Both the budget and the delivered pool are keyed by allocation key, and distinct
-    lines can share one key, so the shared remainder is apportioned rather than
-    subtracted from every line. Apportionment walks the revision's
-    execution-relevant lines in order and gives each line up to its own
-    execution_stock_qty out of what is left of the bucket: earlier lines fill first,
-    and the total handed out for a key equals that key's remainder exactly.
+    Distinct lines can share an allocation key -- engineering additions collapse to
+    "item::<item_code>" -- so the remainder is walked in revision order, each line
+    taking up to its own line_stock_qty. Deterministic, and never double-subtracts a
+    shared bucket from every line.
     """
-    delivered = delivered_stock_qty(revision.technical_list)
+    budget = budget_by_key(revision)
     available = {
-        key: max(total - delivered.get(key, 0), 0)
-        for key, total in delivery_budget_by_key(revision).items()
+        key: max(total - consumed.get(key, 0), 0) for key, total in budget.items()
     }
     result = {}
     for line in revision.items or []:
@@ -194,6 +236,20 @@ def delivery_remaining_by_line(revision):
         available[key] = available.get(key, 0) - share
         result[line.name] = share
     return result
+
+
+def delivery_remaining_by_line(revision):
+    """Remaining deliverable stock qty per execution-relevant revision line."""
+    return _remaining_against(revision, delivered_stock_qty(revision.technical_list))
+
+
+def picking_remaining_by_line(revision):
+    """Remaining pickable stock qty per execution-relevant revision line.
+
+    Independent of the delivery pool: a pick that later becomes its own Delivery Note
+    would otherwise consume the approved quantity twice (spec rule 15).
+    """
+    return _remaining_against(revision, picked_stock_qty(revision.technical_list))
 
 
 def remaining_for_adapter(adapter_key, revision, cache):
@@ -207,6 +263,8 @@ def remaining_for_adapter(adapter_key, revision, cache):
     if pool not in cache:
         if pool == "delivery":
             cache[pool] = delivery_remaining_by_line(revision)
+        elif pool == "picking":
+            cache[pool] = picking_remaining_by_line(revision)
         else:
             cache[pool] = remaining_by_line(revision)
     return cache[pool]

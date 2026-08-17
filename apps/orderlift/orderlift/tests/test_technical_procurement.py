@@ -522,6 +522,40 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertNotIn("custom_technical_revision = %s", delivered)
         self.assertIn("parent_doc.docstatus < 2", delivered)
 
+    def test_picked_pool_is_anchored_on_the_technical_list_not_the_revision(self):
+        """Rule 6 applies to picking exactly as it does to delivery: counting per
+        revision would reset picked totals whenever engineering approves a new one."""
+        source = (
+            APP_ROOT / "orderlift_logistics" / "technical_allocation.py"
+        ).read_text()
+        body = source.split("def picked_stock_qty", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("child.custom_technical_list = %s", body)
+        self.assertNotIn("custom_technical_revision = %s", body)
+        self.assertIn("parent_doc.docstatus < 2", body)
+        self.assertIn("tabPick List Item", body)
+
+    def test_picking_remaining_is_independent_of_delivery(self):
+        """A pick that later becomes its own Delivery Note must not consume the
+        approved quantity twice, so the two pools never see each other."""
+        revision = revision_stub(
+            name="TLR-1",
+            technical_list="TL-1",
+            items=[
+                AttrDict(name="R1", sales_order_item="SOI-1", item_code="I-1",
+                         execution_stock_qty=10, execution_relevant=1),
+            ],
+        )
+        with patch.object(
+            technical_allocation, "picked_stock_qty", return_value={"SOI-1": 4}
+        ), patch.object(
+            technical_allocation, "delivered_stock_qty", return_value={"SOI-1": 10}
+        ):
+            picking = technical_allocation.picking_remaining_by_line(revision)
+            delivery = technical_allocation.delivery_remaining_by_line(revision)
+        # 4 picked of 10 approved leaves 6 pickable, regardless of what was delivered.
+        self.assertEqual(picking["R1"], 6)
+        self.assertEqual(delivery["R1"], 0)
+
     def test_delivery_remaining_subtracts_delivered_from_execution_qty(self):
         revision = revision_stub(
             name="TLR-2",
@@ -596,7 +630,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         delivery = body.split('if doctype == "Delivery Note":', 1)[1]
         self.assertIn("requested[key] += total", delivery)
         # The budget comes from the whole revision, not from this document's rows.
-        self.assertIn("delivery_budget_by_key(revision)", delivery)
+        self.assertIn("budget_by_key(revision)", delivery)
         # The cap must be evaluated once per key, after aggregation -- not inside
         # the loop that walks revision lines.
         self.assertLess(
@@ -947,7 +981,7 @@ class TestTechnicalProcurement(unittest.TestCase):
             )
         )
         self.assertEqual(
-            dict(technical_allocation.delivery_budget_by_key(revision)),
+            dict(technical_allocation.budget_by_key(revision)),
             {"item::I-2": 6},
         )
 
@@ -1045,8 +1079,10 @@ class TestTechnicalProcurement(unittest.TestCase):
             "row_stock_qty",
             "allocated_stock_qty",
             "delivered_stock_qty",
-            "delivery_budget_by_key",
+            "budget_by_key",
             "delivery_remaining_by_line",
+            "picked_stock_qty",
+            "picking_remaining_by_line",
             "remaining_by_line",
             "remaining_for_adapter",
         ):

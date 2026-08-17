@@ -12,8 +12,8 @@ from frappe.utils import cint, flt, getdate, nowdate
 from orderlift.orderlift_logistics.technical_allocation import (
     allocated_stock_qty,
     allocation_key,
+    budget_by_key,
     delivered_stock_qty,
-    delivery_budget_by_key,
     is_root_allocation,
     line_stock_qty,
     remaining_for_adapter,
@@ -502,7 +502,7 @@ def validate_procurement_document(doc, method=None) -> None:
             revision = revisions[revision_name]
             technical_list = _text(revision.technical_list)
             if revision_name not in budget_by_revision:
-                budget_by_revision[revision_name] = delivery_budget_by_key(revision)
+                budget_by_revision[revision_name] = budget_by_key(revision)
             if technical_list not in delivered_by_list:
                 delivered_by_list[technical_list] = delivered_stock_qty(
                     technical_list,
