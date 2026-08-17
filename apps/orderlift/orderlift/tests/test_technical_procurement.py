@@ -119,6 +119,42 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn("revision_to_delivery_note", fields["adapter_key"]["options"])
         self.assertIn("Delivery Note", fields["target_doctype"]["options"])
 
+    def test_delivery_note_rows_use_against_sales_order_and_so_detail(self):
+        """Delivery Note Item has no sales_order/sales_order_item columns. Native
+        delivered-qty tracking hangs off so_detail, and an engineering addition has
+        no Sales Order line so both fields must stay empty for it."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        branch = source.split('if target_doctype == "Delivery Note":', 1)[1].split(
+            "    _set_known_fields", 1
+        )[0]
+        self.assertIn("customer", branch)
+        self.assertIn("posting_date", branch)
+
+        rows = source.split("def _delivery_row_values", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("against_sales_order", rows)
+        self.assertIn("so_detail", rows)
+        self.assertNotIn('"sales_order_item": line.sales_order_item', rows)
+
+    def test_delivery_row_values_omit_sales_order_link_for_added_lines(self):
+        sold = AttrDict(item_code="I-1", item_name="One", description="d",
+                        sales_order_item="SOI-1", uom="Nos", conversion_factor=1,
+                        stock_uom="Nos", warehouse="WH - O", required_date=None)
+        added = AttrDict(item_code="I-2", item_name="Two", description="d",
+                         sales_order_item="", uom="Nos", conversion_factor=1,
+                         stock_uom="Nos", warehouse="WH - O", required_date=None)
+        revision = AttrDict(sales_order="SO-1", project="PROJ-1")
+
+        sold_values = technical_procurement._delivery_row_values(revision, sold, 4)
+        added_values = technical_procurement._delivery_row_values(revision, added, 3)
+
+        self.assertEqual(sold_values["against_sales_order"], "SO-1")
+        self.assertEqual(sold_values["so_detail"], "SOI-1")
+        self.assertEqual(sold_values["qty"], 4)
+        # Added lines were never sold, so they must not link to the Sales Order:
+        # that link is what would pull them into an invoice.
+        self.assertEqual(added_values["against_sales_order"], "")
+        self.assertEqual(added_values["so_detail"], "")
+
     def test_company_policy_fields_are_exact(self):
         self.assertEqual(
             (

@@ -838,11 +838,16 @@ def _build_target(
             if supplier_company and supplier_company != revision.company:
                 frappe.throw(_("Supplier does not belong to the technical revision company."))
         values["supplier"] = supplier
+    if target_doctype == "Delivery Note":
+        customer = _text(_get(sales_order, "customer"))
+        if not customer:
+            frappe.throw(_("The Sales Order has no Customer."))
+        values["customer"] = customer
+        values["posting_date"] = nowdate()
     _set_known_fields(target, values)
 
     item_meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(target_doctype))
     for line, stock_qty, route, action in prepared:
-        factor = flt(line.conversion_factor)
         lineage = {
             "technical_list": technical_list.name,
             "revision": revision.name,
@@ -852,24 +857,58 @@ def _build_target(
             "route": route.name,
             "action": action.name,
         }
-        row_values = {
-            "item_code": line.item_code,
-            "item_name": line.item_name,
-            "description": line.description,
-            "qty": stock_qty / factor,
-            "stock_qty": stock_qty,
-            "uom": line.uom,
-            "conversion_factor": factor,
-            "stock_uom": line.stock_uom,
-            "warehouse": line.warehouse,
-            "schedule_date": _safe_schedule_date(line.required_date or schedule_date),
-            "project": revision.project,
-            "sales_order": revision.sales_order,
-            "sales_order_item": line.sales_order_item,
-        }
+        if target_doctype == "Delivery Note":
+            row_values = _delivery_row_values(revision, line, stock_qty)
+        else:
+            row_values = _procurement_row_values(revision, line, stock_qty, schedule_date)
         row_values.update(_lineage_values(item_meta, lineage))
-        target.append("items", _filter_fields(item_meta, row_values))
+        target.append(TARGET_CHILD_TABLES[target_doctype], _filter_fields(item_meta, row_values))
     return target
+
+
+def _procurement_row_values(revision, line, stock_qty, schedule_date):
+    factor = flt(line.conversion_factor)
+    return {
+        "item_code": line.item_code,
+        "item_name": line.item_name,
+        "description": line.description,
+        "qty": stock_qty / factor,
+        "stock_qty": stock_qty,
+        "uom": line.uom,
+        "conversion_factor": factor,
+        "stock_uom": line.stock_uom,
+        "warehouse": line.warehouse,
+        "schedule_date": _safe_schedule_date(line.required_date or schedule_date),
+        "project": revision.project,
+        "sales_order": revision.sales_order,
+        "sales_order_item": line.sales_order_item,
+    }
+
+
+def _delivery_row_values(revision, line, stock_qty):
+    """Delivery Note Item row for one revision line.
+
+    against_sales_order/so_detail are the Delivery Note's equivalents of
+    sales_order/sales_order_item and are what native delivered-qty tracking reads.
+    Engineering additions have no Sales Order line, so both stay empty and the row
+    can never reach an invoice.
+    """
+    factor = flt(line.conversion_factor)
+    sales_order_item = _text(line.sales_order_item)
+    return {
+        "item_code": line.item_code,
+        "item_name": line.item_name,
+        "description": line.description,
+        "qty": stock_qty / factor,
+        "stock_qty": stock_qty,
+        "uom": line.uom,
+        "conversion_factor": factor,
+        "stock_uom": line.stock_uom,
+        "warehouse": line.warehouse,
+        "project": revision.project,
+        "against_sales_order": _text(revision.sales_order) if sales_order_item else "",
+        "so_detail": sales_order_item,
+    }
 
 
 def _single_line_supplier(prepared):
