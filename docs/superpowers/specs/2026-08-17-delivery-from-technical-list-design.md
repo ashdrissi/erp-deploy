@@ -129,6 +129,42 @@ The Sales Invoice is raised from the **Sales Order**, never from the Delivery No
 
 12. **Non-policy companies and pre-effective-date Sales Orders are untouched.**
 
+## Picking rules
+
+Agreed 2026-08-17, after the Delivery Note work landed. These extend rule 1 to the
+Pick List.
+
+13. **Picking follows the approved revision.** A Pick List is built from the current
+    approved revision's execution-relevant lines, and creating one natively from the
+    Sales Order is blocked in policy-covered companies. Without this, Bilal's report
+    is only half closed: the warehouse would still be shown commercial quantities,
+    and `reserve_submitted_pick_list` would commit stock reservations against them.
+
+14. **A Pick List carries stock rows only.** Services and non-stock lines cannot be
+    picked — there is nothing to take off a shelf, and `Pick List Item` has no
+    `is_stock_item` field. They reach delivery through the Delivery Note instead,
+    which is what rule 10's auto-close depends on.
+
+15. **Picking is capped by the approved execution qty, counted across Pick Lists
+    only.** Picking and delivery keep separate pools: a pick that later becomes its
+    own Delivery Note would otherwise consume the budget twice and make shipping the
+    full approved quantity impossible. This mirrors how the procurement and delivery
+    pools are already independent.
+
+16. **For policy-covered Sales Orders the technical cap replaces the Sales Order
+    cap.** `pick_list_override.validate_sales_order` currently caps picking at the
+    Sales Order's open quantity (`qty - delivered_qty`). That contradicts rule 4 the
+    moment engineering raises a quantity above what was sold, and rule 5 makes that
+    an engineering decision needing no commercial step — so the override must defer
+    to the technical cap for these Sales Orders. Non-policy companies keep today's
+    behaviour exactly.
+
+17. **The interim Pick List allowance is removed.** The Delivery Note validator
+    currently lets rows carrying `pick_list_item` through without lineage, because
+    Pick Lists had none. Once rule 13 holds, that skip goes, closing the interim gap
+    where Pick List deliveries did not count toward the delivery cap (spec rule 8
+    requires each route to enforce rule 1 independently).
+
 ## Out of scope
 
 Delivery Notes and Pick Lists created before this change keep their
