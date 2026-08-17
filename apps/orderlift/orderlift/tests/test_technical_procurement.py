@@ -209,7 +209,11 @@ class TestTechnicalProcurement(unittest.TestCase):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def get_available_actions", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("except frappe.PermissionError:", body)
-        self.assertIn("_action_payload(None, None, None, [])", body)
+        # The payload must still be well formed: it previously passed None where a doc
+        # was dereferenced, which turned a permission error into an AttributeError.
+        self.assertIn('"reference_doctype": _text(reference_doctype)', body)
+        self.assertIn('"actions": []', body)
+        self.assertNotIn("_action_payload(None", body)
 
     def test_pick_list_parent_is_a_delivery_purpose_pick_list(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()

@@ -295,7 +295,19 @@ def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
             _text(reference_doctype), _text(reference_name)
         )
     except frappe.PermissionError:
-        return _action_payload(None, None, None, [])
+        # Echo the requested reference back rather than a resolved doc: the caller keys
+        # its payload cache on these, and no doc was successfully read.
+        return {
+            "reference_doctype": _text(reference_doctype),
+            "reference_name": _text(reference_name),
+            "sales_order": "",
+            "technical_list": "",
+            "revision": "",
+            "approval_hash": "",
+            "route": "",
+            "routes": [],
+            "actions": [],
+        }
     if not technical_list or not revision:
         return _action_payload(reference, technical_list, revision, [])
 
