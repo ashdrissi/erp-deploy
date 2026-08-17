@@ -1166,7 +1166,7 @@ def _delivery_remaining_by_line(revision):
     """Remaining deliverable stock qty per execution-relevant revision line."""
     delivered = _delivered_stock_qty(revision.technical_list)
     result = {}
-    for line in revision.get("items") or []:
+    for line in revision.items or []:
         if not cint(line.execution_relevant):
             continue
         result[line.name] = max(

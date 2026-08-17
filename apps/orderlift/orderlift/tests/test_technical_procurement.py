@@ -10,6 +10,16 @@ class AttrDict(dict):
     __getattr__ = dict.get
 
 
+def revision_stub(**values):
+    """A revision double that is deliberately NOT a dict.
+
+    AttrDict subclasses dict, so `.items` resolves to the real `dict.items` method
+    and never reaches `__getattr__`. A Frappe Document exposes `.items` as its child
+    table, so a revision double has to be a plain namespace to behave like one.
+    """
+    return types.SimpleNamespace(**values)
+
+
 class FakeDB:
     def exists(self, *args, **kwargs):
         return False
@@ -334,7 +344,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn("parent_doc.docstatus < 2", delivered)
 
     def test_delivery_remaining_subtracts_delivered_from_execution_qty(self):
-        revision = AttrDict(
+        revision = revision_stub(
             name="TLR-2",
             technical_list="TL-1",
             items=[
@@ -360,7 +370,7 @@ class TestTechnicalProcurement(unittest.TestCase):
     def test_delivery_remaining_never_goes_negative(self):
         """A revision that lowers execution qty below what already shipped must
         report zero remaining, not a negative that would read as credit."""
-        revision = AttrDict(
+        revision = revision_stub(
             name="TLR-3",
             technical_list="TL-1",
             items=[AttrDict(name="R1", sales_order_item="SOI-1", item_code="I-1",
