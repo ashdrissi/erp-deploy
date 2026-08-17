@@ -686,23 +686,39 @@ class TestTechnicalProcurement(unittest.TestCase):
 
     def test_delivery_cumulative_cap_uses_the_delivery_pool(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        pools = source.split("CONSUMED_POOL_BY_DOCTYPE = {", 1)[1].split("\n}", 1)[0]
-        self.assertIn('"Delivery Note": (', pools)
-        self.assertIn("delivered_stock_qty", pools)
-        self.assertIn("exceeds the remaining delivery quantity", pools)
-        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("CONSUMED_POOL_BY_DOCTYPE.get(doctype)", body)
+        self.assertEqual(
+            technical_procurement.POOLED_DOCTYPES,
+            frozenset({"Delivery Note", "Pick List"}),
+        )
+        # Resolved per call, not from a lookup table: a table captures the function
+        # at import time, so patching a pool would no longer reach the cap and a cap
+        # test could pass while capping nothing.
+        with patch.object(
+            technical_procurement, "delivered_stock_qty", return_value={"k": 1}
+        ), patch.object(
+            technical_procurement, "picked_stock_qty", return_value={"k": 2}
+        ):
+            self.assertEqual(
+                technical_procurement._consumed_stock_qty("Delivery Note", "TL-1"),
+                {"k": 1},
+            )
+            self.assertEqual(
+                technical_procurement._consumed_stock_qty("Pick List", "TL-1"),
+                {"k": 2},
+            )
 
-    def test_picking_cap_uses_the_picking_pool(self):
-        """Picking has its own pool, so a pick and its own Delivery Note never
-        double-consume the approved execution qty."""
+    def test_both_over_cap_messages_stay_extractable_literals(self):
+        """A message held in a lookup table is invisible to the translation
+        extractor, and this deployment runs a French locale."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        pools = source.split("CONSUMED_POOL_BY_DOCTYPE = {", 1)[1].split("\n}", 1)[0]
-        self.assertIn('"Pick List": (', pools)
-        self.assertIn("picked_stock_qty", pools)
-        self.assertIn("exceeds the remaining pickable quantity", pools)
+        self.assertIn(
+            '_("Row {0}: quantity exceeds the remaining delivery quantity.")', source
+        )
+        self.assertIn(
+            '_("Row {0}: quantity exceeds the remaining pickable quantity.")', source
+        )
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("consumed_for(", body)
+        self.assertIn("_consumed_stock_qty(", body)
 
     def test_delivery_cap_aggregates_lines_sharing_an_allocation_key(self):
         """Engineering additions collapse to "item::<item_code>", so two distinct
@@ -711,7 +727,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         the requested total and the budget must be summed per key."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        capped = body.split("pool = CONSUMED_POOL_BY_DOCTYPE.get(doctype)", 1)[1]
+        capped = body.split("if doctype in POOLED_DOCTYPES:", 1)[1]
         self.assertIn("requested[key] += total", capped)
         # The budget comes from the whole revision, not from this document's rows.
         self.assertIn("budget_by_key(revision)", capped)
@@ -1241,7 +1257,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("allocated_by_revision = {}", body)
         self.assertLess(
-            body.index("pool = CONSUMED_POOL_BY_DOCTYPE.get(doctype)"),
+            body.index("if doctype in POOLED_DOCTYPES:"),
             body.index("allocated_by_revision = {}"),
         )
 

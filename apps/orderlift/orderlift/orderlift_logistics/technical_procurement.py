@@ -72,16 +72,10 @@ TARGET_CHILD_TABLES = {
 # delivered_stock_qty or picked_stock_qty on this module -- how the pools are
 # substituted in tests, and the only way to see through the imported binding --
 # would silently have no effect on the cap.
-CONSUMED_POOL_BY_DOCTYPE = {
-    "Delivery Note": (
-        "delivered_stock_qty",
-        "Row {0}: quantity exceeds the remaining delivery quantity.",
-    ),
-    "Pick List": (
-        "picked_stock_qty",
-        "Row {0}: quantity exceeds the remaining pickable quantity.",
-    ),
-}
+# Doctypes capped by a consumed-quantity pool rather than by procurement allowance.
+# Both draw on the approved execution qty but from independent pools, so a pick and
+# the Delivery Note it becomes do not double-consume it (spec rule 15).
+POOLED_DOCTYPES = frozenset({"Delivery Note", "Pick List"})
 
 COMPANY_ENABLED_FIELD = "custom_enable_sales_order_technical_lists"
 COMPANY_EFFECTIVE_FROM_FIELD = "custom_technical_list_effective_from"
@@ -424,6 +418,19 @@ def create_pick_list(revision, selected_row_ids=None, quantities=None) -> dict:
     )
 
 
+def _consumed_stock_qty(doctype, technical_list, *, exclude_doctype="", exclude_name=""):
+    """Qty already consumed from the pool this doctype draws on.
+
+    Resolved per call rather than held in a lookup table: a table would capture the
+    function object at import time, so patching either pool in a test would no longer
+    reach this code path and a cap test could pass while capping nothing.
+    """
+    pool = delivered_stock_qty if doctype == "Delivery Note" else picked_stock_qty
+    return pool(
+        technical_list, exclude_doctype=exclude_doctype, exclude_name=exclude_name
+    )
+
+
 def validate_procurement_document(doc, method=None) -> None:
     """Validate technical lineage while leaving unrelated native procurement untouched."""
     doctype = _text(_get(doc, "doctype"))
@@ -530,10 +537,7 @@ def validate_procurement_document(doc, method=None) -> None:
     # from the whole revision, not from this document's rows, or splitting one
     # delivery into two would shrink the shared bucket to a single line's quantity
     # and block work the cap allows.
-    pool = CONSUMED_POOL_BY_DOCTYPE.get(doctype)
-    if pool:
-        pool_function_name, message = pool
-        consumed_for = globals()[pool_function_name]
+    if doctype in POOLED_DOCTYPES:
         consumed_by_list = {}
         budget_by_revision = {}
         requested = defaultdict(float)
@@ -542,7 +546,8 @@ def validate_procurement_document(doc, method=None) -> None:
             revision = revisions[revision_name]
             technical_list = _text(revision.technical_list)
             if technical_list not in consumed_by_list:
-                consumed_by_list[technical_list] = consumed_for(
+                consumed_by_list[technical_list] = _consumed_stock_qty(
+                    doctype,
                     technical_list,
                     exclude_doctype=doctype,
                     exclude_name=_text(_get(doc, "name")),
@@ -558,7 +563,19 @@ def validate_procurement_document(doc, method=None) -> None:
             existing = consumed_by_list[technical_list].get(alloc_key, 0)
             allowed = budget_by_revision[revision_name].get(alloc_key, 0)
             if existing + total > allowed + 1e-9:
-                frappe.throw(_(message).format(labels[key]))
+                # Kept as two literal _() calls so the translation extractor finds
+                # them; a message held in a table is invisible to it.
+                if doctype == "Delivery Note":
+                    frappe.throw(
+                        _("Row {0}: quantity exceeds the remaining delivery quantity.").format(
+                            labels[key]
+                        )
+                    )
+                frappe.throw(
+                    _("Row {0}: quantity exceeds the remaining pickable quantity.").format(
+                        labels[key]
+                    )
+                )
         return
 
     allocated_by_revision = {}
