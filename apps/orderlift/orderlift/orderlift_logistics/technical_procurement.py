@@ -331,6 +331,16 @@ def create_purchase_order(
     )
 
 
+@frappe.whitelist()
+def create_delivery_note(revision, selected_row_ids=None, quantities=None) -> dict:
+    return _create_from_revision(
+        "revision_to_delivery_note",
+        revision,
+        selected_row_ids,
+        quantities,
+    )
+
+
 def validate_procurement_document(doc, method=None) -> None:
     """Validate technical lineage while leaving unrelated native procurement untouched."""
     doctype = _text(_get(doc, "doctype"))
@@ -463,7 +473,13 @@ def _create_from_revision(
 
     selected_lines = [lines[name] for name in selection]
     route_actions = _adapter_actions_for_lines(revision, selected_lines, adapter_key)
-    remaining = _remaining_by_line(revision)
+    # Delivery consumes its own pool: a line can be fully procured and still
+    # undelivered, and vice versa when stock was already on hand.
+    remaining = (
+        _delivery_remaining_by_line(revision)
+        if adapter_key == "revision_to_delivery_note"
+        else _remaining_by_line(revision)
+    )
     prepared = []
     for line in selected_lines:
         _validate_source_line(revision, line)

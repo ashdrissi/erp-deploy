@@ -155,6 +155,26 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertEqual(added_values["against_sales_order"], "")
         self.assertEqual(added_values["so_detail"], "")
 
+    def test_create_from_revision_picks_the_pool_matching_the_adapter(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def _create_from_revision", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("_delivery_remaining_by_line(revision)", body)
+        self.assertIn("_remaining_by_line(revision)", body)
+        self.assertIn('adapter_key == "revision_to_delivery_note"', body)
+
+    def test_create_delivery_note_is_whitelisted_and_takes_no_supplier(self):
+        import inspect
+
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        self.assertIn(
+            '@frappe.whitelist()\ndef create_delivery_note(', source
+        )
+        signature = inspect.signature(technical_procurement.create_delivery_note)
+        self.assertEqual(
+            list(signature.parameters),
+            ["revision", "selected_row_ids", "quantities"],
+        )
+
     def test_company_policy_fields_are_exact(self):
         self.assertEqual(
             (
