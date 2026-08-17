@@ -33,6 +33,7 @@ ADAPTER_POOLS = {
     "revision_to_material_request": "procurement",
     "revision_to_purchase_order": "procurement",
     "revision_to_delivery_note": "delivery",
+    "revision_to_pick_list": "picking",
 }
 
 

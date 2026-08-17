@@ -87,9 +87,28 @@ class TestTechnicalProcurement(unittest.TestCase):
                 "revision_to_material_request": "Material Request",
                 "revision_to_purchase_order": "Purchase Order",
                 "revision_to_delivery_note": "Delivery Note",
+                "revision_to_pick_list": "Pick List",
             },
         )
         self.assertTrue(all("." not in key for key in technical_procurement.SAFE_ADAPTERS))
+
+    def test_pick_list_is_registered_with_its_own_pool_and_child_table(self):
+        self.assertEqual(
+            technical_procurement.SAFE_ADAPTERS["revision_to_pick_list"], "Pick List"
+        )
+        self.assertEqual(
+            technical_procurement.PROCUREMENT_ITEM_DOCTYPES["Pick List"], "Pick List Item"
+        )
+        self.assertIn("Pick List", technical_procurement.SUPPORTED_PROCUREMENT_DOCTYPES)
+        # Pick List stores rows in "locations", not "items".
+        self.assertEqual(technical_procurement.TARGET_CHILD_TABLES["Pick List"], "locations")
+        # Picking has its own pool: a pick that becomes its own Delivery Note must not
+        # consume the approved quantity twice.
+        self.assertEqual(
+            technical_allocation.ADAPTER_POOLS["revision_to_pick_list"], "picking"
+        )
+        # Pick List must never enter the procurement allocation pool.
+        self.assertNotIn("Pick List", technical_allocation.ALLOCATION_ITEM_DOCTYPES)
 
     def test_delivery_note_carries_lineage_and_row_validation(self):
         self.assertEqual(
@@ -118,6 +137,8 @@ class TestTechnicalProcurement(unittest.TestCase):
         fields = {field["fieldname"]: field for field in action["fields"]}
         self.assertIn("revision_to_delivery_note", fields["adapter_key"]["options"])
         self.assertIn("Delivery Note", fields["target_doctype"]["options"])
+        self.assertIn("revision_to_pick_list", fields["adapter_key"]["options"])
+        self.assertIn("Pick List", fields["target_doctype"]["options"])
 
     def test_delivery_note_rows_use_against_sales_order_and_so_detail(self):
         """Delivery Note Item has no sales_order/sales_order_item columns. Native

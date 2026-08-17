@@ -30,6 +30,7 @@ SAFE_ADAPTERS = {
     "revision_to_material_request": "Material Request",
     "revision_to_purchase_order": "Purchase Order",
     "revision_to_delivery_note": "Delivery Note",
+    "revision_to_pick_list": "Pick List",
 }
 SUPPORTED_REFERENCES = {
     "Sales Order",
@@ -42,6 +43,7 @@ SUPPORTED_PROCUREMENT_DOCTYPES = (
     "Supplier Quotation",
     "Purchase Order",
     "Delivery Note",
+    "Pick List",
 )
 PROCUREMENT_ITEM_DOCTYPES = {
     "Material Request": "Material Request Item",
@@ -49,12 +51,14 @@ PROCUREMENT_ITEM_DOCTYPES = {
     "Supplier Quotation": "Supplier Quotation Item",
     "Purchase Order": "Purchase Order Item",
     "Delivery Note": "Delivery Note Item",
+    "Pick List": "Pick List Item",
 }
 # Parent doctype -> child table fieldname. Pick List uses "locations", not "items".
 TARGET_CHILD_TABLES = {
     "Material Request": "items",
     "Purchase Order": "items",
     "Delivery Note": "items",
+    "Pick List": "locations",
 }
 
 COMPANY_ENABLED_FIELD = "custom_enable_sales_order_technical_lists"
@@ -172,6 +176,7 @@ def _ensure_safe_actions() -> None:
         "revision_to_material_request": _("Create Material Request"),
         "revision_to_purchase_order": _("Create Purchase Order"),
         "revision_to_delivery_note": _("Create Delivery Note"),
+        "revision_to_pick_list": _("Create Pick List"),
     }
     for sequence, (adapter_key, target_doctype) in enumerate(SAFE_ADAPTERS.items(), 10):
         name = frappe.db.get_value(
