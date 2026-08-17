@@ -165,6 +165,34 @@ Pick List.
     where Pick List deliveries did not count toward the delivery cap (spec rule 8
     requires each route to enforce rule 1 independently).
 
+## Invoicing and closure rules
+
+Agreed 2026-08-17, after the Pick List work landed.
+
+18. **The Sales Invoice is raised from the Sales Order, never from a Delivery Note
+    that carries technical lineage.** Enforced server-side, not merely by convention.
+
+    Two reasons, both already decided. Rule 2 says the client pays the full contract
+    price, so the invoice has to follow *sold* quantities — invoicing a short delivery
+    would under-bill. Rule 3 says engineering additions are never billed, and ERPNext's
+    `make_sales_invoice` maps every Delivery Note row with no `so_detail` condition, so
+    invoicing from the Delivery Note pulls additions straight onto the invoice. Rule 3
+    was therefore only ever a convention; this makes it a property.
+
+    Keyed on the lineage stamp, not on company membership: a Delivery Note predating
+    this feature carries no stamp and stays invoiceable, matching "Out of scope" below.
+
+19. **An auto-close records that it was automatic.** Rule 10 requires the close to
+    reverse when a later revision raises a quantity, but a Sales Order can also be
+    closed by a person for reasons this feature knows nothing about. A hidden read-only
+    flag on the Sales Order marks a close performed by this feature; only a close it
+    owns is ever reopened. Without it, an auto-reopen would silently override a human
+    decision.
+
+    Closing and reopening both go through the native `Sales Order.update_status`, which
+    calls `check_modified_date` — so the document must be re-fetched immediately before,
+    or an unrelated concurrent save makes the close throw "has been modified".
+
 ## Out of scope
 
 Delivery Notes and Pick Lists created before this change keep their
