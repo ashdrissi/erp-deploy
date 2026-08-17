@@ -146,6 +146,22 @@ class TestTechnicalListIntegration(unittest.TestCase):
         self.assertIn('"Workflow"', transition_helper)
         self.assertIn("if not workflow:\n        return []", transition_helper)
 
+    def test_ui_dispatches_all_three_adapters(self):
+        page = (APP_ROOT / "public" / "js" / "sales_order_technical_list_20260815f.js").read_text()
+        form = (
+            APP_ROOT
+            / "orderlift_sig"
+            / "doctype"
+            / "sales_order_technical_list_revision"
+            / "sales_order_technical_list_revision.js"
+        ).read_text()
+        for source in (page, form):
+            self.assertIn("revision_to_delivery_note", source)
+            self.assertIn(
+                "orderlift.orderlift_logistics.technical_procurement.create_delivery_note",
+                source,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
