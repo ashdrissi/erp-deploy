@@ -192,6 +192,83 @@ class TestStockReservationDeliveryRuntime(unittest.TestCase):
                 AttrDict(is_return=0, items=[self._direct_row(1)])
             )
 
+    @staticmethod
+    def _pick_list_row(**overrides):
+        row = AttrDict(
+            idx=1,
+            item_code="ITEM-1",
+            warehouse="Stores - OMD",
+            qty=5,
+            stock_qty=5,
+            conversion_factor=1,
+            against_pick_list="PL-1",
+            pick_list_item="PL-1-ROW-1",
+            against_sales_order="",
+            so_detail="",
+            custom_technical_revision="",
+            delivered_by_supplier=0,
+        )
+        row.update(overrides)
+        return row
+
+    def _install_pick_list(self, docstatus=1, picked_qty=5, stock_reserved_qty=5):
+        pick_list = AttrDict(name="PL-1", docstatus=docstatus)
+        pick_list["locations"] = [
+            AttrDict(
+                name="PL-1-ROW-1",
+                picked_qty=picked_qty,
+                stock_reserved_qty=stock_reserved_qty,
+            )
+        ]
+        self.guard.frappe.db.exists = lambda *args, **kwargs: True
+        self.guard.frappe.get_doc = lambda doctype, name: pick_list
+        return pick_list
+
+    def _validate(self, row):
+        self.guard.validate_delivery_note_pick_list_reservation(
+            AttrDict(is_return=0, items=[row])
+        )
+
+    def test_a_lineage_stamped_addition_needs_no_sales_order_reference(self):
+        """Spec rule 3: an engineering addition carries no Sales Order link, because
+        that link is what would pull it onto an invoice. Delivering a picked addition
+        must therefore not be rejected for a missing Sales Order reference."""
+        self._install_pick_list()
+
+        self._validate(self._pick_list_row(custom_technical_revision="TLR-1"))
+
+    def test_an_unstamped_pick_list_row_still_requires_the_sales_order_reference(self):
+        self._install_pick_list()
+
+        with self.assertRaisesRegex(ValidationError, "Sales Order reference is required"):
+            self._validate(self._pick_list_row())
+
+    def test_a_stamped_addition_still_needs_both_pick_list_references(self):
+        self._install_pick_list()
+
+        with self.assertRaisesRegex(ValidationError, "both Pick List and Pick List Item"):
+            self._validate(
+                self._pick_list_row(custom_technical_revision="TLR-1", pick_list_item="")
+            )
+
+    def test_a_stamped_addition_still_needs_a_submitted_pick_list(self):
+        self._install_pick_list(docstatus=0)
+
+        with self.assertRaisesRegex(ValidationError, "must be submitted"):
+            self._validate(self._pick_list_row(custom_technical_revision="TLR-1"))
+
+    def test_a_stamped_addition_still_needs_picked_and_reserved_quantity(self):
+        self._install_pick_list(picked_qty=0, stock_reserved_qty=0)
+
+        with self.assertRaisesRegex(ValidationError, "must have a picked quantity"):
+            self._validate(self._pick_list_row(custom_technical_revision="TLR-1"))
+
+    def test_a_stamped_addition_cannot_deliver_more_than_was_picked(self):
+        self._install_pick_list(picked_qty=2, stock_reserved_qty=2)
+
+        with self.assertRaisesRegex(ValidationError, "cannot exceed the picked quantity"):
+            self._validate(self._pick_list_row(custom_technical_revision="TLR-1"))
+
     def test_pick_list_submit_and_cancel_manage_reservation(self):
         calls = []
         doc = AttrDict(name="PL-1", docstatus=1, purpose="Delivery")

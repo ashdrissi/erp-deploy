@@ -56,7 +56,11 @@ document_stub.Document = _StubDocument
 sys.modules.setdefault("frappe.model", model_stub)
 sys.modules.setdefault("frappe.model.document", document_stub)
 
-from orderlift.orderlift_logistics import technical_allocation, technical_procurement
+from orderlift.orderlift_logistics import (
+    pick_list_override,
+    technical_allocation,
+    technical_procurement,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -1329,6 +1333,107 @@ class TestTechnicalProcurement(unittest.TestCase):
         # Spec rule 7: delivery is not gated on procurement.
         self.assertIn('"required_previous_action": ""', body)
         self.assertIn('"enabled": 1', body)
+
+
+class FakePickListDB:
+    """Only the two calls validate_sales_order makes against the database."""
+
+    def __init__(self, existing=None):
+        self.existing = existing or {}
+        self.sql_calls = []
+
+    def sql(self, query, values=None, as_dict=False):
+        self.sql_calls.append(values or {})
+        return [
+            AttrDict(sales_order_item=name, stock_qty=qty)
+            for name, qty in self.existing.items()
+            if name in (values or {}).get("items", ())
+        ]
+
+    def get_value(self, doctype, name, fieldname):
+        # Every Sales Order in these fixtures is submitted.
+        return 1
+
+
+class FakePickList(pick_list_override.OrderliftPickListMixin):
+    def __init__(self, rows, name="PL-NEW", purpose="Delivery"):
+        self.purpose = purpose
+        self.name = name
+        self.rows = rows
+
+    def get(self, fieldname, default=None):
+        return self.rows if fieldname == "locations" else default
+
+
+def pick_row(sales_order_item, stock_qty, revision=None):
+    return AttrDict(
+        sales_order_item=sales_order_item,
+        stock_qty=stock_qty,
+        custom_technical_revision=revision or "",
+    )
+
+
+class TestPickListOverrideTechnicalCap(unittest.TestCase):
+    """Rule 16: for policy-covered Sales Orders the approved execution qty is the cap.
+
+    Driven through validate_sales_order rather than asserted against the source text,
+    because what matters is which rows the over-pick cap still applies to.
+    """
+
+    SOLD_QTY = 10.0
+
+    def _run(self, rows, db):
+        sold = [
+            AttrDict(
+                name=name,
+                parent="SO-1",
+                qty=self.SOLD_QTY,
+                delivered_qty=0,
+                conversion_factor=1,
+            )
+            for name in {row.sales_order_item for row in rows if row.sales_order_item}
+        ]
+        with patch.object(pick_list_override.frappe, "db", db), patch.object(
+            pick_list_override.frappe, "get_all", return_value=sold, create=True
+        ):
+            FakePickList(rows).validate_sales_order()
+
+    def test_a_stamped_row_may_pick_above_the_sales_order_open_qty(self):
+        """Engineering raised the line to 15 against a sold 10 (rules 4 and 5). The
+        picking pool already capped that row, so the Sales Order cap must stand down."""
+        db = FakePickListDB()
+        self._run([pick_row("SOI-A", 15, revision="TLR-1")], db)
+        # Excluded before the query: a stamped-only Pick List touches the database at all.
+        self.assertEqual(db.sql_calls, [])
+
+    def test_an_unstamped_row_keeps_todays_sales_order_cap(self):
+        db = FakePickListDB()
+        with self.assertRaisesRegex(ValueError, "exceed the remaining quantity"):
+            self._run([pick_row("SOI-A", 15)], db)
+
+    def test_an_unstamped_row_within_the_open_qty_still_passes(self):
+        self._run([pick_row("SOI-A", 10)], FakePickListDB())
+
+    def test_a_stamped_row_does_not_relax_the_cap_on_its_unstamped_neighbour(self):
+        db = FakePickListDB()
+        with self.assertRaisesRegex(ValueError, "exceed the remaining quantity"):
+            self._run(
+                [pick_row("SOI-A", 15, revision="TLR-1"), pick_row("SOI-B", 11)],
+                db,
+            )
+        # The stamped row is not even offered to the query.
+        self.assertEqual(db.sql_calls[0]["items"], ("SOI-B",))
+
+    def test_other_pick_lists_still_count_against_an_unstamped_row(self):
+        db = FakePickListDB(existing={"SOI-A": 8.0})
+        with self.assertRaisesRegex(ValueError, "exceed the remaining quantity"):
+            self._run([pick_row("SOI-A", 3)], db)
+
+    def test_the_override_names_the_rule_behind_the_divergence(self):
+        """A future reader must find out why two caps disagree without archaeology."""
+        source = (APP_ROOT / "orderlift_logistics" / "pick_list_override.py").read_text()
+        self.assertIn("rule 16", source)
+        self.assertIn("custom_technical_revision", source)
 
 
 if __name__ == "__main__":
