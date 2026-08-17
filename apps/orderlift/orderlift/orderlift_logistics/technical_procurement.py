@@ -35,9 +35,18 @@ PROCUREMENT_ITEM_DOCTYPES = {
     "Supplier Quotation": "Supplier Quotation Item",
     "Purchase Order": "Purchase Order Item",
 }
-ROOT_TARGET_ITEM_DOCTYPES = {
+# Only Material Requests and direct Purchase Orders consume procurement allowance.
+# Read by _allocated_stock_qty and nothing else: it joins on child.sales_order,
+# which only these two child doctypes have. Deliveries have their own pool.
+ALLOCATION_ITEM_DOCTYPES = {
     "Material Request": "Material Request Item",
     "Purchase Order": "Purchase Order Item",
+}
+# Parent doctype -> child table fieldname. Pick List uses "locations", not "items".
+TARGET_CHILD_TABLES = {
+    "Material Request": "items",
+    "Purchase Order": "items",
+    "Delivery Note": "items",
 }
 
 COMPANY_ENABLED_FIELD = "custom_enable_sales_order_technical_lists"
@@ -764,7 +773,9 @@ def _previous_action_satisfied(revision_name, revision_item, action_name):
     target_doctype = SAFE_ADAPTERS.get(adapter_key)
     if not target_doctype:
         return False
-    child_doctype = ROOT_TARGET_ITEM_DOCTYPES[target_doctype]
+    child_doctype = PROCUREMENT_ITEM_DOCTYPES.get(target_doctype)
+    if not child_doctype:
+        return False
     meta = _meta(child_doctype)
     if not meta or not all(
         meta.get_field(fieldname)
@@ -825,7 +836,7 @@ def _build_target(
         values["supplier"] = supplier
     _set_known_fields(target, values)
 
-    item_meta = _meta(ROOT_TARGET_ITEM_DOCTYPES[target_doctype])
+    item_meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(target_doctype))
     for line, stock_qty, route, action in prepared:
         factor = flt(line.conversion_factor)
         lineage = {
@@ -1078,7 +1089,7 @@ def _is_root_allocation(doc, row):
 def _allocated_stock_qty(revision_name, *, exclude_doctype="", exclude_name=""):
     revision = frappe.get_doc(REVISION_DOCTYPE, revision_name)
     totals = defaultdict(float)
-    for parent_doctype, child_doctype in ROOT_TARGET_ITEM_DOCTYPES.items():
+    for parent_doctype, child_doctype in ALLOCATION_ITEM_DOCTYPES.items():
         meta = _meta(child_doctype)
         if not meta or not meta.get_field("sales_order_item"):
             continue
@@ -1168,7 +1179,7 @@ def _lineage_values(meta, values):
 
 
 def _lineage_schema_ready(target_doctype):
-    meta = _meta(ROOT_TARGET_ITEM_DOCTYPES.get(target_doctype))
+    meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(target_doctype))
     return bool(
         meta
         and meta.get_field("custom_technical_revision")

@@ -299,6 +299,29 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertNotIn("ignore_permissions=True", source)
         self.assertNotIn("bypass", source.lower())
 
+    def test_allocation_registry_is_separate_from_lineage_registry(self):
+        """Delivery Note carries lineage but must never enter the procurement
+        allocation pool: _allocated_stock_qty joins on child.sales_order, a column
+        Delivery Note Item does not have, and deliveries are not procurement."""
+        self.assertEqual(
+            technical_procurement.ALLOCATION_ITEM_DOCTYPES,
+            {
+                "Material Request": "Material Request Item",
+                "Purchase Order": "Purchase Order Item",
+            },
+        )
+        self.assertNotIn("Delivery Note", technical_procurement.ALLOCATION_ITEM_DOCTYPES)
+        self.assertFalse(hasattr(technical_procurement, "ROOT_TARGET_ITEM_DOCTYPES"))
+
+    def test_lineage_lookups_use_the_lineage_registry_not_the_allocation_registry(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        # These three read a child doctype for lineage purposes and must resolve
+        # Delivery Note, so they cannot read the allocation registry.
+        self.assertIn("PROCUREMENT_ITEM_DOCTYPES.get(target_doctype)", source)
+        self.assertIn("ALLOCATION_ITEM_DOCTYPES.items()", source)
+        # Only the allocation pool may be keyed off the allocation registry.
+        self.assertEqual(source.count("ALLOCATION_ITEM_DOCTYPES"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
