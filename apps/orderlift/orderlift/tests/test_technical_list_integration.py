@@ -26,6 +26,13 @@ class TestTechnicalListIntegration(unittest.TestCase):
         operational_guard = "orderlift.orderlift_logistics.technical_procurement.validate_operational_document"
         self.assertEqual(hooks.doc_events["Pick List"]["before_validate"], operational_guard)
         self.assertIn(operational_guard, hooks.doc_events["Delivery Note"]["before_validate"])
+        # Delivery Note now carries row-level lineage validation, not just the
+        # "an approved revision must exist" gate.
+        delivery = hooks.doc_events["Delivery Note"]["before_validate"]
+        self.assertIn(guard, delivery)
+        self.assertIn(operational_guard, delivery)
+        # Row validation must run before company scoping rewrites the company.
+        self.assertLess(delivery.index(guard), delivery.index("orderlift.company_scope.apply_transaction_company_scope"))
         self.assertNotIn(
             "technical_procurement",
             json.dumps(hooks.doc_events.get("Sales Invoice", {})),
