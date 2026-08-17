@@ -167,6 +167,24 @@ class TestTechnicalListIntegration(unittest.TestCase):
                 source,
             )
 
+    def test_ui_dispatches_the_pick_list_adapter(self):
+        page = (APP_ROOT / "public" / "js" / "sales_order_technical_list_20260815f.js").read_text()
+        form = (
+            APP_ROOT
+            / "orderlift_sig"
+            / "doctype"
+            / "sales_order_technical_list_revision"
+            / "sales_order_technical_list_revision.js"
+        ).read_text()
+        for source in (page, form):
+            self.assertIn("revision_to_pick_list", source)
+            self.assertIn(
+                "orderlift.orderlift_logistics.technical_procurement.create_pick_list",
+                source,
+            )
+        # The native Pick List entry must now be intercepted, not left to fall through.
+        self.assertIn('label === "Pick List"', page)
+
 
 if __name__ == "__main__":
     unittest.main()

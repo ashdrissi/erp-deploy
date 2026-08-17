@@ -184,7 +184,7 @@ def after_migrate() -> None:
     create_custom_fields(custom_fields, update=True)
     _ensure_safe_actions()
     _ensure_internal_material_request_route()
-    _ensure_delivery_route_step()
+    _ensure_ungated_route_steps()
 
 
 def _ensure_safe_actions() -> None:
@@ -253,33 +253,44 @@ def _ensure_internal_material_request_route() -> str:
     return doc.name
 
 
-def _ensure_delivery_route_step() -> None:
-    """Append the delivery action to every enabled route that lacks it.
+UNGATED_ADAPTERS = ("revision_to_delivery_note", "revision_to_pick_list")
 
-    Ungated by design (spec rule 7): stock may already be on hand, so delivery
-    must not wait on a purchase. A company can set required_previous_action on its
-    own route later if it wants procurement-first delivery.
+
+def _ensure_ungated_route_steps() -> None:
+    """Append the delivery and picking actions to every enabled route that lacks them.
+
+    Both are ungated by design (spec rule 7): stock may already be on hand, so
+    neither delivery nor picking must wait on a purchase. A company can set
+    required_previous_action on its own route later if it wants procurement first.
     """
-    action = frappe.db.get_value(
-        "Technical Procurement Action",
-        {"adapter_key": "revision_to_delivery_note"},
-        "name",
-    )
-    if not action:
+    actions = []
+    for adapter_key in UNGATED_ADAPTERS:
+        action = frappe.db.get_value(
+            "Technical Procurement Action",
+            {"adapter_key": adapter_key},
+            "name",
+        )
+        if action:
+            actions.append(action)
+    if not actions:
         return
     routes = frappe.get_all(
         "Technical Procurement Route", filters={"enabled": 1}, pluck="name"
     )
     for route_name in routes:
         route = frappe.get_doc("Technical Procurement Route", route_name)
-        if any(_text(step.action) == action for step in route.steps or []):
-            continue
-        sequence = max([cint(step.sequence) for step in route.steps or []] or [0]) + 10
-        route.append(
-            "steps",
-            {"action": action, "sequence": sequence, "required_previous_action": ""},
-        )
-        route.save()
+        changed = False
+        for action in actions:
+            if any(_text(step.action) == action for step in route.steps or []):
+                continue
+            sequence = max([cint(step.sequence) for step in route.steps or []] or [0]) + 10
+            route.append(
+                "steps",
+                {"action": action, "sequence": sequence, "required_previous_action": ""},
+            )
+            changed = True
+        if changed:
+            route.save()
 
 
 @frappe.whitelist()

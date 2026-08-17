@@ -107,6 +107,7 @@ async function installProcurementActions(frm) {
                 revision_to_material_request: "orderlift.orderlift_logistics.technical_procurement.create_material_request",
                 revision_to_purchase_order: "orderlift.orderlift_logistics.technical_procurement.create_purchase_order",
                 revision_to_delivery_note: "orderlift.orderlift_logistics.technical_procurement.create_delivery_note",
+                revision_to_pick_list: "orderlift.orderlift_logistics.technical_procurement.create_pick_list",
             };
             const method = METHODS[action.adapter_key];
             if (!method) {

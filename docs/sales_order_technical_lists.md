@@ -80,10 +80,11 @@ Safe adapter actions are installed for:
 - Technical Revision to Material Request
 - Technical Revision to Purchase Order
 - Technical Revision to Delivery Note
+- Technical Revision to Pick List
 
 Administrators assemble enabled `Technical Procurement Action` rows into ordered `Technical Procurement Route` records. Routes and labels are configurable; arbitrary Python methods are not accepted.
 
-Normal users do not configure routes. Every Company receives the internal Material Request route automatically, and the delivery action is seeded ungated onto every enabled route. The native Sales Order Create menu stays visible, but scoped companies require a current submitted Technical List before operational documents can proceed. Material Requests are created from the approved revision; direct PO/RFQ creation is redirected to the MR-first flow. Native Delivery-Note-from-Sales-Order is blocked; the approved revision's own Create Delivery Note action is used instead. Native Pick List creation is permitted only after approval; rows sourced from a Pick List carry no lineage, because reserved-stock delivery is forced down that separately gated route. Sales Invoice and payment flows remain tied directly to the Sales Order and are not gated.
+Normal users do not configure routes. Every Company receives the internal Material Request route automatically, and the delivery and pick actions are seeded ungated onto every enabled route. The native Sales Order Create menu stays visible, but scoped companies require a current submitted Technical List before operational documents can proceed. Material Requests are created from the approved revision; direct PO/RFQ creation is redirected to the MR-first flow. Native Delivery-Note-from-Sales-Order is blocked; the approved revision's own Create Delivery Note action is used instead. Native Pick-List-from-Sales-Order is blocked as well; the approved revision's own Create Pick List action is used instead. Sales Invoice and payment flows remain tied directly to the Sales Order and are not gated.
 
 Generated transactions are always drafts. Native MR, RFQ, Supplier Quotation, and PO workflows remain responsible for their own approval and submission.
 
@@ -106,7 +107,17 @@ Billing is unaffected by this shift. The Sales Invoice is always raised from the
 
 Delivery is not gated on procurement: the route step ships with an empty `required_previous_action`, because stock may already be on hand. A Company can still gate its own route by setting that field. Partial deliveries are supported per line, the same way procurement adapters allow partial fulfillment.
 
-Rows sourced from a Pick List are currently allowed through without lineage, because the Pick List is separately gated and reserved-stock delivery is forced down that route; this is revisited when Pick List lineage is added.
+Every Delivery Note row is held to its lineage, including rows sourced from a Pick List.
+
+### Picking
+
+Pick Lists are created from the approved revision as well, and their location rows carry the same lineage fields. Only stock rows can be picked; services and non-stock lines reach delivery through the Delivery Note.
+
+Picking has its own pool, separate from delivery. A pick and the Delivery Note made from it do not consume the approved quantity twice, so the full approved quantity can still be shipped.
+
+For a scoped Sales Order the approved execution quantity replaces the Sales Order's open quantity as the picking cap. The two diverge whenever engineering raises a quantity above what was sold, which needs no commercial change. Pick List rows without technical lineage keep the Sales Order cap. Native Pick-List-from-Sales-Order is blocked; the approved revision's own Create Pick List action is used instead. The pick action is seeded ungated onto every enabled route, for the same reason as delivery.
+
+Delivering a picked engineering addition requires no Sales Order reference, because the addition has none. Every other requirement of that route still holds: the Pick List must be submitted, and the delivered quantity cannot exceed the picked or reserved quantity.
 
 ## User Interfaces
 

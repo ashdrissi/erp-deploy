@@ -1351,13 +1351,53 @@ class TestTechnicalProcurement(unittest.TestCase):
             )
         self.assertEqual(calls, ["delivery", "procurement"])
 
-    def test_delivery_route_step_is_seeded_ungated(self):
+    def test_ungated_route_steps_are_seeded_for_delivery_and_picking(self):
+        """Renamed from the delivery-only seeding: picking is ungated for the same
+        reason as delivery (spec rule 7) — stock may already be on hand."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        self.assertIn("_ensure_delivery_route_step()", source)
-        body = source.split("def _ensure_delivery_route_step", 1)[1].split("\ndef ", 1)[0]
-        # Spec rule 7: delivery is not gated on procurement.
+        self.assertIn("_ensure_ungated_route_steps()", source)
+        body = source.split("def _ensure_ungated_route_steps", 1)[1].split("\ndef ", 1)[0]
+        # Spec rule 7: neither delivery nor picking is gated on procurement.
         self.assertIn('"required_previous_action": ""', body)
         self.assertIn('"enabled": 1', body)
+        self.assertEqual(
+            technical_procurement.UNGATED_ADAPTERS,
+            ("revision_to_delivery_note", "revision_to_pick_list"),
+        )
+
+    def test_ungated_route_steps_appends_both_adapters_to_every_enabled_route(self):
+        route = AttrDict(name="ROUTE-1")
+        route["steps"] = []
+        route.append = lambda table, values: route["steps"].append(AttrDict(values))
+        route.save = lambda: saves.append(len(route["steps"]))
+        saves = []
+        actions = {
+            "revision_to_delivery_note": "ACT-DN",
+            "revision_to_pick_list": "ACT-PL",
+        }
+        fake_db = AttrDict(
+            get_value=lambda doctype, filters, fieldname: actions.get(filters["adapter_key"])
+        )
+        with patch.object(technical_procurement, "frappe") as frappe_mock:
+            frappe_mock.db = fake_db
+            frappe_mock.get_all.return_value = ["ROUTE-1"]
+            frappe_mock.get_doc.return_value = route
+            technical_procurement._ensure_ungated_route_steps()
+
+        self.assertEqual(
+            [step.action for step in route["steps"]], ["ACT-DN", "ACT-PL"]
+        )
+        self.assertEqual([step.required_previous_action for step in route["steps"]], ["", ""])
+        # Distinct sequences, so the two steps do not collide.
+        self.assertEqual(len({step.sequence for step in route["steps"]}), 2)
+        # Idempotent: a second pass appends nothing.
+        with patch.object(technical_procurement, "frappe") as frappe_mock:
+            frappe_mock.db = fake_db
+            frappe_mock.get_all.return_value = ["ROUTE-1"]
+            frappe_mock.get_doc.return_value = route
+            technical_procurement._ensure_ungated_route_steps()
+        self.assertEqual(len(route["steps"]), 2)
+
 
 
 class FakePickListDB:
