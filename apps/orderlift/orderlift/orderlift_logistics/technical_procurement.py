@@ -1003,9 +1003,30 @@ def _delivery_row_values(revision, line, stock_qty):
     sales_order/sales_order_item and are what native delivered-qty tracking reads.
     Engineering additions have no Sales Order line, so both stay empty and the row
     can never reach an invoice.
+
+    The contract rate is copied from the Sales Order Item rather than left for
+    ERPNext's set_missing_values to fetch: otherwise the bon de livraison prints the
+    current price list rate instead of what was actually sold, and any negotiated
+    discount reads as a rate mismatch to the price-list usage guard. Additions carry
+    zero -- they are absorbed, never billed, so any other value would mislead.
     """
     factor = flt(line.conversion_factor)
     sales_order_item = _text(line.sales_order_item)
+    pricing = {"rate": 0, "price_list_rate": 0}
+    if sales_order_item:
+        source = frappe.db.get_value(
+            "Sales Order Item",
+            sales_order_item,
+            ["rate", "price_list_rate", "discount_percentage", "discount_amount"],
+            as_dict=True,
+        )
+        if source:
+            pricing = {
+                "rate": flt(_get(source, "rate")),
+                "price_list_rate": flt(_get(source, "price_list_rate")),
+                "discount_percentage": flt(_get(source, "discount_percentage")),
+                "discount_amount": flt(_get(source, "discount_amount")),
+            }
     return {
         "item_code": line.item_code,
         "item_name": line.item_name,
@@ -1019,6 +1040,7 @@ def _delivery_row_values(revision, line, stock_qty):
         "project": revision.project,
         "against_sales_order": _text(revision.sales_order) if sales_order_item else "",
         "so_detail": sales_order_item,
+        **pricing,
     }
 
 

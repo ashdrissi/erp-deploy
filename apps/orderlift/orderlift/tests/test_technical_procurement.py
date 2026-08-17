@@ -155,6 +155,51 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertEqual(added_values["against_sales_order"], "")
         self.assertEqual(added_values["so_detail"], "")
 
+    def test_delivery_rows_carry_the_contract_rate_not_the_price_list_rate(self):
+        """Without an explicit rate, ERPNext's set_missing_values fetches the price
+        list rate: the bon de livraison would print list prices instead of the
+        negotiated ones, and any discount would read as a rate mismatch to the
+        price-list guard. Additions are absorbed, so they carry zero."""
+        sold = AttrDict(item_code="I-1", item_name="One", description="d",
+                        sales_order_item="SOI-1", uom="Nos", conversion_factor=1,
+                        stock_uom="Nos", warehouse="WH - O", required_date=None)
+        added = AttrDict(item_code="I-2", item_name="Two", description="d",
+                         sales_order_item="", uom="Nos", conversion_factor=1,
+                         stock_uom="Nos", warehouse="WH - O", required_date=None)
+        revision = AttrDict(sales_order="SO-1", project="PROJ-1")
+        calls = []
+
+        def get_value(doctype, name, fieldnames, as_dict=False):
+            calls.append((doctype, name))
+            return AttrDict(
+                rate=80,
+                price_list_rate=100,
+                discount_percentage=20,
+                discount_amount=20,
+            )
+
+        with patch.object(frappe_stub.db, "get_value", side_effect=get_value):
+            sold_values = technical_procurement._delivery_row_values(revision, sold, 4)
+            added_values = technical_procurement._delivery_row_values(revision, added, 3)
+
+        self.assertEqual(sold_values["rate"], 80)
+        self.assertEqual(sold_values["price_list_rate"], 100)
+        self.assertEqual(sold_values["discount_percentage"], 20)
+        self.assertEqual(sold_values["discount_amount"], 20)
+        self.assertEqual(added_values["rate"], 0)
+        self.assertEqual(added_values["price_list_rate"], 0)
+        # One fetch for the sold row, none for the addition.
+        self.assertEqual(calls, [("Sales Order Item", "SOI-1")])
+
+    def test_delivery_rows_survive_a_missing_sales_order_item_row(self):
+        sold = AttrDict(item_code="I-1", item_name="One", description="d",
+                        sales_order_item="SOI-1", uom="Nos", conversion_factor=1,
+                        stock_uom="Nos", warehouse="WH - O", required_date=None)
+        revision = AttrDict(sales_order="SO-1", project="PROJ-1")
+        with patch.object(frappe_stub.db, "get_value", return_value=None):
+            values = technical_procurement._delivery_row_values(revision, sold, 4)
+        self.assertEqual(values["against_sales_order"], "SO-1")
+
     def test_create_from_revision_picks_the_pool_matching_the_adapter(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def _create_from_revision", 1)[1].split("\ndef ", 1)[0]
