@@ -296,6 +296,10 @@ def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
         for step, action in _route_actions(route):
             if remaining_for_adapter(action.adapter_key, revision, pools).get(line.name, 0) <= 0:
                 continue
+            # A Pick List carries stock rows only (spec rule 14), so a services-only
+            # revision must offer no Create Pick List button at all.
+            if action.adapter_key == "revision_to_pick_list" and not _is_pickable_line(line):
+                continue
             required = _get(step, "required_previous_action")
             if required and not _previous_action_satisfied(revision.name, line.name, required):
                 continue
@@ -579,6 +583,16 @@ def _create_from_revision(
         frappe.throw(_("Unknown technical revision items: {0}.").format(", ".join(missing)))
 
     selected_lines = [lines[name] for name in selection]
+    if adapter_key == "revision_to_pick_list":
+        # Services cannot be picked and reach delivery through the Delivery Note
+        # instead (spec rule 14). A real revision mixes both, so a service line is
+        # dropped rather than rejected -- throwing would make Create Pick List
+        # unusable on any realistic revision.
+        selected_lines = [line for line in selected_lines if _is_pickable_line(line)]
+        if not selected_lines:
+            frappe.throw(
+                _("None of the selected rows can be picked: only stock items are pickable.")
+            )
     route_actions = _adapter_actions_for_lines(revision, selected_lines, adapter_key)
     # Delivery consumes its own pool: a line can be fully procured and still
     # undelivered, and vice versa when stock was already on hand.
@@ -963,6 +977,14 @@ def _build_target(
             frappe.throw(_("The Sales Order has no Customer."))
         values["customer"] = customer
         values["posting_date"] = nowdate()
+    if target_doctype == "Pick List":
+        customer = _text(_get(sales_order, "customer"))
+        if not customer:
+            frappe.throw(_("The Sales Order has no Customer."))
+        values["customer"] = customer
+        # pick_list_reservation and pick_list_override both early-return on any
+        # other purpose, so a technical Pick List must be a Delivery one.
+        values["purpose"] = "Delivery"
     _set_known_fields(target, values)
 
     item_meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(target_doctype))
@@ -978,6 +1000,8 @@ def _build_target(
         }
         if target_doctype == "Delivery Note":
             row_values = _delivery_row_values(revision, line, stock_qty)
+        elif target_doctype == "Pick List":
+            row_values = _pick_list_row_values(revision, line, stock_qty)
         else:
             row_values = _procurement_row_values(revision, line, stock_qty, schedule_date)
         row_values.update(_lineage_values(item_meta, lineage))
@@ -1050,6 +1074,43 @@ def _delivery_row_values(revision, line, stock_qty):
         "so_detail": sales_order_item,
         **pricing,
     }
+
+
+def _pick_list_row_values(revision, line, stock_qty):
+    """Pick List Item row for one revision line.
+
+    Pick List Item uses sales_order/sales_order_item like the procurement doctypes,
+    and has no project field. Engineering additions carry no Sales Order line, so
+    both stay empty -- pick_list_override only caps rows that have one, which is
+    what lets an addition be picked at all.
+    """
+    factor = flt(line.conversion_factor)
+    sales_order_item = _text(line.sales_order_item)
+    return {
+        "item_code": line.item_code,
+        "item_name": line.item_name,
+        "description": line.description,
+        "qty": stock_qty / factor,
+        "stock_qty": stock_qty,
+        "uom": line.uom,
+        "conversion_factor": factor,
+        "stock_uom": line.stock_uom,
+        "warehouse": line.warehouse,
+        "sales_order": _text(revision.sales_order) if sales_order_item else "",
+        "sales_order_item": sales_order_item,
+    }
+
+
+def _is_pickable_line(line):
+    """Only stock items can be picked (spec rule 14).
+
+    Pick List Item has no is_stock_item field, so pickability comes from the revision
+    line, falling back to the Item master when the cached flag is unset.
+    """
+    value = _get(line, "is_stock_item")
+    if value is not None and value != "":
+        return bool(cint(value))
+    return bool(cint(frappe.db.get_value("Item", _text(line.item_code), "is_stock_item")))
 
 
 def _single_line_supplier(prepared):

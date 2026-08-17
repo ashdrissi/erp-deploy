@@ -156,6 +156,76 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn("so_detail", rows)
         self.assertNotIn('"sales_order_item": line.sales_order_item', rows)
 
+    def test_pick_list_rows_use_locations_and_the_sales_order_fieldnames(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        rows = source.split("def _pick_list_row_values", 1)[1].split("\ndef ", 1)[0]
+        # Pick List Item uses sales_order/sales_order_item, not against_sales_order.
+        self.assertIn('"sales_order"', rows)
+        self.assertIn('"sales_order_item"', rows)
+        self.assertNotIn("against_sales_order", rows)
+        # It has no project field, so do not invent one.
+        self.assertNotIn('"project"', rows)
+
+    def test_pick_list_parent_is_a_delivery_purpose_pick_list(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        branch = source.split('if target_doctype == "Pick List":', 1)[1].split(
+            "    _set_known_fields", 1
+        )[0]
+        self.assertIn('"purpose"', branch)
+        self.assertIn('"Delivery"', branch)
+        self.assertIn("customer", branch)
+
+    def test_non_stock_lines_are_skipped_for_picking_not_rejected(self):
+        """A revision legitimately mixes stock and service lines. Throwing on a
+        service line would make Create Pick List unusable; services reach delivery
+        through the Delivery Note instead (spec rule 14)."""
+        stock = AttrDict(name="R1", item_code="I-1", is_stock_item=1)
+        service = AttrDict(name="R2", item_code="I-2", is_stock_item=0)
+        self.assertTrue(technical_procurement._is_pickable_line(stock))
+        self.assertFalse(technical_procurement._is_pickable_line(service))
+
+    def test_non_pickable_lines_are_filtered_out_of_both_picking_entry_points(self):
+        """A services-only revision must offer no Create Pick List button, and a
+        mixed selection must drop its service lines instead of failing."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def _create_from_revision", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('adapter_key == "revision_to_pick_list"', body)
+        self.assertIn("_is_pickable_line(line)", body)
+        self.assertIn("only stock items are pickable", body)
+        actions = source.split("def get_available_actions", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("_is_pickable_line(line)", actions)
+
+    def test_pick_list_row_values_omit_the_sales_order_link_for_added_lines(self):
+        """pick_list_override only caps rows that carry a sales_order_item, which is
+        exactly what lets an engineering addition be picked at all."""
+        sold = AttrDict(item_code="I-1", item_name="One", description="d",
+                        sales_order_item="SOI-1", uom="Nos", conversion_factor=1,
+                        stock_uom="Nos", warehouse="WH - O")
+        added = AttrDict(item_code="I-2", item_name="Two", description="d",
+                         sales_order_item="", uom="Nos", conversion_factor=1,
+                         stock_uom="Nos", warehouse="WH - O")
+        revision = AttrDict(sales_order="SO-1", project="PROJ-1")
+
+        sold_values = technical_procurement._pick_list_row_values(revision, sold, 4)
+        added_values = technical_procurement._pick_list_row_values(revision, added, 3)
+
+        self.assertEqual(sold_values["sales_order"], "SO-1")
+        self.assertEqual(sold_values["sales_order_item"], "SOI-1")
+        self.assertEqual(sold_values["qty"], 4)
+        self.assertEqual(sold_values["stock_qty"], 4)
+        self.assertEqual(added_values["sales_order"], "")
+        self.assertEqual(added_values["sales_order_item"], "")
+        self.assertNotIn("project", added_values)
+
+    def test_pickability_falls_back_to_the_item_master(self):
+        """Pick List Item has no is_stock_item field, so pickability comes from the
+        revision line -- and from the Item master when the cached flag is unset."""
+        line = AttrDict(name="R1", item_code="I-1", is_stock_item=None)
+        with patch.object(frappe_stub.db, "get_value", return_value=1):
+            self.assertTrue(technical_procurement._is_pickable_line(line))
+        with patch.object(frappe_stub.db, "get_value", return_value=0):
+            self.assertFalse(technical_procurement._is_pickable_line(line))
+
     def test_delivery_row_values_omit_sales_order_link_for_added_lines(self):
         sold = AttrDict(item_code="I-1", item_name="One", description="d",
                         sales_order_item="SOI-1", uom="Nos", conversion_factor=1,
