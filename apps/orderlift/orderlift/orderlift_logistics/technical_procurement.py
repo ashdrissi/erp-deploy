@@ -395,6 +395,12 @@ def validate_procurement_document(doc, method=None) -> None:
         return
     if cint(_get(doc, "docstatus")) == 2:
         return
+    # A Sales Return copies the lineage fields (they are not no_copy) onto rows with
+    # negative qty, so _validate_target_row would reject every return ever made
+    # through this feature with "quantity must be greater than zero".
+    # delivery_note_reservation_guard bails on is_return for the same reason.
+    if cint(_get(doc, "is_return")):
+        return
 
     rows = _get(doc, "items") or []
     linked_rows = []
@@ -1311,6 +1317,11 @@ def _delivered_stock_qty(technical_list, *, exclude_doctype="", exclude_name="")
     time engineering approves a new one. It is also anchored on the Technical List
     rather than against_sales_order because engineering additions carry no Sales
     Order link and would otherwise escape the cap entirely.
+
+    Return rows are deliberately NOT excluded. Their qty is negative, so summing
+    them credits the quantity back to the delivery pool, which is exactly right: a
+    refused delivery leaves the line deliverable again. Do not add an is_return
+    filter here -- validate_procurement_document skips returns, this must not.
     """
     totals = defaultdict(float)
     meta = _meta("Delivery Note Item")

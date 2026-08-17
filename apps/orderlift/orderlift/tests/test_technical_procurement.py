@@ -648,6 +648,126 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertEqual(procurement_pool.call_count, 1)
         self.assertEqual(delivery_pool.call_count, 1)
 
+    def _return_delivery_note(self, *, is_return):
+        revision = revision_stub(
+            name="TLR-1",
+            technical_list="TL-1",
+            company="Orderlift",
+            project="PROJ-1",
+            sales_order="SO-1",
+            approval_hash="abc",
+            check_permission=lambda *args: None,
+            items=[
+                AttrDict(
+                    name="R1",
+                    line_key="SOI-1",
+                    sales_order_item="SOI-1",
+                    item_code="I-1",
+                    uom="Nos",
+                    conversion_factor=1,
+                    stock_uom="Nos",
+                    warehouse="WH - O",
+                    execution_relevant=1,
+                    execution_stock_qty=6,
+                )
+            ],
+        )
+        technical_list = AttrDict(
+            name="TL-1", technical_list="TL-1", check_permission=lambda *args: None
+        )
+        row = AttrDict(
+            item_code="I-1",
+            qty=-2,
+            stock_qty=-2,
+            conversion_factor=1,
+            uom="Nos",
+            stock_uom="Nos",
+            warehouse="WH - O",
+            project="PROJ-1",
+            against_sales_order="SO-1",
+            so_detail="SOI-1",
+            custom_technical_list="TL-1",
+            custom_technical_revision="TLR-1",
+            custom_technical_revision_item="R1",
+            custom_technical_line_key="SOI-1",
+            custom_technical_approval_hash="abc",
+            custom_technical_procurement_route="ROUTE-1",
+            custom_technical_procurement_action="ACT-DN",
+        )
+        doc = AttrDict(
+            doctype="Delivery Note",
+            docstatus=0,
+            is_return=1 if is_return else 0,
+            name="DN-RET-1",
+            company="Orderlift",
+            project="PROJ-1",
+            items=[row],
+        )
+        documents = {
+            (technical_procurement.REVISION_DOCTYPE, "TLR-1"): revision,
+            (technical_procurement.TECHNICAL_LIST_DOCTYPE, "TL-1"): technical_list,
+        }
+        return doc, documents
+
+    def test_sales_returns_against_a_technical_delivery_note_are_allowed(self):
+        """make_sales_return copies the lineage fields (they are not no_copy) onto a
+        return whose rows have negative qty. Without an is_return guard the row
+        validation throws "quantity must be greater than zero" and no client refusal
+        can ever be recorded."""
+        doc, documents = self._return_delivery_note(is_return=True)
+        with patch.object(
+            technical_procurement, "_technical_schema_ready", return_value=True
+        ), patch.object(
+            frappe_stub,
+            "get_doc",
+            side_effect=lambda doctype, name: documents[(doctype, name)],
+            create=True,
+        ), patch.object(technical_procurement, "_lock_document"), patch.object(
+            technical_procurement, "_validate_revision"
+        ), patch.object(
+            technical_procurement, "_validate_source_line"
+        ), patch.object(
+            technical_procurement, "_delivered_stock_qty", return_value={}
+        ):
+            technical_procurement.validate_procurement_document(doc)
+
+    def test_forward_delivery_note_rows_still_reject_a_negative_quantity(self):
+        doc, documents = self._return_delivery_note(is_return=False)
+        with patch.object(
+            technical_procurement, "_technical_schema_ready", return_value=True
+        ), patch.object(
+            frappe_stub,
+            "get_doc",
+            side_effect=lambda doctype, name: documents[(doctype, name)],
+            create=True,
+        ), patch.object(technical_procurement, "_lock_document"), patch.object(
+            technical_procurement, "_validate_revision"
+        ), patch.object(
+            technical_procurement, "_validate_source_line"
+        ), patch.object(
+            technical_procurement, "_delivered_stock_qty", return_value={}
+        ):
+            with self.assertRaisesRegex(ValueError, "must be greater than zero"):
+                technical_procurement.validate_procurement_document(doc)
+
+    def test_is_return_guard_precedes_the_row_loop(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('if cint(_get(doc, "is_return")):', body)
+        self.assertLess(
+            body.index('if cint(_get(doc, "is_return")):'),
+            body.index('rows = _get(doc, "items") or []'),
+        )
+
+    def test_delivered_totals_keep_counting_return_rows(self):
+        """A return's negative rows must stay in the delivered pool: that is what
+        credits the quantity back so the line can be delivered again."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        delivered = source.split("def _delivered_stock_qty", 1)[1].split("\ndef ", 1)[0]
+        self.assertNotIn("parent_doc.is_return", delivered)
+        self.assertNotIn("child.is_return", delivered)
+        self.assertIn("credits the quantity back", delivered)
+
     def test_native_delivery_note_from_sales_order_is_blocked(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
