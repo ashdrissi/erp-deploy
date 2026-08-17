@@ -103,11 +103,25 @@ class TestTechnicalQtyLimit(unittest.TestCase):
             doc.validate_qty()
         self.assertEqual(stamped.get("sales_order_item"), "SOI-1")
 
-    def test_only_material_request_rows_are_considered(self):
-        """The mixin is wired to Material Request only; a row of any other child
-        doctype must be passed straight through."""
-        other = Row(
+    def test_purchase_order_rows_are_exempt_too(self):
+        """Purchase Order is capped against Sales Order Item as well -- that entry is
+        appended at runtime by update_status_updater(), not declared in __init__."""
+        stamped = Row(
             doctype="Purchase Order Item",
+            item_code="ECL-00001",
+            sales_order_item="l8cndlei1j",
+            custom_technical_revision="TLR-11397",
+        )
+        doc = Doc([stamped])
+        doc.validate_qty()
+
+        self.assertEqual(doc.seen, [("ECL-00001", None)])
+        self.assertEqual(stamped.get("sales_order_item"), "l8cndlei1j")
+
+    def test_unrelated_child_doctypes_are_passed_straight_through(self):
+        """Only the two doctypes ERPNext caps against Sales Order Item are touched."""
+        other = Row(
+            doctype="Sales Invoice Item",
             item_code="I-9",
             sales_order_item="SOI-9",
             custom_technical_revision="TLR-1",

@@ -2,15 +2,23 @@ from __future__ import annotations
 
 
 LINEAGE_FIELD = "custom_technical_revision"
-LINEAGE_ROW_DOCTYPE = "Material Request Item"
 LINK_FIELD = "sales_order_item"
+# Child doctypes whose rows ERPNext caps against Sales Order Item.stock_qty.
+#
+# Material Request declares that link in its status_updater. Purchase Order does NOT:
+# its __init__ lists only the Material Request Item entry, and the Sales Order Item
+# entry is *appended at runtime* by update_status_updater() (purchase_order.py) for
+# drop-ship rows. Reading only __init__ is how this was first missed -- both are
+# capped, and the error names the Sales Order Item in either case.
+LINEAGE_ROW_DOCTYPES = frozenset({"Material Request Item", "Purchase Order Item"})
 
 
 class OrderliftTechnicalQtyLimitMixin:
     """Exempt approved Technical List rows from the Sales-Order-qty overflow guard.
 
-    ERPNext caps a Material Request row at its linked ``Sales Order Item.stock_qty``
-    (``status_updater``, joining on ``sales_order_item``). Spec rule 16 makes the approved
+    ERPNext caps a Material Request or Purchase Order row at its linked
+    ``Sales Order Item.stock_qty`` (``status_updater``, joining on ``sales_order_item``).
+    Spec rule 16 makes the approved
     execution qty the cap for policy-covered Sales Orders, and rule 5 makes raising it an
     engineering decision that does not amend the Sales Order -- so without this exemption a
     revision that raises a quantity above the sold quantity cannot be procured at all.
@@ -32,7 +40,7 @@ class OrderliftTechnicalQtyLimitMixin:
     def validate_qty(self):
         hidden = []
         for row in self.get_all_children():
-            if getattr(row, "doctype", None) != LINEAGE_ROW_DOCTYPE:
+            if getattr(row, "doctype", None) not in LINEAGE_ROW_DOCTYPES:
                 continue
             if not (row.get(LINEAGE_FIELD) or "").strip():
                 continue

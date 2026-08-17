@@ -186,9 +186,18 @@ Agreed 2026-08-17, after a live Material Request was refused.
     moves to the correct document rather than disappearing. Rows with no lineage stamp keep
     the native guard exactly, and non-policy companies are untouched.
 
-    **Purchase Order needs no equivalent change.** Its `status_updater` links only to
-    `Material Request Item`, so a direct Purchase Order has no Sales-Order-qty guard to
-    relax. Widening the mixin to it would be dead code.
+    **Applies to Purchase Order as well as Material Request.**
+
+    *Corrected 2026-08-18.* This originally claimed Purchase Order needed no equivalent
+    change, on the grounds that its `status_updater` links only to `Material Request Item`.
+    That was wrong: `PurchaseOrder.__init__` lists only that entry, but
+    `update_status_updater()` **appends** a `Purchase Order Item → Sales Order Item` entry
+    at runtime (`purchase_order.py`, `join_field: "sales_order_item"`). Reading only
+    `__init__` is how it was missed, and `PUR-ORD-2026-00061~TESTOPP` was refused for the
+    same item and quantity as the Material Request that prompted this rule.
+
+    The lesson generalises: an ERPNext `status_updater` list is not fully knowable from
+    `__init__`. Check for runtime appends before concluding a doctype is unaffected.
 
 ## Invoicing and closure rules
 

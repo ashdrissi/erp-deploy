@@ -725,9 +725,11 @@ extend_doctype_class = {
     "Customer": "orderlift.sales.utils.customer_tier.CustomerGroupFallbackMixin",
     "Contract": "orderlift.crm.extensions.contract.ContractDateValidationMixin",
     "Pick List": "orderlift.orderlift_logistics.pick_list_override.OrderliftPickListMixin",
-    # Material Request only: Purchase Order's status_updater links to Material Request
-    # Item, not Sales Order Item, so it has no Sales-Order-qty guard to relax.
+    # Both are capped against Sales Order Item.stock_qty. Material Request declares that
+    # link in its status_updater; Purchase Order appends it at runtime in
+    # update_status_updater(), so it is not visible in __init__.
     "Material Request": "orderlift.orderlift_logistics.technical_qty_limit.OrderliftTechnicalQtyLimitMixin",
+    "Purchase Order": "orderlift.orderlift_logistics.technical_qty_limit.OrderliftTechnicalQtyLimitMixin",
 }
 
 override_doctype_class = {

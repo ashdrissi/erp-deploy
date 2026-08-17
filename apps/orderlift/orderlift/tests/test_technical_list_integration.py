@@ -66,14 +66,17 @@ class TestTechnicalListIntegration(unittest.TestCase):
         self.assertIn("except frappe.PermissionError:", body)
         self.assertIn('summary["active_revision"] = None', body)
 
-    def test_material_request_qty_limit_mixin_is_wired(self):
-        """Rule 20: without this, ERPNext caps a Material Request at the sold quantity
-        and a revision that raised a quantity cannot be procured at all. Purchase Order
-        is deliberately absent -- its status_updater links to Material Request Item, so
-        it has no Sales-Order-qty guard to relax."""
+    def test_qty_limit_mixin_is_wired_for_both_procurement_doctypes(self):
+        """Rule 20: without this, ERPNext caps procurement at the sold quantity and a
+        revision that raised a quantity cannot be procured at all.
+
+        Purchase Order needs it too. Its __init__ lists only the Material Request Item
+        entry, and the Sales Order Item entry is appended at runtime by
+        update_status_updater() -- reading only __init__ is how it was first missed, and
+        PUR-ORD-2026-00061~TESTOPP was refused as a result."""
         mixin = "orderlift.orderlift_logistics.technical_qty_limit.OrderliftTechnicalQtyLimitMixin"
         self.assertEqual(hooks.extend_doctype_class["Material Request"], mixin)
-        self.assertNotIn("Purchase Order", hooks.extend_doctype_class)
+        self.assertEqual(hooks.extend_doctype_class["Purchase Order"], mixin)
 
     def test_migration_installs_company_policy_and_lineage(self):
         self.assertIn("orderlift.orderlift_sig.technical_list.after_migrate", hooks.after_migrate)
