@@ -521,6 +521,88 @@ class TestTechnicalProcurement(unittest.TestCase):
             delivery.index("existing + total > budget[key]"),
         )
 
+    def test_available_actions_filter_each_action_against_its_own_pool(self):
+        """A line raised as a full Material Request has zero procurement remaining
+        but is still undelivered. Filtering the whole payload against the
+        procurement pool drops it from the delivery action too, which silently
+        produces a Delivery Note missing the procured line."""
+        revision = revision_stub(
+            name="TLR-1",
+            technical_list="TL-1",
+            sales_order="SO-1",
+            company="Orderlift",
+            approval_hash="abc",
+            items=[
+                AttrDict(
+                    name="R1",
+                    line_key="SOI-1",
+                    sales_order_item="SOI-1",
+                    item_code="I-1",
+                    execution_stock_qty=5,
+                    execution_relevant=1,
+                )
+            ],
+        )
+        technical_list = AttrDict(
+            doctype=technical_procurement.TECHNICAL_LIST_DOCTYPE,
+            name="TL-1",
+            sales_order="SO-1",
+        )
+        reference = AttrDict(doctype="Sales Order", name="SO-1")
+        route = AttrDict(name="ROUTE-1")
+        steps = [
+            (
+                AttrDict(sequence=10, required_previous_action=""),
+                AttrDict(
+                    name="ACT-MR",
+                    action_label="Create Material Request",
+                    adapter_key="revision_to_material_request",
+                    sequence=10,
+                ),
+            ),
+            (
+                AttrDict(sequence=20, required_previous_action=""),
+                AttrDict(
+                    name="ACT-DN",
+                    action_label="Create Delivery Note",
+                    adapter_key="revision_to_delivery_note",
+                    sequence=20,
+                ),
+            ),
+        ]
+
+        with patch.object(
+            technical_procurement,
+            "_resolve_current_revision",
+            return_value=(reference, technical_list, revision),
+        ), patch.object(technical_procurement, "_validate_revision"), patch.object(
+            frappe_stub,
+            "get_doc",
+            return_value=AttrDict(
+                name="SO-1", company="Orderlift", check_permission=lambda *args: None
+            ),
+            create=True,
+        ), patch.object(
+            technical_procurement, "_technical_policy_applies", return_value=True
+        ), patch.object(
+            technical_procurement, "_route_for_line", return_value=route
+        ), patch.object(
+            technical_procurement, "_route_actions", return_value=steps
+        ), patch.object(
+            technical_procurement, "_remaining_by_line", return_value={}
+        ) as procurement_pool, patch.object(
+            technical_procurement, "_delivery_remaining_by_line", return_value={"R1": 5}
+        ) as delivery_pool:
+            payload = technical_procurement.get_available_actions("Sales Order", "SO-1")
+
+        actions = {action["adapter_key"]: action for action in payload["actions"]}
+        self.assertIn("revision_to_delivery_note", actions)
+        self.assertEqual(actions["revision_to_delivery_note"]["row_ids"], ["R1"])
+        self.assertNotIn("revision_to_material_request", actions)
+        # Each pool costs SQL, so it must be computed at most once.
+        self.assertEqual(procurement_pool.call_count, 1)
+        self.assertEqual(delivery_pool.call_count, 1)
+
     def test_native_delivery_note_from_sales_order_is_blocked(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]

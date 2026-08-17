@@ -270,15 +270,32 @@ def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
     if not _technical_policy_applies(sales_order):
         return _action_payload(reference, technical_list, revision, [])
 
-    remaining = _remaining_by_line(revision)
+    # Each action is filtered against the pool its own adapter consumes: a line can
+    # be fully procured and still undelivered, so filtering the whole payload
+    # against the procurement pool would drop procured lines from the delivery
+    # action as well. Each pool runs SQL, so both are computed lazily and cached.
+    pools = {}
+
+    def remaining_for(adapter_key):
+        pool = "delivery" if adapter_key == "revision_to_delivery_note" else "procurement"
+        if pool not in pools:
+            pools[pool] = (
+                _delivery_remaining_by_line(revision)
+                if pool == "delivery"
+                else _remaining_by_line(revision)
+            )
+        return pools[pool]
+
     grouped = {}
     for line in revision.items or []:
-        if not cint(line.execution_relevant) or remaining.get(line.name, 0) <= 0:
+        if not cint(line.execution_relevant):
             continue
         route = _route_for_line(revision, line)
         if not route:
             continue
         for step, action in _route_actions(route):
+            if remaining_for(action.adapter_key).get(line.name, 0) <= 0:
+                continue
             required = _get(step, "required_previous_action")
             if required and not _previous_action_satisfied(revision.name, line.name, required):
                 continue
