@@ -17,6 +17,7 @@ REVISION_ITEM_DOCTYPE = "Sales Order Technical List Item"
 SAFE_ADAPTERS = {
     "revision_to_material_request": "Material Request",
     "revision_to_purchase_order": "Purchase Order",
+    "revision_to_delivery_note": "Delivery Note",
 }
 SUPPORTED_REFERENCES = {
     "Sales Order",
@@ -28,12 +29,14 @@ SUPPORTED_PROCUREMENT_DOCTYPES = (
     "Request for Quotation",
     "Supplier Quotation",
     "Purchase Order",
+    "Delivery Note",
 )
 PROCUREMENT_ITEM_DOCTYPES = {
     "Material Request": "Material Request Item",
     "Request for Quotation": "Request for Quotation Item",
     "Supplier Quotation": "Supplier Quotation Item",
     "Purchase Order": "Purchase Order Item",
+    "Delivery Note": "Delivery Note Item",
 }
 # Only Material Requests and direct Purchase Orders consume procurement allowance.
 # Read by _allocated_stock_qty and nothing else: it joins on child.sales_order,
@@ -162,6 +165,7 @@ def _ensure_safe_actions() -> None:
     labels = {
         "revision_to_material_request": _("Create Material Request"),
         "revision_to_purchase_order": _("Create Purchase Order"),
+        "revision_to_delivery_note": _("Create Delivery Note"),
     }
     for sequence, (adapter_key, target_doctype) in enumerate(SAFE_ADAPTERS.items(), 10):
         name = frappe.db.get_value(

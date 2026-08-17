@@ -28,7 +28,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Adapter Key",
-      "options": "revision_to_material_request\nrevision_to_purchase_order",
+      "options": "revision_to_material_request\nrevision_to_purchase_order\nrevision_to_delivery_note",
       "reqd": 1,
       "unique": 1
     },
@@ -37,7 +37,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Target DocType",
-      "options": "Material Request\nPurchase Order",
+      "options": "Material Request\nPurchase Order\nDelivery Note",
       "reqd": 1
     },
     {

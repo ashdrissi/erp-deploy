@@ -44,6 +44,18 @@ utils_stub.now_datetime = lambda: "2026-08-15 00:00:00"
 sys.modules.setdefault("frappe", frappe_stub)
 sys.modules.setdefault("frappe.utils", utils_stub)
 
+model_stub = types.ModuleType("frappe.model")
+document_stub = types.ModuleType("frappe.model.document")
+
+
+class _StubDocument:
+    pass
+
+
+document_stub.Document = _StubDocument
+sys.modules.setdefault("frappe.model", model_stub)
+sys.modules.setdefault("frappe.model.document", document_stub)
+
 from orderlift.orderlift_logistics import technical_procurement
 
 
@@ -74,9 +86,38 @@ class TestTechnicalProcurement(unittest.TestCase):
             {
                 "revision_to_material_request": "Material Request",
                 "revision_to_purchase_order": "Purchase Order",
+                "revision_to_delivery_note": "Delivery Note",
             },
         )
         self.assertTrue(all("." not in key for key in technical_procurement.SAFE_ADAPTERS))
+
+    def test_delivery_note_carries_lineage_and_row_validation(self):
+        self.assertEqual(
+            technical_procurement.PROCUREMENT_ITEM_DOCTYPES["Delivery Note"],
+            "Delivery Note Item",
+        )
+        self.assertIn("Delivery Note", technical_procurement.SUPPORTED_PROCUREMENT_DOCTYPES)
+        self.assertEqual(technical_procurement.TARGET_CHILD_TABLES["Delivery Note"], "items")
+
+    def test_action_doctype_registry_matches_the_adapter_registry(self):
+        from orderlift.orderlift_logistics.doctype.technical_procurement_action import (
+            technical_procurement_action,
+        )
+
+        self.assertEqual(
+            technical_procurement_action.SAFE_ADAPTERS,
+            technical_procurement.SAFE_ADAPTERS,
+        )
+        action = json.loads(
+            (
+                DOCTYPE_ROOT
+                / "technical_procurement_action"
+                / "technical_procurement_action.json"
+            ).read_text()
+        )
+        fields = {field["fieldname"]: field for field in action["fields"]}
+        self.assertIn("revision_to_delivery_note", fields["adapter_key"]["options"])
+        self.assertIn("Delivery Note", fields["target_doctype"]["options"])
 
     def test_company_policy_fields_are_exact(self):
         self.assertEqual(
