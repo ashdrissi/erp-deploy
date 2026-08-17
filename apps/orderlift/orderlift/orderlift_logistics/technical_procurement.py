@@ -16,6 +16,7 @@ from orderlift.orderlift_logistics.technical_allocation import (
     delivered_stock_qty,
     is_root_allocation,
     line_stock_qty,
+    picked_stock_qty,
     remaining_for_adapter,
     revision_lines,
     row_stock_qty,
@@ -59,6 +60,27 @@ TARGET_CHILD_TABLES = {
     "Purchase Order": "items",
     "Delivery Note": "items",
     "Pick List": "locations",
+}
+
+# Doctype -> (consumed-pool function name, over-cap message). Both consume the
+# approved execution qty but from independent pools, so a pick and its own Delivery
+# Note do not double-consume (spec rule 15). Keyed by doctype, distinct from
+# technical_allocation.ADAPTER_POOLS which is keyed by adapter.
+#
+# The pool is held by name and resolved through this module's globals at call time.
+# Storing the function object would freeze the binding into the dict, so patching
+# delivered_stock_qty or picked_stock_qty on this module -- how the pools are
+# substituted in tests, and the only way to see through the imported binding --
+# would silently have no effect on the cap.
+CONSUMED_POOL_BY_DOCTYPE = {
+    "Delivery Note": (
+        "delivered_stock_qty",
+        "Row {0}: quantity exceeds the remaining delivery quantity.",
+    ),
+    "Pick List": (
+        "picked_stock_qty",
+        "Row {0}: quantity exceeds the remaining pickable quantity.",
+    ),
 }
 
 COMPANY_ENABLED_FIELD = "custom_enable_sales_order_technical_lists"
@@ -392,6 +414,16 @@ def create_delivery_note(revision, selected_row_ids=None, quantities=None) -> di
     )
 
 
+@frappe.whitelist()
+def create_pick_list(revision, selected_row_ids=None, quantities=None) -> dict:
+    return _create_from_revision(
+        "revision_to_pick_list",
+        revision,
+        selected_row_ids,
+        quantities,
+    )
+
+
 def validate_procurement_document(doc, method=None) -> None:
     """Validate technical lineage while leaving unrelated native procurement untouched."""
     doctype = _text(_get(doc, "doctype"))
@@ -406,7 +438,9 @@ def validate_procurement_document(doc, method=None) -> None:
     if cint(_get(doc, "is_return")):
         return
 
-    rows = _get(doc, "items") or []
+    # Pick List keeps its rows in "locations": a hardcoded doc.items read would see
+    # an empty list and silently validate nothing at all.
+    rows = _get(doc, TARGET_CHILD_TABLES.get(doctype, "items")) or []
     linked_rows = []
     for row in rows:
         revision_name = _text(_get(row, "custom_technical_revision"))
@@ -484,50 +518,47 @@ def validate_procurement_document(doc, method=None) -> None:
                 ).format(_row_label(row), doctype)
             )
 
-    if doctype == "Delivery Note":
-        # Delivery is capped by the delivery pool, not the procurement pool:
-        # is_root_allocation is False for Delivery Note, so the block below would
-        # leave delivery with no cumulative cap at all.
-        #
-        # Requested quantities are aggregated by allocation key rather than checked
-        # per revision line, because distinct lines can share one key: engineering
-        # additions collapse to "item::<item_code>". Checking each line separately
-        # against the same pool bucket would let one document ship that bucket's
-        # whole budget once per line. The budget is likewise the sum over the lines
-        # sharing the key -- taken from the whole revision, not from this document's
-        # rows, or splitting one delivery into two would shrink the shared bucket to
-        # a single line's quantity and block work the cap allows.
-        delivered_by_list = {}
+    # Delivery and picking are each capped by their own pool, not the procurement
+    # pool: is_root_allocation is False for both, so the block below would leave
+    # them with no cumulative cap at all.
+    #
+    # Requested quantities are aggregated by allocation key rather than checked per
+    # revision line, because distinct lines can share one key: engineering additions
+    # collapse to "item::<item_code>". Checking each line separately against the same
+    # pool bucket would let one document ship that bucket's whole budget once per
+    # line. The budget is likewise the sum over the lines sharing the key -- taken
+    # from the whole revision, not from this document's rows, or splitting one
+    # delivery into two would shrink the shared bucket to a single line's quantity
+    # and block work the cap allows.
+    pool = CONSUMED_POOL_BY_DOCTYPE.get(doctype)
+    if pool:
+        pool_function_name, message = pool
+        consumed_for = globals()[pool_function_name]
+        consumed_by_list = {}
         budget_by_revision = {}
         requested = defaultdict(float)
-        budget = {}
         labels = {}
         for (revision_name, revision_item), total in line_totals.items():
             revision = revisions[revision_name]
             technical_list = _text(revision.technical_list)
-            if revision_name not in budget_by_revision:
-                budget_by_revision[revision_name] = budget_by_key(revision)
-            if technical_list not in delivered_by_list:
-                delivered_by_list[technical_list] = delivered_stock_qty(
+            if technical_list not in consumed_by_list:
+                consumed_by_list[technical_list] = consumed_for(
                     technical_list,
                     exclude_doctype=doctype,
                     exclude_name=_text(_get(doc, "name")),
                 )
+            if revision_name not in budget_by_revision:
+                budget_by_revision[revision_name] = budget_by_key(revision)
             source_line = revision_lines(revision)[revision_item]
-            pool_key = allocation_key(source_line)
-            key = (technical_list, pool_key)
+            key = (technical_list, revision_name, allocation_key(source_line))
             requested[key] += total
-            budget[key] = budget_by_revision[revision_name].get(pool_key, 0)
             labels.setdefault(key, _row_label(source_line))
         for key, total in requested.items():
-            technical_list, pool_key = key
-            existing = delivered_by_list[technical_list].get(pool_key, 0)
-            if existing + total > budget[key] + 1e-9:
-                frappe.throw(
-                    _("Row {0}: quantity exceeds the remaining delivery quantity.").format(
-                        labels[key]
-                    )
-                )
+            technical_list, revision_name, alloc_key = key
+            existing = consumed_by_list[technical_list].get(alloc_key, 0)
+            allowed = budget_by_revision[revision_name].get(alloc_key, 0)
+            if existing + total > allowed + 1e-9:
+                frappe.throw(_(message).format(labels[key]))
         return
 
     allocated_by_revision = {}

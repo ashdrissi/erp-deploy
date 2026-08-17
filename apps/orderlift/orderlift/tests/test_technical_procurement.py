@@ -686,9 +686,23 @@ class TestTechnicalProcurement(unittest.TestCase):
 
     def test_delivery_cumulative_cap_uses_the_delivery_pool(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        pools = source.split("CONSUMED_POOL_BY_DOCTYPE = {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('"Delivery Note": (', pools)
+        self.assertIn("delivered_stock_qty", pools)
+        self.assertIn("exceeds the remaining delivery quantity", pools)
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("delivered_stock_qty(", body)
-        self.assertIn("exceeds the remaining delivery quantity", body)
+        self.assertIn("CONSUMED_POOL_BY_DOCTYPE.get(doctype)", body)
+
+    def test_picking_cap_uses_the_picking_pool(self):
+        """Picking has its own pool, so a pick and its own Delivery Note never
+        double-consume the approved execution qty."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        pools = source.split("CONSUMED_POOL_BY_DOCTYPE = {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('"Pick List": (', pools)
+        self.assertIn("picked_stock_qty", pools)
+        self.assertIn("exceeds the remaining pickable quantity", pools)
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("consumed_for(", body)
 
     def test_delivery_cap_aggregates_lines_sharing_an_allocation_key(self):
         """Engineering additions collapse to "item::<item_code>", so two distinct
@@ -697,15 +711,34 @@ class TestTechnicalProcurement(unittest.TestCase):
         the requested total and the budget must be summed per key."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        delivery = body.split('if doctype == "Delivery Note":', 1)[1]
-        self.assertIn("requested[key] += total", delivery)
+        capped = body.split("pool = CONSUMED_POOL_BY_DOCTYPE.get(doctype)", 1)[1]
+        self.assertIn("requested[key] += total", capped)
         # The budget comes from the whole revision, not from this document's rows.
-        self.assertIn("budget_by_key(revision)", delivery)
+        self.assertIn("budget_by_key(revision)", capped)
         # The cap must be evaluated once per key, after aggregation -- not inside
         # the loop that walks revision lines.
         self.assertLess(
-            delivery.index("requested[key] += total"),
-            delivery.index("existing + total > budget[key]"),
+            capped.index("requested[key] += total"),
+            capped.index("existing + total > allowed"),
+        )
+
+    def test_validation_reads_the_right_child_table_per_doctype(self):
+        """Pick List stores rows in locations. Reading doc.items for a Pick List
+        would silently validate nothing at all -- the worst possible failure, since
+        it looks like the guard is working."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("TARGET_CHILD_TABLES", body)
+        self.assertNotIn('rows = _get(doc, "items") or []', body)
+
+    def test_create_pick_list_is_whitelisted_and_takes_no_supplier(self):
+        import inspect
+
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        self.assertIn("@frappe.whitelist()\ndef create_pick_list(", source)
+        self.assertEqual(
+            list(inspect.signature(technical_procurement.create_pick_list).parameters),
+            ["revision", "selected_row_ids", "quantities"],
         )
 
     def test_available_actions_filter_each_action_against_its_own_pool(self):
@@ -898,7 +931,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn('if cint(_get(doc, "is_return")):', body)
         self.assertLess(
             body.index('if cint(_get(doc, "is_return")):'),
-            body.index('rows = _get(doc, "items") or []'),
+            body.index("rows = _get(doc, TARGET_CHILD_TABLES"),
         )
 
     def test_delivered_totals_keep_counting_return_rows(self):
@@ -968,6 +1001,77 @@ class TestTechnicalProcurement(unittest.TestCase):
             project="PROJ-1",
             items=rows,
         )
+
+    def _pick_list_for(self, revision, revision_items):
+        rows = [
+            AttrDict(
+                item_code="I-2",
+                qty=3,
+                stock_qty=3,
+                conversion_factor=1,
+                uom="Nos",
+                stock_uom="Nos",
+                warehouse="WH - O",
+                custom_technical_list="TL-1",
+                custom_technical_revision=revision.name,
+                custom_technical_revision_item=revision_item,
+                custom_technical_line_key=revision_item,
+                custom_technical_approval_hash="abc",
+                custom_technical_procurement_route="ROUTE-1",
+                custom_technical_procurement_action="ACT-PL",
+            )
+            for revision_item in revision_items
+        ]
+        # Rows live in locations, and there is no items table at all.
+        return AttrDict(
+            doctype="Pick List",
+            docstatus=0,
+            name="PL-1",
+            company="Orderlift",
+            purpose="Delivery",
+            locations=rows,
+        )
+
+    def test_pick_list_locations_are_validated_and_capped_by_the_picking_pool(self):
+        """Reading doc.items for a Pick List would see an empty list and validate
+        nothing while looking like it worked. The rows must be read from locations
+        and capped against the picking pool, not the delivery pool."""
+        revision = self._shared_key_revision()
+        documents = {
+            (technical_procurement.REVISION_DOCTYPE, revision.name): revision,
+            (technical_procurement.TECHNICAL_LIST_DOCTYPE, "TL-1"): AttrDict(
+                name="TL-1", check_permission=lambda *args: None
+            ),
+        }
+
+        def run(picked, delivered):
+            with patch.object(
+                technical_procurement, "_technical_schema_ready", return_value=True
+            ), patch.object(
+                frappe_stub,
+                "get_doc",
+                side_effect=lambda doctype, name: documents[(doctype, name)],
+                create=True,
+            ), patch.object(technical_procurement, "_lock_document"), patch.object(
+                technical_procurement, "_validate_revision"
+            ), patch.object(
+                technical_procurement, "_validate_source_line"
+            ), patch.object(
+                technical_procurement, "picked_stock_qty", return_value=picked
+            ), patch.object(
+                technical_procurement, "delivered_stock_qty", return_value=delivered
+            ):
+                technical_procurement.validate_procurement_document(
+                    self._pick_list_for(revision, ["R2"])
+                )
+
+        # Nothing picked yet, and a fully delivered line must not block picking:
+        # the two pools are independent.
+        run({}, {"item::I-2": 6})
+        # 6 of 6 approved units already picked, so this row exceeds the cap. If the
+        # guard were reading doc.items it would pass silently instead.
+        with self.assertRaisesRegex(ValueError, "remaining pickable quantity"):
+            run({"item::I-2": 6}, {})
 
     def _run_delivery_validation(self, revision, doc, delivered):
         documents = {
@@ -1136,7 +1240,10 @@ class TestTechnicalProcurement(unittest.TestCase):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("allocated_by_revision = {}", body)
-        self.assertLess(body.index('if doctype == "Delivery Note":'), body.index("allocated_by_revision = {}"))
+        self.assertLess(
+            body.index("pool = CONSUMED_POOL_BY_DOCTYPE.get(doctype)"),
+            body.index("allocated_by_revision = {}"),
+        )
 
     def test_allocation_helpers_live_in_their_own_module(self):
         from orderlift.orderlift_logistics import technical_allocation
