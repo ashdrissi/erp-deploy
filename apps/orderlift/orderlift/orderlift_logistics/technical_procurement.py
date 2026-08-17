@@ -431,8 +431,18 @@ def validate_procurement_document(doc, method=None) -> None:
         # Delivery is capped by the delivery pool, not the procurement pool:
         # _is_root_allocation is False for Delivery Note, so the block below would
         # leave delivery with no cumulative cap at all.
+        #
+        # Requested quantities are aggregated by allocation key rather than checked
+        # per revision line, because distinct lines can share one key: engineering
+        # additions collapse to "item::<item_code>". Checking each line separately
+        # against the same pool bucket would let one document ship that bucket's
+        # whole budget once per line. The budget is likewise the sum over the lines
+        # sharing the key.
         delivered_by_list = {}
-        for revision_name, revision_item in line_totals:
+        requested = defaultdict(float)
+        budget = defaultdict(float)
+        labels = {}
+        for (revision_name, revision_item), total in line_totals.items():
             revision = revisions[revision_name]
             technical_list = _text(revision.technical_list)
             if technical_list not in delivered_by_list:
@@ -442,12 +452,17 @@ def validate_procurement_document(doc, method=None) -> None:
                     exclude_name=_text(_get(doc, "name")),
                 )
             source_line = _revision_lines(revision)[revision_item]
-            key = _allocation_key(source_line)
-            existing = delivered_by_list[technical_list].get(key, 0)
-            if existing + line_totals[(revision_name, revision_item)] > _line_stock_qty(source_line) + 1e-9:
+            key = (technical_list, _allocation_key(source_line))
+            requested[key] += total
+            budget[key] += _line_stock_qty(source_line)
+            labels.setdefault(key, _row_label(source_line))
+        for key, total in requested.items():
+            technical_list, allocation_key = key
+            existing = delivered_by_list[technical_list].get(allocation_key, 0)
+            if existing + total > budget[key] + 1e-9:
                 frappe.throw(
                     _("Row {0}: quantity exceeds the remaining delivery quantity.").format(
-                        _row_label(source_line)
+                        labels[key]
                     )
                 )
         return

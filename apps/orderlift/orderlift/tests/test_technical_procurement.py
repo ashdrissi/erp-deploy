@@ -504,6 +504,23 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn("_delivered_stock_qty(", body)
         self.assertIn("exceeds the remaining delivery quantity", body)
 
+    def test_delivery_cap_aggregates_lines_sharing_an_allocation_key(self):
+        """Engineering additions collapse to "item::<item_code>", so two distinct
+        revision lines can share one pool bucket. Checking each line separately
+        against that bucket would let one document ship the budget twice, so both
+        the requested total and the budget must be summed per key."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        delivery = body.split('if doctype == "Delivery Note":', 1)[1]
+        self.assertIn("requested[key] += total", delivery)
+        self.assertIn("budget[key] += _line_stock_qty(source_line)", delivery)
+        # The cap must be evaluated once per key, after aggregation -- not inside
+        # the loop that walks revision lines.
+        self.assertLess(
+            delivery.index("requested[key] += total"),
+            delivery.index("existing + total > budget[key]"),
+        )
+
     def test_native_delivery_note_from_sales_order_is_blocked(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
