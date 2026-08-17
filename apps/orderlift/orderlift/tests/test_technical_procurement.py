@@ -201,11 +201,22 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertEqual(values["against_sales_order"], "SO-1")
 
     def test_create_from_revision_picks_the_pool_matching_the_adapter(self):
+        """The adapter must consume its own pool, and it must do so through the one
+        shared helper -- not a second copy of the mapping that can drift from the
+        one get_available_actions filters with."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def _create_from_revision", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("_delivery_remaining_by_line(revision)", body)
-        self.assertIn("_remaining_by_line(revision)", body)
-        self.assertIn('adapter_key == "revision_to_delivery_note"', body)
+        self.assertIn("_remaining_for_adapter(adapter_key, revision, {})", body)
+        self.assertNotIn("_delivery_remaining_by_line(", body)
+        self.assertEqual(
+            technical_procurement.ADAPTER_POOLS["revision_to_delivery_note"], "delivery"
+        )
+        self.assertEqual(
+            technical_procurement.ADAPTER_POOLS["revision_to_material_request"], "procurement"
+        )
+        self.assertEqual(
+            technical_procurement.ADAPTER_POOLS["revision_to_purchase_order"], "procurement"
+        )
 
     def test_create_delivery_note_is_whitelisted_and_takes_no_supplier(self):
         import inspect
@@ -996,6 +1007,44 @@ class TestTechnicalProcurement(unittest.TestCase):
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("allocated_by_revision = {}", body)
         self.assertLess(body.index('if doctype == "Delivery Note":'), body.index("allocated_by_revision = {}"))
+
+    def test_pool_selection_is_expressed_once_for_every_adapter(self):
+        """The UI payload and the adapter must agree on remaining quantity. Two
+        separate expressions of the same choice is how they drift, and a mismatch
+        offers the user a quantity the adapter then refuses."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        self.assertIn("def _remaining_for_adapter(", source)
+        # Exactly one definition and two call sites.
+        self.assertEqual(source.count("_remaining_for_adapter("), 3)
+
+    def test_remaining_for_adapter_maps_each_adapter_to_its_pool(self):
+        calls = []
+        with patch.object(
+            technical_procurement, "_remaining_by_line",
+            side_effect=lambda r: calls.append("procurement") or {"R1": 1},
+        ), patch.object(
+            technical_procurement, "_delivery_remaining_by_line",
+            side_effect=lambda r: calls.append("delivery") or {"R1": 2},
+        ):
+            revision = revision_stub(name="TLR-1", technical_list="TL-1", items=[])
+            cache = {}
+            self.assertEqual(
+                technical_procurement._remaining_for_adapter(
+                    "revision_to_delivery_note", revision, cache
+                ),
+                {"R1": 2},
+            )
+            self.assertEqual(
+                technical_procurement._remaining_for_adapter(
+                    "revision_to_material_request", revision, cache
+                ),
+                {"R1": 1},
+            )
+            # Cached: a second lookup must not re-run the SQL-backed pool.
+            technical_procurement._remaining_for_adapter(
+                "revision_to_delivery_note", revision, cache
+            )
+        self.assertEqual(calls, ["delivery", "procurement"])
 
     def test_delivery_route_step_is_seeded_ungated(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()

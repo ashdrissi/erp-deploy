@@ -276,16 +276,6 @@ def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
     # action as well. Each pool runs SQL, so both are computed lazily and cached.
     pools = {}
 
-    def remaining_for(adapter_key):
-        pool = "delivery" if adapter_key == "revision_to_delivery_note" else "procurement"
-        if pool not in pools:
-            pools[pool] = (
-                _delivery_remaining_by_line(revision)
-                if pool == "delivery"
-                else _remaining_by_line(revision)
-            )
-        return pools[pool]
-
     grouped = {}
     for line in revision.items or []:
         if not cint(line.execution_relevant):
@@ -294,7 +284,7 @@ def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
         if not route:
             continue
         for step, action in _route_actions(route):
-            if remaining_for(action.adapter_key).get(line.name, 0) <= 0:
+            if _remaining_for_adapter(action.adapter_key, revision, pools).get(line.name, 0) <= 0:
                 continue
             required = _get(step, "required_previous_action")
             if required and not _previous_action_satisfied(revision.name, line.name, required):
@@ -582,11 +572,7 @@ def _create_from_revision(
     route_actions = _adapter_actions_for_lines(revision, selected_lines, adapter_key)
     # Delivery consumes its own pool: a line can be fully procured and still
     # undelivered, and vice versa when stock was already on hand.
-    remaining = (
-        _delivery_remaining_by_line(revision)
-        if adapter_key == "revision_to_delivery_note"
-        else _remaining_by_line(revision)
-    )
+    remaining = _remaining_for_adapter(adapter_key, revision, {})
     prepared = []
     for line in selected_lines:
         _validate_source_line(revision, line)
@@ -1413,6 +1399,29 @@ def _delivery_remaining_by_line(revision):
         available[key] = available.get(key, 0) - share
         result[line.name] = share
     return result
+
+
+ADAPTER_POOLS = {
+    "revision_to_material_request": "procurement",
+    "revision_to_purchase_order": "procurement",
+    "revision_to_delivery_note": "delivery",
+}
+
+
+def _remaining_for_adapter(adapter_key, revision, cache):
+    """Remaining qty per revision line for the pool the adapter consumes.
+
+    Each pool runs SQL, so results are memoised in the caller's cache dict. An
+    unknown adapter falls back to the procurement pool, matching the pre-existing
+    default.
+    """
+    pool = ADAPTER_POOLS.get(adapter_key, "procurement")
+    if pool not in cache:
+        if pool == "delivery":
+            cache[pool] = _delivery_remaining_by_line(revision)
+        else:
+            cache[pool] = _remaining_by_line(revision)
+    return cache[pool]
 
 
 def _normalise_selection(selected_row_ids, quantities=None):
