@@ -1164,13 +1164,27 @@ def _validate_target_row(doc, row, revision, source_line):
             )
         )
     project = _target_project(doc, row)
-    # Only enforce when the target actually carries a project value: some stock
-    # doctypes have no project field at all, and an absent value is not a mismatch.
-    if revision.project and project and project != revision.project:
+    # Scoped to doctypes that actually have the field: skipping the check for any
+    # empty value would let a cleared project through on Material Request, Purchase
+    # Order and Delivery Note, which all carry it. Only a genuinely fieldless target
+    # is tolerated.
+    if revision.project and project != revision.project and _target_has_project_field(doc, row_meta):
         frappe.throw(_("Row {0}: Project does not match the technical revision.").format(_row_label(row)))
     sales_order = _target_sales_order(row)
     if sales_order and sales_order != revision.sales_order:
         frappe.throw(_("Row {0}: Sales Order does not match the technical revision.").format(_row_label(row)))
+
+
+def _target_has_project_field(doc, row_meta):
+    """Whether the target carries a project field on its row or its parent."""
+    if row_meta and row_meta.get_field("project"):
+        return True
+    doctype = _text(_get(doc, "doctype"))
+    parent_meta = getattr(doc, "meta", None) or _meta(doctype)
+    if parent_meta and parent_meta.get_field("project"):
+        return True
+    child_meta = _meta(PROCUREMENT_ITEM_DOCTYPES.get(doctype))
+    return bool(child_meta and child_meta.get_field("project"))
 
 
 def _validate_warehouse(warehouse, company, required, row):

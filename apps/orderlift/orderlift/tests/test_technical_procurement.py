@@ -931,14 +931,63 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn('_text(_get(row, "pick_list_item"))', body)
         self.assertIn("Remove this skip in Plan 2.", body)
 
-    def test_project_check_tolerates_a_missing_project(self):
-        """Some stock doctypes have no project field at all; an absent value is not
-        a mismatch and must not block the document."""
-        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        body = source.split("def _validate_target_row", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn(
-            "if revision.project and project and project != revision.project:", body
+    def _project_check_row(self, *, row_meta):
+        source_line = AttrDict(
+            name="R1",
+            line_key="SOI-1",
+            sales_order_item="SOI-1",
+            item_code="I-1",
+            uom="Nos",
+            conversion_factor=1,
+            stock_uom="Nos",
+            warehouse="",
+            execution_relevant=1,
+            execution_stock_qty=3,
         )
+        revision = revision_stub(
+            name="TLR-1",
+            technical_list="TL-1",
+            company="Orderlift",
+            project="PROJ-1",
+            sales_order="SO-1",
+            approval_hash="abc",
+            items=[source_line],
+        )
+        row = AttrDict(
+            meta=row_meta,
+            item_code="I-1",
+            qty=3,
+            stock_qty=3,
+            conversion_factor=1,
+            uom="Nos",
+            stock_uom="Nos",
+            warehouse="",
+            project="",
+        )
+        doc = AttrDict(doctype="Material Request", company="Orderlift", project="")
+        return doc, row, revision, source_line
+
+    def test_cleared_project_is_still_rejected_when_the_target_has_the_field(self):
+        """Tolerating any empty project relaxed the invariant for Material Request
+        and Purchase Order, which both carry the field: a row whose project was
+        cleared then passed a check it used to fail."""
+        doc, row, revision, source_line = self._project_check_row(
+            row_meta=FakeMeta({"project"})
+        )
+        with patch.object(technical_procurement, "_validate_source_line"):
+            with self.assertRaisesRegex(ValueError, "Project does not match"):
+                technical_procurement._validate_target_row(doc, row, revision, source_line)
+
+    def test_project_check_is_skipped_only_when_the_field_is_absent(self):
+        """The tolerance exists for doctypes with no project field at all, not for
+        any empty value."""
+        doc, row, revision, source_line = self._project_check_row(
+            row_meta=FakeMeta({"item_code"})
+        )
+        with patch.object(technical_procurement, "_validate_source_line"), patch.object(
+            technical_procurement, "_meta", return_value=None
+        ):
+            technical_procurement._validate_target_row(doc, row, revision, source_line)
 
     def test_procurement_cumulative_cap_stays_reachable_for_other_doctypes(self):
         """The delivery branch ends in `return`; the procurement pool below it must
