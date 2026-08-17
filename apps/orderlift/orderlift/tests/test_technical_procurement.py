@@ -170,6 +170,28 @@ class TestTechnicalProcurement(unittest.TestCase):
         # It has no project field, so do not invent one.
         self.assertNotIn('"project"', rows)
 
+    def test_delivery_note_carries_the_sales_order_commercial_context(self):
+        """Without this, ERPNext derives selling_price_list from party and session
+        defaults. A stale global default belonging to another company then fails the
+        company scope check with a message naming a price list that has nothing to do
+        with the document (observed live: "Price List prix-ventes-min does not belong
+        to company Orderlift Maroc Installation"). The rows already carry the Sales
+        Order's rates, so the header has to agree with them."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        branch = source.split('if target_doctype == "Delivery Note":', 1)[1].split(
+            'if target_doctype == "Pick List":', 1
+        )[0]
+        for fieldname in (
+            "selling_price_list",
+            "currency",
+            "conversion_rate",
+            "price_list_currency",
+            "plc_conversion_rate",
+        ):
+            self.assertIn(fieldname, branch, fieldname)
+        # Copied from the Sales Order, not the session or the customer.
+        self.assertIn("_get(sales_order, fieldname)", branch)
+
     def test_pick_list_parent_is_a_delivery_purpose_pick_list(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         branch = source.split('if target_doctype == "Pick List":', 1)[1].split(

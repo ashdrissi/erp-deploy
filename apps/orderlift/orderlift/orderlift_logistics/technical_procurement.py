@@ -1061,6 +1061,21 @@ def _build_target(
             frappe.throw(_("The Sales Order has no Customer."))
         values["customer"] = customer
         values["posting_date"] = nowdate()
+        # Carry the Sales Order's commercial context, or ERPNext derives it from
+        # party and session defaults instead. A stale global default selling price
+        # list belonging to another company then fails the company scope check with
+        # a message naming a list unrelated to the document. The rows already carry
+        # the Sales Order's rates, so the header must agree with them.
+        for fieldname in (
+            "selling_price_list",
+            "currency",
+            "conversion_rate",
+            "price_list_currency",
+            "plc_conversion_rate",
+        ):
+            value = _get(sales_order, fieldname)
+            if value not in (None, ""):
+                values[fieldname] = value
     if target_doctype == "Pick List":
         customer = _text(_get(sales_order, "customer"))
         if not customer:
