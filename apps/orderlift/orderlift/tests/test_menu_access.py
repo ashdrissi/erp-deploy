@@ -16,7 +16,7 @@ utils_stub.cint = lambda value=0: int(value or 0)
 sys.modules["frappe.utils"] = utils_stub
 
 
-from orderlift import company_access, menu_access, menu_registry
+from orderlift import company_access, menu_access, menu_registry, work_notifications
 from orderlift.scripts import setup_startup_roles
 from orderlift.startup_roles import (
     CANONICAL_BUSINESS_ROLES,
@@ -40,16 +40,16 @@ class TestMenuAccessHelpers(unittest.TestCase):
         finally:
             menu_access._get_roles = original_get_roles
 
-    def test_current_company_prefers_browser_session_without_changing_preference(self):
+    def test_current_company_prefers_browser_session_without_changing_last_selected(self):
         original_session_context = menu_access.get_session_company_context
-        original_preferred = menu_access.get_user_default_company
+        original_last_selected = menu_access.get_last_selected_company
         original_set_session = menu_access.set_session_current_company
         menu_access.get_session_company_context = lambda **kwargs: {
             "user": "demo@example.com",
             "company": "Orderlift Maroc Installation",
             "revision": 4,
         }
-        menu_access.get_user_default_company = lambda user=None: "Orderlift Maroc Distribution"
+        menu_access.get_last_selected_company = lambda user=None: "Orderlift Maroc Distribution"
         menu_access.set_session_current_company = lambda company, user=None: self.fail(
             "Existing session context must not be rewritten"
         )
@@ -60,16 +60,18 @@ class TestMenuAccessHelpers(unittest.TestCase):
             )
         finally:
             menu_access.get_session_company_context = original_session_context
-            menu_access.get_user_default_company = original_preferred
+            menu_access.get_last_selected_company = original_last_selected
             menu_access.set_session_current_company = original_set_session
 
         self.assertEqual(current, "Orderlift Maroc Installation")
 
-    def test_multi_company_without_session_or_preference_requires_selection(self):
+    def test_multi_company_without_session_or_last_selected_requires_selection(self):
         original_session_context = menu_access.get_session_company_context
-        original_preferred = menu_access.get_user_default_company
+        original_last_selected = menu_access.get_last_selected_company
+        original_sid = menu_access._interactive_session_sid
         menu_access.get_session_company_context = lambda **kwargs: {}
-        menu_access.get_user_default_company = lambda user=None: ""
+        menu_access.get_last_selected_company = lambda user=None: ""
+        menu_access._interactive_session_sid = lambda user=None: "SID-A"
         try:
             current = menu_access.resolve_current_company(
                 user="demo@example.com",
@@ -77,16 +79,43 @@ class TestMenuAccessHelpers(unittest.TestCase):
             )
         finally:
             menu_access.get_session_company_context = original_session_context
-            menu_access.get_user_default_company = original_preferred
+            menu_access.get_last_selected_company = original_last_selected
+            menu_access._interactive_session_sid = original_sid
 
         self.assertEqual(current, "")
 
-    def test_single_allowed_company_is_automatic_without_preference(self):
+    def test_new_interactive_session_uses_last_selected_and_seeds_sid(self):
+        originals = {
+            "context": menu_access.get_session_company_context,
+            "last_selected": menu_access.get_last_selected_company,
+            "session_set": menu_access.set_session_current_company,
+            "sid": menu_access._interactive_session_sid,
+        }
+        seeded = []
+        menu_access.get_session_company_context = lambda **kwargs: {}
+        menu_access.get_last_selected_company = lambda user=None: "Orderlift Maroc Installation"
+        menu_access.set_session_current_company = lambda company, user=None: seeded.append((company, user)) or {"company": company}
+        menu_access._interactive_session_sid = lambda user=None: "SID-NEW"
+        try:
+            current = menu_access.resolve_current_company(
+                user="demo@example.com",
+                allowed_companies=["Orderlift Maroc Distribution", "Orderlift Maroc Installation"],
+            )
+        finally:
+            menu_access.get_session_company_context = originals["context"]
+            menu_access.get_last_selected_company = originals["last_selected"]
+            menu_access.set_session_current_company = originals["session_set"]
+            menu_access._interactive_session_sid = originals["sid"]
+
+        self.assertEqual(current, "Orderlift Maroc Installation")
+        self.assertEqual(seeded, [("Orderlift Maroc Installation", "demo@example.com")])
+
+    def test_single_allowed_company_is_automatic_without_last_selected(self):
         original_session_context = menu_access.get_session_company_context
-        original_preferred = menu_access.get_user_default_company
+        original_last_selected = menu_access.get_last_selected_company
         original_sid = menu_access._interactive_session_sid
         menu_access.get_session_company_context = lambda **kwargs: {}
-        menu_access.get_user_default_company = lambda user=None: ""
+        menu_access.get_last_selected_company = lambda user=None: ""
         menu_access._interactive_session_sid = lambda user=None: ""
         try:
             current = menu_access.resolve_current_company(
@@ -95,7 +124,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
             )
         finally:
             menu_access.get_session_company_context = original_session_context
-            menu_access.get_user_default_company = original_preferred
+            menu_access.get_last_selected_company = original_last_selected
             menu_access._interactive_session_sid = original_sid
 
         self.assertEqual(current, "Orderlift Maroc Installation")
@@ -205,7 +234,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(context_a["company"], "Orderlift Maroc Distribution")
         self.assertEqual(context_b["company"], "Orderlift Maroc Installation")
 
-    def test_preferred_company_uses_namespaced_default_before_legacy_company(self):
+    def test_last_selected_company_uses_only_namespaced_default(self):
         original_defaults = getattr(menu_access.frappe, "defaults", None)
         calls = []
 
@@ -214,13 +243,14 @@ class TestMenuAccessHelpers(unittest.TestCase):
             def get_user_default(key, user=None):
                 calls.append((key, user))
                 return {
-                    menu_access.PREFERRED_COMPANY_DEFAULT_KEY: "Orderlift Maroc Installation",
+                    menu_access.LAST_SELECTED_COMPANY_DEFAULT_KEY: "Orderlift Maroc Installation",
                     "Company": "Orderlift Maroc Distribution",
+                    menu_access.LEGACY_PREFERRED_COMPANY_DEFAULT_KEY: "Orderlift Turkey",
                 }.get(key)
 
         menu_access.frappe.defaults = Defaults()
         try:
-            company = menu_access.get_user_default_company("demo@example.com")
+            company = menu_access.get_last_selected_company("demo@example.com")
         finally:
             if original_defaults is None:
                 delattr(menu_access.frappe, "defaults")
@@ -228,7 +258,117 @@ class TestMenuAccessHelpers(unittest.TestCase):
                 menu_access.frappe.defaults = original_defaults
 
         self.assertEqual(company, "Orderlift Maroc Installation")
-        self.assertEqual(calls, [(menu_access.PREFERRED_COMPANY_DEFAULT_KEY, "demo@example.com")])
+        self.assertEqual(calls, [(menu_access.LAST_SELECTED_COMPANY_DEFAULT_KEY, "demo@example.com")])
+
+    def test_noninteractive_multi_company_resolution_ignores_last_selected(self):
+        originals = {
+            "context": menu_access.get_session_company_context,
+            "last_selected": menu_access.get_last_selected_company,
+            "sid": menu_access._interactive_session_sid,
+        }
+        menu_access.get_session_company_context = lambda **kwargs: {}
+        menu_access.get_last_selected_company = lambda user=None: "Orderlift Maroc Installation"
+        menu_access._interactive_session_sid = lambda user=None: ""
+        try:
+            current = menu_access.resolve_current_company(
+                user="demo@example.com",
+                allowed_companies=["Orderlift Maroc Distribution", "Orderlift Maroc Installation"],
+            )
+        finally:
+            menu_access.get_session_company_context = originals["context"]
+            menu_access.get_last_selected_company = originals["last_selected"]
+            menu_access._interactive_session_sid = originals["sid"]
+
+        self.assertEqual(current, "")
+
+    def test_explicit_company_switch_persists_last_selected(self):
+        originals = {
+            "access": menu_access.user_can_access_company,
+            "request": menu_access._current_request,
+            "session_set": menu_access.set_session_current_company,
+            "last_set": menu_access._set_last_selected_company,
+            "payload": menu_access.get_company_access_payload,
+        }
+        calls = []
+        menu_access.user_can_access_company = lambda company, user=None: True
+        menu_access._current_request = lambda: types.SimpleNamespace(method="POST")
+        menu_access.set_session_current_company = lambda company, user=None: {"company": company}
+        menu_access._set_last_selected_company = lambda company, user=None: calls.append((company, user))
+        menu_access.get_company_access_payload = lambda **kwargs: {"current_company": kwargs.get("requested_company")}
+        try:
+            result = menu_access.set_current_company("Orderlift Maroc Installation")
+        finally:
+            menu_access.user_can_access_company = originals["access"]
+            menu_access._current_request = originals["request"]
+            menu_access.set_session_current_company = originals["session_set"]
+            menu_access._set_last_selected_company = originals["last_set"]
+            menu_access.get_company_access_payload = originals["payload"]
+
+        self.assertEqual(result["current_company"], "Orderlift Maroc Installation")
+        self.assertEqual(calls, [("Orderlift Maroc Installation", "demo@example.com")])
+
+    def test_company_access_change_clears_disallowed_last_selected(self):
+        originals = {
+            "db": getattr(menu_access.frappe, "db", None),
+            "get_all": getattr(menu_access.frappe, "get_all", None),
+            "new_doc": getattr(menu_access.frappe, "new_doc", None),
+            "delete_doc": getattr(menu_access.frappe, "delete_doc", None),
+            "clear_cache": getattr(menu_access.frappe, "clear_cache", None),
+            "last_selected": menu_access.get_last_selected_company,
+            "all_access": menu_access.user_can_access_all_companies,
+        }
+        deleted_defaults = []
+        inserted_permissions = []
+
+        class Db:
+            @staticmethod
+            def exists(doctype, name):
+                return True
+
+            @staticmethod
+            def delete(doctype, filters):
+                deleted_defaults.append((doctype, filters))
+
+        class Permission:
+            def insert(self, ignore_permissions=False):
+                inserted_permissions.append(self.for_value)
+
+        menu_access.frappe.db = Db()
+        menu_access.frappe.get_all = lambda *args, **kwargs: []
+        menu_access.frappe.new_doc = lambda doctype: Permission()
+        menu_access.frappe.delete_doc = lambda *args, **kwargs: None
+        menu_access.frappe.clear_cache = lambda **kwargs: None
+        menu_access.get_last_selected_company = lambda user=None: "Orderlift Maroc Distribution"
+        menu_access.user_can_access_all_companies = lambda user=None: False
+        try:
+            result = menu_access.save_user_company_access(
+                "demo@example.com",
+                ["Orderlift Maroc Installation"],
+            )
+        finally:
+            for name in ("db", "get_all", "new_doc", "delete_doc", "clear_cache"):
+                value = originals[name]
+                if value is None:
+                    delattr(menu_access.frappe, name)
+                else:
+                    setattr(menu_access.frappe, name, value)
+            menu_access.get_last_selected_company = originals["last_selected"]
+            menu_access.user_can_access_all_companies = originals["all_access"]
+
+        self.assertEqual(inserted_permissions, ["Orderlift Maroc Installation"])
+        self.assertEqual(result["last_selected_company"], "")
+        self.assertEqual(
+            deleted_defaults,
+            [
+                (
+                    "DefaultValue",
+                    {
+                        "parent": "demo@example.com",
+                        "defkey": menu_access.LAST_SELECTED_COMPANY_DEFAULT_KEY,
+                    },
+                )
+            ],
+        )
 
     def test_menu_registry_has_stable_unique_keys(self):
         keys = [item["key"] for item in menu_registry.iter_menu_items()]
@@ -252,7 +392,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertIn("stock.warehouse_tree", keys)
         self.assertIn("stock.warehouse_report", keys)
         self.assertNotIn("items.pricing_builder", keys)
-        self.assertNotIn("my_work.notifications", keys)
+        self.assertIn("my_work.notifications", keys)
 
     def test_my_work_todo_uses_filtered_page(self):
         todo = menu_registry.menu_item_by_key("my_work.todo")
@@ -260,6 +400,44 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(todo["label"], "My ToDos")
         self.assertEqual(todo["link_type"], "Page")
         self.assertEqual(todo["link_to"], "my-todos")
+
+    def test_my_work_notifications_link_and_personal_counts(self):
+        notifications = menu_registry.menu_item_by_key("my_work.notifications")
+        self.assertEqual(notifications["link_type"], "DocType")
+        self.assertEqual(notifications["link_to"], "Notification Log")
+
+        calls = []
+        original_db = getattr(work_notifications.frappe, "db", None)
+        work_notifications.frappe.db = types.SimpleNamespace(
+            count=lambda doctype, filters: calls.append((doctype, filters)) or (4 if doctype == "ToDo" else 7)
+        )
+        try:
+            counts = work_notifications.get_work_counts()
+        finally:
+            if original_db is None:
+                delattr(work_notifications.frappe, "db")
+            else:
+                work_notifications.frappe.db = original_db
+
+        self.assertEqual(counts, {"open_todos": 4, "unread_notifications": 7})
+        self.assertEqual(calls[0], ("ToDo", {"status": "Open", "allocated_to": "demo@example.com"}))
+        self.assertEqual(calls[1], ("Notification Log", {"read": 0, "for_user": "demo@example.com"}))
+
+    def test_sidebar_work_badges_use_routes_and_realtime_state_updates(self):
+        source = (
+            APP_ROOT / "orderlift" / "public" / "js" / "orderlift_sidebar_tune_20260423e.js"
+        ).read_text()
+
+        self.assertIn('renderWorkCount("my-todos", "My ToDos"', source)
+        self.assertIn('renderWorkCount("Notification Log", "Notifications"', source)
+        self.assertIn('anchor.insertBefore(badge, control || null)', source)
+        self.assertIn('(count ? "" : " is-empty")', source)
+        self.assertIn('badge.textContent = String(count)', source)
+        self.assertIn('findSidebarItemByLabel("ToDo")', source)
+        self.assertIn('frappe.realtime.doctype_subscribe("ToDo")', source)
+        self.assertIn('frappe.realtime.doctype_subscribe("Notification Log")', source)
+        self.assertIn('data.doctype === "ToDo" || data.doctype === "Notification Log"', source)
+        self.assertIn('notification_log.notification_log.mark_as_read', source)
 
     def test_company_switcher_is_sid_scoped_and_replaces_native_session_defaults(self):
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
@@ -299,7 +477,11 @@ class TestMenuAccessHelpers(unittest.TestCase):
         )[0]
         self.assertIn('upper() != "POST"', setter)
         self.assertIn("set_session_current_company", setter)
-        self.assertNotIn("_set_user_default_company", setter)
+        self.assertIn("_set_last_selected_company", setter)
+        session_setter = menu_access_source.split("def set_session_current_company(", 1)[1].split(
+            "def clear_session_company_context", 1
+        )[0]
+        self.assertNotIn("_set_last_selected_company", session_setter)
         boot = (APP_ROOT / "orderlift" / "boot.py").read_text()
         self.assertIn('defaults["Company"] = company', boot)
         self.assertIn('sysdefaults["Company"] = company', boot)
@@ -308,9 +490,15 @@ class TestMenuAccessHelpers(unittest.TestCase):
         patch = (
             APP_ROOT / "orderlift" / "patches" / "v1_0" / "backfill_session_company_context.py"
         ).read_text()
-        self.assertIn("PREFERRED_COMPANY_DEFAULT_KEY", patch)
+        self.assertIn("LEGACY_PREFERRED_COMPANY_DEFAULT_KEY", patch)
         self.assertIn('row.get("ref_doctype") != "Company"', patch)
         self.assertNotIn("delete_doc", patch)
+        retire_patch = (
+            APP_ROOT / "orderlift" / "patches" / "v1_0" / "retire_preferred_company_default.py"
+        ).read_text()
+        self.assertIn("LEGACY_PREFERRED_COMPANY_DEFAULT_KEY", retire_patch)
+        self.assertIn('frappe.db.delete(', retire_patch)
+        self.assertNotIn("set_user_default", retire_patch)
 
     def test_company_context_consumers_fail_closed_without_shared_default(self):
         campaign = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "campaign.py").read_text()
@@ -644,6 +832,48 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertIn("Pricing Configuration", rate_review["roles"])
         self.assertNotIn("Logistics User", rate_review["roles"])
 
+    def test_financial_detail_is_guarded_by_dashboard_menu_access(self):
+        self.assertEqual(
+            menu_access.SUPPORTING_PAGE_MENU_KEYS["sale-financial-workspace"],
+            "finance.sale_financial_dashboard",
+        )
+        dashboard = menu_registry.menu_item_by_key("finance.sale_financial_dashboard")
+        self.assertEqual(
+            dashboard["roles"],
+            ["Orderlift Admin", "Finance User", "Finance Admin"],
+        )
+        self.assertNotIn(
+            "finance.sale_financial_dashboard",
+            setup_startup_roles.MENU_ROLE_MAP["Orderlift Executive"],
+        )
+
+        rule = {
+            "enabled": 1,
+            "allowed_roles_json": json.dumps(dashboard["roles"]),
+            "denied_roles_json": "[]",
+        }
+        original_get_roles = menu_access._get_roles
+        original_page_roles = menu_access._page_roles
+        menu_access._get_roles = lambda user=None: {"Finance User"} if user == "finance@example.com" else {"Sales User"}
+        menu_access._page_roles = lambda page_name: {
+            "Orderlift Admin", "System Manager", "Finance User", "Finance Admin"
+        }
+        try:
+            rules = {"finance.sale_financial_dashboard": rule}
+            self.assertTrue(
+                menu_access.user_can_access_page(
+                    "sale-financial-workspace", user="finance@example.com", rules=rules
+                )
+            )
+            self.assertFalse(
+                menu_access.user_can_access_page(
+                    "sale-financial-workspace", user="sales@example.com", rules=rules
+                )
+            )
+        finally:
+            menu_access._get_roles = original_get_roles
+            menu_access._page_roles = original_page_roles
+
     def test_permission_setup_exposes_a_non_mutating_dry_run(self):
         source = (
             APP_ROOT / "orderlift" / "scripts" / "setup_startup_roles.py"
@@ -739,21 +969,20 @@ class TestMenuAccessHelpers(unittest.TestCase):
         self.assertEqual(access_center["roles"], ["Orderlift Admin", "System Manager"])
         self.assertEqual(menu_editor["roles"], ["Orderlift Admin", "System Manager"])
 
-    def test_document_template_targets_use_shipment_plan_label(self):
-        from orderlift.document_templates import get_supported_document_template_targets
+    def test_document_template_targets_are_loaded_from_active_configuration(self):
+        source = (APP_ROOT / "orderlift" / "document_templates.py").read_text()
 
-        targets = {row["doctype"]: row["label"] for row in get_supported_document_template_targets()}
-
-        self.assertEqual(targets["Forecast Load Plan"], "Shipment Plan")
-        self.assertIn("Opportunity", targets)
-        self.assertIn("Project", targets)
-        self.assertIn("Quotation", targets)
-        self.assertIn("Sales Order", targets)
+        body = source.split("def get_supported_document_template_targets", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('"Orderlift Document Template Target"', body)
+        self.assertIn('filters={"parent": ["in", active_templates]}', body)
+        self.assertNotIn("Forecast Load Plan", body)
 
     def test_projects_menu_does_not_include_logistics_links(self):
         projects = next(section for section in menu_registry.get_menu_sections() if section["key"] == "projects")
         keys = {link["key"] for link in projects["links"]}
 
+        self.assertIn("projects.projects", keys)
+        self.assertEqual(menu_registry.menu_item_by_key("projects.projects")["link_to"], "Project")
         self.assertNotIn("projects.logistics_dashboard", keys)
         self.assertNotIn("projects.container_planning", keys)
 
@@ -1035,7 +1264,15 @@ class TestMenuAccessHelpers(unittest.TestCase):
             if row.get("type") == "Link" and row.get("link_type") == "DocType" and row.get("link_to") == "Project"
         ]
 
-        self.assertEqual([row["label"] for row in project_rows], ["CRM Projects", "SIG Projects"])
+        # Three menu entries target DocType Project: crm.projects_list and
+        # sig.projects (both overridden above) plus the un-overridden
+        # projects.projects entry, which keeps its registry label. What this test
+        # guards is that overrides key off the internal _menu_key rather than the
+        # shared link target, so same-target rows get distinct labels.
+        self.assertEqual(
+            [row["label"] for row in project_rows],
+            ["CRM Projects", "SIG Projects", "Projects"],
+        )
         self.assertTrue(all("_menu_key" not in row for row in updated))
 
     def test_business_user_bootinfo_keeps_only_main_dashboard_sidebar(self):
@@ -1172,13 +1409,19 @@ class TestMenuAccessHelpers(unittest.TestCase):
         originals = {
             "all_companies": menu_access.user_can_access_all_companies,
             "allowed_companies": menu_access.get_allowed_companies,
-            "user_default": menu_access.get_user_default_company,
+            "last_selected": menu_access.get_last_selected_company,
+            "session_context": menu_access.get_session_company_context,
+            "session_set": menu_access.set_session_current_company,
+            "sid": menu_access._interactive_session_sid,
             "doctype_available": menu_access._doctype_available,
             "get_all": getattr(menu_access.frappe, "get_all", None),
         }
         menu_access.user_can_access_all_companies = lambda user=None: False
         menu_access.get_allowed_companies = lambda user=None: ["Orderlift", "Orderlift Turkey"]
-        menu_access.get_user_default_company = lambda user=None: "Orderlift Turkey"
+        menu_access.get_last_selected_company = lambda user=None: "Orderlift Turkey"
+        menu_access.get_session_company_context = lambda **kwargs: {}
+        menu_access.set_session_current_company = lambda company, user=None: {"company": company}
+        menu_access._interactive_session_sid = lambda user=None: "SID-A"
         menu_access._doctype_available = lambda doctype: doctype == "Company"
 
         def get_all(doctype, filters=None, fields=None, **kwargs):
@@ -1194,7 +1437,10 @@ class TestMenuAccessHelpers(unittest.TestCase):
         finally:
             menu_access.user_can_access_all_companies = originals["all_companies"]
             menu_access.get_allowed_companies = originals["allowed_companies"]
-            menu_access.get_user_default_company = originals["user_default"]
+            menu_access.get_last_selected_company = originals["last_selected"]
+            menu_access.get_session_company_context = originals["session_context"]
+            menu_access.set_session_current_company = originals["session_set"]
+            menu_access._interactive_session_sid = originals["sid"]
             menu_access._doctype_available = originals["doctype_available"]
             if originals["get_all"] is None:
                 delattr(menu_access.frappe, "get_all")
@@ -1238,7 +1484,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
         try:
             self.assertEqual(
                 company_access.sales_order_query("demo@example.com"),
-                "(`tabSales Order`.company = 'Orderlift')",
+                "(`tabSales Order`.company in ('Orderlift'))",
             )
         finally:
             company_access.user_can_access_all_companies = original_all_companies
@@ -1301,7 +1547,7 @@ class TestMenuAccessHelpers(unittest.TestCase):
         try:
             self.assertEqual(
                 company_access.sales_commission_query("bilal@example.com"),
-                "((`tabSales Commission`.company = 'Orderlift')) and (`tabSales Commission`.salesperson = 'Bilal')",
+                "((`tabSales Commission`.company in ('Orderlift'))) and (`tabSales Commission`.salesperson = 'Bilal')",
             )
         finally:
             company_access.user_can_access_all_companies = original_all_companies

@@ -104,7 +104,7 @@
                         ${filterInput("olp-search", __("Search"), STATE.search, __("Opportunity, customer, source"), "search")}
                         ${filterCombo("olp-owner", __("Owner"), STATE.owner === "All" ? "" : STATE.owner, __("All owners"), STATE.filters.owners || [])}
                         ${filterCombo("olp-source", __("Source"), STATE.source === "All" ? "" : STATE.source, __("All sources"), STATE.filters.sources || [])}
-                        ${filterSelect("olp-business-type", __("Type"), ["All", "Distribution", "Installation", ...(STATE.filters.business_types || []).filter((value) => !["Distribution", "Installation"].includes(value))], STATE.businessType, __("All business types"))}
+                        ${filterSelect("olp-business-type", __("Type"), ["All", ...(STATE.filters.business_types || [])], STATE.businessType, __("All business types"))}
                         ${filterCombo("olp-segment", __("CRM segment"), STATE.segment === "All" ? "" : STATE.segment, __("All CRM segments"), STATE.filters.segments || [])}
                         ${filterCombo("olp-company", __("Company"), STATE.company === "All" ? "" : STATE.company, __("All companies"), STATE.filters.companies || [])}
                         <div class="olp-filter-actions">

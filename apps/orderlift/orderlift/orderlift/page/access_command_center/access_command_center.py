@@ -12,7 +12,6 @@ from orderlift.menu_access import (
     get_all_companies,
     get_allowed_business_types,
     get_allowed_companies,
-    get_user_default_company,
     get_menu_access_payload,
     save_menu_access_for_role as _save_menu_access_for_role,
     SUPPORTING_PAGE_MENU_KEYS,
@@ -205,6 +204,12 @@ BUSINESS_FEATURE_BACKING_DOCTYPES = {
     "training.leaderboard": ("Employee Training Progress",),
     "projects.project_pipeline": ("Project", "Project Status", "ToDo"),
     "projects.sales_order_pipeline": ("Sales Order", "Orderlift Order Status", "ToDo"),
+    "projects.technical_list_manager": (
+        "Sales Order",
+        "Sales Order Technical List",
+        "Sales Order Technical List Revision",
+        "Orderlift Annex Document",
+    ),
     "stock.dashboard": ("Bin", "Item", "Warehouse", "Stock Ledger Entry", "Stock Entry", "Stock Demand Plan"),
     "stock.demand_plan": ("Stock Demand Plan", "Sales Order", "Pick List", "Purchase Order"),
     "stock.planning_settings": ("Stock Planning Settings",),
@@ -231,6 +236,33 @@ BUSINESS_FEATURE_ACTION_OVERRIDES = {
     "stock.warehouse_report": ("view", "export"),
     "stock.balance": ("view", "export"),
     "stock.ledger": ("view", "export"),
+    "projects.technical_list_manager": ("open", "view", "create_edit", "approve_cancel", "delete", "export"),
+}
+BUSINESS_FEATURE_ACTION_BACKING_DOCTYPES = {
+    "projects.technical_list_manager": {
+        "view": (
+            "Sales Order",
+            "Sales Order Technical List",
+            "Sales Order Technical List Revision",
+            "Orderlift Annex Document",
+        ),
+        "create_edit": (
+            "Sales Order Technical List",
+            "Sales Order Technical List Revision",
+            "Orderlift Annex Document",
+        ),
+        "approve_cancel": ("Sales Order Technical List Revision",),
+        "delete": (
+            "Sales Order Technical List",
+            "Sales Order Technical List Revision",
+            "Orderlift Annex Document",
+        ),
+        "export": (
+            "Sales Order Technical List",
+            "Sales Order Technical List Revision",
+            "Orderlift Annex Document",
+        ),
+    },
 }
 MATRIX_DOCTYPE_GROUPS = (
     {
@@ -694,12 +726,9 @@ def save_user_configuration(payload: str | dict) -> dict:
         frappe.throw(_("Unknown roles: {0}").format(", ".join(missing_roles)))
 
     companies = _clean_list(data.get("companies"))
-    default_company = (data.get("default_company") or "").strip()
-    if default_company and default_company not in companies:
-        companies.append(default_company)
     business_types = _clean_list(data.get("business_types"))
     warehouses = _clean_list(data.get("warehouses"))
-    _assert_company_assignment_scope(companies, default_company)
+    _assert_company_assignment_scope(companies)
     _assert_business_type_assignment_scope(business_types)
     _assert_warehouse_assignment_scope(warehouses)
 
@@ -738,7 +767,7 @@ def save_user_configuration(payload: str | dict) -> dict:
         user.new_password = new_password
     user.save(ignore_permissions=True)
 
-    _save_user_company_access(user_name, companies, default_company=default_company)
+    _save_user_company_access(user_name, companies)
     _cleanup_company_dependent_user_permissions(user_name)
     _assert_business_types_match_user_companies(user_name, business_types)
     _save_user_business_type_access(user_name, business_types)
@@ -851,13 +880,12 @@ def save_user_roles(user_name: str, roles: str | list, audit_note: str | None = 
 def save_user_companies(
     user_name: str,
     companies: str | list,
-    default_company: str | None = None,
     audit_note: str | None = None,
 ) -> dict:
     _require_access_manager()
     _assert_user_scope(user_name)
-    _assert_company_assignment_scope(_clean_list(companies), default_company)
-    result = _save_user_company_access(user_name, companies, default_company=default_company)
+    _assert_company_assignment_scope(_clean_list(companies))
+    result = _save_user_company_access(user_name, companies)
     _cleanup_company_dependent_user_permissions(user_name)
     _add_audit_note("User", user_name, audit_note, _("Updated assigned companies."))
     frappe.db.commit()
@@ -1173,7 +1201,6 @@ def get_user_detail(user_name: str) -> dict:
         "role_count": len(visible_roles),
         "access_level": _access_level(visible_roles),
         "allowed_companies": get_allowed_companies(user.name),
-        "default_company": get_user_default_company(user.name),
         "allowed_business_types": get_allowed_business_types(user.name),
         "allowed_warehouses": get_selected_warehouses(user.name),
         "user_permissions": user_permissions,
@@ -1688,7 +1715,11 @@ def _business_feature_action_state(item: dict, role: str, actions: tuple[str, ..
                 })
                 continue
 
-            action_states = [_business_doc_action_payload(action, row) for row in backing]
+            action_backing = [
+                _business_doctype_resolved(doctype, role)
+                for doctype in _business_action_backing_doctypes(item, action)
+            ]
+            action_states = [_business_doc_action_payload(action, row) for row in action_backing]
             action_enabled = bool(action_states) and all(state["enabled"] for state in action_states)
             if action == "select":
                 payload.append({
@@ -1778,6 +1809,13 @@ def _business_backing_doctypes(item: dict) -> tuple[str, ...]:
     if configured:
         return tuple(doctype for doctype in configured if frappe.db.exists("DocType", doctype))
     return tuple(doctype for doctype in item.get("required_doctypes") or [] if frappe.db.exists("DocType", doctype))
+
+
+def _business_action_backing_doctypes(item: dict, action: str) -> tuple[str, ...]:
+    configured = (BUSINESS_FEATURE_ACTION_BACKING_DOCTYPES.get(item["key"]) or {}).get(action)
+    if configured is None:
+        return _business_backing_doctypes(item)
+    return tuple(doctype for doctype in configured if frappe.db.exists("DocType", doctype))
 
 
 def _business_feature_includes(item: dict) -> list[str]:
@@ -1873,10 +1911,10 @@ def _compile_target_feature_access(role: str, grants: dict[str, dict]) -> None:
                     for fieldname in ("read", "select", "report", "print"):
                         fields[fieldname] = 1
                         managed.add(fieldname)
-                if cint(actions.get("select")):
-                    fields["select"] = 1
-                    managed.add("select")
-                for action in allowed_actions:
+            for action in allowed_actions:
+                for doctype_name in _business_action_backing_doctypes(item, action):
+                    fields = backing_flags.setdefault(doctype_name, {})
+                    managed = backing_managed_fields.setdefault(doctype_name, set())
                     for fieldname in BUSINESS_ACTION_PERMISSION_FIELDS.get(action, ()):
                         managed.add(fieldname)
                         fields[fieldname] = max(fields.get(fieldname, 0), cint(actions.get(action)))
@@ -3092,13 +3130,11 @@ def _role_profile_roles(role_profile: str) -> list[str]:
         )
 
 
-def _assert_company_assignment_scope(companies: list[str], default_company: str | None = None) -> None:
+def _assert_company_assignment_scope(companies: list[str]) -> None:
     if _is_superadmin_session() or user_can_access_all_companies(frappe.session.user):
         return
     allowed = set(get_allowed_companies(frappe.session.user))
     requested = set(companies or [])
-    if default_company:
-        requested.add(default_company)
     blocked = sorted(requested - allowed)
     if blocked:
         frappe.throw(_("You can assign only companies you can access: {0}").format(", ".join(blocked)))

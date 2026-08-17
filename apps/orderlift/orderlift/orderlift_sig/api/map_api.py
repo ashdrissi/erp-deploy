@@ -10,7 +10,7 @@ def get_map_projects(filters: dict | str | None = None) -> list[dict]:
     Used by the /project-map web page.
 
     Optional filters dict keys:
-      project_type  — matches custom_project_type_ol
+      project_type  - matches native Project.project_type
       qc_status     — matches custom_qc_status
       status        — matches ERPNext Project.status
     """
@@ -21,7 +21,7 @@ def get_map_projects(filters: dict | str | None = None) -> list[dict]:
     project_filters = [["Project", "custom_latitude", "is", "set"], ["Project", "custom_latitude", "!=", 0]]
 
     if filters.get("project_type"):
-        project_filters.append(["Project", "custom_project_type_ol", "=", filters["project_type"]])
+        project_filters.append(["Project", "project_type", "=", filters["project_type"]])
 
     if filters.get("qc_status"):
         project_filters.append(["Project", "custom_qc_status", "=", filters["qc_status"]])
@@ -34,7 +34,7 @@ def get_map_projects(filters: dict | str | None = None) -> list[dict]:
         filters=project_filters,
         fields=[
             "name", "project_name", "status", "customer", "expected_start_date", "expected_end_date",
-            "custom_project_type_ol", "custom_qc_status", "custom_site_address", "custom_city",
+            "project_type", "custom_qc_status", "custom_site_address", "custom_city",
             "custom_latitude", "custom_longitude",
         ],
         order_by="modified desc",
@@ -48,7 +48,7 @@ def get_map_projects(filters: dict | str | None = None) -> list[dict]:
             "customer": row.get("customer"),
             "expected_start_date": row.get("expected_start_date"),
             "expected_end_date": row.get("expected_end_date"),
-            "project_type": row.get("custom_project_type_ol"),
+            "project_type": row.get("project_type"),
             "qc_status": row.get("custom_qc_status"),
             "site_address": row.get("custom_site_address"),
             "city": row.get("custom_city"),
@@ -57,6 +57,11 @@ def get_map_projects(filters: dict | str | None = None) -> list[dict]:
         }
         for row in rows
     ]
+
+
+@frappe.whitelist(allow_guest=False)
+def get_project_types() -> list[str]:
+    return frappe.get_list("Project Type", pluck="name", order_by="name asc", limit_page_length=0)
 
 
 @frappe.whitelist(allow_guest=False)

@@ -85,8 +85,12 @@ PY
 - `apps/orderlift/orderlift/orderlift_logistics/page/stock_rate_review`: bulk review page for missing/provisional Purchase Receipt and Material Receipt rates. Warehouse-only users work in native forms with value fields hidden; users with purchasing or privileged-pricing capability can review rates.
 - `apps/orderlift/orderlift/orderlift_logistics/page/stock_dashboard`: active-company and warehouse-scoped stock cockpit with item quantity/valuation drill-down, read-only movement history, and read-only Stock Entry history. See `docs/stock_dashboard.md`.
 - `apps/orderlift/orderlift/orderlift_logistics/stock_planning.py`: confirmed-Sales-Order stock planning engine. It allocates submitted incoming PO quantity once by delivery priority, creates due/partial Pick Lists, optionally creates Material Requests, and never creates Stock Reservation Entries directly. Company settings and worked examples live in `Stock Planning Settings`; operational plans live in `Stock Demand Plan`. See `docs/stock_planning.md`.
+- `apps/orderlift/orderlift/orderlift_sig/technical_list.py`: company-configured Sales Order Technical List lifecycle. One stable list belongs to each eligible submitted Sales Order; immutable submitted revisions own execution quantities and revision-specific annex snapshots. New procurement is allowed only from the current submitted revision. See `docs/sales_order_technical_lists.md`.
+- `apps/orderlift/orderlift/orderlift_logistics/technical_procurement.py`: safe configurable adapters and universal MR/RFQ/Supplier Quotation/PO lineage guards for approved Technical List revisions.
 - `apps/orderlift/orderlift/orderlift_sales/page/buying_price_review`: privileged multi-Purchase Order review page for negotiated buying-price approvals; the Purchase Order form exposes the same decisions in `Pricing Alerts & Approvals`.
-- `apps/orderlift/orderlift/orderlift_finance/account_governance.py`: minimal backend account defaults, Account edit restriction, and invoice/payment account defaulting/protection. Native finance documents stay visible; backend account fields are superadmin-only.
+- `apps/orderlift/orderlift/orderlift_finance/account_governance.py`: minimal backend account defaults, all-company Mode of Payment account presets, Account edit restriction, and invoice/payment account defaulting/protection. Native finance documents stay visible; backend account fields are superadmin-only.
+- `apps/orderlift/orderlift/orderlift_finance/cash_flow.py`: permission-safe Project and standalone-Sales-Order financial model. It separates expected/actual profitability from actual/committed/forecast cash, exposes per-context 13-week/monthly funding positions, and never returns backend account names. Revenue/Cost Forecast Final controls remove only theoretical residuals; existing SO/SI/PO/PI and payment values remain. The manager is `sale-financial-dashboard`; entity drill-down is `sale-financial-workspace`.
+- `apps/orderlift/orderlift/orderlift_crm/project_linkage.py`: native `Sales Order.project` lifecycle. Opportunity statuses may require submitted Sales Orders/payments and enable `Auto create Project`; successful moves create/reuse one Project and attach all non-cancelled related Sales Orders.
 - `apps/orderlift/orderlift/delete_blocker_helper.py`: permission-safe recursive blocker discovery and transactional deletion used by the global Desk delete popup. It deduplicates the readable downstream dependency graph and deletes deepest dependencies first. Users with `delete_submitted_blockers` may cancel submitted selected blockers through native hooks and delete them with the parent; other users retain native delete/submission restrictions.
 - `apps/orderlift/orderlift/orderlift_logistics/source_chain.py`: permission-safe, read-only commercial source chain for Material Request, Purchase Order, Purchase Receipt, and Purchase Invoice forms. It resolves Opportunity through Sales Order lineage without changing Project, Cost Center, or accounting dimensions.
 - `apps/orderlift/orderlift/orderlift_logistics/utils/material_request.py`: keeps Material Requests quantity-only and maps multiple selected submitted Purchase Material Requests into one unsaved supplier Purchase Order while preserving row-level source links.
@@ -200,9 +204,10 @@ Always use `-w /home/frappe/frappe-bench` with `docker exec` for bench commands.
 
 ### Company Session Context
 - Company `User Permission` records define the allowed-company security boundary.
-- `orderlift_preferred_company` is the new-session fallback; legacy `Company` defaults remain compatibility data only.
-- The active company is stored in Redis under `orderlift:company_context:<sid>`. Never persist an active switch back to user defaults.
+- `orderlift_last_selected_company` is the new-browser-session fallback and is updated only by an explicit sidebar company switch; legacy `Company` defaults remain compatibility data only and are never runtime context.
+- The active company is stored in Redis under `orderlift:company_context:<sid>`; an explicit switch also updates only the separate last-selected fallback, never the legacy `Company` default.
 - Tabs in one browser session share the active company. Separate browsers/devices using the same account have independent company contexts.
+- The most recent explicit switch affects only future browser sessions. Existing browser SIDs keep their independent Redis context.
 - Do not add URL/deep-link company overrides. Interactive Desk queries use the exact SID company; noninteractive jobs, API-token requests, and console operations use all allowed companies.
 - The global switcher is `orderlift/public/js/orderlift_company_switcher_20260803d.js`. Native Frappe Company Session Defaults are retired by `orderlift.patches.v1_0.backfill_session_company_context`.
 - Run the live Redis isolation check with `bench --site <site> execute orderlift.tests.live_company_session_context.run`.
@@ -225,6 +230,7 @@ The project uses **one unified sidebar** called `Main Dashboard`. All section-sp
 - **`orderlift/menu_registry.py`** — central registry of all 17 sidebar sections and their links, organized by business domain. Each section has role-based visibility.
 - **`orderlift/scripts/setup_main_dashboard_sidebar.py`** — builds the registry into the Frappe `Workspace Sidebar` doctype on deployment.
 - **`orderlift/public/js/orderlift_main_sidebar_lock_20260429b.js`** — client-side lock preventing business users from switching workspaces.
+- Keep the native `Project` DocType link (`projects.projects`, label `Projects`) in the `Gestion de Projets` registry section. `after_migrate` rebuilds `Main Dashboard` from this registry, so direct database-only sidebar edits will be overwritten.
 
 ### Sidebar Sections (17 sections in `menu_registry.py`)
 

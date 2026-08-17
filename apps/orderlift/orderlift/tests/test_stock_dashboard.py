@@ -58,6 +58,8 @@ class TestStockDashboard(unittest.TestCase):
     def test_available_quantity_label_is_explicit(self):
         self.assertIn('label: __("Available After SO")', JS_SOURCE)
         self.assertIn('${__("Available After SO")}', JS_SOURCE)
+        self.assertIn("get_effective_demand_by_item", PY_SOURCE)
+        self.assertIn("actual_qty - demand_qty", PY_SOURCE)
 
     def test_sorting_is_wired_to_column_headers(self):
         self.assertIn("function sortableStockHeader", JS_SOURCE)

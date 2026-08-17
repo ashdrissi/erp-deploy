@@ -4,6 +4,7 @@ import unittest
 
 
 frappe_stub = types.ModuleType("frappe")
+frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.session = types.SimpleNamespace(user="demo@example.com")
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 sys.modules["frappe"] = frappe_stub
@@ -54,6 +55,18 @@ class TestPageRoleSync(unittest.TestCase):
         self.assertCountEqual(
             strict["pricing-sheet-builder"],
             ["Orderlift Admin", "Sales Manager", "Sales User", "System Manager"],
+        )
+
+    def test_financial_detail_inherits_parent_menu_roles(self):
+        strict = sync_page_roles_from_menu_registry.strict_menu_page_role_map()
+
+        self.assertEqual(
+            strict["sale-financial-workspace"],
+            ["Orderlift Admin", "Finance User", "Finance Admin", "System Manager"],
+        )
+        self.assertEqual(
+            strict["sale-financial-workspace"],
+            strict["sale-financial-dashboard"],
         )
 
     def test_registry_reports_include_system_manager(self):

@@ -116,6 +116,15 @@ class TestOpportunityVoiceComment(unittest.TestCase):
             source.index("if not is_auto_saved_draft_opportunity(doc):"),
         )
 
+    def test_opportunity_updates_and_deletes_do_not_switch_company_context(self):
+        hooks_source = (APP_ROOT / "orderlift" / "orderlift_crm" / "opportunity_hooks.py").read_text()
+        pipeline_source = (APP_ROOT / "orderlift" / "orderlift_crm" / "api" / "pipeline.py").read_text()
+
+        for source in (hooks_source, pipeline_source):
+            self.assertNotIn("set_current_company(", source)
+            self.assertNotIn("set_session_current_company(", source)
+            self.assertNotIn("_set_last_selected_company(", source)
+
     def test_quotation_delete_clears_campaign_target_link(self):
         hooks = (APP_ROOT / "orderlift" / "hooks.py").read_text()
         source = (APP_ROOT / "orderlift" / "orderlift_crm" / "opportunity_hooks.py").read_text()

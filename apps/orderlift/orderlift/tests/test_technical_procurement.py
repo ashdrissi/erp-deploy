@@ -1,0 +1,304 @@
+import json
+import sys
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+class AttrDict(dict):
+    __getattr__ = dict.get
+
+
+class FakeDB:
+    def exists(self, *args, **kwargs):
+        return False
+
+    def get_value(self, *args, **kwargs):
+        return None
+
+
+frappe_stub = types.ModuleType("frappe")
+frappe_stub._ = lambda message, *args, **kwargs: message
+frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
+frappe_stub.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(ValueError(message))
+frappe_stub.db = FakeDB()
+
+utils_stub = types.ModuleType("frappe.utils")
+utils_stub.cint = lambda value=0: int(value or 0)
+utils_stub.flt = lambda value=0: float(value or 0)
+utils_stub.getdate = lambda value: value
+utils_stub.nowdate = lambda: "2026-08-15"
+utils_stub.now_datetime = lambda: "2026-08-15 00:00:00"
+
+sys.modules.setdefault("frappe", frappe_stub)
+sys.modules.setdefault("frappe.utils", utils_stub)
+
+from orderlift.orderlift_logistics import technical_procurement
+
+
+APP_ROOT = Path(__file__).resolve().parents[1]
+DOCTYPE_ROOT = APP_ROOT / "orderlift_logistics" / "doctype"
+
+
+class FakeMeta:
+    def __init__(self, fields):
+        self.fields = set(fields)
+
+    def get_field(self, fieldname):
+        return AttrDict(fieldname=fieldname) if fieldname in self.fields else None
+
+
+class TestTechnicalProcurement(unittest.TestCase):
+    def test_exact_core_doctypes_and_safe_adapters(self):
+        self.assertEqual(
+            technical_procurement.REVISION_DOCTYPE,
+            "Sales Order Technical List Revision",
+        )
+        self.assertEqual(
+            technical_procurement.TECHNICAL_LIST_DOCTYPE,
+            "Sales Order Technical List",
+        )
+        self.assertEqual(
+            technical_procurement.SAFE_ADAPTERS,
+            {
+                "revision_to_material_request": "Material Request",
+                "revision_to_purchase_order": "Purchase Order",
+            },
+        )
+        self.assertTrue(all("." not in key for key in technical_procurement.SAFE_ADAPTERS))
+
+    def test_company_policy_fields_are_exact(self):
+        self.assertEqual(
+            (
+                technical_procurement.COMPANY_ENABLED_FIELD,
+                technical_procurement.COMPANY_EFFECTIVE_FROM_FIELD,
+                technical_procurement.COMPANY_APPLY_ALL_FIELD,
+                technical_procurement.COMPANY_BUSINESS_TYPES_FIELD,
+                technical_procurement.COMPANY_DEFAULT_ROUTE_FIELD,
+            ),
+            (
+                "custom_enable_sales_order_technical_lists",
+                "custom_technical_list_effective_from",
+                "custom_technical_list_apply_all_business_types",
+                "custom_technical_list_business_types",
+                "custom_technical_list_default_procurement_route",
+            ),
+        )
+
+    def test_lineage_fields_are_exact(self):
+        self.assertEqual(
+            set(technical_procurement.LINEAGE_FIELDS),
+            {
+                "custom_technical_list",
+                "custom_technical_revision",
+                "custom_technical_revision_item",
+                "custom_technical_line_key",
+                "custom_technical_approval_hash",
+                "custom_technical_procurement_route",
+                "custom_technical_procurement_action",
+            },
+        )
+        meta = FakeMeta(technical_procurement.LINEAGE_FIELDS)
+        values = {
+            "technical_list": "TL-1",
+            "revision": "TLR-1",
+            "revision_item": "TLRI-1",
+            "line_key": "SOI-1",
+            "approval_hash": "abc",
+            "route": "Default",
+            "action": "MR",
+        }
+        self.assertEqual(len(technical_procurement._lineage_values(meta, values)), 7)
+
+    def test_selection_accepts_ids_quantity_map_and_rejects_invalid_values(self):
+        self.assertEqual(
+            technical_procurement._normalise_selection(
+                '["ROW-1", "ROW-2"]', '{"ROW-1": 2}'
+            ),
+            {"ROW-1": 2.0, "ROW-2": None},
+        )
+        with self.assertRaises(ValueError):
+            technical_procurement._normalise_selection(["ROW-1", "ROW-1"])
+        with self.assertRaises(ValueError):
+            technical_procurement._normalise_selection(["ROW-1"], {"ROW-1": 0})
+
+    def test_revision_quantity_uses_execution_stock_quantity(self):
+        line = AttrDict(execution_qty=3, execution_stock_qty=12, conversion_factor=4)
+        self.assertEqual(technical_procurement._line_stock_qty(line), 12)
+        self.assertEqual(
+            technical_procurement._row_stock_qty(
+                {"qty": 3, "stock_qty": 0, "conversion_factor": 4}
+            ),
+            12,
+        )
+
+    def test_allocation_key_prefers_sales_order_item(self):
+        self.assertEqual(
+            technical_procurement._allocation_key(
+                {"sales_order_item": "SOI-1", "item_code": "I-1"}
+            ),
+            "SOI-1",
+        )
+        self.assertEqual(
+            technical_procurement._allocation_key({"sales_order_item": "", "item_code": "I-1"}),
+            "item::I-1",
+        )
+
+    def test_only_material_requests_and_direct_purchase_orders_reserve_quantity(self):
+        self.assertTrue(
+            technical_procurement._is_root_allocation(
+                {"doctype": "Material Request"}, {"material_request_item": ""}
+            )
+        )
+        self.assertTrue(
+            technical_procurement._is_root_allocation(
+                {"doctype": "Purchase Order"}, {"material_request_item": ""}
+            )
+        )
+        self.assertFalse(
+            technical_procurement._is_root_allocation(
+                {"doctype": "Purchase Order"}, {"material_request_item": "MRI-1"}
+            )
+        )
+
+    def test_revision_reference_resolves_parent_current_revision(self):
+        supplied = AttrDict(
+            doctype=technical_procurement.REVISION_DOCTYPE,
+            name="TLR-OLD",
+            technical_list="TL-1",
+            check_permission=lambda *args: None,
+        )
+        parent = AttrDict(
+            doctype=technical_procurement.TECHNICAL_LIST_DOCTYPE,
+            name="TL-1",
+            sales_order="SO-1",
+            current_revision="TLR-CURRENT",
+            check_permission=lambda *args: None,
+        )
+        current = AttrDict(
+            doctype=technical_procurement.REVISION_DOCTYPE,
+            name="TLR-CURRENT",
+            technical_list="TL-1",
+            check_permission=lambda *args: None,
+        )
+        documents = {
+            (technical_procurement.REVISION_DOCTYPE, "TLR-OLD"): supplied,
+            (technical_procurement.TECHNICAL_LIST_DOCTYPE, "TL-1"): parent,
+            (technical_procurement.REVISION_DOCTYPE, "TLR-CURRENT"): current,
+        }
+        with patch.object(
+            frappe_stub,
+            "get_doc",
+            side_effect=lambda doctype, name: documents[(doctype, name)],
+            create=True,
+        ), patch.object(
+            technical_procurement, "_technical_schema_ready", return_value=True
+        ), patch.object(technical_procurement, "_validate_revision"):
+            _reference, resolved_parent, resolved_revision = (
+                technical_procurement._resolve_current_revision(
+                    technical_procurement.REVISION_DOCTYPE, "TLR-OLD"
+                )
+            )
+
+        self.assertIs(resolved_parent, parent)
+        self.assertIs(resolved_revision, current)
+
+    def test_business_type_policy_uses_values_not_labels(self):
+        fields = {
+            technical_procurement.COMPANY_ENABLED_FIELD,
+            technical_procurement.COMPANY_APPLY_ALL_FIELD,
+            technical_procurement.COMPANY_BUSINESS_TYPES_FIELD,
+        }
+        values = {
+            technical_procurement.COMPANY_ENABLED_FIELD: 1,
+            technical_procurement.COMPANY_APPLY_ALL_FIELD: 0,
+        }
+        company = AttrDict(
+            custom_technical_list_business_types=[AttrDict(business_type="TYPE-42")]
+        )
+        source = AttrDict(company="Orderlift", custom_crm_business_type="TYPE-42")
+        with patch.object(
+            technical_procurement, "_meta", return_value=FakeMeta(fields)
+        ), patch.object(
+            frappe_stub.db,
+            "get_value",
+            side_effect=lambda doctype, name, fieldname: values.get(fieldname),
+        ), patch.object(frappe_stub, "get_doc", return_value=company, create=True):
+            self.assertTrue(technical_procurement._technical_policy_applies(source))
+            source["custom_crm_business_type"] = "TYPE-OTHER"
+            self.assertFalse(technical_procurement._technical_policy_applies(source))
+
+    def test_setup_doctypes_define_ordered_safe_routes(self):
+        action = json.loads(
+            (
+                DOCTYPE_ROOT
+                / "technical_procurement_action"
+                / "technical_procurement_action.json"
+            ).read_text()
+        )
+        route = json.loads(
+            (
+                DOCTYPE_ROOT
+                / "technical_procurement_route"
+                / "technical_procurement_route.json"
+            ).read_text()
+        )
+        step = json.loads(
+            (
+                DOCTYPE_ROOT
+                / "technical_procurement_route_step"
+                / "technical_procurement_route_step.json"
+            ).read_text()
+        )
+        action_fields = {field["fieldname"]: field for field in action["fields"]}
+        route_fields = {field["fieldname"]: field for field in route["fields"]}
+        step_fields = {field["fieldname"]: field for field in step["fields"]}
+
+        self.assertEqual(action_fields["adapter_key"]["fieldtype"], "Select")
+        self.assertNotIn(".", action_fields["adapter_key"]["options"])
+        self.assertEqual(route_fields["company"]["options"], "Company")
+        self.assertEqual(route_fields["steps"]["options"], "Technical Procurement Route Step")
+        self.assertEqual(step_fields["action"]["options"], "Technical Procurement Action")
+        self.assertEqual(
+            step_fields["required_previous_action"]["options"],
+            "Technical Procurement Action",
+        )
+
+    def test_source_contract_uses_parent_current_revision_and_execution_fields(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        self.assertIn("technical_list.current_revision", source)
+        self.assertNotIn("custom_current_revision", source)
+        self.assertNotIn("custom_current_technical_revision", source)
+        for fieldname in (
+            "item_code",
+            "item_name",
+            "description",
+            "sales_order_item",
+            "sales_order_qty",
+            "execution_qty",
+            "execution_stock_qty",
+            "uom",
+            "conversion_factor",
+            "stock_uom",
+            "warehouse",
+            "required_date",
+            "procurement_route",
+            "line_key",
+            "execution_relevant",
+        ):
+            self.assertIn(fieldname, source)
+        self.assertIn("_recalculate_approval_hash", source)
+        self.assertIn("parent_doc.docstatus < 2", source)
+        self.assertIn("AND child.sales_order = %s{extra}", source)
+        self.assertIn("def _allocation_key", source)
+        self.assertNotIn('"custom_technical_revision_item", "qty"', source)
+        self.assertIn("FOR UPDATE", source)
+        self.assertIn("target.insert()", source)
+        self.assertNotIn("target.submit()", source)
+        self.assertNotIn("ignore_permissions=True", source)
+        self.assertNotIn("bypass", source.lower())
+
+
+if __name__ == "__main__":
+    unittest.main()

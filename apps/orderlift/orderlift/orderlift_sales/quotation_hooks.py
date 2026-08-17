@@ -25,6 +25,7 @@ from orderlift.sales.utils.pricing_projection import calculate_agent_commission
 
 
 OTHER_CHARGE_ITEM_CODE = "OTHER-CHARGES"
+CAPABILITY_PRIVILEGED_PRICING = "privileged_pricing"
 @frappe.whitelist()
 def get_other_charge_item(company: str | None = None) -> dict:
     if not frappe.has_permission("Quotation", "create") and not frappe.has_permission("Quotation", "write"):
@@ -71,7 +72,7 @@ def get_other_charge_template(other_charge: str, company: str | None = None) -> 
 
     template = _other_charge_template_values(other_charge)
     item_defaults = get_other_charge_item(company=company)
-    return {
+    result = {
         "other_charge": other_charge,
         "description": template.get("description") or item_defaults.get("description") or other_charge,
         "uom": template.get("uom") or item_defaults.get("uom") or _default_service_uom(),
@@ -79,6 +80,9 @@ def get_other_charge_template(other_charge: str, company: str | None = None) -> 
         "item_code": template.get("item_code") or item_defaults.get("item_code") or OTHER_CHARGE_ITEM_CODE,
         "item_name": item_defaults.get("item_name") or _("Other Charges"),
     }
+    if user_has_capability(CAPABILITY_PRIVILEGED_PRICING):
+        result["expected_unit_cost"] = flt(template.get("expected_unit_cost"))
+    return result
 
 
 @frappe.whitelist()
@@ -173,6 +177,7 @@ def sync_quotation_other_charges(doc, method=None) -> None:
         description = charge.get("description") or item_defaults.get("description") or _("Other Charges")
         qty = flt(charge.get("qty") or 1) or 1
         rate = flt(charge.get("rate"))
+        expected_unit_cost = flt(charge.get("expected_unit_cost"))
         amount = flt(qty * rate)
         row = doc.append(
             "items",
@@ -204,6 +209,7 @@ def sync_quotation_other_charges(doc, method=None) -> None:
             "source_discount_percent": 0,
             "source_max_discount_percent": 0,
             "source_discount_amount": 0,
+            "source_landed_cost": expected_unit_cost,
         }.items():
             if row.meta.get_field(fieldname):
                 row.set(fieldname, value)
@@ -222,32 +228,66 @@ def sync_quotation_pricing_snapshot_fields(doc, method=None) -> None:
 
 def _normalized_other_charge_rows(doc) -> list[dict]:
     rows = []
+    can_edit_cost = user_has_capability(CAPABILITY_PRIVILEGED_PRICING)
+    previous = doc.get_doc_before_save() if hasattr(doc, "get_doc_before_save") else None
+    previous_values = {
+        row.get("name"): {
+            "other_charge": (row.get("other_charge") or "").strip(),
+            "expected_unit_cost": row.get("expected_unit_cost"),
+        }
+        for row in (previous.get("custom_other_charges") if previous else []) or []
+        if row.get("name")
+    }
     for charge in doc.get("custom_other_charges") or []:
-        template = _other_charge_template_values(charge.get("other_charge"))
+        other_charge = (charge.get("other_charge") or "").strip()
+        if not other_charge or not frappe.db.exists("Orderlift Other Charge", other_charge):
+            frappe.throw(_("Select a valid saved Other Charge."))
+        template = _other_charge_template_values(other_charge)
         description = (charge.get("description") or "").strip() or template.get("description") or _("Other Charges")
         qty = flt(charge.get("qty") or 0)
         rate = flt(charge.get("rate") if charge.get("rate") is not None else template.get("rate"))
+        previous_value = previous_values.get(charge.get("name")) or {}
+        template_changed = previous_value and previous_value.get("other_charge") != other_charge
+        if can_edit_cost and not (
+            template_changed
+            and flt(charge.get("expected_unit_cost")) == flt(previous_value.get("expected_unit_cost"))
+        ):
+            raw_expected_cost = charge.get("expected_unit_cost")
+        elif not template_changed and previous_value:
+            raw_expected_cost = previous_value.get("expected_unit_cost")
+        else:
+            raw_expected_cost = template.get("expected_unit_cost")
+        expected_unit_cost = flt(
+            template.get("expected_unit_cost") if raw_expected_cost in (None, "") else raw_expected_cost
+        )
         uom = (charge.get("uom") or "").strip() or template.get("uom")
-        item_code = (charge.get("item_code") or "").strip() or template.get("item_code")
+        item_code = template.get("item_code") or OTHER_CHARGE_ITEM_CODE
         if qty <= 0:
             frappe.throw(_("Other charge quantity must be greater than zero: {0}").format(description))
         if rate < 0:
             frappe.throw(_("Other charge amount cannot be negative: {0}").format(description))
+        if expected_unit_cost < 0:
+            frappe.throw(_("Other charge expected cost cannot be negative: {0}").format(description))
         amount = flt(qty * rate)
+        expected_cost = flt(qty * expected_unit_cost)
         charge.description = description
         charge.qty = qty
         charge.uom = uom
         charge.rate = rate
         charge.amount = amount
+        charge.expected_unit_cost = expected_unit_cost
+        charge.expected_cost = expected_cost
         charge.item_code = item_code
         rows.append(
             {
-                "other_charge": (charge.get("other_charge") or "").strip(),
+                "other_charge": other_charge,
                 "description": description,
                 "qty": qty,
                 "uom": uom,
                 "rate": rate,
                 "amount": amount,
+                "expected_unit_cost": expected_unit_cost,
+                "expected_cost": expected_cost,
                 "item_code": item_code,
             }
         )
@@ -263,7 +303,7 @@ def _other_charge_template_values(other_charge: str | None) -> dict:
     values = frappe.db.get_value(
         "Orderlift Other Charge",
         other_charge,
-        ["description", "default_uom", "default_rate", "item_code", "disabled"],
+        ["description", "default_uom", "default_rate", "default_expected_unit_cost", "item_code", "disabled"],
         as_dict=True,
     ) or {}
     if values.get("disabled"):
@@ -272,6 +312,7 @@ def _other_charge_template_values(other_charge: str | None) -> dict:
         "description": values.get("description") or other_charge,
         "uom": values.get("default_uom") or "",
         "rate": flt(values.get("default_rate")),
+        "expected_unit_cost": flt(values.get("default_expected_unit_cost")),
         "item_code": values.get("item_code") or "",
     }
 

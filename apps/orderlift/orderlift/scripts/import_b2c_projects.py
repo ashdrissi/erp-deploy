@@ -88,8 +88,8 @@ def upsert_project(opportunity: str, row: dict, dry_run: int = 1) -> dict:
         doc.custom_crm_business_type = BUSINESS_TYPE
     if doc.meta.get_field("custom_crm_segment"):
         doc.custom_crm_segment = CRM_SEGMENT
-    if doc.meta.get_field("custom_project_type_ol"):
-        doc.custom_project_type_ol = PROJECT_TYPE
+    if doc.meta.get_field("project_type") and not doc.project_type:
+        doc.project_type = opp_doc.get("custom_project_type") or PROJECT_TYPE
     if doc.meta.get_field("custom_city"):
         doc.custom_city = clean_text(row.get("Ville / Localisation"))
     confirmation_date = parse_excel_date(row.get("Date de confirmation"))

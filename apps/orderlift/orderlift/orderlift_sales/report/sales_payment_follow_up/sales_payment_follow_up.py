@@ -93,8 +93,6 @@ def _project_expression() -> str:
         choices.append("sii.project")
     if so_meta.get_field("project"):
         choices.append("so.project")
-    if so_meta.get_field("custom_installation_project"):
-        choices.append("so.custom_installation_project")
     return f"coalesce({', '.join(choices)}, '')" if choices else "''"
 
 

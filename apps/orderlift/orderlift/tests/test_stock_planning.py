@@ -47,7 +47,10 @@ class TestStockPlanningContract(unittest.TestCase):
         payload = json.loads(path.read_text())
         fields = {row["fieldname"]: row for row in payload["fields"]}
 
-        self.assertEqual(fields["sales_order_item"]["unique"], 1)
+        self.assertEqual(fields["demand_source_key"]["unique"], 1)
+        self.assertTrue(fields["demand_source_key"]["hidden"])
+        self.assertIn("technical_revision_item", fields)
+        self.assertNotIn("unique", fields["sales_order_item"])
         self.assertEqual(fields["allocations"]["options"], "Stock Demand Allocation")
         self.assertIn("incoming_backup_check_date", fields)
         self.assertIn("latest_safe_incoming_date", fields)

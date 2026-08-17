@@ -62,7 +62,6 @@ LINK_REGISTRY = [
 
     # ── Project ────────────────────────────────────────────────────────
     ("Sales Order", "project", "Project", "downstream"),
-    ("Sales Order", "custom_installation_project", "Project", "downstream"),
 
     # ── Accounting ─────────────────────────────────────────────────────
     ("Sales Invoice", "sales_order", "Sales Order", "upstream"),
@@ -1108,7 +1107,7 @@ def _get_preview_field_candidates(doctype):
         "Lead": ["status", "company_name", "email_id", "mobile_no", "territory"],
         "Opportunity": ["status", "party_name", "opportunity_type", "opportunity_from", "sales_stage", "opportunity_amount"],
         "Quotation": ["status", "party_name", "customer_name", "transaction_date", "valid_till", "grand_total"],
-        "Sales Order": ["status", "customer_name", "transaction_date", "delivery_date", "custom_installation_project", "grand_total"],
+        "Sales Order": ["status", "customer_name", "transaction_date", "delivery_date", "project", "grand_total"],
         "Delivery Note": ["status", "customer_name", "posting_date", "project", "grand_total"],
         "Sales Invoice": ["status", "customer_name", "posting_date", "due_date", "grand_total", "outstanding_amount"],
         "Payment Entry": ["payment_type", "party", "posting_date", "paid_amount", "received_amount", "reference_no"],

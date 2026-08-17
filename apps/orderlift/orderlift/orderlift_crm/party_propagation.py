@@ -320,9 +320,9 @@ def sync_downstream_sales_party_context(doc, method=None) -> None:
         return
     customers = {(row.get("customer") or "").strip() for row in sales_orders if row.get("customer")}
     projects = {
-        (row.get("custom_installation_project") or row.get("project") or "").strip()
+        (row.get("project") or "").strip()
         for row in sales_orders
-        if row.get("custom_installation_project") or row.get("project")
+        if row.get("project")
     }
     if len(customers) > 1 or len(projects) > 1:
         frappe.throw("Source Sales Orders must use the same Customer and Project.")
@@ -341,7 +341,7 @@ def sync_downstream_sales_party_context(doc, method=None) -> None:
         "shipping_address": source.get("shipping_address"),
         "tax_id": tax_id,
         "custom_customer_tax_id": tax_id,
-        "project": source.get("custom_installation_project") or source.get("project"),
+        "project": source.get("project"),
         "custom_site_address_name": source.get("custom_site_address_name"),
     }
     _apply_values(doc, values, overwrite=False)

@@ -13,11 +13,12 @@
     "roles": [
         {"role": "Orderlift Admin"},
         {"role": "System Manager"},
-        {"role": "Finance User"}
+        {"role": "Finance User"},
+        {"role": "Finance Admin"}
     ],
     "script": null,
     "standard": "Yes",
     "style": null,
     "system_page": 0,
-    "title": "Sale Financial Dashboard"
+    "title": "Project & Order Finance"
 }

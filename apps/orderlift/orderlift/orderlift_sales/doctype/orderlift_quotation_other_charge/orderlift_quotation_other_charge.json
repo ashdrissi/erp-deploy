@@ -12,6 +12,8 @@
     "uom",
     "rate",
     "amount",
+    "expected_unit_cost",
+    "expected_cost",
     "item_code"
   ],
   "fields": [
@@ -20,7 +22,8 @@
       "fieldtype": "Link",
       "in_list_view": 1,
       "label": "Charge",
-      "options": "Orderlift Other Charge"
+      "options": "Orderlift Other Charge",
+      "reqd": 1
     },
     {
       "fieldname": "description",
@@ -60,11 +63,30 @@
       "read_only": 1
     },
     {
+      "fieldname": "expected_unit_cost",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Expected Unit Cost HT",
+      "precision": "9",
+      "permlevel": 2
+    },
+    {
+      "fieldname": "expected_cost",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Expected Cost HT",
+      "precision": "9",
+      "read_only": 1,
+      "permlevel": 2
+    },
+    {
       "default": "OTHER-CHARGES",
       "fieldname": "item_code",
       "fieldtype": "Link",
+      "hidden": 1,
       "label": "Item",
-      "options": "Item"
+      "options": "Item",
+      "read_only": 1
     }
   ],
   "istable": 1,

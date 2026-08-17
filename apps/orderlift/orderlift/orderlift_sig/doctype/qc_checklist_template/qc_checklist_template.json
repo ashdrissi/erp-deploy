@@ -24,10 +24,10 @@
   },
   {
    "fieldname": "project_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Project Type",
-   "options": "\nNew Installation\nMaintenance\nUpgrade\nInspection"
+   "options": "Project Type"
   },
   {
    "fieldname": "col_break_1",

@@ -1,16 +1,37 @@
 (function () {
-    const PARTY_DOCTYPES = ["Lead", "Prospect", "Customer"];
+    const PARTY_DOCTYPES = ["Lead", "Prospect", "Customer", "Supplier"];
+    const CRM_PARTY_DOCTYPES = ["Lead", "Prospect", "Customer"];
+    const IDENTITY_FIELDS = [
+        "customer_name",
+        "supplier_name",
+        "company_name",
+        "lead_name",
+        "tax_id",
+        "custom_tax_id",
+        "email_id",
+        "mobile_no",
+        "phone",
+        "whatsapp_no",
+    ];
 
     PARTY_DOCTYPES.forEach((doctype) => {
-        frappe.ui.form.on(doctype, {
+        const handlers = {
             refresh(frm) {
-                removeIrrelevantActions(frm);
-                syncCreateActions(frm);
-                addPartyTools(frm);
-                renderPartyWorkspace(frm);
+                if (CRM_PARTY_DOCTYPES.includes(frm.doctype)) {
+                    removeIrrelevantActions(frm);
+                    syncCreateActions(frm);
+                    addPartyTools(frm);
+                    renderPartyWorkspace(frm);
+                } else if (!frm.is_new()) {
+                    frm.add_custom_button(__("Check Duplicates"), () => checkDuplicates(frm, true), __("Party"));
+                }
                 scheduleDuplicateCheck(frm);
             },
+        };
+        IDENTITY_FIELDS.forEach((fieldname) => {
+            handlers[fieldname] = scheduleDuplicateCheck;
         });
+        frappe.ui.form.on(doctype, handlers);
     });
 
     function syncCreateActions(frm) {
@@ -201,13 +222,13 @@
 
     function scheduleDuplicateCheck(frm) {
         if (frappe.route_options && frappe.route_options.orderlift_skip_duplicate_check) {
-            frm.__orderliftDuplicateCheckScheduled = true;
+            clearTimeout(frm.__orderliftDuplicateCheckTimer);
             frappe.route_options = null;
             return;
         }
-        if (!frm.is_new() || frm.__orderliftDuplicateCheckScheduled) return;
-        frm.__orderliftDuplicateCheckScheduled = true;
-        setTimeout(() => checkDuplicates(frm, false), 600);
+        if (!frm.is_new()) return;
+        clearTimeout(frm.__orderliftDuplicateCheckTimer);
+        frm.__orderliftDuplicateCheckTimer = setTimeout(() => checkDuplicates(frm, false), 600);
     }
 
     async function checkDuplicates(frm, manual) {
@@ -234,7 +255,7 @@
             const company = frm.doc.custom_company || frappe.boot?.orderlift_company_access?.current_company || "";
             const request = await frappe.call({
                 method: "orderlift.orderlift_crm.party_management.request_duplicate_reuse",
-                args: { values, requested_company: company, reason: __("Reuse possible duplicate from {0}", [frm.doctype]) },
+                args: { values, requested_company: company, reason: __("Reuse possible duplicate from {0}", [frm.doctype]), party_type: frm.doctype },
                 freeze: true,
             });
             dialog.hide();
@@ -275,7 +296,7 @@
 
     function partyIdentity(frm) {
         return {
-            party_name: frm.doc.customer_name || frm.doc.company_name || frm.doc.lead_name || "",
+            party_name: frm.doc.customer_name || frm.doc.supplier_name || frm.doc.company_name || frm.doc.lead_name || "",
             contact_name: [frm.doc.first_name, frm.doc.last_name].filter(Boolean).join(" "),
             tax_id: frm.doc.tax_id || frm.doc.custom_tax_id || "",
             email_id: frm.doc.email_id || "",
@@ -283,7 +304,7 @@
         };
     }
 
-    function partyDisplayName(frm) { return frm.doc.customer_name || frm.doc.company_name || frm.doc.lead_name || frm.doc.name || ""; }
+    function partyDisplayName(frm) { return frm.doc.customer_name || frm.doc.supplier_name || frm.doc.company_name || frm.doc.lead_name || frm.doc.name || ""; }
     function escape(value) { return frappe.utils.escape_html(String(value || "")); }
     function injectStyles() {
         if (document.getElementById("ol-party-workspace-styles")) return;

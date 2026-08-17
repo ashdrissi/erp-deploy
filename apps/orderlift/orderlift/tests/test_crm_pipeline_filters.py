@@ -32,21 +32,24 @@ frappe_utils_stub.nowdate = lambda: "2026-04-27"
 sys.modules["frappe.utils"] = frappe_utils_stub
 
 from orderlift.orderlift_crm.api import pipeline
-from orderlift.orderlift_crm import project_responsibility
+from orderlift.orderlift_crm import project_linkage, project_responsibility
 from orderlift import company_access
 
 
 class TestCrmPipelineFilters(unittest.TestCase):
     def setUp(self):
         self.original_pipeline_frappe = pipeline.frappe
+        self.original_project_linkage_frappe = project_linkage.frappe
         self.original_company_access_frappe = company_access.frappe
         pipeline.frappe = frappe_stub
+        project_linkage.frappe = frappe_stub
         company_access.frappe = frappe_stub
         frappe_stub.session.user = "demo@example.com"
         frappe_stub.get_roles = lambda user=None: []
 
     def tearDown(self):
         pipeline.frappe = self.original_pipeline_frappe
+        project_linkage.frappe = self.original_project_linkage_frappe
         company_access.frappe = self.original_company_access_frappe
 
     def test_project_manager_defaults_to_creator_and_joins_native_project_users(self):
@@ -196,6 +199,21 @@ class TestCrmPipelineFilters(unittest.TestCase):
             pipeline._sales_order_card = original_sales_order_card
             pipeline._owned_pipeline_visibility_enabled = original_owned_flag
 
+    def test_sales_order_pipeline_excludes_project_linked_orders_in_permission_query(self):
+        calls = []
+        original_get_list = pipeline.frappe.get_list
+        try:
+            pipeline.frappe.get_list = lambda doctype, **kwargs: calls.append((doctype, kwargs)) or []
+
+            pipeline._sales_order_cards(statuses=[])
+
+            self.assertEqual(calls[0][0], "Sales Order")
+            self.assertEqual(calls[0][1]["filters"]["docstatus"], ["<", 2])
+            self.assertEqual(calls[0][1]["filters"]["project"], ["is", "not set"])
+            self.assertEqual(calls[0][1]["limit_page_length"], 200)
+        finally:
+            pipeline.frappe.get_list = original_get_list
+
     def test_project_pipeline_derives_crm_segment_from_source_opportunity(self):
         original_has_field = pipeline._has_field
         original_project_related_docs = pipeline._project_related_docs
@@ -238,9 +256,11 @@ class TestCrmPipelineFilters(unittest.TestCase):
 
     def test_sales_order_pipeline_derives_crm_segment_from_campaign_target(self):
         original_sales_order_related_docs = pipeline._sales_order_related_docs
+        original_sales_order_source_opportunity = pipeline._sales_order_source_opportunity
         original_db = pipeline.frappe.db
         try:
             pipeline._sales_order_related_docs = lambda sales_order, project_name: []
+            pipeline._sales_order_source_opportunity = lambda sales_order: None
             pipeline.frappe.db = types.SimpleNamespace(
                 exists=lambda doctype, name=None: doctype == "DocType" and name == "Partner Campaign Target",
                 get_value=lambda doctype, name, fields, as_dict=False: {
@@ -271,6 +291,7 @@ class TestCrmPipelineFilters(unittest.TestCase):
             self.assertIn("Grossiste", card["tags"])
         finally:
             pipeline._sales_order_related_docs = original_sales_order_related_docs
+            pipeline._sales_order_source_opportunity = original_sales_order_source_opportunity
             pipeline.frappe.db = original_db
 
     def test_sales_order_title_prefers_source_opportunity_before_project(self):
@@ -295,7 +316,7 @@ class TestCrmPipelineFilters(unittest.TestCase):
                 get_value=get_value,
             )
 
-            title = pipeline._sales_order_title(_Row(name="SO-1", project="PROJ-1", custom_installation_project=""))
+            title = pipeline._sales_order_title(_Row(name="SO-1", project="PROJ-1"))
 
             self.assertEqual(title, "Villa Lift")
             self.assertNotIn(("Project", "PROJ-1", "project_name"), calls)
@@ -311,6 +332,7 @@ class TestCrmPipelineFilters(unittest.TestCase):
             pipeline.frappe.db = types.SimpleNamespace(
                 exists=lambda doctype, name=None: True,
                 sql=lambda query, params, as_dict=False: calls.append(query) or [],
+                get_value=lambda *args, **kwargs: None,
             )
 
             self.assertIsNone(pipeline._project_source_opportunity("PROJ-1"))

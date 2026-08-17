@@ -54,6 +54,8 @@ def get_supplier_buying_price_lists(
     company = _text(company)
     if not supplier or not company:
         return []
+    if not _supplier_allowed_for_company(supplier, company):
+        return []
     target_currency = _text(target_currency) or _text(frappe.db.get_value("Company", company, "default_currency"))
     reference_date = _text(reference_date) or nowdate()
 
@@ -107,6 +109,11 @@ def get_supplier_buying_price_lists(
             }
         )
     return allowed
+
+
+@frappe.whitelist()
+def is_supplier_allowed_for_purchase_company(supplier: str, company: str) -> dict:
+    return {"allowed": _supplier_allowed_for_company(supplier, company)}
 
 
 @frappe.whitelist()
@@ -329,16 +336,21 @@ def set_purchase_order_price_review_decisions(decisions, attestation=0) -> dict:
 def sync_purchase_order_buying_price_lists(doc, method=None) -> list[str]:
     """Sanitize ordered source rows and derive the native primary buying list."""
     if not doc or not _doc_has_field(doc, "selected_buying_price_lists"):
-        return _legacy_price_lists(doc)
+        return _native_parent_price_lists(doc)
 
     company = _text(doc.get("company"))
     supplier = _text(doc.get("supplier"))
+    if supplier and company and not _supplier_allowed_for_company(supplier, company):
+        supplier = ""
+        doc.supplier = ""
+        if _doc_has_field(doc, "supplier_name"):
+            doc.supplier_name = ""
     target_currency = _text(doc.get("currency")) or _text(frappe.db.get_value("Company", company, "default_currency"))
     reference_date = _text(doc.get("transaction_date")) or nowdate()
     supplier_details = {
         row["price_list"]: row
         for row in get_supplier_buying_price_lists(
-            _text(doc.get("supplier")),
+            supplier,
             company,
             target_currency=target_currency,
             reference_date=reference_date,
@@ -401,19 +413,18 @@ def sync_purchase_order_buying_price_lists(doc, method=None) -> list[str]:
             )
         pair_rates[pair] = row["exchange_rate"]
     if not valid_rows:
-        legacy = _text(doc.get("buying_price_list"))
-        if legacy and (not supplier or legacy in supplier_lists):
-            validate_visible_price_list(legacy, kind="buying", required=True, company=company)
-            details = supplier_details.get(legacy) or _price_list_exchange_details(
-                legacy, target_currency, reference_date
-            )
+        for index, row in enumerate(supplier_details.values(), start=1):
+            price_list = _text(row.get("price_list"))
+            if not price_list or price_list in unique:
+                continue
+            unique.add(price_list)
             valid_rows.append(
                 {
-                    "price_list": legacy,
-                    "source_currency": details["source_currency"],
-                    "exchange_rate": details["exchange_rate"],
-                    "exchange_rate_source": "System",
-                    "sequence": 10,
+                    "price_list": price_list,
+                    "source_currency": _text(row.get("source_currency")),
+                    "exchange_rate": flt(row.get("exchange_rate")) or 1.0,
+                    "exchange_rate_source": row.get("exchange_rate_source") or "System",
+                    "sequence": index * 10,
                     "is_active": 1,
                 }
             )
@@ -455,6 +466,16 @@ def validate_purchase_order_buying_prices(doc, method=None) -> None:
         return
     _protect_price_review_fields(doc)
     price_lists = sync_purchase_order_buying_price_lists(doc)
+    if not _text(doc.get("supplier")):
+        for row in doc.get("items") or []:
+            _clear_buying_price_reference(row, clear_rate=True)
+        _set_update_summary(doc)
+        return
+    selected_price_lists = set(price_lists)
+    for row in doc.get("items") or []:
+        row_price_list = _text(row.get("custom_source_buying_price_list"))
+        if row_price_list and row_price_list not in selected_price_lists:
+            _clear_buying_price_reference(row, clear_rate=True)
     item_rows = [
         row
         for row in (doc.get("items") or [])
@@ -546,8 +567,20 @@ def _resolve_document_candidates(doc, *, price_lists: list[str] | None = None) -
     if not price_lists:
         return {}
     company = _text(_value(doc, "company"))
+    # Drop lists the user can no longer use instead of throwing: a stale or
+    # unshared list must fall through to the missing-price flow ("enter a direct
+    # buying rate"), not a bare permission error. Mirrors the skip in
+    # sync_purchase_order_buying_price_lists.
+    visible = []
     for price_list in price_lists:
-        validate_visible_price_list(price_list, kind="buying", required=True, company=company)
+        try:
+            validate_visible_price_list(price_list, kind="buying", required=True, company=company)
+        except Exception:
+            continue
+        visible.append(price_list)
+    price_lists = visible
+    if not price_lists:
+        return {}
     supplier = _text(_value(doc, "supplier"))
     currency = _text(_value(doc, "currency"))
     reference_date = _text(_value(doc, "transaction_date")) or nowdate()
@@ -592,10 +625,10 @@ def _active_price_lists(doc) -> list[str]:
         price_list = _text(_value(row, "price_list"))
         if price_list and cint(_value(row, "is_active") if _value(row, "is_active") is not None else 1) and price_list not in selected:
             selected.append(price_list)
-    return selected or _legacy_price_lists(doc)
+    return selected
 
 
-def _legacy_price_lists(doc) -> list[str]:
+def _native_parent_price_lists(doc) -> list[str]:
     price_list = _text(_value(doc, "buying_price_list"))
     return [price_list] if price_list else []
 
@@ -900,6 +933,48 @@ def _clear_price_review(row) -> None:
         else:
             value = 0
         _set(row, fieldname, value)
+
+
+def _clear_buying_price_reference(row, *, clear_rate: bool = False) -> None:
+    had_loaded_price = bool(
+        _text(_value(row, "custom_source_buying_price_list"))
+        or _text(_value(row, "custom_source_item_price"))
+        or flt(_value(row, "custom_loaded_buying_rate"))
+        or flt(_value(row, "price_list_rate"))
+    )
+    _set(row, "price_list_rate", 0)
+    _set(row, "custom_source_buying_price_list", "")
+    _set(row, "custom_source_item_price", "")
+    _set(row, "custom_lock_buying_price_source", 0)
+    _set(row, "custom_source_buying_rate", 0)
+    _set(row, "custom_loaded_buying_rate", 0)
+    _set(row, "custom_loaded_buying_currency", "")
+    _set(row, "custom_loaded_buying_uom", "")
+    _set(row, "custom_price_variance_amount", 0)
+    _set(row, "custom_price_variance_percent", 0)
+    _clear_price_review(row)
+    if clear_rate and had_loaded_price:
+        _set(row, "rate", 0)
+        _set(row, "amount", 0)
+
+
+def _supplier_company(supplier: str) -> str:
+    has_column = getattr(getattr(frappe, "db", None), "has_column", None)
+    if not supplier or not callable(has_column) or not has_column("Supplier", "custom_company"):
+        return ""
+    return _text(frappe.db.get_value("Supplier", supplier, "custom_company"))
+
+
+def _supplier_allowed_for_company(supplier: str, company: str) -> bool:
+    supplier = _text(supplier)
+    company = _text(company)
+    if not supplier or not company:
+        return False
+    if not _supplier_company(supplier):
+        return True
+    from orderlift.orderlift_crm.party_management import party_has_company_access
+
+    return party_has_company_access("Supplier", supplier, company)
 
 
 def _protect_price_review_fields(doc) -> None:

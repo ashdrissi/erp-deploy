@@ -49,6 +49,12 @@ OPPORTUNITY_CHECKS = [
         "description": "At least one linked Sales Order is submitted.",
     },
     {
+        "key": "has_submitted_payment",
+        "group": "Payment",
+        "label": "Has submitted payment",
+        "description": "A submitted customer Receive Payment Entry has a positive allocation to a linked Sales Order or Sales Invoice.",
+    },
+    {
         "key": "no_sales_order_cancelled",
         "group": "Sales Order",
         "label": "No sales order is cancelled",
@@ -93,7 +99,7 @@ PROJECT_CHECKS = [
         "key": "has_submitted_payment",
         "group": "Payment",
         "label": "Has submitted payment",
-        "description": "A submitted Payment Entry is allocated to a linked Sales Order or Sales Invoice.",
+        "description": "A submitted customer Receive Payment Entry has a positive allocation to a linked Sales Order or Sales Invoice.",
     },
     {
         "key": "has_purchase_order",
@@ -198,7 +204,7 @@ SALES_ORDER_CHECKS = [
         "key": "has_project",
         "group": "Project",
         "label": "Has project",
-        "description": "The Sales Order is linked to a Project or Installation Project.",
+        "description": "The Sales Order is linked to a Project.",
     },
     {
         "key": "has_submitted_delivery_note",
@@ -295,40 +301,74 @@ def _run_status_check(document_type: str, check: str, doc, context: dict) -> boo
 
 
 def _opportunity_check_context(doc) -> dict:
-    quotations = _linked_quotations(doc.name)
-    sales_orders = _linked_sales_orders([quotation["name"] for quotation in quotations])
+    all_quotations = _linked_quotations(doc.name, include_cancelled=True)
+    quotations = [row for row in all_quotations if cint(row.get("docstatus")) < 2]
+    all_sales_orders = _linked_sales_orders(
+        doc.name,
+        [quotation["name"] for quotation in all_quotations],
+        include_cancelled=True,
+    )
+    sales_orders = _linked_sales_orders(
+        doc.name,
+        [quotation["name"] for quotation in quotations],
+        include_cancelled=False,
+    )
     projects = _linked_projects(sales_orders)
+    sales_order_names = [row.get("name") for row in sales_orders if row.get("name")]
+    sales_invoices = _sales_invoices_for_sales_orders(sales_order_names)
     return {
         "quotations": quotations,
+        "all_quotations": all_quotations,
         "sales_orders": sales_orders,
+        "all_sales_orders": all_sales_orders,
         "projects": projects,
+        "payment_entries": _project_payment_entries(
+            sales_order_names,
+            [row.get("name") for row in sales_invoices if row.get("name")],
+        ),
     }
 
 
-def _linked_quotations(opportunity: str) -> list[dict]:
+def _linked_quotations(opportunity: str, include_cancelled: bool = False) -> list[dict]:
     if not opportunity:
         return []
+    filters = {"opportunity": opportunity}
+    if not include_cancelled:
+        filters["docstatus"] = ["<", 2]
     return frappe.get_all(
         "Quotation",
-        filters={"opportunity": opportunity, "docstatus": ["<", 2]},
+        filters=filters,
         fields=["name", "status", "docstatus"],
         order_by="modified desc",
         limit_page_length=0,
     )
 
 
-def _linked_sales_orders(quotation_names: list[str]) -> list[dict]:
-    if not quotation_names:
+def _linked_sales_orders(
+    opportunity: str,
+    quotation_names: list[str],
+    include_cancelled: bool = False,
+) -> list[dict]:
+    conditions = []
+    params = {}
+    if quotation_names:
+        conditions.append("soi.prevdoc_docname IN %(quotations)s")
+        params["quotations"] = tuple(quotation_names)
+    if _has_field("Sales Order", "opportunity"):
+        conditions.append("so.opportunity = %(opportunity)s")
+        params["opportunity"] = opportunity
+    if not conditions:
         return []
+    cancelled_condition = "" if include_cancelled else "AND so.docstatus < 2"
     return frappe.db.sql(
-        """
-        SELECT DISTINCT so.name, so.status, so.docstatus, COALESCE(so.custom_installation_project, so.project) AS project_name
-        FROM `tabSales Order Item` soi
-        INNER JOIN `tabSales Order` so ON so.name = soi.parent
-        WHERE soi.prevdoc_docname IN %(quotations)s AND so.docstatus < 2
+        f"""
+        SELECT DISTINCT so.name, so.status, so.docstatus, so.project AS project_name
+        FROM `tabSales Order` so
+        LEFT JOIN `tabSales Order Item` soi ON soi.parent = so.name
+        WHERE ({' OR '.join(conditions)}) {cancelled_condition}
         ORDER BY so.modified DESC
         """,
-        {"quotations": tuple(quotation_names)},
+        params,
         as_dict=True,
     )
 
@@ -347,8 +387,11 @@ def _linked_projects(sales_orders: list[dict]) -> list[dict]:
 
 def _run_opportunity_check(check: str, context: dict) -> bool:
     quotations = context["quotations"]
+    all_quotations = context.get("all_quotations", quotations)
     sales_orders = context["sales_orders"]
+    all_sales_orders = context.get("all_sales_orders", sales_orders)
     projects = context["projects"]
+    payment_entries = context["payment_entries"]
 
     if check == "has_quotation":
         return bool(quotations)
@@ -359,13 +402,21 @@ def _run_opportunity_check(check: str, context: dict) -> bool:
     if check == "at_least_one_quotation_open":
         return any(row.get("status") == "Open" for row in quotations)
     if check == "no_quotation_cancelled":
-        return bool(quotations) and all(cint(row.get("docstatus")) != 2 and row.get("status") != "Cancelled" for row in quotations)
+        return bool(all_quotations) and all(
+            cint(row.get("docstatus")) != 2 and row.get("status") != "Cancelled"
+            for row in all_quotations
+        )
     if check == "has_sales_order":
         return bool(sales_orders)
     if check == "has_submitted_sales_order":
         return any(cint(row.get("docstatus")) == 1 for row in sales_orders)
+    if check == "has_submitted_payment":
+        return bool(payment_entries)
     if check == "no_sales_order_cancelled":
-        return bool(sales_orders) and all(cint(row.get("docstatus")) != 2 and row.get("status") != "Cancelled" for row in sales_orders)
+        return bool(all_sales_orders) and all(
+            cint(row.get("docstatus")) != 2 and row.get("status") != "Cancelled"
+            for row in all_sales_orders
+        )
     if check == "has_project":
         return bool(projects)
     if check == "no_project_cancelled":
@@ -374,11 +425,13 @@ def _run_opportunity_check(check: str, context: dict) -> bool:
 
 
 def _project_check_context(doc) -> dict:
-    sales_orders = _project_sales_orders(doc.name)
+    all_sales_orders = _project_sales_orders(doc.name, include_cancelled=True)
+    sales_orders = [row for row in all_sales_orders if cint(row.get("docstatus")) < 2]
     sales_order_names = [row.get("name") for row in sales_orders if row.get("name")]
     sales_invoices = _project_sales_invoices(doc.name, sales_order_names)
     return {
         "sales_orders": sales_orders,
+        "all_sales_orders": all_sales_orders,
         "purchase_orders": _project_purchase_orders(doc.name),
         "delivery_notes": _project_delivery_notes(doc.name, sales_order_names),
         "sales_invoices": sales_invoices,
@@ -389,23 +442,15 @@ def _project_check_context(doc) -> dict:
     }
 
 
-def _project_sales_orders(project: str) -> list[dict]:
+def _project_sales_orders(project: str, include_cancelled: bool = False) -> list[dict]:
     if not project or not frappe.db.exists("DocType", "Sales Order"):
         return []
-    if _db_has_column("Sales Order", "custom_installation_project"):
-        return frappe.db.sql(
-            """
-            SELECT name, status, docstatus, per_delivered, per_billed
-            FROM `tabSales Order`
-            WHERE project = %(project)s OR custom_installation_project = %(project)s
-            ORDER BY modified DESC
-            """,
-            {"project": project},
-            as_dict=True,
-        )
+    filters = {"project": project}
+    if not include_cancelled:
+        filters["docstatus"] = ["<", 2]
     return frappe.get_all(
         "Sales Order",
-        filters={"project": project},
+        filters=filters,
         fields=["name", "status", "docstatus", "per_delivered", "per_billed"],
         order_by="modified desc",
         limit_page_length=0,
@@ -470,6 +515,22 @@ def _project_sales_invoices(project: str, sales_order_names: list[str]) -> list[
     )
 
 
+def _sales_invoices_for_sales_orders(sales_order_names: list[str]) -> list[dict]:
+    if not sales_order_names or not frappe.db.exists("DocType", "Sales Invoice"):
+        return []
+    return frappe.db.sql(
+        """
+        SELECT DISTINCT si.name, si.status, si.docstatus
+        FROM `tabSales Invoice` si
+        INNER JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
+        WHERE sii.sales_order IN %(sales_orders)s AND si.docstatus < 2
+        ORDER BY si.modified DESC
+        """,
+        {"sales_orders": tuple(sales_order_names)},
+        as_dict=True,
+    )
+
+
 def _project_payment_entries(sales_order_names: list[str], sales_invoice_names: list[str]) -> list[dict]:
     references = []
     params = {}
@@ -486,7 +547,11 @@ def _project_payment_entries(sales_order_names: list[str], sales_invoice_names: 
         SELECT DISTINCT pe.name, pe.docstatus, per.reference_doctype, per.reference_name, per.allocated_amount
         FROM `tabPayment Entry` pe
         INNER JOIN `tabPayment Entry Reference` per ON per.parent = pe.name
-        WHERE pe.docstatus = 1 AND per.allocated_amount > 0 AND ({' OR '.join(references)})
+        WHERE pe.docstatus = 1
+          AND pe.payment_type = 'Receive'
+          AND pe.party_type = 'Customer'
+          AND per.allocated_amount > 0
+          AND ({' OR '.join(references)})
         ORDER BY pe.modified DESC
         """,
         params,
@@ -496,6 +561,7 @@ def _project_payment_entries(sales_order_names: list[str], sales_invoice_names: 
 
 def _run_project_check(check: str, doc, context: dict) -> bool:
     sales_orders = context["sales_orders"]
+    all_sales_orders = context.get("all_sales_orders", sales_orders)
     purchase_orders = context["purchase_orders"]
     delivery_notes = context["delivery_notes"]
     sales_invoices = context["sales_invoices"]
@@ -508,8 +574,9 @@ def _run_project_check(check: str, doc, context: dict) -> bool:
     if check == "has_submitted_sales_order":
         return any(cint(row.get("docstatus")) == 1 for row in sales_orders)
     if check == "no_sales_order_cancelled":
-        return bool(sales_orders) and all(
-            cint(row.get("docstatus")) != 2 and row.get("status") != "Cancelled" for row in sales_orders
+        return bool(all_sales_orders) and all(
+            cint(row.get("docstatus")) != 2 and row.get("status") != "Cancelled"
+            for row in all_sales_orders
         )
     if check == "has_submitted_payment":
         return bool(payment_entries)
@@ -593,7 +660,7 @@ def _run_sales_order_check(check: str, doc, context: dict) -> bool:
     if check == "has_delivery_date":
         return bool(doc.get("delivery_date"))
     if check == "has_project":
-        return bool(doc.get("project") or doc.get("custom_installation_project"))
+        return bool(doc.get("project"))
     if check == "has_submitted_delivery_note":
         return bool(context["has_submitted_delivery_note"])
     if check == "all_items_delivered":
@@ -605,6 +672,5 @@ def _run_sales_order_check(check: str, doc, context: dict) -> bool:
     return False
 
 
-def _db_has_column(doctype: str, fieldname: str) -> bool:
-    has_column = getattr(frappe.db, "has_column", None)
-    return bool(has_column and has_column(doctype, fieldname))
+def _has_field(doctype: str, fieldname: str) -> bool:
+    return bool(frappe.get_meta(doctype).get_field(fieldname))

@@ -50,9 +50,11 @@ def build_advance_invoice_payload(
     cost_center: str | None = None,
     uom: str | None = None,
     taxes_and_charges: str | None = None,
+    sales_order: str | None = None,
 ) -> dict:
     frappe.has_permission("Sales Invoice", "create", throw=True)
     source = _coerce_dict(option)
+    resolved_sales_order = (source.get("sales_order") or sales_order or "").strip()
     available_amount = flt(source.get("available_amount"))
     invoice_amount_ttc = flt(amount if amount not in (None, "") else available_amount)
     if invoice_amount_ttc <= 0:
@@ -70,13 +72,14 @@ def build_advance_invoice_payload(
         uom=uom,
         description=source.get("description") or designation,
         amount_ttc=invoice_amount_ttc,
+        sales_order=resolved_sales_order,
     )
     return {
         "row": row,
         "header": {
             "custom_invoice_mode": "Advance",
             "custom_advance_payment_entry": source.get("payment_entry") or "",
-            "custom_advance_sales_order": source.get("sales_order") or "",
+            "custom_advance_sales_order": resolved_sales_order,
             "custom_advance_payment_schedule_row": source.get("payment_schedule_row") or "",
         },
     }
@@ -90,6 +93,7 @@ def build_custom_invoice_payload(
     description: str | None = None,
     cost_center: str | None = None,
     uom: str | None = None,
+    sales_order: str | None = None,
 ) -> dict:
     frappe.has_permission("Sales Invoice", "create", throw=True)
     item_name = (item_name or "").strip()
@@ -100,6 +104,7 @@ def build_custom_invoice_payload(
     income_account = (income_account or "").strip()
     if not income_account:
         frappe.throw(_("Income Account is required."))
+    resolved_sales_order = (sales_order or "").strip()
     return {
         "row": _text_invoice_row(
             item_name,
@@ -108,11 +113,12 @@ def build_custom_invoice_payload(
             cost_center=cost_center,
             uom=uom,
             description=description or item_name,
+            sales_order=resolved_sales_order,
         ),
         "header": {
             "custom_invoice_mode": "Custom",
             "custom_advance_payment_entry": "",
-            "custom_advance_sales_order": "",
+            "custom_advance_sales_order": resolved_sales_order,
             "custom_advance_payment_schedule_row": "",
         },
     }
@@ -241,6 +247,7 @@ def _text_invoice_row(
     uom: str | None = None,
     description: str | None = None,
     amount_ttc: float | None = None,
+    sales_order: str | None = None,
 ) -> dict:
     amount = flt(amount)
     amount_ttc = flt(amount_ttc if amount_ttc not in (None, "") else amount)
@@ -254,6 +261,7 @@ def _text_invoice_row(
         "uom": (uom or _default_uom() or "").strip(),
         "income_account": income_account or "",
         "cost_center": cost_center or "",
+        "sales_order": (sales_order or "").strip(),
         "allow_zero_valuation_rate": 1,
         "custom_pu_ttc": amount_ttc,
         "custom_pt_ttc": amount_ttc,

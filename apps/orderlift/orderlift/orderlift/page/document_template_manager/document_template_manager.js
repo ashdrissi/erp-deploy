@@ -194,10 +194,9 @@
     function confirmDeleteAnnex(page, templateName) {
         const template = (STATE.annexes || []).find((row) => row.name === templateName);
         if (!template) return;
-        confirmDelete(template.template_name, __("This permanently deletes the template and every saved annex document created from it."), async () => {
-            const res = await frappe.call({ method: "orderlift.document_templates.delete_template", args: { name: template.name }, freeze: true, freeze_message: __("Deleting template and saved annex documents...") });
-            const annexCount = Number((res.message || {}).annex_count || 0);
-            frappe.show_alert({ message: __("Template deleted ({0} annex documents removed)", [annexCount]), indicator: "green" });
+        confirmDelete(template.template_name, __("Templates with historical annex documents cannot be deleted."), async () => {
+            await frappe.call({ method: "orderlift.document_templates.delete_template", args: { name: template.name }, freeze: true });
+            frappe.show_alert({ message: __("Template deleted"), indicator: "green" });
             load(page);
         });
     }

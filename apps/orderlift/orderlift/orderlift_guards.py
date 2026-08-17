@@ -76,11 +76,12 @@ def has_annex_document_permission(
 
 def annex_document_query(user=None):
     user = user or frappe.session.user
-    if user_can_access_all_companies(user):
+    if user == "Administrator":
         return None
-    if not _has_field("Orderlift Annex Document", "company"):
-        return None
-    return _company_query("Orderlift Annex Document", "company", user)
+    # Dynamic source permissions cannot be represented safely in one SQL list
+    # condition. Annexes are exposed through their permission-checked parent
+    # workspaces instead of the standalone list for business users.
+    return "`tabOrderlift Annex Document`.name is null"
 
 
 # ---------------------------------------------------------------------------

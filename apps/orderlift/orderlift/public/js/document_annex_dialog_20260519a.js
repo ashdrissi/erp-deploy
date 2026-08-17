@@ -1,22 +1,40 @@
 (function () {
-    const SUPPORTED_DOCTYPES = ["Opportunity", "Project", "Quotation", "Sales Order", "Forecast Load Plan"];
+    const SUPPORTED_DOCTYPES = ["Opportunity", "Project", "Quotation", "Sales Order", "Forecast Load Plan", "Sales Order Technical List Revision"];
+    const WORKSPACE_DOCTYPES = new Set(["Project", "Quotation", "Sales Order", "Sales Order Technical List Revision"]);
+    const WORKSPACE_JS = "/assets/orderlift/js/fiches_annexes_workspace_20260816a.js";
+    const WORKSPACE_CSS = "/assets/orderlift/css/fiches_annexes_workspace_20260816a.css";
+    let workspacePromise;
 
     SUPPORTED_DOCTYPES.forEach((doctype) => {
         frappe.ui.form.on(doctype, {
             refresh(frm) {
                 if (!frm || frm.is_new()) return;
-                frm.add_custom_button(__("Fiches annexes"), () => openAnnexDialog(frm));
+                if (!WORKSPACE_DOCTYPES.has(doctype)) {
+                    frm.add_custom_button(__("Fiches annexes"), () => openAnnexDialog(frm));
+                }
+                if (WORKSPACE_DOCTYPES.has(doctype)) mountAnnexWorkspace(frm);
             },
         });
     });
 
-    async function openAnnexDialog(frm) {
+    async function openAnnexDialog(request, options) {
+        const normalized = normalizeRequest(request, options);
+        const frm = normalized.frm;
+        const dialogOptions = normalized.options;
+        if (!frm.doctype || !frm.doc.name) {
+            frappe.msgprint({ message: __("Save the document before opening its annexes."), indicator: "orange" });
+            return;
+        }
         injectStyles();
         let bundle;
         try {
             const res = await frappe.call({
                 method: "orderlift.document_templates.get_annex_bundle",
-                args: { reference_doctype: frm.doctype, reference_name: frm.doc.name },
+                args: {
+                    reference_doctype: frm.doctype,
+                    reference_name: frm.doc.name,
+                    annex_name: dialogOptions.annexName || "",
+                },
                 freeze: true,
                 freeze_message: __("Chargement des fiches annexes..."),
             });
@@ -27,16 +45,100 @@
             return;
         }
 
-        const entries = bundle.templates || [];
-        const state = { active: entries[0] ? entries[0].template.name : "" };
+        let entries = bundle.templates || [];
+        const focusedEntry = entries.find((entry) => {
+            if (dialogOptions.annexName) return annexName(entry) === dialogOptions.annexName;
+            return dialogOptions.templateName && entry.template && entry.template.name === dialogOptions.templateName;
+        });
+        if ((dialogOptions.annexName || dialogOptions.templateName) && !focusedEntry) {
+            frappe.msgprint({ message: __("The requested annex is not available on this document."), indicator: "orange" });
+            return;
+        }
+        if (focusedEntry && dialogOptions.onlyAnnex) entries = [focusedEntry];
+        const state = {
+            active: focusedEntry ? focusedEntry.template.name : (entries[0] ? entries[0].template.name : ""),
+            readOnly: Boolean(dialogOptions.readOnly || bundle.read_only),
+            onChange: dialogOptions.onChange,
+        };
         const dialog = new frappe.ui.Dialog({
-            title: __("Fiches annexes"),
+            title: dialogOptions.title || __("Fiches annexes"),
             size: "extra-large",
             fields: [{ fieldtype: "HTML", fieldname: "body" }],
         });
         dialog.show();
         dialog.$wrapper && dialog.$wrapper.addClass("ol-annex-dialog-modal");
         renderDialog(frm, dialog, entries, state);
+    }
+
+    window.orderliftOpenAnnexDialog = openAnnexDialog;
+
+    function normalizeRequest(request, options) {
+        const source = request || {};
+        const requestOptions = source.options || {};
+        const explicitOptions = options || {};
+        const pick = (...keys) => {
+            for (const values of [explicitOptions, requestOptions, source]) {
+                for (const key of keys) {
+                    if (values[key] !== undefined && values[key] !== null) return values[key];
+                }
+            }
+            return undefined;
+        };
+        const mergedOptions = {
+            ...requestOptions,
+            ...explicitOptions,
+            annexName: pick("annexName", "annex_name", "focusAnnex", "focus_annex") || "",
+            templateName: pick("templateName", "template_name", "focusTemplate", "focus_template") || "",
+            onlyAnnex: Boolean(pick("onlyAnnex", "only_annex")),
+            readOnly: pick("readOnly", "read_only"),
+            title: pick("title") || "",
+            onChange: pick("onChange", "on_change"),
+        };
+        const candidate = source.frm || source;
+        const frm = candidate.doctype && candidate.doc
+            ? candidate
+            : { doctype: candidate.doctype || "", doc: candidate.doc || { name: "" }, is_new: () => false };
+        return { frm, options: mergedOptions };
+    }
+
+    function annexName(entry) {
+        if (!entry) return "";
+        if (typeof entry.annex === "string") return entry.annex;
+        return (entry.annex && entry.annex.name) || entry.annex_name || "";
+    }
+
+    function mountAnnexWorkspace(frm) {
+        loadAnnexWorkspace().then((workspace) => workspace && workspace.mount(frm)).catch((error) => {
+            console.error("Unable to initialize the annex workspace", error);
+        });
+    }
+
+    function loadAnnexWorkspace() {
+        if (window.orderliftAnnexWorkspace) return Promise.resolve(window.orderliftAnnexWorkspace);
+        if (workspacePromise) return workspacePromise;
+        if (!document.querySelector(`link[href="${WORKSPACE_CSS}"]`)) {
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = WORKSPACE_CSS;
+            document.head.appendChild(link);
+        }
+        workspacePromise = new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[src="${WORKSPACE_JS}"]`);
+            const script = existing || document.createElement("script");
+            const complete = () => resolve(window.orderliftAnnexWorkspace);
+            script.addEventListener("load", complete, { once: true });
+            script.addEventListener("error", () => reject(new Error("Annex workspace asset failed to load")), { once: true });
+            if (!existing) {
+                script.src = WORKSPACE_JS;
+                document.head.appendChild(script);
+            } else if (window.orderliftAnnexWorkspace) {
+                complete();
+            }
+        }).catch((error) => {
+            workspacePromise = null;
+            throw error;
+        });
+        return workspacePromise;
     }
 
     function renderDialog(frm, dialog, entries, state) {
@@ -58,11 +160,14 @@
                     ${entries.map((entry) => templateButton(entry, state.active)).join("")}
                 </aside>
                 <section class="ol-annex-dialog-panel">
-                    ${panelMarkup(activeEntry)}
+                    ${panelMarkup(activeEntry, state.readOnly)}
                 </section>
             </div>
         `);
         bindFileControls(body, frm);
+        if (state.readOnly) {
+            body.find("[data-annex-status],[data-annex-field],[data-annex-upload],[data-annex-clear-file]").prop("disabled", true);
+        }
 
         body.find("[data-annex-template-switch]").on("click", function () {
             state.active = $(this).data("annex-template-switch");
@@ -114,7 +219,7 @@
         const isActive = template.name === active;
         const fieldCount = Number((template.fields || []).filter((field) => !["Section Break", "Column Break", "HTML"].includes(field.fieldtype)).length);
         return `
-            <button type="button" class="ol-annex-dialog-item ${isActive ? "active" : ""}" data-annex-template-switch="${esc(template.name)}">
+            <button type="button" class="ol-annex-dialog-item ${isActive ? "active" : ""}" data-annex-template-switch="${esc(template.name)}" aria-pressed="${isActive ? "true" : "false"}">
                 <span class="ol-annex-dialog-item-kicker">${esc(__("Fiche annexe"))}</span>
                 <strong>${esc(__(template.template_name))}</strong>
                 <span class="ol-annex-dialog-item-meta"><em>${esc(__(annex.status || getDefaultStatus(template)))}</em><small>${fieldCount} ${esc(__("champs"))}</small></span>
@@ -122,7 +227,7 @@
         `;
     }
 
-    function panelMarkup(entry) {
+    function panelMarkup(entry, readOnly) {
         const template = entry.template;
         const annex = entry.annex || { values: {} };
         return `
@@ -130,11 +235,11 @@
                 <div>
                     <span>${esc(__("Fiche annexe"))}</span>
                     <h3>${esc(__(template.template_name))}</h3>
-                    <p>${esc(__("Complétez les informations liées à ce document, puis enregistrez ou imprimez la fiche."))}</p>
+                    <p>${esc(__(readOnly ? "Cette fiche est figée ou affichée depuis une phase précédente. Elle est en lecture seule." : "Complétez les informations liées à ce document, puis enregistrez ou imprimez la fiche."))}</p>
                 </div>
                 <div class="ol-annex-dialog-actions">
                     <label><span>${esc(__("Statut"))}</span><select data-annex-status="${esc(template.name)}">${statusOptions(template, annex.status)}</select></label>
-                    <button type="button" class="btn btn-sm btn-default" data-annex-save="${esc(template.name)}">${esc(__("Enregistrer"))}</button>
+                    ${readOnly ? "" : `<button type="button" class="btn btn-sm btn-default" data-annex-save="${esc(template.name)}">${esc(__("Enregistrer"))}</button>`}
                     <button type="button" class="btn btn-sm btn-primary" data-annex-print="${esc(template.name)}" ${annex.name ? "" : "disabled"}>${esc(__("Imprimer"))}</button>
                 </div>
             </div>
@@ -159,7 +264,8 @@
     function fieldMarkup(template, field, values) {
         if (field.fieldtype === "HTML") return `<div class="ol-annex-dialog-html">${field.options || field.default_value || ""}</div>`;
 
-        const value = values[field.field_key] != null ? values[field.field_key] : (field.default_value || "");
+        const rawValue = values[field.field_key] != null ? values[field.field_key] : (field.default_value || "");
+        const value = controlValue(field.fieldtype, rawValue);
         const common = `data-annex-template="${esc(template.name)}" data-annex-field="${esc(field.field_key)}"`;
         const required = field.is_required ? `<em>${esc(__("Obligatoire"))}</em>` : "";
         let control = "";
@@ -238,11 +344,18 @@
         const body = dialog.fields_dict.body.$wrapper;
         const values = {};
         let missing = "";
+        const status = body.find(`[data-annex-status="${cssEscape(templateName)}"]`).val() || getDefaultStatus(entry.template);
+        const selectedStatus = (entry.template.statuses || []).find((row) => row.status_label === status);
+        const completing = Boolean(selectedStatus && selectedStatus.is_complete);
         (entry.template.fields || []).forEach((field) => {
             if (["Section Break", "Column Break", "HTML"].includes(field.fieldtype)) return;
             const control = body.find(`[data-annex-template="${cssEscape(templateName)}"][data-annex-field="${cssEscape(field.field_key)}"]`);
-            const value = field.fieldtype === "Check" ? (control.is(":checked") ? "1" : "0") : String(control.val() || "").trim();
-            if (field.is_required && !value) missing = missing || field.field_label;
+            let value = field.fieldtype === "Check" ? (control.is(":checked") ? "1" : "0") : String(control.val() || "").trim();
+            if (field.fieldtype === "Datetime") value = value.replace("T", " ");
+            const requiredMissing = field.required_value_mode === "Checked"
+                ? !["1", "true", "True"].includes(value)
+                : !value;
+            if (completing && field.is_required && requiredMissing) missing = missing || field.field_label;
             values[field.field_key] = value;
         });
         if (missing) {
@@ -250,10 +363,18 @@
             return;
         }
 
-        const status = body.find(`[data-annex-status="${cssEscape(templateName)}"]`).val() || getDefaultStatus(entry.template);
         const res = await frappe.call({
             method: "orderlift.document_templates.save_annex_document",
-            args: { reference_doctype: frm.doctype, reference_name: frm.doc.name, template: templateName, status, values: JSON.stringify(values) },
+            args: {
+                reference_doctype: frm.doctype,
+                reference_name: frm.doc.name,
+                template: templateName,
+                status,
+                values: JSON.stringify(values),
+                annex_name: annexName(entry),
+                expected_modified: entry.annex && entry.annex.modified,
+                expect_absent: annexName(entry) ? 0 : 1,
+            },
             freeze: true,
             freeze_message: __("Enregistrement de la fiche annexe..."),
         });
@@ -261,12 +382,23 @@
             entry.annex = res.message.annex;
             frappe.show_alert({ message: __("Fiche annexe enregistrée"), indicator: "green" });
             renderDialog(frm, dialog, entries, state);
+            if (typeof state.onChange === "function") {
+                Promise.resolve(state.onChange(res.message.annex)).catch((error) => {
+                    console.error("Unable to refresh the annex workspace", error);
+                });
+            }
         }
     }
 
     function cssEscape(value) {
         if (window.CSS && CSS.escape) return CSS.escape(String(value));
         return String(value).replace(/"/g, '\\"');
+    }
+
+    function controlValue(fieldtype, value) {
+        const text = value == null ? "" : String(value);
+        if (fieldtype === "Datetime") return text.replace(" ", "T");
+        return text;
     }
 
     function esc(value) { return frappe.utils.escape_html(value == null ? "" : String(value)); }

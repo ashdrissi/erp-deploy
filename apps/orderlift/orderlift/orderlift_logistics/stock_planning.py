@@ -10,6 +10,10 @@ from frappe.utils import add_days, cint, flt, getdate, now_datetime, nowdate
 from orderlift.orderlift_logistics.doctype.stock_planning_settings.stock_planning_settings import (
     get_company_settings,
 )
+from orderlift.orderlift_logistics.effective_demand import (
+    get_effective_demand_rows,
+    source_key,
+)
 
 
 STATUS_NOT_DUE = "Not Due"
@@ -53,27 +57,26 @@ def validate_sales_order_stock_dates(doc, method=None) -> None:
 
 
 def sync_sales_order_demand_plans(doc, method=None) -> list[str]:
-    """Create one system-managed demand plan per submitted stock Sales Order row."""
+    """Create one system-managed demand plan per effective demand row."""
     if not doc or cint(doc.get("docstatus")) != 1:
         return []
     settings = get_company_settings(doc.get("company"))
     if not settings or not cint(settings.enabled):
         return []
 
-    stock_items = _stock_item_codes(row.get("item_code") for row in doc.get("items") or [])
-    names = []
-    for row in doc.get("items") or []:
-        if row.get("item_code") not in stock_items:
-            continue
-        delivery_date = row.get("delivery_date") or doc.get("delivery_date")
-        if not delivery_date:
-            continue
-        plan = _get_or_new_plan(row.name)
-        _apply_source_values(plan, doc, row, settings)
-        plan.flags.ignore_permissions = True
-        plan.save(ignore_permissions=True)
-        names.append(plan.name)
+    names = _sync_effective_demand_plans(doc.get("company"), settings, sales_orders=[doc.get("name")])
 
+    _enqueue_company_recalculation(doc.get("company"))
+    return names
+
+
+def sync_technical_revision_demand_plans(doc, method=None) -> list[str]:
+    if not doc or not doc.get("sales_order") or not doc.get("company"):
+        return []
+    settings = get_company_settings(doc.get("company"))
+    if not settings or not cint(settings.enabled):
+        return []
+    names = _sync_effective_demand_plans(doc.get("company"), settings, sales_orders=[doc.get("sales_order")])
     _enqueue_company_recalculation(doc.get("company"))
     return names
 
@@ -151,12 +154,12 @@ def recalculate_company(company: str, *, process_actions: bool = True) -> dict:
     if not settings or not cint(settings.enabled):
         return {"company": company, "enabled": False, "plans": 0, "actions": []}
 
-    _sync_missing_submitted_orders(company, settings)
+    _sync_effective_demand_plans(company, settings)
     plans = _open_plan_docs(company)
     if not plans:
         return {"company": company, "enabled": True, "plans": 0, "actions": []}
 
-    source_rows = _sales_order_rows(plans)
+    source_rows = _effective_source_rows(plans)
     pick_coverage = _pick_list_coverage(source_rows)
     logistics_dates = _forecast_plan_dates(company)
     incoming_by_item = _incoming_supply(company, logistics_dates)
@@ -166,9 +169,10 @@ def recalculate_company(company: str, *, process_actions: bool = True) -> dict:
 
     grouped = defaultdict(list)
     for plan in plans:
-        source = source_rows.get(plan.sales_order_item)
+        plan_key = _plan_source_key(plan)
+        source = source_rows.get(plan_key)
         if not source or cint(source.get("docstatus")) != 1:
-            _mark_cancelled(plan, _("Source Sales Order is no longer submitted."))
+            _mark_cancelled(plan, _("Source demand is no longer active."))
             continue
         _refresh_plan_source(plan, source, settings)
         grouped[plan.item_code].append(plan)
@@ -179,8 +183,8 @@ def recalculate_company(company: str, *, process_actions: bool = True) -> dict:
         physical_pool = flt(stock_by_item.get(item_code, {}).get("available_qty"))
 
         for plan in item_plans:
-            source = source_rows[plan.sales_order_item]
-            coverage = pick_coverage.get(plan.sales_order_item, {})
+            source = source_rows[_plan_source_key(plan)]
+            coverage = pick_coverage.get(plan.sales_order_item, {}) if plan.sales_order_item else {}
             open_qty = _open_stock_qty(source)
             pick_list_qty = min(flt(coverage.get("pick_list_qty")), open_qty)
             reserved_qty = min(flt(coverage.get("reserved_qty")), open_qty)
@@ -322,25 +326,40 @@ def after_migrate() -> None:
         return
     for company in frappe.get_all("Company", pluck="name", limit_page_length=0):
         get_company_settings(company, create_default=True)
+    if frappe.db.exists("DocType", "Stock Demand Plan") and frappe.get_meta("Stock Demand Plan").get_field("demand_source_key"):
+        frappe.db.sql(
+            """
+            UPDATE `tabStock Demand Plan`
+            SET demand_source_key = CONCAT('SOI:', sales_order_item), source_type = 'Sales Order'
+            WHERE COALESCE(demand_source_key, '') = '' AND COALESCE(sales_order_item, '') != ''
+            """
+        )
 
 
-def _get_or_new_plan(sales_order_item: str):
-    name = frappe.db.get_value("Stock Demand Plan", {"sales_order_item": sales_order_item}, "name")
+def _get_or_new_plan(demand_source_key: str, sales_order_item: str = ""):
+    name = frappe.db.get_value("Stock Demand Plan", {"demand_source_key": demand_source_key}, "name")
+    if not name and sales_order_item:
+        name = frappe.db.get_value("Stock Demand Plan", {"sales_order_item": sales_order_item}, "name")
     return frappe.get_doc("Stock Demand Plan", name) if name else frappe.new_doc("Stock Demand Plan")
 
 
-def _apply_source_values(plan, sales_order, row, settings) -> None:
+def _apply_effective_source_values(plan, row, settings) -> None:
     item_lead_time = cint(frappe.get_cached_value("Item", row.item_code, "lead_time_days"))
     procurement_delay = item_lead_time or cint(settings.default_procurement_delay_days)
-    delivery_date = getdate(row.delivery_date or sales_order.delivery_date)
+    delivery_date = getdate(row.delivery_date)
     plan.update(
         {
-            "company": sales_order.company,
-            "sales_order": sales_order.name,
-            "sales_order_item": row.name,
-            "customer": sales_order.customer,
+            "source_type": row.get("source_type") or "Sales Order",
+            "demand_source_key": source_key(row),
+            "company": row.company if row.get("company") else plan.company,
+            "sales_order": row.sales_order,
+            "sales_order_item": row.sales_order_item or "",
+            "technical_list": row.get("technical_list") or "",
+            "technical_revision": row.get("technical_revision") or "",
+            "technical_revision_item": row.get("technical_revision_item") or "",
+            "customer": row.customer,
             "item_code": row.item_code,
-            "warehouse": row.warehouse or sales_order.set_warehouse,
+            "warehouse": row.warehouse or "",
             "stock_uom": row.stock_uom,
             "required_qty": flt(row.stock_qty) or flt(row.qty) * (flt(row.conversion_factor) or 1),
             "delivery_date": delivery_date,
@@ -380,7 +399,63 @@ def _refresh_plan_source(plan, source, settings) -> None:
     plan.latest_safe_incoming_date = add_days(delivery_date, -cint(settings.incoming_safety_days))
 
 
+def _sync_effective_demand_plans(company: str, settings, sales_orders=None) -> list[str]:
+    rows = get_effective_demand_rows(company, sales_orders=sales_orders)
+    sales_order_item_counts = defaultdict(int)
+    for row in rows:
+        if row.get("sales_order_item"):
+            sales_order_item_counts[row.get("sales_order_item")] += 1
+    active_keys = set()
+    names = []
+    for row in rows:
+        if not row.get("delivery_date"):
+            continue
+        key = source_key(row)
+        if not key or key.endswith(":"):
+            continue
+        active_keys.add(key)
+        fallback_sales_order_item = ""
+        if row.get("source_type") == "Sales Order" or sales_order_item_counts[row.get("sales_order_item")] == 1:
+            fallback_sales_order_item = row.get("sales_order_item") or ""
+        plan = _get_or_new_plan(key, fallback_sales_order_item)
+        _apply_effective_source_values(plan, row, settings)
+        plan.flags.ignore_permissions = True
+        plan.save(ignore_permissions=True)
+        names.append(plan.name)
+
+    stale_filters = {"company": company, "source_cancelled": 0}
+    if sales_orders:
+        stale_filters["sales_order"] = ["in", list(sales_orders)]
+    existing = frappe.get_all(
+        "Stock Demand Plan",
+        filters=stale_filters,
+        fields=["name", "demand_source_key", "sales_order_item"],
+        limit_page_length=0,
+    )
+    for plan in existing:
+        key = _plan_source_key(plan)
+        if key and key not in active_keys:
+            frappe.db.set_value(
+                "Stock Demand Plan",
+                plan.name,
+                {
+                    "source_cancelled": 1,
+                    "planning_status": STATUS_CANCELLED,
+                    "next_action_date": None,
+                    "risk_message": _("Source demand is no longer active."),
+                    "last_calculated_on": now_datetime(),
+                },
+                update_modified=False,
+            )
+    return names
+
+
 def _sync_missing_submitted_orders(company: str, settings) -> None:
+    _sync_effective_demand_plans(company, settings)
+    return
+
+
+def _legacy_sync_missing_submitted_orders(company: str, settings) -> None:
     rows = frappe.db.sql(
         """
         SELECT soi.name, soi.parent, soi.item_code, soi.qty, soi.stock_qty, soi.stock_uom,
@@ -442,31 +517,22 @@ def _open_plan_docs(company: str) -> list:
     return [frappe.get_doc("Stock Demand Plan", name) for name in names]
 
 
-def _sales_order_rows(plans: list) -> dict:
-    names = [plan.sales_order_item for plan in plans if plan.sales_order_item]
-    if not names:
-        return {}
-    rows = frappe.db.sql(
-        """
-        SELECT soi.name, soi.parent, soi.item_code, soi.qty, soi.stock_qty, soi.delivered_qty,
-               soi.stock_uom, soi.uom, soi.conversion_factor, soi.delivery_date, soi.warehouse,
-               soi.description, soi.item_name, so.docstatus, so.customer, so.company,
-               so.delivery_date AS parent_delivery_date, so.set_warehouse
-        FROM `tabSales Order Item` soi
-        INNER JOIN `tabSales Order` so ON so.name = soi.parent
-        WHERE soi.name IN %(names)s
-        """,
-        {"names": tuple(names)},
-        as_dict=True,
-    )
-    for row in rows:
-        row.delivery_date = row.delivery_date or row.parent_delivery_date
-        row.warehouse = row.warehouse or row.set_warehouse
-    return {row.name: row for row in rows}
+def _effective_source_rows(plans: list) -> dict:
+    sales_orders_by_company = defaultdict(set)
+    for plan in plans:
+        if plan.sales_order and plan.company:
+            sales_orders_by_company[plan.company].add(plan.sales_order)
+    rows = []
+    for company, sales_orders in sales_orders_by_company.items():
+        rows.extend(get_effective_demand_rows(company, sales_orders=sales_orders))
+    return {source_key(row): row for row in rows}
 
 
 def _pick_list_coverage(source_rows: dict) -> dict:
     if not source_rows:
+        return {}
+    sales_order_items = sorted({row.get("sales_order_item") for row in source_rows.values() if row.get("sales_order_item")})
+    if not sales_order_items:
         return {}
     rows = frappe.db.sql(
         """
@@ -481,7 +547,7 @@ def _pick_list_coverage(source_rows: dict) -> dict:
           AND pl.docstatus < 2
         GROUP BY pli.sales_order_item
         """,
-        {"items": tuple(source_rows)},
+        {"items": tuple(sales_order_items)},
         as_dict=True,
     )
     result = {row.sales_order_item: dict(row) for row in rows}
@@ -493,7 +559,7 @@ def _pick_list_coverage(source_rows: dict) -> dict:
         WHERE pli.sales_order_item IN %(items)s AND pl.docstatus < 2
         ORDER BY pl.creation DESC
         """,
-        {"items": tuple(source_rows)},
+        {"items": tuple(sales_order_items)},
         as_dict=True,
     )
     for row in latest:
@@ -730,7 +796,7 @@ def _plan_action(
 
 def _create_pick_list_for_plan(plan, source, stock_qty: float, *, submit: bool) -> dict | None:
     stock_qty = flt(stock_qty)
-    if stock_qty <= 0:
+    if stock_qty <= 0 or not plan.sales_order_item:
         return None
     conversion_factor = flt(source.get("conversion_factor")) or 1
     pick_list = frappe.new_doc("Pick List")
@@ -791,22 +857,25 @@ def _cap_pick_list_qty(pick_list, sales_order_item: str, target_stock_qty: float
 
 
 def _create_material_request_for_plan(plan, source, stock_qty: float, *, submit: bool) -> dict | None:
-    existing = frappe.db.get_value(
-        "Material Request Item",
-        {
-            "sales_order_item": plan.sales_order_item,
-            "docstatus": ["<", 2],
-        },
-        "parent",
-    )
-    if existing:
+    if plan.sales_order_item:
+        existing = frappe.db.get_value(
+            "Material Request Item",
+            {
+                "sales_order_item": plan.sales_order_item,
+                "docstatus": ["<", 2],
+            },
+            "parent",
+        )
+        if existing:
+            return None
+    elif plan.latest_material_request:
         return None
     conversion_factor = flt(source.get("conversion_factor")) or 1
     material_request = frappe.new_doc("Material Request")
     material_request.company = plan.company
     material_request.material_request_type = "Purchase"
     material_request.transaction_date = nowdate()
-    material_request.schedule_date = plan.delivery_date
+    material_request.schedule_date = _safe_schedule_date(plan.delivery_date)
     material_request.append(
         "items",
         {
@@ -815,10 +884,10 @@ def _create_material_request_for_plan(plan, source, stock_qty: float, *, submit:
             "uom": source.get("uom") or plan.stock_uom,
             "stock_uom": plan.stock_uom,
             "conversion_factor": conversion_factor,
-            "schedule_date": plan.delivery_date,
+            "schedule_date": _safe_schedule_date(plan.delivery_date),
             "warehouse": source.get("warehouse"),
             "sales_order": plan.sales_order,
-            "sales_order_item": plan.sales_order_item,
+            "sales_order_item": plan.sales_order_item or None,
         },
     )
     material_request.insert(ignore_permissions=True)
@@ -846,9 +915,25 @@ def _stock_item_codes(item_codes) -> set[str]:
     )
 
 
+def _safe_schedule_date(value):
+    if not value:
+        return getdate(nowdate())
+    return max(getdate(value), getdate(nowdate()))
+
+
 def _open_stock_qty(source) -> float:
+    if source.get("demand_source_key"):
+        return max(flt(source.get("stock_qty")), 0)
     conversion_factor = flt(source.get("conversion_factor")) or 1
     return max((flt(source.get("qty")) - flt(source.get("delivered_qty"))) * conversion_factor, 0)
+
+
+def _plan_source_key(plan) -> str:
+    key = (plan.get("demand_source_key") or "").strip()
+    if key:
+        return key
+    sales_order_item = (plan.get("sales_order_item") or "").strip()
+    return f"SOI:{sales_order_item}" if sales_order_item else ""
 
 
 def _demand_priority(plan) -> tuple:

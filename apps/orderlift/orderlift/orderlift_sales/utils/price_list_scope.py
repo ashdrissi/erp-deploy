@@ -2,7 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from orderlift.reference_access import require_reference_use
+from orderlift.reference_access import require_reference_select, require_reference_use
 
 from orderlift.menu_access import resolve_current_company
 from orderlift.role_capabilities import (
@@ -97,14 +97,21 @@ def validate_price_list_scope(price_list_name, kind=None, required=False, compan
             frappe.throw(_("Price List is required."))
         return ""
 
-    require_reference_use(
-        "Price List",
-        price_list_name,
-        filters={"enabled": 1},
-        label="Price List",
-    )
+    explicit_company = (company or "").strip()
+    company = (explicit_company or current_company() or "").strip()
+    if explicit_company:
+        require_reference_select("Price List")
+    else:
+        require_reference_use(
+            "Price List",
+            price_list_name,
+            filters={"enabled": 1},
+            label="Price List",
+        )
 
     fields = ["name"]
+    if _has_column("Price List", "enabled"):
+        fields.append("enabled")
     if _has_column("Price List", PRICE_LIST_TYPE_FIELD):
         fields.append(PRICE_LIST_TYPE_FIELD)
     if kind == "buying" and _has_column("Price List", "buying"):
@@ -117,6 +124,8 @@ def validate_price_list_scope(price_list_name, kind=None, required=False, compan
     values = frappe.db.get_value("Price List", price_list_name, fields, as_dict=True)
     if not values:
         frappe.throw(_("Price List {0} does not exist.").format(price_list_name))
+    if "enabled" in fields and cint(values.get("enabled")) != 1:
+        _throw_price_list_unavailable()
 
     if kind == "buying" and "buying" in fields and cint(values.get("buying")) != 1:
         frappe.throw(_("Price List {0} is not a buying price list.").format(price_list_name))
@@ -127,10 +136,16 @@ def validate_price_list_scope(price_list_name, kind=None, required=False, compan
     if expected_type and actual_type != expected_type:
         frappe.throw(_("Price List {0} is not a {1} price list.").format(price_list_name, expected_type))
 
-    company = (company or current_company() or "").strip()
     if company and "custom_company" in fields and (values.get("custom_company") or "").strip() != company:
         frappe.throw(_("Price List {0} does not belong to company {1}.").format(price_list_name, company))
     return price_list_name
+
+
+def _throw_price_list_unavailable():
+    frappe.throw(
+        _("The selected {0} is unavailable or not permitted.").format(_("Price List")),
+        getattr(frappe, "PermissionError", Exception),
+    )
 
 
 def apply_price_list_company(doc, company=None):

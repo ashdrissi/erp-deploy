@@ -172,7 +172,7 @@ def _related_docs(opportunity: str) -> list[dict]:
         if sales_order:
             sales_order_name = sales_order[0][0]
             docs.append({"doctype": "Sales Order", "name": sales_order_name, "label": "Sales Order"})
-            project = frappe.db.get_value("Sales Order", sales_order_name, "custom_installation_project")
+            project = frappe.db.get_value("Sales Order", sales_order_name, "project")
             if project:
                 docs.append({"doctype": "Project", "name": project, "label": "Project"})
             material_request = frappe.db.sql(

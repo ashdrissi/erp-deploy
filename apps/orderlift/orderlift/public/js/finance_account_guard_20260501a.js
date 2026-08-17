@@ -17,7 +17,13 @@
             },
         },
         "Purchase Invoice": {
-            parent: ["credit_to", "party_account_currency", "is_opening", "against_expense_account"],
+            parent: [
+                "credit_to",
+                "cash_bank_account",
+                "party_account_currency",
+                "is_opening",
+                "against_expense_account",
+            ],
             tables: {
                 items: ["expense_account", "cost_center"],
                 taxes: ["account_head", "cost_center"],

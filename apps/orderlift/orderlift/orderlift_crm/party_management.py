@@ -10,7 +10,25 @@ from orderlift.menu_access import get_allowed_companies
 from orderlift.role_capabilities import CAPABILITY_PARTY_COMPANY_ACCESS_APPROVAL, user_has_capability
 
 
-PARTY_DOCTYPES = {"Lead", "Prospect", "Customer"}
+PARTY_DOCTYPES = {"Lead", "Prospect", "Customer", "Supplier"}
+PARTY_NAME_FIELDS = {
+    "Customer": ("customer_name",),
+    "Lead": ("company_name", "lead_name"),
+    "Prospect": ("company_name",),
+    "Supplier": ("supplier_name",),
+}
+PARTY_TAX_ID_FIELDS = {
+    "Customer": "tax_id",
+    "Lead": "custom_tax_id",
+    "Prospect": "custom_tax_id",
+    "Supplier": "tax_id",
+}
+DUPLICATE_PARTY_GROUPS = {
+    "Customer": ("Customer", "Lead", "Prospect"),
+    "Lead": ("Customer", "Lead", "Prospect"),
+    "Prospect": ("Customer", "Lead", "Prospect"),
+    "Supplier": ("Supplier",),
+}
 READ_PERMISSION_TYPES = {None, "read", "select", "report", "print", "email"}
 
 
@@ -20,18 +38,31 @@ def prepare_party(doc, method=None) -> None:
     _validate_internal_companies(doc)
     _sync_primary_company(doc)
     _validate_unique_tax_id(doc)
+    _validate_unique_party_name(doc)
 
 
 def party_tax_id(doc) -> str:
-    fieldname = "tax_id" if getattr(doc, "doctype", None) == "Customer" else "custom_tax_id"
+    if not getattr(doc, "meta", None):
+        return ""
+    fieldname = PARTY_TAX_ID_FIELDS.get(getattr(doc, "doctype", None), "")
+    if not fieldname:
+        return ""
+    if not doc.meta.get_field(fieldname):
+        return ""
     return (doc.get(fieldname) or "").strip()
 
 
 def party_has_company_access(party_type: str, party_name: str, company: str) -> bool:
     if party_type not in PARTY_DOCTYPES or not party_name or not company:
         return False
-    primary = frappe.db.get_value(party_type, party_name, "custom_company") or ""
-    if primary == company:
+    internal_field = _internal_party_field(party_type)
+    fields = ["custom_company", "represents_company"]
+    if internal_field:
+        fields.append(internal_field)
+    values = frappe.db.get_value(party_type, party_name, fields, as_dict=True) or {}
+    primary = values.get("custom_company") or ""
+    represents_self = internal_field and values.get(internal_field) and values.get("represents_company") == company
+    if primary == company and not represents_self:
         return True
     if not frappe.db.exists("DocType", "Party Internal Company Access"):
         return False
@@ -150,13 +181,13 @@ def save_party_contact(party_type: str, party_name: str, values: str | dict) -> 
 @frappe.whitelist()
 def check_party_duplicates(party_type: str, values: str | dict, party_name: str | None = None) -> list[dict]:
     if party_type not in PARTY_DOCTYPES:
-        frappe.throw(_("Party Type must be Lead, Prospect, or Customer."))
+        frappe.throw(_("Party Type must be Lead, Prospect, Customer, or Supplier."))
     values = frappe.parse_json(values) if isinstance(values, str) else (values or {})
     matches = []
     target = _normalized_identity(values)
     if not any(target.values()):
         return []
-    for candidate_type in ("Customer", "Lead", "Prospect"):
+    for candidate_type in _duplicate_party_types(party_type):
         for candidate in _candidate_parties(candidate_type):
             if candidate_type == party_type and candidate.name == party_name:
                 continue
@@ -179,11 +210,17 @@ def check_party_duplicates(party_type: str, values: str | dict, party_name: str 
 
 
 @frappe.whitelist()
-def request_duplicate_reuse(values: str | dict, requested_company: str, reason: str | None = None) -> dict:
+def request_duplicate_reuse(
+    values: str | dict,
+    requested_company: str,
+    reason: str | None = None,
+    party_type: str | None = None,
+) -> dict:
     values = frappe.parse_json(values) if isinstance(values, str) else (values or {})
     matches = []
     target = _normalized_identity(values)
-    for candidate_type in ("Customer", "Lead", "Prospect"):
+    candidate_types = _duplicate_party_types(party_type or "Customer")
+    for candidate_type in candidate_types:
         for candidate in _candidate_parties(candidate_type):
             score, _reasons = _duplicate_score(target, _normalized_identity(candidate))
             if score >= 70:
@@ -320,13 +357,55 @@ def _validate_unique_tax_id(doc) -> None:
     tax_id = party_tax_id(doc)
     if not tax_id:
         return
-    for party_type in ("Customer", "Lead", "Prospect"):
-        fieldname = "tax_id" if party_type == "Customer" else "custom_tax_id"
+    for party_type in _duplicate_party_types(doc.doctype):
+        fieldname = PARTY_TAX_ID_FIELDS[party_type]
         if not frappe.get_meta(party_type).get_field(fieldname):
             continue
         duplicate = frappe.db.get_value(party_type, {fieldname: tax_id}, "name")
         if duplicate and not (party_type == doc.doctype and duplicate == doc.name) and not _same_party_lineage(doc, party_type, duplicate):
             frappe.throw(_("ICE / Tax ID {0} already belongs to {1} {2}.").format(tax_id, party_type, duplicate))
+
+
+def _validate_unique_party_name(doc) -> None:
+    if getattr(doc.flags, "ignore_orderlift_party_duplicate_check", False):
+        return
+    target_name = _normalized_identity(doc).get("name")
+    if not target_name:
+        return
+    if not doc.is_new():
+        previous = frappe.db.get_value(
+            doc.doctype,
+            doc.name,
+            list(PARTY_NAME_FIELDS[doc.doctype]),
+            as_dict=True,
+        )
+        if previous and _normalized_identity(previous).get("name") == target_name:
+            return
+    for party_type in _duplicate_party_types(doc.doctype):
+        for candidate in _candidate_parties(party_type):
+            if party_type == doc.doctype and candidate.name == doc.name:
+                continue
+            if _same_party_lineage(doc, party_type, candidate.name):
+                continue
+            if _normalized_identity(candidate).get("name") != target_name:
+                continue
+            if frappe.has_permission(party_type, "read", doc=candidate.name):
+                frappe.throw(
+                    _("A {0} named {1} already exists ({2}). Open and reuse it instead of creating a duplicate.").format(
+                        party_type,
+                        _party_display_name(candidate, party_type),
+                        candidate.name,
+                    )
+                )
+            frappe.throw(
+                _("A party with this name already exists in another internal company. Request access instead of creating a duplicate.")
+            )
+
+
+def _duplicate_party_types(party_type: str) -> tuple[str, ...]:
+    if party_type not in DUPLICATE_PARTY_GROUPS:
+        frappe.throw(_("Party Type must be Lead, Prospect, Customer, or Supplier."))
+    return DUPLICATE_PARTY_GROUPS[party_type]
 
 
 def _same_party_lineage(doc, other_type: str, other_name: str) -> bool:
@@ -343,6 +422,21 @@ def _same_party_lineage(doc, other_type: str, other_name: str) -> bool:
 
 def _validate_internal_companies(doc) -> None:
     rows = doc.get("custom_internal_company_access") or []
+    if _is_internal_orderlift_party(doc):
+        represented_company = (doc.get("represents_company") or "").strip()
+        if represented_company:
+            for row in list(rows):
+                if (row.get("company") or "").strip() == represented_company:
+                    doc.remove(row)
+            rows = doc.get("custom_internal_company_access") or []
+        for row in rows:
+            row.is_primary = 0
+        companies = [(row.get("company") or "").strip() for row in rows]
+        if len(companies) != len(set(companies)):
+            frappe.throw(_("Each internal company can appear only once."))
+        _stamp_internal_company_access_approvals(doc, rows)
+        return
+
     primary = (doc.get("custom_company") or "").strip()
     if primary and not any((row.get("company") or "").strip() == primary for row in rows):
         doc.append("custom_internal_company_access", {"company": primary, "is_primary": 1})
@@ -362,6 +456,10 @@ def _validate_internal_companies(doc) -> None:
         doc.custom_company = selected_primary
         if doc.meta.get_field("company"):
             doc.company = selected_primary
+    _stamp_internal_company_access_approvals(doc, rows)
+
+
+def _stamp_internal_company_access_approvals(doc, rows) -> None:
     if getattr(doc.flags, "ignore_orderlift_party_company_validation", False):
         return
     existing = set()
@@ -384,6 +482,18 @@ def _validate_internal_companies(doc) -> None:
             frappe.throw(_("Request approval before adding internal company {0}.").format(company))
         row.approved_by = row.get("approved_by") or frappe.session.user
         row.approved_on = row.get("approved_on") or now_datetime()
+
+
+def _is_internal_orderlift_party(doc) -> bool:
+    fieldname = _internal_party_field(getattr(doc, "doctype", ""))
+    return bool(fieldname and doc.get(fieldname) and doc.get("represents_company"))
+
+
+def _internal_party_field(doctype: str) -> str:
+    return {
+        "Customer": "is_internal_customer",
+        "Supplier": "is_internal_supplier",
+    }.get(doctype, "")
 
 
 def _get_permitted_party(party_type: str, party_name: str, ptype: str = "read"):
@@ -477,15 +587,15 @@ def _linked_deals(party_type: str, party_name: str) -> dict:
 def _candidate_parties(party_type: str):
     meta = frappe.get_meta(party_type)
     fields = ["name", "custom_company"]
-    for fieldname in ("customer_name", "company_name", "lead_name", "first_name", "last_name", "tax_id", "custom_tax_id", "custom_general_email", "custom_general_mobile", "custom_general_phone", "custom_general_whatsapp", "email_id", "mobile_no", "phone", "whatsapp_no"):
+    for fieldname in ("customer_name", "supplier_name", "company_name", "lead_name", "first_name", "last_name", "tax_id", "custom_tax_id", "custom_general_email", "custom_general_mobile", "custom_general_phone", "custom_general_whatsapp", "email_id", "mobile_no", "phone", "whatsapp_no"):
         if meta.get_field(fieldname):
             fields.append(fieldname)
-    return frappe.get_all(party_type, fields=list(dict.fromkeys(fields)), limit_page_length=500, order_by="modified desc")
+    return frappe.get_all(party_type, fields=list(dict.fromkeys(fields)), limit_page_length=0, order_by="modified desc")
 
 
 def _normalized_identity(values) -> dict:
     getter = values.get
-    name = getter("customer_name") or getter("company_name") or getter("party_name") or getter("lead_name") or ""
+    name = getter("customer_name") or getter("supplier_name") or getter("company_name") or getter("party_name") or getter("lead_name") or ""
     contact = getter("contact_name") or " ".join(filter(None, [getter("first_name"), getter("last_name")]))
     return {
         "name": _normalize_text(name),
@@ -521,6 +631,8 @@ def _party_display_name(doc, party_type: str) -> str:
         return doc.get("customer_name") or doc.name
     if party_type == "Lead":
         return doc.get("company_name") or doc.get("lead_name") or doc.name
+    if party_type == "Supplier":
+        return doc.get("supplier_name") or doc.name
     return doc.get("company_name") or doc.name
 
 

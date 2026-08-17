@@ -39,10 +39,12 @@ PIPELINE_ASSIGNMENT_CAPABILITIES = {
     "Project": CAPABILITY_PROJECT_PIPELINE_ASSIGNMENT,
     "Sales Order": CAPABILITY_SALES_ORDER_PIPELINE_ASSIGNMENT,
 }
-DEFAULT_DRAFT_COMPANY = "Orderlift Maroc Installation"
+PIPELINE_STATUS_FIELDS = {
+    "Opportunity": "sales_stage",
+    "Project": "custom_project_status",
+    "Sales Order": "custom_orderlift_order_status",
+}
 DEFAULT_DRAFT_PROSPECT = "Draft Unassigned Prospect"
-DEFAULT_INSTALLATION_BUSINESS_TYPE = "Installation"
-DEFAULT_INSTALLATION_SEGMENT = "Individu"
 DEFAULT_OPPORTUNITY_STAGE = "1. Demande Client"
 
 
@@ -110,23 +112,41 @@ def get_opportunity_pipeline_data(
 
 @frappe.whitelist()
 def update_opportunity_stage(opportunity: str, stage: str) -> dict:
-    doc = frappe.get_doc("Opportunity", opportunity)
+    savepoint = "orderlift_opportunity_stage"
+    if callable(getattr(frappe.db, "savepoint", None)):
+        frappe.db.savepoint(savepoint)
     try:
-        status_info = _validate_status_for_document("Opportunity", stage, doc)
-    except StatusCheckBlockedError as exc:
-        return _blocked_stage_move_payload("Opportunity", doc.name, stage, str(exc), exc.failed_labels)
-    previous = doc.sales_stage
-    doc.sales_stage = stage
-    if status_info.get("auto_close_opportunity") and doc.meta.get_field("status"):
-        doc.status = "Closed"
-    doc.save(ignore_permissions=False)
-    assignment = sync_pipeline_status_assignment("Opportunity", doc.name, status_info, stage)
-    frappe.db.commit()
-    _log_status_change("Opportunity", doc.name, previous, stage)
-    statuses = list_editable_statuses("Opportunity", include_inactive=False, company=doc.get("company"))
-    card = _opportunity_card(doc.as_dict(), statuses)
-    card["assignment"] = assignment
-    return card
+        frappe.db.sql(
+            "SELECT name FROM `tabOpportunity` WHERE name = %s FOR UPDATE",
+            (opportunity,),
+        )
+        doc = frappe.get_doc("Opportunity", opportunity)
+        try:
+            status_info = _validate_status_for_document("Opportunity", stage, doc)
+        except StatusCheckBlockedError as exc:
+            return _blocked_stage_move_payload("Opportunity", doc.name, stage, str(exc), exc.failed_labels)
+        previous = doc.sales_stage
+        doc.sales_stage = stage
+        if status_info.get("auto_close_opportunity") and doc.meta.get_field("status"):
+            doc.status = "Closed"
+        doc.save(ignore_permissions=False)
+        project_info = (
+            _ensure_opportunity_project(doc)
+            if status_info.get("auto_create_project")
+            else None
+        )
+        assignment = sync_pipeline_status_assignment("Opportunity", doc.name, status_info, stage)
+        _log_status_change("Opportunity", doc.name, previous, stage)
+        statuses = list_editable_statuses("Opportunity", include_inactive=False, company=doc.get("company"))
+        card = _opportunity_card(doc.as_dict(), statuses)
+        card["assignment"] = assignment
+        if project_info:
+            card["project"] = project_info
+        return card
+    except Exception:
+        if callable(getattr(frappe.db, "rollback", None)):
+            frappe.db.rollback(save_point=savepoint)
+        raise
 
 
 @frappe.whitelist()
@@ -141,7 +161,7 @@ def get_project_pipeline_data(
     company = _resolve_pipeline_company(company)
     statuses = _filter_statuses_by_business_type(
         list_editable_statuses("Project", include_inactive=False, company=company),
-        business_type or "Installation",
+        business_type,
     )
     cards = _project_cards(
         search=search,
@@ -190,7 +210,6 @@ def update_project_stage(project: str, stage: str) -> dict:
     doc.custom_project_status = stage
     doc.save(ignore_permissions=False)
     assignment = sync_pipeline_status_assignment("Project", doc.name, status_info, stage)
-    frappe.db.commit()
     _log_status_change("Project", doc.name, previous, stage)
     statuses = list_editable_statuses("Project", include_inactive=False, company=doc.get("company"))
     card = _project_card(doc.as_dict(), statuses)
@@ -261,7 +280,6 @@ def update_sales_order_stage(sales_order: str, stage: str) -> dict:
     doc.custom_orderlift_order_status = stage
     doc.save(ignore_permissions=False)
     assignment = sync_pipeline_status_assignment("Sales Order", doc.name, status_info, stage)
-    frappe.db.commit()
     _log_status_change("Sales Order", doc.name, previous, stage)
     statuses = list_editable_statuses("Sales Order", include_inactive=False, company=doc.get("company"))
     card = _sales_order_card(doc.as_dict(), statuses)
@@ -338,8 +356,10 @@ def get_party_defaults(party_type: str, party_name: str) -> dict:
 @frappe.whitelist()
 def create_draft_opportunity(company: str | None = None, business_type: str | None = None, segment: str | None = None) -> dict:
     company = _resolve_draft_company(company)
-    business_type = (business_type or DEFAULT_INSTALLATION_BUSINESS_TYPE).strip()
-    segment = (segment or DEFAULT_INSTALLATION_SEGMENT).strip()
+    business_type = (business_type or get_single_company_business_type(company) or "").strip()
+    if not business_type:
+        frappe.throw(_("Select a CRM Business Type for this Opportunity."))
+    segment = (segment or "").strip()
     prospect = _ensure_draft_prospect(company=company, business_type=business_type, segment=segment)
 
     doc = frappe.new_doc("Opportunity")
@@ -561,6 +581,90 @@ def prepare_project_from_opportunity(opportunity: str):
     return project
 
 
+def _ensure_opportunity_project(opportunity_doc) -> dict:
+    frappe.db.sql(
+        "SELECT name FROM `tabOpportunity` WHERE name = %s FOR UPDATE",
+        (opportunity_doc.name,),
+    )
+    sales_orders = _opportunity_sales_orders(opportunity_doc.name)
+    project_names = {
+        row.get("project") for row in sales_orders if row.get("project")
+    }
+    if _has_field("Project", "custom_source_opportunity"):
+        project_names.update(
+            row.name
+            for row in frappe.get_all(
+                "Project",
+                filters={"custom_source_opportunity": opportunity_doc.name},
+                fields=["name"],
+                order_by="creation asc",
+                limit_page_length=0,
+            )
+        )
+    if len(project_names) > 1:
+        frappe.throw(
+            _("Opportunity {0} is linked to multiple Projects: {1}").format(
+                opportunity_doc.name, ", ".join(sorted(project_names))
+            )
+        )
+
+    created = not project_names
+    if created:
+        customer = _customer_for_opportunity_party(opportunity_doc)
+        project = frappe.new_doc("Project")
+        project.project_name = (
+            opportunity_doc.get("title")
+            or opportunity_doc.get("customer_name")
+            or opportunity_doc.name
+        )
+        project.company = opportunity_doc.get("company") or ""
+        project.customer = customer.name
+        project.status = "Open"
+    else:
+        project = frappe.get_doc("Project", next(iter(project_names)))
+        from orderlift.orderlift_crm.project_linkage import assert_project_opportunity_family
+
+        assert_project_opportunity_family(project.name, opportunity_doc.name)
+        source_opportunity = (project.get("custom_source_opportunity") or "").strip()
+        if source_opportunity and source_opportunity != opportunity_doc.name:
+            frappe.throw(
+                _("Project {0} already belongs to Opportunity {1}.").format(
+                    project.name, source_opportunity
+                )
+            )
+
+    if project.meta.get_field("custom_source_opportunity"):
+        project.custom_source_opportunity = opportunity_doc.name
+    from orderlift.orderlift_crm.project_linkage import (
+        _copy_source_context_to_project,
+        link_sales_orders_to_project_as_system,
+    )
+
+    _copy_source_context_to_project(opportunity_doc, project)
+    if project.is_new():
+        project.insert(ignore_permissions=False)
+    else:
+        project.save(ignore_permissions=False)
+
+    link_sales_orders_to_project_as_system(
+        project,
+        sales_orders,
+        expected_opportunity=opportunity_doc.name,
+    )
+    return {
+        "name": project.name,
+        "project_name": project.get("project_name") or project.name,
+        "created": int(created),
+        "sales_orders_linked": len(sales_orders),
+    }
+
+
+def _opportunity_sales_orders(opportunity: str) -> list[dict]:
+    from orderlift.orderlift_crm.project_linkage import opportunity_sales_orders
+
+    return opportunity_sales_orders(opportunity)
+
+
 def _opportunity_cards(search=None, owner=None, source=None, company=None, business_type=None, segment=None, statuses=None) -> list[dict]:
     filters = {"docstatus": ["<", 2]}
     if owner and owner != "All":
@@ -685,7 +789,7 @@ def _opportunity_related_docs(opportunity: str) -> list[dict]:
         direct_sales_orders = frappe.get_all(
             "Sales Order",
             filters={"opportunity": opportunity, "docstatus": ["<", 2]},
-            fields=["name", "status", "project", "custom_installation_project"],
+            fields=["name", "status", "project"],
             order_by="modified desc",
             limit_page_length=5,
         )
@@ -695,7 +799,7 @@ def _opportunity_related_docs(opportunity: str) -> list[dict]:
     if quotation_names:
         quoted_sales_orders = frappe.db.sql(
             """
-            SELECT DISTINCT so.name, so.status, so.project, so.custom_installation_project
+            SELECT DISTINCT so.name, so.status, so.project
             FROM `tabSales Order Item` soi
             INNER JOIN `tabSales Order` so ON so.name = soi.parent
             WHERE soi.prevdoc_docname IN ({placeholders}) AND so.docstatus < 2
@@ -730,7 +834,7 @@ def _opportunity_related_docs(opportunity: str) -> list[dict]:
 
 def _append_opportunity_sales_order_docs(docs: list[dict], seen: set[tuple[str, str]], sales_order) -> None:
     _append_unique_doc(docs, seen, "Sales Order", sales_order.name, _("Sales Order"), sales_order.status)
-    project_name = sales_order.get("custom_installation_project") or sales_order.get("project")
+    project_name = sales_order.get("project")
     if not project_name:
         return
     project_status = frappe.db.get_value(
@@ -790,7 +894,7 @@ def _project_card(row, statuses: list[dict]) -> dict:
     crm_info = _project_crm_info(row)
     assignment = _assignment_for_card("Project", row.get("name"), stage, statuses)
     tags = []
-    for tag in [crm_info.get("business_type") or "Installation", crm_info.get("crm_segment")]:
+    for tag in [crm_info.get("business_type"), crm_info.get("crm_segment")]:
         if tag:
             tags.append(tag)
     if row.get("custom_qc_status"):
@@ -805,7 +909,7 @@ def _project_card(row, statuses: list[dict]) -> dict:
         "assigned_user": assignment.get("user") or "",
         "assigned_user_label": assignment.get("label") or "",
         "assignment_source": assignment.get("source") or "",
-        "business_type": crm_info.get("business_type") or "Installation",
+        "business_type": crm_info.get("business_type") or "",
         "crm_segment": crm_info.get("crm_segment") or "",
         "stage": stage,
         "legacy_status": row.get("status") or "",
@@ -825,11 +929,11 @@ def _project_related_docs(project: str) -> list[dict]:
         """
         SELECT name, status
         FROM `tabSales Order`
-        WHERE docstatus < 2 AND (project = %s OR custom_installation_project = %s)
+        WHERE docstatus < 2 AND project = %s
         ORDER BY modified DESC
         LIMIT 3
         """,
-        (project, project),
+        (project,),
         as_dict=True,
     ):
         docs.append(_doc_link("Sales Order", row.name, _("Sales Order"), row.status))
@@ -946,7 +1050,7 @@ def get_project_documents(project: str) -> dict:
     if frappe.db.exists("DocType", "Sales Order"):
         _add("Sales Order", _sql(
             "SELECT name, status FROM `tabSales Order` "
-            "WHERE docstatus < 2 AND (project = %(p)s OR custom_installation_project = %(p)s) "
+            "WHERE docstatus < 2 AND project = %(p)s "
             "ORDER BY modified DESC LIMIT 20"
         ))
 
@@ -986,7 +1090,7 @@ def get_project_documents(project: str) -> dict:
             "SELECT DISTINCT pl.name, pl.status FROM `tabPick List` pl "
             "INNER JOIN `tabPick List Item` pli ON pli.parent = pl.name "
             "INNER JOIN `tabSales Order` so ON so.name = pli.sales_order "
-            "WHERE pl.docstatus < 2 AND (so.project = %(p)s OR so.custom_installation_project = %(p)s) "
+            "WHERE pl.docstatus < 2 AND so.project = %(p)s "
             "ORDER BY pl.modified DESC LIMIT 20"
         ))
 
@@ -1088,13 +1192,10 @@ def get_sales_order_documents(sales_order: str) -> dict:
     sales_order_row = frappe.db.get_value(
         "Sales Order",
         sales_order,
-        ["project", "custom_installation_project"],
+        ["project"],
         as_dict=True,
     ) or {}
-    project_names = list(dict.fromkeys(filter(None, [
-        sales_order_row.get("project"),
-        sales_order_row.get("custom_installation_project"),
-    ])))
+    project_names = [sales_order_row.get("project")] if sales_order_row.get("project") else []
     project_rows = []
     for project_name in project_names:
         row = frappe.db.get_value("Project", project_name, ["name", "status"], as_dict=True)
@@ -1167,13 +1268,13 @@ def _sales_order_cards(
     billing_progress=None,
     statuses=None,
 ) -> list[dict]:
-    filters = {"docstatus": ["<", 2]}
+    filters = {"docstatus": ["<", 2], "project": ["is", "not set"]}
     if company and company != "All":
         filters["company"] = company
     if owner and owner != "All":
         filters["owner"] = owner
     fields = ["name", "customer", "company", "owner", "status", "grand_total", "per_delivered", "per_billed", "project"]
-    for fieldname in ["custom_orderlift_order_status", "custom_installation_project", "custom_crm_business_type", "custom_crm_segment", "custom_partner_campaign_target"]:
+    for fieldname in ["custom_orderlift_order_status", "custom_crm_business_type", "custom_crm_segment", "custom_partner_campaign_target"]:
         if _has_field("Sales Order", fieldname):
             fields.append(fieldname)
     rows = frappe.get_list("Sales Order", filters=filters, fields=fields, order_by="modified desc", limit_page_length=200)
@@ -1202,7 +1303,7 @@ def _sales_order_cards(
 
 
 def _sales_order_card(row, statuses: list[dict]) -> dict:
-    docs = _sales_order_related_docs(row.get("name"), row.get("project") or row.get("custom_installation_project"))
+    docs = _sales_order_related_docs(row.get("name"), row.get("project"))
     stage = resolve_status_column("Sales Order", row.get("custom_orderlift_order_status"), row.get("status"), statuses)
     delivered_pct = flt(row.get("per_delivered") or 0)
     billed_pct = flt(row.get("per_billed") or 0)
@@ -1242,7 +1343,7 @@ def _sales_order_title(row) -> str:
     if title:
         return title
 
-    project_name = row.get("custom_installation_project") or row.get("project")
+    project_name = row.get("project")
     if not project_name:
         return ""
     project_opportunity = frappe.db.get_value("Project", project_name, "custom_source_opportunity") if _has_field("Project", "custom_source_opportunity") else None
@@ -1333,11 +1434,7 @@ def _sales_order_related_docs(sales_order: str, project_name: str | None) -> lis
 
 
 def _sales_order_business_type(row) -> str:
-    if row.get("custom_crm_business_type"):
-        return row.get("custom_crm_business_type")
-    if row.get("custom_installation_project") or row.get("project"):
-        return "Installation"
-    return "Distribution"
+    return row.get("custom_crm_business_type") or ""
 
 
 def _project_crm_info(row) -> dict:
@@ -1349,7 +1446,7 @@ def _project_crm_info(row) -> dict:
     opportunity = row.get("custom_source_opportunity") or _project_source_opportunity(row.get("name"))
     if opportunity:
         return _opportunity_crm_info(opportunity)
-    return {"business_type": "Installation", "crm_segment": None}
+    return {"business_type": None, "crm_segment": None}
 
 
 def _sales_order_crm_info(row) -> dict:
@@ -1374,7 +1471,7 @@ def _sales_order_crm_info(row) -> dict:
     opportunity = _sales_order_source_opportunity(row.get("name"))
     if opportunity:
         return _opportunity_crm_info(opportunity)
-    project_name = row.get("custom_installation_project") or row.get("project")
+    project_name = row.get("project")
     if project_name:
         project_opportunity = frappe.db.get_value("Project", project_name, "custom_source_opportunity") if _has_field("Project", "custom_source_opportunity") else None
         if project_opportunity:
@@ -1491,7 +1588,7 @@ def _party_display_name(doc, party_type: str) -> str:
 
 
 def _resolve_draft_company(company: str | None = None) -> str:
-    requested = (company or "").strip() or DEFAULT_DRAFT_COMPANY
+    requested = (company or "").strip()
     if requested and frappe.db.exists("Company", requested) and user_can_access_company(requested):
         return requested
     return _resolve_pipeline_company(None)
@@ -1760,39 +1857,22 @@ def _default_customer_group() -> str:
 def _project_source_opportunity(project: str | None) -> str | None:
     if not project or not frappe.db.exists("DocType", "Sales Order"):
         return None
-    rows = frappe.db.sql(
-        """
-        SELECT q.opportunity
-        FROM `tabSales Order` so
-        INNER JOIN `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN `tabQuotation` q ON q.name = soi.prevdoc_docname
-        WHERE so.docstatus < 2
-          AND (so.project = %s OR so.custom_installation_project = %s)
-          AND COALESCE(q.opportunity, '') != ''
-        ORDER BY so.modified DESC
-        LIMIT 1
-        """,
-        (project, project),
-        as_dict=True,
-    )
-    return rows[0].opportunity if rows else None
+    from orderlift.orderlift_crm.project_linkage import project_opportunity_families
+
+    opportunities = project_opportunity_families(project)
+    if len(opportunities) > 1:
+        frappe.throw(
+            _("Project {0} is shared by mixed Opportunity families: {1}").format(
+                project, ", ".join(sorted(opportunities))
+            )
+        )
+    return next(iter(opportunities)) if opportunities else None
 
 
 def _sales_order_source_opportunity(sales_order: str | None) -> str | None:
-    if not sales_order or not frappe.db.exists("DocType", "Quotation"):
-        return None
-    rows = frappe.db.sql(
-        """
-        SELECT DISTINCT q.opportunity
-        FROM `tabSales Order Item` soi
-        INNER JOIN `tabQuotation` q ON q.name = soi.prevdoc_docname
-        WHERE soi.parent = %s
-          AND COALESCE(q.opportunity, '') != ''
-        """,
-        (sales_order,),
-        as_dict=True,
-    )
-    return rows[0].opportunity if len(rows) == 1 else None
+    from orderlift.orderlift_crm.project_linkage import sales_order_source_opportunity
+
+    return sales_order_source_opportunity(sales_order)
 
 
 def _linked_status_rows(doctype: str, query: str, params: tuple) -> list[dict]:
@@ -1899,15 +1979,43 @@ def _blocked_stage_move_payload(document_type: str, record: str, stage: str, mes
 
 
 def sync_pipeline_status_assignment(document_type: str, document_name: str, status_info: dict | None, stage: str | None = None) -> dict:
-    _clear_pipeline_assignment_todos(document_type, document_name)
     status_info = status_info or {}
+    assigned_user = (status_info.get("assigned_user") or "").strip()
+    if not assigned_user:
+        existing = _find_open_pipeline_todo(document_type, document_name)
+        if existing and existing.get("allocated_to"):
+            return _assignment_payload(
+                existing.get("allocated_to"),
+                source="todo",
+                todo_name=existing.get("name"),
+            )
+        return _assignment_payload("")
     return _assign_pipeline_document(
         document_type,
         document_name,
-        status_info.get("assigned_user"),
+        assigned_user,
         stage,
         priority=status_info.get("todo_priority"),
     )
+
+
+def sync_pipeline_assignment_on_update(doc, method=None) -> None:
+    document_type = (getattr(doc, "doctype", None) or "").strip()
+    status_field = PIPELINE_STATUS_FIELDS.get(document_type)
+    has_value_changed = getattr(doc, "has_value_changed", None)
+    if not status_field or not callable(has_value_changed) or not has_value_changed(status_field):
+        return
+
+    stage = (doc.get(status_field) or "").strip()
+    if not stage:
+        return
+    statuses = list_editable_statuses(
+        document_type,
+        include_inactive=True,
+        company=doc.get("company"),
+    )
+    status_info = next((status for status in statuses if status.get("name") == stage), {})
+    sync_pipeline_status_assignment(document_type, doc.name, status_info, stage)
 
 
 def _assign_pipeline_document(
@@ -1956,9 +2064,29 @@ def _assign_pipeline_document(
             }
         ).insert(ignore_permissions=True)
         todo_name = todo.name
+        _notify_pipeline_assignment(document_type, document_name, user)
 
     _close_other_pipeline_assignment_todos(document_type, document_name, user)
     return _assignment_payload(user, source="todo", todo_name=todo_name)
+
+
+def _notify_pipeline_assignment(document_type: str, document_name: str, user: str) -> None:
+    if not user or user == frappe.session.user:
+        return
+    try:
+        frappe.get_doc(
+            {
+                "doctype": "Notification Log",
+                "subject": _("{0} {1} was assigned to you").format(document_type, document_name),
+                "for_user": user,
+                "from_user": frappe.session.user,
+                "type": "Assignment",
+                "document_type": document_type,
+                "document_name": document_name,
+            }
+        ).insert(ignore_permissions=True)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Orderlift pipeline assignment notification failed")
 
 
 def _assignment_for_card(document_type: str, document_name: str | None, stage: str | None, statuses: list[dict]) -> dict:
@@ -2083,15 +2211,9 @@ def _card_for_document(document_type: str, document_name: str) -> dict:
 
 
 def _document_business_type(document_type: str, doc) -> str | None:
-    if document_type == "Project":
-        return "Installation"
-    if document_type == "Sales Order":
-        if doc.meta.get_field("custom_crm_business_type") and doc.get("custom_crm_business_type"):
-            return doc.get("custom_crm_business_type")
-        if doc.get("custom_installation_project") or doc.get("project"):
-            return "Installation"
-        return "Distribution"
-    if document_type == "Opportunity" and doc.meta.get_field("custom_crm_business_type"):
+    if document_type in {"Opportunity", "Project", "Sales Order"} and doc.meta.get_field(
+        "custom_crm_business_type"
+    ):
         return doc.get("custom_crm_business_type")
     return None
 
@@ -2123,7 +2245,6 @@ def _log_status_change(document_type: str, name: str, previous: str | None, curr
                 "content": _("Pipeline status changed from {0} to {1}").format(previous or "-", current),
             }
         ).insert(ignore_permissions=True)
-        frappe.db.commit()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Orderlift pipeline status audit log failed")
 

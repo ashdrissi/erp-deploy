@@ -4,6 +4,7 @@ import unittest
 
 
 frappe_stub = types.ModuleType("frappe")
+frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.session = types.SimpleNamespace(user="Guest")
 frappe_stub.get_roles = lambda user=None: []

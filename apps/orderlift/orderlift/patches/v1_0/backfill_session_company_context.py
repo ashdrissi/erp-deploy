@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 
-from orderlift.menu_access import PREFERRED_COMPANY_DEFAULT_KEY
+from orderlift.menu_access import LEGACY_PREFERRED_COMPANY_DEFAULT_KEY
 
 
 def execute():
@@ -30,9 +30,9 @@ def _backfill_preferred_companies() -> None:
             preferred_by_user[user] = {"company": company, "is_primary_key": is_primary_key}
 
     for user, candidate in preferred_by_user.items():
-        if frappe.db.exists("DefaultValue", {"parent": user, "defkey": PREFERRED_COMPANY_DEFAULT_KEY}):
+        if frappe.db.exists("DefaultValue", {"parent": user, "defkey": LEGACY_PREFERRED_COMPANY_DEFAULT_KEY}):
             continue
-        frappe.defaults.set_user_default(PREFERRED_COMPANY_DEFAULT_KEY, candidate["company"], user=user)
+        frappe.defaults.set_user_default(LEGACY_PREFERRED_COMPANY_DEFAULT_KEY, candidate["company"], user=user)
 
 
 def _retire_native_company_session_default() -> None:

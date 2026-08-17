@@ -80,24 +80,12 @@
   },
   {
     "doctype": "Custom Field",
-    "name": "Project-custom_project_type_ol",
-    "dt": "Project",
-    "fieldname": "custom_project_type_ol",
-    "fieldtype": "Select",
-    "label": "Project Type",
-    "options": "\nNew Installation\nMaintenance\nUpgrade\nInspection",
-    "insert_after": "custom_sig_section",
-    "in_list_view": 1,
-    "in_standard_filter": 1
-  },
-  {
-    "doctype": "Custom Field",
     "name": "Project-custom_site_address",
     "dt": "Project",
     "fieldname": "custom_site_address",
     "fieldtype": "Small Text",
     "label": "Site Address",
-    "insert_after": "custom_project_type_ol"
+    "insert_after": "project_type"
   },
   {
     "doctype": "Custom Field",

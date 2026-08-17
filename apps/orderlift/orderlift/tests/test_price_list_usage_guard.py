@@ -462,6 +462,32 @@ class TestPriceListUsageGuard(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not priced in Selling Price List"):
             price_list_usage_guard.validate_sales_order_price_list(doc)
 
+    def test_doc_price_list_validation_scopes_to_document_company(self):
+        """Intercompany documents are created in a company other than the session's.
+
+        Without the document's own company the validator falls back to
+        current_company() (the session company) and rejects a price list that is
+        perfectly valid for the document, as "unavailable or not permitted".
+        """
+        price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
+        price_list_usage_guard.frappe.db = DbStub()
+        captured = {}
+
+        def capture(price_list, kind=None, required=False, company=None):
+            captured["company"] = company
+            return price_list
+
+        price_list_usage_guard.validate_visible_price_list = capture
+        doc = DocStub(
+            company="Orderlift Maroc Distribution",
+            selling_price_list="Sell A",
+            items=[{"item_code": "ITEM-001", "rate": 10}],
+        )
+
+        price_list_usage_guard.validate_sales_order_price_list(doc)
+
+        self.assertEqual(captured["company"], "Orderlift Maroc Distribution")
+
     def test_admin_override_bypasses_delivery_note_min_rate_guard(self):
         price_list_usage_guard.frappe.get_roles = lambda user=None: ["Orderlift Admin"]
         price_list_usage_guard.frappe.db = DbStub()

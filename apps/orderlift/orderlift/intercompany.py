@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import flt, today
+from frappe.utils import cint, flt, now_datetime, today
 
 
 ORDERLIFT_PARENT_COMPANY = "Orderlift"
@@ -43,7 +43,9 @@ def ensure_internal_orderlift_parties(dry_run: int = 1, companies=None, parent_c
 def create_draft_sales_order_from_purchase_order(doc, method=None) -> str | None:
     if not doc or doc.doctype != "Purchase Order":
         return None
-    if int(doc.get("docstatus") or 0) != 0:
+    # Runs from the Purchase Order's on_submit hook, so only a submitted PO
+    # qualifies. The Sales Order it creates is still a draft in the other company.
+    if int(doc.get("docstatus") or 0) != 1:
         return None
     if doc.get("inter_company_order_reference"):
         return doc.get("inter_company_order_reference")
@@ -173,10 +175,13 @@ def _ensure_internal_customer(represented_company: str, allowed_companies: list[
     _set_if_field(doc, "is_internal_customer", 1)
     _set_if_field(doc, "represents_company", represented_company)
     _set_if_field(doc, "default_currency", _company_currency(represented_company))
+    _remove_internal_company_access(doc, [represented_company])
+    _ensure_internal_company_access(doc, allowed_companies)
     _ensure_allowed_companies(doc, allowed_companies)
     doc.flags.ignore_permissions = True
     doc.flags.ignore_orderlift_company_scope = True
     doc.save(ignore_permissions=True) if existing else doc.insert(ignore_permissions=True)
+    doc = _ensure_canonical_internal_party_name("Customer", doc, represented_company, summary, dry_run=dry_run)
     _tag_internal_party("Customer", doc.name, summary)
     summary["customers_updated" if existing else "customers_created"] += 1
     return doc.name
@@ -200,10 +205,13 @@ def _ensure_internal_supplier(represented_company: str, allowed_companies: list[
     _set_if_field(doc, "is_internal_supplier", 1)
     _set_if_field(doc, "represents_company", represented_company)
     _set_if_field(doc, "default_currency", _company_currency(represented_company))
+    _remove_internal_company_access(doc, [represented_company])
+    _ensure_internal_company_access(doc, allowed_companies)
     _ensure_allowed_companies(doc, allowed_companies)
     doc.flags.ignore_permissions = True
     doc.flags.ignore_orderlift_company_scope = True
     doc.save(ignore_permissions=True) if existing else doc.insert(ignore_permissions=True)
+    doc = _ensure_canonical_internal_party_name("Supplier", doc, represented_company, summary, dry_run=dry_run)
     _tag_internal_party("Supplier", doc.name, summary)
     summary["suppliers_updated" if existing else "suppliers_created"] += 1
     return doc.name
@@ -250,8 +258,12 @@ def _set_sales_order_currency_and_price_list(sales_order, purchase_order) -> Non
 
 def _selling_price_list_for_order(purchase_order, company: str) -> str | None:
     buying_price_list = (purchase_order.get("buying_price_list") or "").strip()
-    if buying_price_list and frappe.db.get_value("Price List", buying_price_list, "selling"):
-        return buying_price_list
+    if buying_price_list:
+        # A disabled list reused here fails the downstream enabled check in
+        # validate_price_list_scope and surfaces as "unavailable or not permitted".
+        values = frappe.db.get_value("Price List", buying_price_list, ["selling", "enabled"], as_dict=True) or {}
+        if cint(values.get("selling")) and cint(values.get("enabled")):
+            return buying_price_list
 
     filters = {"selling": 1, "enabled": 1}
     if _doctype_has_field("Price List", "custom_company"):
@@ -299,6 +311,58 @@ def _ensure_allowed_company(doc, company: str) -> None:
     doc.append("companies", {"company": company})
 
 
+def _remove_internal_company_access(doc, companies: list[str]) -> None:
+    if not doc.meta.get_field("custom_internal_company_access"):
+        return
+    remove = {company for company in companies if company}
+    for row in list(doc.get("custom_internal_company_access") or []):
+        if (row.get("company") or "").strip() in remove:
+            doc.remove(row)
+
+
+def _ensure_internal_company_access(doc, companies: list[str]) -> None:
+    if not doc.meta.get_field("custom_internal_company_access"):
+        return
+    seen = {
+        (row.get("company") or "").strip()
+        for row in doc.get("custom_internal_company_access") or []
+        if (row.get("company") or "").strip()
+    }
+    for company in dict.fromkeys(company for company in companies if company):
+        if company in seen:
+            continue
+        doc.append(
+            "custom_internal_company_access",
+            {
+                "company": company,
+                "is_primary": 0,
+                "approved_by": frappe.session.user,
+                "approved_on": now_datetime(),
+            },
+        )
+        seen.add(company)
+
+
+def _ensure_canonical_internal_party_name(doctype: str, doc, represented_company: str, summary: dict, *, dry_run: int = 1):
+    target_name = _party_name(represented_company)
+    if doc.name == target_name:
+        return doc
+    if frappe.db.exists(doctype, target_name):
+        summary.setdefault("skipped", []).append(
+            {
+                "doctype": doctype,
+                "name": doc.name,
+                "reason": "canonical_name_exists",
+                "target_name": target_name,
+            }
+        )
+        return doc
+    if dry_run:
+        return doc
+    renamed = frappe.rename_doc(doctype, doc.name, target_name, force=True, merge=False, show_alert=False)
+    return frappe.get_doc(doctype, renamed)
+
+
 def _party_allowed_to_transact(doctype: str, party: str, company: str) -> bool:
     return bool(
         frappe.db.exists(
@@ -326,7 +390,7 @@ def _doctype_has_field(doctype: str, fieldname: str) -> bool:
 
 
 def _party_name(represented_company: str) -> str:
-    return f"{represented_company} - Internal"
+    return represented_company
 
 
 def _company_currency(company: str) -> str:

@@ -72,6 +72,8 @@ SCOPED_DOCTYPES: dict[str, dict] = {
     "Purchase Agent Rules": {"company_field": "company", "bt_field": None, "segments_field": None},
     "Stock Planning Settings": {"company_field": "company", "bt_field": None, "segments_field": None},
     "Stock Demand Plan": {"company_field": "company", "bt_field": None, "segments_field": None},
+    "Sales Order Technical List": {"company_field": "company", "bt_field": "business_type", "segments_field": None},
+    "Sales Order Technical List Revision": {"company_field": "company", "bt_field": "business_type", "segments_field": None},
 }
 
 # Native ERPNext transaction doctypes whose Company must always follow the active
@@ -90,6 +92,7 @@ TRANSACTION_COMPANY_DOCTYPES = frozenset(
         "Sales Invoice",
         "Sales Order",
         "Stock Entry",
+        "Supplier Quotation",
     }
 )
 
@@ -343,12 +346,17 @@ def backfill_party_custom_company() -> None:
 def backfill_party_internal_companies() -> None:
     if not frappe.db.exists("DocType", "Party Internal Company Access"):
         return
-    for doctype in ("Lead", "Prospect", "Customer"):
+    for doctype in ("Lead", "Prospect", "Customer", "Supplier"):
         if not (_meta_has_field(doctype, "custom_company") and _meta_has_field(doctype, "custom_internal_company_access")):
             continue
+        filters = {"custom_company": ["!=", ""]}
+        if doctype == "Customer" and _meta_has_field(doctype, "is_internal_customer"):
+            filters["is_internal_customer"] = 0
+        if doctype == "Supplier" and _meta_has_field(doctype, "is_internal_supplier"):
+            filters["is_internal_supplier"] = 0
         rows = frappe.get_all(
             doctype,
-            filters={"custom_company": ["!=", ""]},
+            filters=filters,
             fields=["name", "custom_company"],
             limit_page_length=0,
         )

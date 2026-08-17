@@ -1,0 +1,100 @@
+{
+  "actions": [],
+  "allow_import": 1,
+  "autoname": "format:TPA-{#####}",
+  "creation": "2026-08-15 00:00:00",
+  "doctype": "DocType",
+  "document_type": "Setup",
+  "engine": "InnoDB",
+  "field_order": [
+    "action_label",
+    "adapter_key",
+    "target_doctype",
+    "sequence",
+    "is_active",
+    "description"
+  ],
+  "fields": [
+    {
+      "fieldname": "action_label",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Action Label",
+      "reqd": 1
+    },
+    {
+      "description": "Fixed application adapter. It cannot be changed after creation.",
+      "fieldname": "adapter_key",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Adapter Key",
+      "options": "revision_to_material_request\nrevision_to_purchase_order",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "target_doctype",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Target DocType",
+      "options": "Material Request\nPurchase Order",
+      "reqd": 1
+    },
+    {
+      "default": "100",
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Sequence"
+    },
+    {
+      "default": "1",
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Active"
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    }
+  ],
+  "links": [],
+  "modified": "2026-08-15 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Orderlift Logistics",
+  "name": "Technical Procurement Action",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "export": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Orderlift Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "export": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "write": 1
+    },
+    {
+      "read": 1,
+      "report": 1,
+      "role": "Purchase Manager"
+    }
+  ],
+  "search_fields": "action_label,adapter_key,target_doctype",
+  "sort_field": "sequence",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "action_label",
+  "track_changes": 1
+}

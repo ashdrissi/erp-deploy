@@ -61,6 +61,25 @@ class FakeDoc(FakeRow):
         return self._before
 
 
+class FakeModeDoc:
+    def __init__(self, name, mode_type, accounts=None):
+        self.name = name
+        self.type = mode_type
+        self.accounts = list(accounts or [])
+        self.saved = False
+
+    def get(self, fieldname):
+        return getattr(self, fieldname, None)
+
+    def append(self, fieldname, values):
+        row = FakeRow(**values)
+        getattr(self, fieldname).append(row)
+        return row
+
+    def save(self, ignore_permissions=False):
+        self.saved = True
+
+
 class FakeDB:
     accounts = {
         "Receivable - D": "Demo Company",
@@ -338,6 +357,119 @@ class TestFinanceAccountGovernance(unittest.TestCase):
 
         self.assertEqual(doc.paid_from, "Receivable - D")
         self.assertEqual(doc.paid_to, "Wire Bank - D")
+
+    def test_all_enabled_payment_modes_are_mapped_for_all_companies(self):
+        companies = ["Orderlift", "Demo Company"]
+        mode_docs = {
+            "Bank Draft": FakeModeDoc("Bank Draft", "Bank"),
+            "Cash": FakeModeDoc("Cash", "Cash"),
+            "Cheque": FakeModeDoc("Cheque", "Bank"),
+            "Credit Card": FakeModeDoc("Credit Card", "Bank"),
+            "Wire Transfer": FakeModeDoc(
+                "Wire Transfer",
+                "Bank",
+                [FakeRow(company="Demo Company", default_account="Wrong - X")],
+            ),
+        }
+
+        def get_all(doctype, **kwargs):
+            if doctype == "Company":
+                return companies
+            if doctype == "Mode of Payment":
+                return [
+                    types.SimpleNamespace(name=name, type=doc.type)
+                    for name, doc in mode_docs.items()
+                ]
+            return []
+
+        account_maps = {
+            "Orderlift": {"bank": "Bank - OL", "cash": "Cash - OL"},
+            "Demo Company": {"bank": "Bank - D", "cash": "Cash - D"},
+        }
+        with (
+            patch.object(account_governance.frappe, "get_all", side_effect=get_all),
+            patch.object(
+                account_governance.frappe,
+                "get_doc",
+                side_effect=lambda _doctype, name: mode_docs[name],
+                create=True,
+            ),
+            patch.object(
+                account_governance,
+                "get_company_account_map",
+                side_effect=lambda company, create_missing=False: account_maps[company],
+            ),
+            patch.object(account_governance, "_doctype_exists", return_value=True),
+            patch.object(account_governance, "_account_belongs_to_company", return_value=True),
+        ):
+            result = account_governance.ensure_mode_of_payment_accounts()
+
+        self.assertEqual(result["missing"], {})
+        for name, mode in mode_docs.items():
+            rows = {row.company: row.default_account for row in mode.accounts}
+            expected_key = "cash" if name == "Cash" else "bank"
+            self.assertEqual(
+                rows,
+                {company: account_maps[company][expected_key] for company in companies},
+            )
+            self.assertTrue(mode.saved)
+
+    def test_paid_purchase_invoice_uses_payment_mode_company_account(self):
+        doc = FakeDoc(
+            "Purchase Invoice",
+            company="Demo Company",
+            is_paid=1,
+            mode_of_payment="Wire Transfer",
+            credit_to="",
+            cash_bank_account="",
+        )
+
+        with patch.object(account_governance, "_mode_of_payment_account", return_value="Wire Bank - D"):
+            account_governance.apply_document_account_defaults(doc)
+
+        self.assertEqual(doc.credit_to, "Payable - D")
+        self.assertEqual(doc.cash_bank_account, "Wire Bank - D")
+
+    def test_paid_cash_purchase_invoice_uses_company_cash_account(self):
+        doc = FakeDoc(
+            "Purchase Invoice",
+            company="Demo Company",
+            is_paid=1,
+            mode_of_payment="Cash",
+            credit_to="",
+            cash_bank_account="",
+        )
+
+        account_governance.apply_document_account_defaults(doc)
+
+        self.assertEqual(doc.cash_bank_account, "Cash - D")
+
+    def test_unpaid_purchase_invoice_does_not_set_cash_bank_account(self):
+        doc = FakeDoc(
+            "Purchase Invoice",
+            company="Demo Company",
+            is_paid=0,
+            mode_of_payment="",
+            credit_to="",
+            cash_bank_account="",
+        )
+
+        account_governance.apply_document_account_defaults(doc)
+
+        self.assertEqual(doc.cash_bank_account, "")
+
+    def test_paid_purchase_invoice_requires_mode_of_payment(self):
+        doc = FakeDoc(
+            "Purchase Invoice",
+            company="Demo Company",
+            is_paid=1,
+            mode_of_payment="",
+            credit_to="",
+            cash_bank_account="",
+        )
+
+        with self.assertRaisesRegex(Exception, "Select a Mode of Payment"):
+            account_governance.apply_document_account_defaults(doc)
 
     def test_non_superadmin_cannot_change_account_fields_after_save(self):
         before = FakeDoc("Sales Invoice", company="Demo Company", debit_to="Receivable - D")

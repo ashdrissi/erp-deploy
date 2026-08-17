@@ -12,6 +12,7 @@
     "description",
     "default_uom",
     "default_rate",
+    "default_expected_unit_cost",
     "item_code"
   ],
   "fields": [
@@ -51,6 +52,14 @@
       "label": "Default Unit Amount HT"
     },
     {
+      "fieldname": "default_expected_unit_cost",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Default Expected Unit Cost HT",
+      "precision": "9",
+      "permlevel": 2
+    },
+    {
       "default": "OTHER-CHARGES",
       "fieldname": "item_code",
       "fieldtype": "Link",
@@ -66,10 +75,13 @@
   "owner": "Administrator",
   "permissions": [
     {"role": "Orderlift Admin", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Orderlift Admin", "permlevel": 2, "read": 1, "write": 1},
     {"role": "Pricing Configuration", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "Pricing Configuration", "permlevel": 2, "read": 1, "write": 1},
     {"role": "Sales Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "share": 1, "print": 1, "email": 1},
     {"role": "Sales User", "read": 1, "report": 1, "print": 1, "email": 1},
-    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1}
+    {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1, "share": 1, "print": 1, "email": 1},
+    {"role": "System Manager", "permlevel": 2, "read": 1, "write": 1}
   ],
   "sort_field": "modified",
   "sort_order": "DESC",

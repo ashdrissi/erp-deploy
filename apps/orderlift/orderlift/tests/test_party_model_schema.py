@@ -12,8 +12,13 @@ class TestPartyModelSchema(unittest.TestCase):
         crm_fields = json.loads((APP_ROOT / "fixtures" / "custom_field_crm_classification.json").read_text())
         by_key = {(row.get("dt"), row.get("fieldname")): row for row in company_fields + crm_fields}
 
-        for doctype in ("Lead", "Prospect", "Customer"):
+        for doctype in ("Lead", "Prospect", "Customer", "Supplier"):
             self.assertIn((doctype, "custom_company"), by_key)
+            self.assertEqual(
+                by_key[(doctype, "custom_internal_company_access")]["options"],
+                "Party Internal Company Access",
+            )
+        for doctype in ("Lead", "Prospect", "Customer"):
             for fieldname in (
                 "custom_company_communication_section",
                 "custom_general_email",
@@ -22,14 +27,18 @@ class TestPartyModelSchema(unittest.TestCase):
                 "custom_general_whatsapp",
             ):
                 self.assertIn((doctype, fieldname), by_key)
-            self.assertEqual(
-                by_key[(doctype, "custom_internal_company_access")]["options"],
-                "Party Internal Company Access",
-            )
             self.assertEqual(by_key[(doctype, "custom_party_workspace_section")]["fieldtype"], "Section Break")
             self.assertIn((doctype, "custom_party_workspace_html"), by_key)
         self.assertEqual(by_key[("Lead", "custom_tax_id")]["label"], "ICE / Tax ID")
         self.assertEqual(by_key[("Prospect", "custom_tax_id")]["label"], "ICE / Tax ID")
+
+    def test_internal_company_access_primary_column_is_hidden(self):
+        doctype = json.loads(
+            (APP_ROOT / "orderlift_crm" / "doctype" / "party_internal_company_access" / "party_internal_company_access.json").read_text()
+        )
+        fields = {row.get("fieldname"): row for row in doctype.get("fields", [])}
+        self.assertEqual(fields["is_primary"].get("hidden"), 1)
+        self.assertNotEqual(fields["is_primary"].get("in_list_view"), 1)
 
     def test_downstream_site_and_tax_fields_are_defined(self):
         fields = json.loads((APP_ROOT / "fixtures" / "custom_field_crm_classification.json").read_text())
@@ -61,6 +70,8 @@ class TestPartyModelSchema(unittest.TestCase):
         self.assertIn("save_party_address", party_js)
         self.assertIn("save_party_contact", party_js)
         self.assertIn("Linked Deals", party_js)
+        self.assertIn('"Supplier": "public/js/party_form_simplify_20260812a.js"', hooks)
+        self.assertIn('frm.doc.supplier_name', party_js)
         self.assertIn("_ensure_party_field_order", (APP_ROOT / "orderlift_crm" / "setup.py").read_text())
 
 

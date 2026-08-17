@@ -146,77 +146,13 @@ class TestReportingMasterData(unittest.TestCase):
         self.assertEqual(companies, [{"name": "Orderlift Turkey", "abbr": "OTR", "currency": "TRY"}])
         self.assertEqual(calls[0][1]["filters"][reporting.REPORTING_COMPANY_FIELD], 1)
 
-    def test_sale_financial_totals_keep_transaction_currencies_separate(self):
-        rows = sale_financial_dashboard._currency_totals(
-            [{"currency": "MAD", "amount": 1000}, {"currency": "USD", "amount": 200}],
-            [{"currency": "USD", "amount": 50}, {"currency": "TRY", "amount": 300}],
+    def test_sale_financial_page_is_a_cash_flow_facade(self):
+        self.assertEqual(
+            sale_financial_dashboard.PAGE_ROLES,
+            ("Orderlift Admin", "System Manager", "Finance User", "Finance Admin"),
         )
-        by_currency = {row["currency"]: row for row in rows}
-
-        self.assertEqual(by_currency["MAD"]["revenue"], 1000)
-        self.assertEqual(by_currency["USD"]["revenue"], 200)
-        self.assertEqual(by_currency["USD"]["charges"], 50)
-        self.assertEqual(by_currency["TRY"]["charges"], 300)
-
-    def test_sale_financial_filters_normalize_business_context(self):
-        filters = sale_financial_dashboard._clean_filters(
-            '{"company":"Orderlift Turkey","business_type":"Maintenance","search":"  ABC  "}'
-        )
-
-        self.assertEqual(filters["company"], "Orderlift Turkey")
-        self.assertEqual(filters["business_type"], "Maintenance")
-        self.assertEqual(filters["search"], "ABC")
-        self.assertEqual(reporting.normalize_business_type("Maintenance"), "Maintenance")
-
-    def test_sale_financial_row_filter_matches_business_filters(self):
-        filters = {
-            "company": "Orderlift Maroc Installation",
-            "business_type": "Installation",
-            "crm_segment": "Promoteur",
-            "currency": "MAD",
-            "sales_status": "To Deliver",
-            "search": "acme",
-        }
-        row = {
-            "company": "Orderlift Maroc Installation",
-            "business_type": "Installation",
-            "segment": "Promoteur",
-            "currency": "MAD",
-            "workflow_status": "To Deliver",
-            "customer": "ACME Towers",
-        }
-
-        self.assertTrue(
-            sale_financial_dashboard._matches_filters(
-                row,
-                filters,
-                status_filter="sales_status",
-                search_fields=("customer",),
-            )
-        )
-
-        filters["crm_segment"] = "Installateur"
-        self.assertFalse(
-            sale_financial_dashboard._matches_filters(
-                row,
-                filters,
-                status_filter="sales_status",
-                search_fields=("customer",),
-            )
-        )
-
-    def test_sale_financial_segment_summary_aggregates_workload_and_amounts(self):
-        rows = sale_financial_dashboard._segment_summary(
-            [{"segment": "Promoteur", "currency": "MAD", "amount": 1000}],
-            [{"segment": "Promoteur"}, {"segment": "Installateur"}],
-            [{"segment": "Promoteur", "currency": "MAD", "amount": 250}],
-        )
-        by_segment = {row["label"]: row for row in rows}
-
-        self.assertEqual(by_segment["Promoteur"]["sales_orders"], 1)
-        self.assertEqual(by_segment["Promoteur"]["projects"], 1)
-        self.assertEqual(by_segment["Promoteur"]["purchase_orders"], 1)
-        self.assertEqual(by_segment["Promoteur"]["amounts"][0]["margin"], 750)
+        self.assertTrue(callable(sale_financial_dashboard.get_portfolio_data))
+        self.assertTrue(callable(sale_financial_dashboard.get_cash_flow_detail))
 
 
 if __name__ == "__main__":

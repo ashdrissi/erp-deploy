@@ -24,7 +24,6 @@
         selectedUser: "",
         selectedUserDetail: null,
         userSettingsOpen: false,
-        userDefaultCompanyDraft: "",
         data: null,
         matrixDraft: {},
         matrixDraftRole: "",
@@ -93,7 +92,6 @@
         try {
             const res = await frappe.call({ method: `${METHOD}.get_user_detail`, args: { user_name: userName } });
             STATE.selectedUserDetail = res.message || null;
-            STATE.userDefaultCompanyDraft = (STATE.selectedUserDetail || {}).default_company || "";
             if (shouldRender && page) render(page);
         } catch (error) {
             frappe.msgprint({ title: __("User Detail Failed"), message: error.message || __("Could not load user."), indicator: "red" });
@@ -110,7 +108,6 @@
         const userName = STATE.selectedUser;
         STATE.userSettingsOpen = false;
         STATE.selectedUserDetail = null;
-        STATE.userDefaultCompanyDraft = "";
         render(page);
         window.setTimeout(() => {
             page.main.find("[data-view-user]").filter(function () {
@@ -740,7 +737,7 @@
             </div>
             <div class="acc-detail-section">
                 <h3>${__("Company Access")}</h3>
-                <div class="acc-role-toggle-list acc-company-toggle-list">${companies.map((company) => companyAccessRow(company, assignedCompanies, user.default_company)).join("") || `<div class="acc-empty-inline">${__("No companies found.")}</div>`}</div>
+                <div class="acc-role-toggle-list acc-company-toggle-list">${companies.map((company) => companyAccessRow(company, assignedCompanies)).join("") || `<div class="acc-empty-inline">${__("No companies found.")}</div>`}</div>
             </div>
             <div class="acc-detail-section">
                 <h3>${__("Warehouse Access")}</h3>
@@ -871,11 +868,10 @@
         return `<button class="acc-mini-user ${user.name === STATE.selectedUser ? "active" : ""}" data-view-user="${escapeHtml(user.name)}"><span class="acc-avatar tiny">${initials(user.full_name || user.name)}</span><span><strong>${escapeHtml(user.full_name || user.name)}</strong><small>${escapeHtml(user.main_role || user.user_type || "")}</small></span></button>`;
     }
 
-    function companyAccessRow(company, assignedCompanies, defaultCompany) {
+    function companyAccessRow(company, assignedCompanies) {
         const isAssigned = assignedCompanies.has(company.name);
-        const isDefault = company.name === defaultCompany;
         const businessTypes = (company.business_types || []).map((type) => `<span>${escapeHtml(type)}</span>`).join("") || `<span>${__("No business types")}</span>`;
-        return `<div class="acc-company-row ${isDefault ? "is-default" : ""}"><label class="acc-role-toggle ${isAssigned ? "selected" : ""}"><input type="checkbox" data-user-company="${escapeHtml(company.name)}" ${isAssigned ? "checked" : ""} /><span>${escapeHtml(company.name)}</span><small class="acc-company-business-types">${businessTypes}</small></label><button type="button" class="acc-default-company-btn ${isDefault ? "active" : ""}" data-make-default-company="${escapeHtml(company.name)}">${isDefault ? __("Default") : __("Make Default")}</button></div>`;
+        return `<div class="acc-company-row"><label class="acc-role-toggle ${isAssigned ? "selected" : ""}"><input type="checkbox" data-user-company="${escapeHtml(company.name)}" ${isAssigned ? "checked" : ""} /><span>${escapeHtml(company.name)}</span><small class="acc-company-business-types">${businessTypes}</small></label></div>`;
     }
 
     function roleCard(role) {
@@ -1195,19 +1191,6 @@
         page.main.find("[data-save-user-configuration]").on("click", () => saveUserConfiguration(page));
         page.main.find("[data-delete-user]").on("click", () => deleteSelectedUser(page));
         page.main.find("[data-user-company]").on("change", function () {
-            const company = String($(this).data("user-company") || "");
-            if (!$(this).is(":checked") && company === STATE.userDefaultCompanyDraft) {
-                STATE.userDefaultCompanyDraft = "";
-                page.main.find("[data-make-default-company]").filter(function () { return String($(this).data("make-default-company") || "") === company; }).removeClass("active").text(__("Make Default"));
-            }
-            refreshCompanyScopedAccessOptions(page);
-        });
-        page.main.find("[data-make-default-company]").on("click", function () {
-            const company = String($(this).data("make-default-company") || "");
-            STATE.userDefaultCompanyDraft = company;
-            page.main.find("[data-user-company]").filter(function () { return String($(this).data("user-company") || "") === company; }).prop("checked", true);
-            page.main.find("[data-make-default-company]").removeClass("active").text(__("Make Default"));
-            $(this).addClass("active").text(__("Default"));
             refreshCompanyScopedAccessOptions(page);
         });
         page.main.find("[data-save-menu-access]").on("click", () => reviewAndSaveMenuAccess(page));
@@ -1381,7 +1364,6 @@
         if (newPassword) payload.new_password = newPassword;
         payload.roles = panel.find("[data-user-role]:checked").map(function () { return $(this).data("user-role"); }).get();
         payload.companies = panel.find("[data-user-company]:checked").map(function () { return $(this).data("user-company"); }).get();
-        payload.default_company = STATE.userDefaultCompanyDraft || "";
         payload.warehouses = panel.find("[data-user-warehouse]:checked").map(function () { return $(this).data("user-warehouse"); }).get();
         payload.business_types = panel.find("[data-user-business-type]:checked").map(function () { return $(this).data("user-business-type"); }).get();
         frappe.confirm(
@@ -2009,7 +1991,7 @@
             .acc-derived-field { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; margin-bottom:12px; padding:10px 12px; border:1px solid var(--info-100); border-radius:9px; background:var(--info-50); } .acc-derived-field > span { color:var(--info-700); font-size:11px; font-weight:600; } .acc-derived-field > strong { color:var(--info-700); font-size:12px; } .acc-derived-field > small { grid-column:1 / -1; color:var(--ink-600); font-size:10px; line-height:1.45; }
             .acc-toggle-line { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--ink-100); border-radius:8px; font-size:13px; color:var(--ink-700); cursor:pointer; margin-bottom:12px; transition:all .2s var(--ease); } .acc-toggle-line input[type='checkbox'] { appearance:none; width:32px; height:18px; background:var(--ink-200); border-radius:999px; position:relative; cursor:pointer; transition:background .2s var(--ease); flex-shrink:0; } .acc-toggle-line input[type='checkbox']::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; background:#fff; border-radius:50%; transition:transform .2s var(--ease); box-shadow:var(--shadow-xs); } .acc-toggle-line input[type='checkbox']:checked { background:var(--success-500); } .acc-toggle-line input[type='checkbox']:checked::after { transform:translateX(14px); }
             .acc-role-toggle-list { display:flex; flex-direction:column; gap:4px; max-height:360px; overflow-y:auto; margin:0 -4px 12px; padding:4px; border:1px solid var(--ink-100); border-radius:10px; background:var(--surface-2); } .acc-role-toggle { display:grid; grid-template-columns:16px 1fr auto; align-items:center; gap:10px; padding:7px 10px; border-radius:7px; background:transparent; cursor:pointer; transition:all .15s var(--ease); font-size:12px; color:var(--ink-700); border:1px solid transparent; } .acc-role-toggle:hover { background:var(--surface); border-color:var(--ink-100); } .acc-role-toggle.selected { background:var(--surface); border-color:var(--primary-100); } .acc-role-toggle.selected span:first-of-type { color:var(--primary-700); font-weight:500; } .acc-role-toggle .acc-badge { font-size:9px; padding:2px 5px; }
-            .acc-company-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:center; } .acc-company-row .acc-role-toggle { margin:0; align-items:flex-start; } .acc-company-row.is-default .acc-role-toggle { border-color:var(--success-100); background:var(--success-50); } .acc-company-business-types { grid-column:2 / 4; display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; } .acc-company-business-types span { display:inline-flex; border-radius:999px; background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); padding:2px 6px; font-size:9px; font-weight:800; } .acc-default-company-btn { min-height:31px; border:1px solid var(--ink-200); border-radius:8px; background:var(--surface); color:var(--ink-600); padding:0 9px; font-size:10px; font-weight:700; cursor:pointer; white-space:nowrap; } .acc-default-company-btn:hover { border-color:var(--primary-100); color:var(--primary-700); background:var(--primary-50); } .acc-default-company-btn.active { border-color:var(--success-100); color:var(--success-700); background:var(--success-50); cursor:default; }
+            .acc-company-row { display:block; } .acc-company-row .acc-role-toggle { margin:0; align-items:flex-start; } .acc-company-business-types { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; } .acc-company-business-types span { display:inline-flex; border-radius:999px; background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); padding:2px 6px; font-size:9px; font-weight:800; }
             .acc-card-grid { padding:16px; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; } .acc-role-card { border-radius:14px; padding:14px; background:var(--surface); border:1px solid var(--ink-150); box-shadow:var(--shadow-xs); } .acc-role-card.elevated { border-color:var(--cyan-100); background:var(--cyan-50); } .acc-role-card.critical { border-color:var(--rose-100); background:var(--rose-50); } .acc-card-top { display:flex; justify-content:space-between; gap:10px; align-items:start; } .acc-role-badges { display:flex; flex-wrap:wrap; gap:5px; justify-content:flex-end; } .acc-role-card h3 { margin:12px 0 5px; color:var(--ink-1000); font-size:15px; font-weight:600; } .acc-role-card p,.acc-access-card p { margin:0 0 12px; color:var(--ink-500); font-size:12px; line-height:1.45; } .acc-role-capability-row { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 12px; } .acc-card-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; } .acc-card-metrics span { border-radius:10px; padding:10px; background:var(--surface-2); color:var(--ink-500); font-size:10px; font-weight:500; text-transform:uppercase; } .acc-card-metrics strong { display:block; color:var(--ink-1000); font-size:18px; } .acc-role-card-actions { display:grid; gap:8px; } .acc-role-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; } .acc-text-link { display:inline-flex; align-items:center; justify-content:center; min-height:34px; border-radius:8px; color:var(--ink-600); background:var(--surface-2); border:1px solid var(--ink-100); font-size:12px; font-weight:500; text-decoration:none; } .acc-text-link:hover { color:var(--ink-900); border-color:var(--ink-200); text-decoration:none; }
             .acc-matrix-toolbar label { display:flex; flex-direction:column; gap:5px; color:var(--ink-600); font-size:11px; font-weight:500; } .acc-source-legend { display:inline-flex; gap:6px; align-items:center; color:var(--ink-500); font-size:11px; font-weight:500; } .acc-source-legend b { width:9px; height:9px; border-radius:999px; display:inline-block; } .acc-source-legend .custom { background:var(--accent-600); } .acc-source-legend .standard { background:var(--primary-600); } .acc-source-legend .none { background:var(--ink-400); } .acc-doctype-cell strong,.acc-doctype-cell small { display:block; } .acc-doctype-cell small { color:var(--ink-500); font-size:10px; font-weight:500; margin-top:2px; }
             .acc-matrix-search-status { display:inline-flex; align-items:center; gap:6px; min-width:86px; min-height:26px; padding:4px 8px; border-radius:999px; color:var(--ink-500); font-size:11px; font-weight:700; } .acc-matrix-search-status:empty { display:none; } .acc-matrix-search-status.active { background:var(--primary-50); color:var(--primary-700); border:1px solid var(--primary-100); } .acc-matrix-search-status b { width:12px; height:12px; border-radius:999px; border:2px solid var(--primary-100); border-top-color:var(--primary-600); animation:accSpin .75s linear infinite; } @keyframes accSpin { to { transform:rotate(360deg); } }

@@ -59,6 +59,7 @@ class TestSalesInvoiceModes(unittest.TestCase):
             description="Custom work",
             cost_center="Main - OMI",
             uom="Nos",
+            sales_order="SO-001",
         )
 
         self.assertEqual(payload["header"]["custom_invoice_mode"], "Custom")
@@ -67,10 +68,27 @@ class TestSalesInvoiceModes(unittest.TestCase):
         self.assertEqual(payload["row"]["rate"], 1200)
         self.assertEqual(payload["row"]["uom"], "Nos")
         self.assertEqual(payload["row"]["income_account"], "Sales - OMI")
+        self.assertEqual(payload["row"]["sales_order"], "SO-001")
+        self.assertEqual(payload["header"]["custom_advance_sales_order"], "SO-001")
+
+    def test_build_advance_invoice_payload_links_row_and_header_to_sales_order(self):
+        sales_invoice_modes.sales_tax_template_total_rate = lambda template: 0
+        option = {"available_amount": 1000, "payment_entry": "PE-002", "designation": "Acompte"}
+
+        payload = sales_invoice_modes.build_advance_invoice_payload(
+            option,
+            amount=1000,
+            income_account="Sales - OMI",
+            uom="Nos",
+            sales_order="SO-002",
+        )
+
+        self.assertEqual(payload["row"]["sales_order"], "SO-002")
+        self.assertEqual(payload["header"]["custom_advance_sales_order"], "SO-002")
 
     def test_build_advance_invoice_payload_converts_ttc_to_ht_from_tax_template(self):
         sales_invoice_modes.sales_tax_template_total_rate = lambda template: 20 if template == "VAT 20" else 0
-        option = {"available_amount": 1200, "payment_entry": "PE-001", "designation": "Acompte"}
+        option = {"available_amount": 1200, "payment_entry": "PE-001", "sales_order": "SO-001", "designation": "Acompte"}
 
         payload = sales_invoice_modes.build_advance_invoice_payload(
             option,
@@ -85,6 +103,8 @@ class TestSalesInvoiceModes(unittest.TestCase):
         self.assertAlmostEqual(payload["row"]["custom_pt_ttc"], 1200)
         self.assertAlmostEqual(payload["row"]["custom_applied_taxes"], 200)
         self.assertEqual(payload["row"]["uom"], "Nos")
+        self.assertEqual(payload["row"]["sales_order"], "SO-001")
+        self.assertEqual(payload["header"]["custom_advance_sales_order"], "SO-001")
 
     def test_build_advance_payload_caps_available_amount(self):
         option = {"available_amount": 500, "payment_entry": "PE-001", "designation": "Acompte"}
@@ -113,10 +133,10 @@ class TestSalesInvoiceModes(unittest.TestCase):
 
     def test_sales_invoice_mode_script_is_wired(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
-        script = (APP_ROOT / "public" / "js" / "sales_invoice_mode_20260812c.js").read_text()
+        script = (APP_ROOT / "public" / "js" / "sales_invoice_mode_20260812d.js").read_text()
         pricing_setup = (APP_ROOT / "sales" / "utils" / "pricing_setup.py").read_text()
 
-        self.assertIn("sales_invoice_mode_20260812c.js", hooks)
+        self.assertIn("sales_invoice_mode_20260812d.js", hooks)
         for label in ["Invoice Based on Items", "Invoice Based on Advance", "Custom Invoice"]:
             self.assertIn(label, script)
         self.assertIn('data-ol-si-mode="items"', script)
@@ -127,6 +147,9 @@ class TestSalesInvoiceModes(unittest.TestCase):
         self.assertIn('label: __("Amount TTC")', script)
         self.assertIn('fieldname: "uom"', script)
         self.assertIn("taxes_and_charges: frm.doc.taxes_and_charges", script)
+        self.assertIn("sales_order: singleSourceSalesOrder(frm)", script)
+        self.assertIn("function singleSourceSalesOrder(frm)", script)
+        self.assertIn("frm.__orderlift_stashed_items", script)
         for fieldname in [
             "custom_invoice_mode",
             "custom_advance_payment_entry",

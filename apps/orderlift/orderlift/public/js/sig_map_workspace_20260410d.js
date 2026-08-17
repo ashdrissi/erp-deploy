@@ -53,10 +53,6 @@
                 <div class="sig-map-filters">
                     <select id="sig-filter-type" class="sig-filter-select">
                         <option value="">All Types</option>
-                        <option value="New Installation">New Installation</option>
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Upgrade">Upgrade</option>
-                        <option value="Inspection">Inspection</option>
                     </select>
                     <select id="sig-filter-qc" class="sig-filter-select">
                         <option value="">All QC Status</option>
@@ -222,6 +218,16 @@
         });
 
         loadProjects({});
+        loadProjectTypes();
+
+        function loadProjectTypes() {
+            frappe.call({ method: "orderlift.orderlift_sig.api.map_api.get_project_types" }).then((response) => {
+                const options = (response.message || []).map((value) =>
+                    `<option value="${frappe.utils.escape_html(value)}">${frappe.utils.escape_html(value)}</option>`
+                ).join("");
+                $("#sig-filter-type").innerHTML = `<option value="">All Types</option>${options}`;
+            });
+        }
 
         function loadProjects(filters) {
             setLoading(true);

@@ -58,6 +58,12 @@ const context = {
         get_doc(cdt, cdn) {
             return docs.get(cdn);
         },
+        db: {
+            get_value(doctype, name, fieldname) {
+                calls.push({ method: "db.get_value", doctype, name, fieldname });
+                return Promise.resolve({ message: { [fieldname]: `${doctype}-${fieldname}` } });
+            },
+        },
         get_user_settings(doctype, key) {
             return this.model.user_settings[doctype]?.[key] || {};
         },
@@ -283,6 +289,27 @@ function makeGridFrm() {
     };
 }
 
+async function runProspectTaxIdRefreshScenario() {
+    const frm = makeGridFrm();
+    frm.doc.quotation_to = "Prospect";
+    frm.doc.party_name = "test prospect";
+    frm.doc.custom_customer_tax_id = "Prospect-custom_tax_id";
+    frm.fields_dict.custom_customer_tax_id = {};
+    let setValueCalls = 0;
+    frm.set_value = async (fieldname, value) => {
+        setValueCalls += 1;
+        frm.doc[fieldname] = value;
+    };
+
+    const callsBefore = calls.length;
+    formHandlers.refresh(frm);
+    await Promise.resolve();
+
+    assertEqual("Prospect tax lookup uses custom_tax_id", calls[callsBefore].fieldname, "custom_tax_id");
+    assertEqual("Prospect tax id stays unchanged after refresh", frm.doc.custom_customer_tax_id, "Prospect-custom_tax_id");
+    assertEqual("Prospect tax id refresh does not dirty saved value", setValueCalls, 0);
+}
+
 async function runDraftTTCRecalculateScenario() {
     const row = makeRow();
     row.custom_applied_taxes = 0;
@@ -442,6 +469,7 @@ async function main() {
     runLinePrecisionScenario();
     runGridScenario();
     runConfiguredMarginScenario();
+    await runProspectTaxIdRefreshScenario();
     await runDraftTTCRecalculateScenario();
     await runSubmittedLockScenario();
 
@@ -458,6 +486,7 @@ async function main() {
             pt_ttc: finalRow.custom_pt_ttc,
         },
         submitted_locked: true,
+        prospect_tax_id_stable: true,
         setValueCalls: calls.length,
     }, null, 2));
 }

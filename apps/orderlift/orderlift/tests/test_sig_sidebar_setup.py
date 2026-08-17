@@ -31,8 +31,10 @@ class TestSigSidebarSetup(unittest.TestCase):
         self.assertEqual(labels[labels.index("CRM & Customers") + 1], "CRM Dashboard")
         self.assertEqual(labels[labels.index("CRM & Customers") + 2], "Projects List")
         self.assertEqual(labels[labels.index("Finance") + 1], "Sale Financial Dashboard")
-        self.assertEqual(labels[labels.index("Gestion de Projets") + 1], "Project Pipeline")
-        self.assertEqual(labels[labels.index("Gestion de Projets") + 2], "Sales Order Pipeline")
+        projects_index = labels.index("Gestion de Projets")
+        self.assertEqual(labels[projects_index + 1], "Projects")
+        self.assertEqual(labels[projects_index + 2], "Project Pipeline")
+        self.assertEqual(labels[projects_index + 3], "Sales Order Pipeline")
         self.assertEqual(labels[labels.index("Logistics") + 1], "Logistics Pipeline")
         for section in setup_main_dashboard_sidebar.SECTION_ICONS:
             section_index = next(

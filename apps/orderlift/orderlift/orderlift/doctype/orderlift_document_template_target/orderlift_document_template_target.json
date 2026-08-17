@@ -4,9 +4,16 @@
   "doctype": "DocType",
   "editable_grid": 1,
   "engine": "InnoDB",
-  "field_order": ["target_doctype"],
+  "field_order": ["target_doctype", "allow_direct_creation", "allow_execution_copy", "allow_import_from_sales_order", "required_for_revision", "must_be_complete", "default_selected", "display_order"],
   "fields": [
-    {"fieldname": "target_doctype", "fieldtype": "Select", "label": "Target DocType", "options": "Opportunity\nProject\nQuotation\nSales Order\nForecast Load Plan", "reqd": 1, "in_list_view": 1}
+    {"fieldname": "target_doctype", "fieldtype": "Select", "label": "Target DocType", "options": "Opportunity\nQuotation\nSales Order\nProject\nForecast Load Plan\nSales Order Technical List Revision", "reqd": 1, "in_list_view": 1, "description": "The business document this annex template applies to."},
+    {"fieldname": "allow_direct_creation", "fieldtype": "Check", "label": "Allow Direct Creation", "default": "1", "in_list_view": 1, "description": "The annex can be created and edited directly on this document."},
+    {"fieldname": "allow_execution_copy", "fieldtype": "Check", "label": "Allow Execution Copy from Upstream", "in_list_view": 1, "description": "An annex from an earlier document (Quotation or Sales Order) can be copied into a Technical List Revision as an editable execution copy."},
+    {"fieldname": "allow_import_from_sales_order", "fieldtype": "Check", "label": "Legacy Sales Order Import", "hidden": 1},
+    {"fieldname": "required_for_revision", "fieldtype": "Check", "label": "Required for Revision", "description": "The Technical List Revision cannot be submitted unless this annex is present."},
+    {"fieldname": "must_be_complete", "fieldtype": "Check", "label": "Must Be Complete", "description": "The annex must be fully completed before the Technical List Revision can be submitted."},
+    {"fieldname": "default_selected", "fieldtype": "Check", "label": "Selected by Default", "description": "When a new Technical List Revision is created, this annex is created or copied automatically."},
+    {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100"}
   ],
   "istable": 1,
   "links": [],
@@ -16,7 +23,7 @@
   "name": "Orderlift Document Template Target",
   "owner": "Administrator",
   "permissions": [],
-  "sort_field": "idx",
+  "sort_field": "display_order",
   "sort_order": "ASC",
   "states": []
 }

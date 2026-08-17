@@ -7,6 +7,9 @@ from frappe.utils import flt, getdate, nowdate
 from orderlift.menu_access import resolve_current_company
 
 
+MANUAL_CHARGE_ITEM_CODES = {"OTHER-CHARGES", "TRANSPORTATION-CHARGE"}
+
+
 def default_schedule_date(doc, method=None) -> None:
     if not doc:
         return
@@ -58,7 +61,13 @@ def make_purchase_order_from_material_requests(
     company = requests[0].company
     supplier_doc = frappe.get_doc("Supplier", supplier)
     supplier_doc.check_permission("read")
-    if supplier_doc.meta.get_field("custom_company") and (supplier_doc.custom_company or "").strip() != company:
+    from orderlift.orderlift_sales.utils.purchase_order_pricing import (
+        _supplier_allowed_for_company,
+        get_supplier_buying_price_lists,
+        sync_purchase_order_buying_price_lists,
+    )
+
+    if supplier_doc.meta.get_field("custom_company") and not _supplier_allowed_for_company(supplier, company):
         frappe.throw(_("Supplier {0} does not belong to company {1}.").format(supplier, company))
     transaction_date = nowdate()
     requested_schedule_date = str(getdate(schedule_date)) if schedule_date else ""
@@ -97,6 +106,27 @@ def make_purchase_order_from_material_requests(
             {key: value for key, value in values.items() if value is not None and item_meta.get_field(key)},
         )
 
+    for index, row in enumerate(
+        get_supplier_buying_price_lists(
+            supplier,
+            company,
+            target_currency=supplier_currency,
+            reference_date=transaction_date,
+        ),
+        start=1,
+    ):
+        purchase_order.append(
+            "selected_buying_price_lists",
+            {
+                "price_list": row["price_list"],
+                "source_currency": row.get("source_currency"),
+                "exchange_rate": row.get("exchange_rate"),
+                "exchange_rate_source": row.get("exchange_rate_source") or "System",
+                "sequence": index * 10,
+                "is_active": 1,
+            },
+        )
+    sync_purchase_order_buying_price_lists(purchase_order)
     purchase_order.flags.ignore_mandatory = True
     payload = purchase_order.as_dict()
     payload["__islocal"] = 1
@@ -138,13 +168,13 @@ def _purchase_order_source_rows(material_requests):
         requests.append(doc)
         for row in doc.items:
             remaining_qty = max(flt(row.qty) - flt(row.get("ordered_qty")), 0)
-            if not row.item_code or remaining_qty <= 0:
+            if not row.item_code or remaining_qty <= 0 or row.item_code in MANUAL_CHARGE_ITEM_CODES:
                 skipped_rows.append(
                     {
                         "material_request": doc.name,
                         "material_request_item": row.name,
                         "item_code": row.item_code or "",
-                        "reason": _("Fully ordered or missing item"),
+                        "reason": _("Manual charge, fully ordered, or missing item"),
                     }
                 )
                 continue

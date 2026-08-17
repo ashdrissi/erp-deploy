@@ -12,6 +12,9 @@ sys.modules["frappe"] = frappe_stub
 
 utils_stub = types.ModuleType("frappe.utils")
 utils_stub.cint = lambda value=0: int(float(value or 0))
+utils_stub.flt = lambda value=0, precision=None: round(float(value or 0), precision) if precision is not None else float(value or 0)
+utils_stub.getdate = lambda value=None: value
+utils_stub.nowdate = lambda: "2026-08-15"
 sys.modules["frappe.utils"] = utils_stub
 
 from orderlift.orderlift_sales.utils import price_list_scope
@@ -20,9 +23,9 @@ from orderlift.orderlift_sales.utils import price_list_scope
 class TestPriceListScope(unittest.TestCase):
     def setUp(self):
         self.rows = {
-            "Buy OL": {"name": "Buy OL", "buying": 1, "selling": 0, "custom_company": "Orderlift"},
-            "Sell OL": {"name": "Sell OL", "buying": 0, "selling": 1, "custom_company": "Orderlift"},
-            "Buy Other": {"name": "Buy Other", "buying": 1, "selling": 0, "custom_company": "OtherCo"},
+            "Buy OL": {"name": "Buy OL", "enabled": 1, "buying": 1, "selling": 0, "custom_company": "Orderlift"},
+            "Sell OL": {"name": "Sell OL", "enabled": 1, "buying": 0, "selling": 1, "custom_company": "Orderlift"},
+            "Buy Other": {"name": "Buy Other", "enabled": 1, "buying": 1, "selling": 0, "custom_company": "OtherCo"},
         }
 
         class DbStub:
@@ -60,16 +63,19 @@ class TestPriceListScope(unittest.TestCase):
         self.original_throw = getattr(price_list_scope.frappe, "throw", None)
         self.original_resolve_current_company = price_list_scope.resolve_current_company
         self.original_require_reference_use = price_list_scope.require_reference_use
+        self.original_require_reference_select = price_list_scope.require_reference_select
         price_list_scope.frappe.db = DbStub()
         price_list_scope.frappe.get_all = get_all
         price_list_scope.frappe.throw = frappe_stub.throw
         price_list_scope.resolve_current_company = lambda user=None: "Orderlift"
         price_list_scope.require_reference_use = lambda doctype, name, **kwargs: name
+        price_list_scope.require_reference_select = lambda doctype: None
 
     def tearDown(self):
         price_list_scope.frappe.db = self.original_db
         price_list_scope.resolve_current_company = self.original_resolve_current_company
         price_list_scope.require_reference_use = self.original_require_reference_use
+        price_list_scope.require_reference_select = self.original_require_reference_select
         if self.original_get_all:
             price_list_scope.frappe.get_all = self.original_get_all
         else:
@@ -86,6 +92,17 @@ class TestPriceListScope(unittest.TestCase):
     def test_validate_price_list_scope_rejects_other_company(self):
         with self.assertRaisesRegex(ValueError, "does not belong to company Orderlift"):
             price_list_scope.validate_price_list_scope("Buy Other", kind="buying", required=True)
+
+    def test_validate_price_list_scope_uses_explicit_company_not_session_query(self):
+        def fail_session_scoped_reference(*args, **kwargs):
+            raise AssertionError("session-scoped reference check should not run")
+
+        price_list_scope.require_reference_use = fail_session_scoped_reference
+
+        self.assertEqual(
+            price_list_scope.validate_price_list_scope("Buy Other", kind="buying", required=True, company="OtherCo"),
+            "Buy Other",
+        )
 
     def test_validate_price_list_scope_rejects_wrong_type(self):
         with self.assertRaisesRegex(ValueError, "is not a buying price list"):

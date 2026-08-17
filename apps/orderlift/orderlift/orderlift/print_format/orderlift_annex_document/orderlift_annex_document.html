@@ -1,4 +1,4 @@
-{%- set template = frappe.get_doc("Orderlift Document Template", doc.template) -%}
+{%- set template = annex_print_template(doc) -%}
 {%- set company = frappe.get_doc("Company", doc.company) if doc.company else None -%}
 {%- set company_logo = company.company_logo if company else "" -%}
 {%- set company_address = get_company_address(doc.company) if doc.company else "" -%}

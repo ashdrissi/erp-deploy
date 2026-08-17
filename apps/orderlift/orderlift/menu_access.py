@@ -25,11 +25,13 @@ from orderlift.retired_pages import RETIRED_PAGE_NAMES
 MENU_ACCESS_DOCTYPE = "Orderlift Menu Access Rule"
 COMPANY_DOCTYPE = "Company"
 BUSINESS_TYPE_DOCTYPE = "CRM Business Type"
-PREFERRED_COMPANY_DEFAULT_KEY = "orderlift_preferred_company"
+LAST_SELECTED_COMPANY_DEFAULT_KEY = "orderlift_last_selected_company"
+LEGACY_PREFERRED_COMPANY_DEFAULT_KEY = "orderlift_preferred_company"
 SESSION_COMPANY_CACHE_PREFIX = "orderlift:company_context"
 ADMIN_BYPASS_ROLES = {"System Manager", "Administrator"}
 BUSINESS_SCOPE_BYPASS_ROLES = {"Orderlift Admin"}
 SUPPORTING_PAGE_MENU_KEYS = {
+    "sale-financial-workspace": "finance.sale_financial_dashboard",
     "planning": "logistics.container_planning",
     "forecast-plans": "logistics.container_planning",
     "dimensioning-set-builder": "items.dimensioning_sets",
@@ -476,7 +478,7 @@ def get_company_access_payload(user: str | None = None, requested_company: str |
     user = user or frappe.session.user
     unrestricted = user_can_access_all_companies(user)
     companies = get_allowed_companies(user) if not unrestricted else get_all_companies()
-    preferred_company = get_user_default_company(user)
+    last_selected_company = get_last_selected_company(user)
     current_company = resolve_current_company(
         user=user,
         requested_company=requested_company,
@@ -487,8 +489,7 @@ def get_company_access_payload(user: str | None = None, requested_company: str |
         "unrestricted": unrestricted,
         "companies": companies,
         "current_company": current_company,
-        "user_default_company": preferred_company if preferred_company in companies else "",
-        "preferred_company": preferred_company if preferred_company in companies else "",
+        "last_selected_company": last_selected_company if last_selected_company in companies else "",
         "context_revision": cint(context.get("revision")) if context else 0,
         "requires_company_selection": bool(not current_company and len(companies) > 1),
         "company_currencies": get_company_currency_map(companies),
@@ -532,6 +533,7 @@ def set_current_company(company: str) -> dict:
         frappe.throw("Company switching requires a POST request", frappe.PermissionError)
     if not set_session_current_company(company, user=frappe.session.user):
         frappe.throw("An authenticated browser session is required to switch company.")
+    _set_last_selected_company(company, user=frappe.session.user)
     return get_company_access_payload(requested_company=company)
 
 
@@ -553,48 +555,46 @@ def resolve_current_company(
     if session_company in allowed_companies:
         return session_company
 
-    preferred_company = get_user_default_company(user)
-    if preferred_company in allowed_companies:
-        if _interactive_session_sid(user):
-            set_session_current_company(preferred_company, user=user)
-        return preferred_company
+    interactive_sid = _interactive_session_sid(user)
+    if interactive_sid:
+        last_selected_company = get_last_selected_company(user)
+        if last_selected_company in allowed_companies:
+            set_session_current_company(last_selected_company, user=user)
+            return last_selected_company
 
     if len(allowed_companies) == 1:
         company = allowed_companies[0]
-        if _interactive_session_sid(user):
+        if interactive_sid:
             set_session_current_company(company, user=user)
         return company
     return ""
 
 
-def get_user_default_company(user: str | None = None) -> str:
+def get_last_selected_company(user: str | None = None) -> str:
     defaults = getattr(frappe, "defaults", None)
     if not defaults or not hasattr(defaults, "get_user_default"):
         return ""
     user = user or frappe.session.user
     with suppress(Exception):
-        preferred = (defaults.get_user_default(PREFERRED_COMPANY_DEFAULT_KEY, user=user) or "").strip()
-        if preferred:
-            return preferred
-    with suppress(Exception):
-        return (defaults.get_user_default("Company", user=user) or "").strip()
-    with suppress(Exception):
-        return (defaults.get_user_default("Company") or "").strip()
+        return (defaults.get_user_default(LAST_SELECTED_COMPANY_DEFAULT_KEY, user=user) or "").strip()
     return ""
 
 
-def _set_user_default_company(company: str, user: str | None = None) -> None:
+def _set_last_selected_company(company: str, user: str | None = None) -> None:
     defaults = getattr(frappe, "defaults", None)
     if not defaults or not hasattr(defaults, "set_user_default"):
         return
     user = user or frappe.session.user
-    with suppress(Exception):
-        defaults.set_user_default(PREFERRED_COMPANY_DEFAULT_KEY, company, user=user)
-    with suppress(Exception):
-        defaults.set_user_default("Company", company, user=user)
+    defaults.set_user_default(LAST_SELECTED_COMPANY_DEFAULT_KEY, company, user=user)
+
+
+def _clear_last_selected_company(user: str) -> None:
+    if not user:
         return
-    with suppress(Exception):
-        defaults.set_user_default("Company", company)
+    frappe.db.delete(
+        "DefaultValue",
+        {"parent": user, "defkey": LAST_SELECTED_COMPANY_DEFAULT_KEY},
+    )
 
 
 def get_session_company_context(
@@ -772,21 +772,15 @@ def user_can_access_company(company: str | None, user: str | None = None) -> boo
     return company in set(get_allowed_companies(user))
 
 
-def save_user_company_access(user: str, companies: list[str] | str, default_company: str | None = None) -> dict:
+def save_user_company_access(user: str, companies: list[str] | str) -> dict:
     user = (user or "").strip()
     if not user or not frappe.db.exists("User", user):
         frappe.throw(f"User {user} was not found.")
 
     company_names = _clean_list(companies)
-    default_company = (default_company or "").strip()
     missing = [company for company in company_names if not frappe.db.exists(COMPANY_DOCTYPE, company)]
     if missing:
         frappe.throw(f"Unknown companies: {', '.join(missing)}")
-    if default_company:
-        if default_company not in company_names:
-            frappe.throw(f"Default company must be one of the assigned companies: {default_company}")
-        if not frappe.db.exists(COMPANY_DOCTYPE, default_company):
-            frappe.throw(f"Unknown default company: {default_company}")
 
     existing = frappe.get_all(
         "User Permission",
@@ -807,11 +801,18 @@ def save_user_company_access(user: str, companies: list[str] | str, default_comp
         doc.is_default = 0
         doc.insert(ignore_permissions=True)
 
-    if default_company:
-        _set_user_default_company(default_company, user=user)
+    last_selected_company = get_last_selected_company(user)
+    effective_companies = get_all_companies() if user_can_access_all_companies(user) else company_names
+    if last_selected_company and last_selected_company not in effective_companies:
+        _clear_last_selected_company(user)
+        last_selected_company = ""
 
     frappe.clear_cache(user=user)
-    return {"user": user, "companies": company_names, "default_company": default_company}
+    return {
+        "user": user,
+        "companies": company_names,
+        "last_selected_company": last_selected_company,
+    }
 
 
 # ---------------------------------------------------------------------------

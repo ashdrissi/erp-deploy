@@ -90,7 +90,7 @@
                     <div class="olp-hero-copy">
                         <div class="olp-eyebrow">${__("Orderlift SIG")}</div>
                         <h1>${__("Project Pipeline")}</h1>
-                        <p>${__("Track installation projects with linked sales, purchasing, delivery, invoice, and QC context visible on every card.")}</p>
+                        <p>${__("Track projects with linked sales, purchasing, delivery, invoice, and QC context visible on every card.")}</p>
                     </div>
                     <div class="olp-hero-kpis">
                         ${kpi(STATE.kpis.primary_label, STATE.kpis.primary_value)}
@@ -294,7 +294,7 @@
         const routeOptions = {};
         if (STATE.company !== "All") routeOptions.company = STATE.company;
         if (STATE.owner !== "All") routeOptions.custom_project_owner = STATE.owner;
-        routeOptions.custom_crm_business_type = STATE.business_type !== "All" ? STATE.business_type : "Installation";
+        if (STATE.business_type !== "All") routeOptions.custom_crm_business_type = STATE.business_type;
         if (STATE.segment !== "All") routeOptions.custom_crm_segment = STATE.segment;
         frappe.route_options = routeOptions;
         frappe.new_doc("Project");
@@ -768,10 +768,9 @@
                 customer: card.subtitle || "",
                 company: card.company || "",
                 project: projectName,
-                custom_installation_project: projectName,
-                custom_crm_business_type: card.business_type || "Installation",
                 custom_crm_segment: card.crm_segment || "",
             };
+            if (card.business_type) frappe.route_options.custom_crm_business_type = card.business_type;
             frappe.new_doc("Sales Order");
             return;
         }

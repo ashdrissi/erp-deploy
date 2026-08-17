@@ -230,7 +230,7 @@
     {
       "fieldname": "installation_project",
       "fieldtype": "Link",
-      "label": "Installation Project",
+      "label": "Project",
       "options": "Project"
     },
     {

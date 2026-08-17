@@ -5,7 +5,7 @@
         documentType: "Opportunity",
         company: "",
         data: { statuses: [], legacy_statuses: [], colors: [], todo_priorities: [], users: [], predefined_checks: [] },
-        draft: { label: "", sequence: 100, color: "Blue", assigned_user: "", todo_priority: "Important Non Urgent", auto_collapse: 0, auto_close_opportunity: 0, required_checks: [], confirmation_message: "", is_active: 1, is_default: 0, applies_distribution: 1, applies_installation: 1 },
+        draft: { label: "", sequence: 100, color: "Blue", assigned_user: "", todo_priority: "Important Non Urgent", auto_collapse: 0, auto_close_opportunity: 0, auto_create_project: 0, required_checks: [], confirmation_message: "", is_active: 1, is_default: 0, applies_distribution: 1, applies_installation: 1 },
         quickActionsDraft: [],
         statusSearch: "",
         statusFilter: "All",
@@ -298,6 +298,7 @@
             todo_priority: "Important Non Urgent",
             auto_collapse: 0,
             auto_close_opportunity: 0,
+            auto_create_project: 0,
             required_checks: [],
             confirmation_message: "",
             is_active: 1,
@@ -322,6 +323,7 @@
             todo_priority: row.find("[data-field='todo_priority']").val(),
             auto_collapse: row.find("[data-field='auto_collapse']").is(":checked") ? 1 : 0,
             auto_close_opportunity: row.find("[data-field='auto_close_opportunity']").is(":checked") ? 1 : 0,
+            auto_create_project: row.find("[data-field='auto_create_project']").is(":checked") ? 1 : 0,
             required_checks: row.find("[data-field='required_checks']:checked").map(function () { return $(this).val(); }).get(),
             confirmation_message: row.find("[data-field='confirmation_message']").val(),
             is_active: row.find("[data-field='is_active']").is(":checked") ? 1 : 0,
@@ -335,6 +337,7 @@
         const data = STATE.data || {};
         const showFlowFields = data.show_flow_fields !== false;
         const showAutoCloseOpportunity = Boolean(data.show_auto_close_opportunity);
+        const showAutoCreateProject = Boolean(data.show_auto_create_project);
         const allowRename = data.allow_rename !== false || !row.name;
         return `
             <div class="osc-status-row" data-row="${name}" data-name="${frappe.utils.escape_html(name || row.name || "")}" data-docname="${frappe.utils.escape_html(row.docname || row.name || "")}">
@@ -348,6 +351,7 @@
                     <label><input data-field="is_default" type="checkbox" ${row.is_default ? "checked" : ""} /> ${__("Default")}</label>
                     <label><input data-field="auto_collapse" type="checkbox" ${row.auto_collapse ? "checked" : ""} /> ${__("Collapse by default")}</label>
                     ${showAutoCloseOpportunity ? `<label><input data-field="auto_close_opportunity" type="checkbox" ${row.auto_close_opportunity ? "checked" : ""} /> ${__("Auto close Opportunity")}</label>` : ""}
+                    ${showAutoCreateProject ? `<label><input data-field="auto_create_project" type="checkbox" ${row.auto_create_project ? "checked" : ""} /> ${__("Auto create Project")}</label>` : ""}
                     ${showFlowFields ? `<label><input data-field="applies_distribution" type="checkbox" ${row.applies_distribution ? "checked" : ""} /> ${__("Distribution")}</label>
                     <label><input data-field="applies_installation" type="checkbox" ${row.applies_installation ? "checked" : ""} /> ${__("Installation")}</label>` : ""}
                 </div>

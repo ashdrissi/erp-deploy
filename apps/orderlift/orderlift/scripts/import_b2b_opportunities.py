@@ -424,9 +424,7 @@ def upsert_distribution_sales_order(
         doc.custom_crm_business_type = "Distribution"
     if doc.meta.get_field("custom_crm_segment"):
         doc.custom_crm_segment = crm_segment
-    if doc.meta.get_field("custom_installation_project") and project_name:
-        doc.custom_installation_project = project_name
-    elif doc.meta.get_field("project") and project_name:
+    if doc.meta.get_field("project") and project_name:
         doc.project = project_name
 
     if not doc.get("items"):
@@ -478,8 +476,8 @@ def upsert_installation_project(
         doc.custom_crm_business_type = "Installation"
     if doc.meta.get_field("custom_crm_segment"):
         doc.custom_crm_segment = DEFAULT_INSTALLATION_SEGMENT
-    if doc.meta.get_field("custom_project_type_ol"):
-        doc.custom_project_type_ol = "New Installation"
+    if doc.meta.get_field("project_type") and not doc.project_type:
+        doc.project_type = frappe.db.get_value("Opportunity", opportunity, "custom_project_type")
     if doc.meta.get_field("custom_city"):
         doc.custom_city = clean_text(row.get("Ville/Site"))
     confirmation_date = parse_excel_date(row.get("Date de confirmation"))

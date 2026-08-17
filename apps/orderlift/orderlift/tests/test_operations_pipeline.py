@@ -10,6 +10,7 @@ class _Row(types.SimpleNamespace):
 
 
 frappe_stub = types.ModuleType("frappe")
+frappe_stub._ = lambda value, *args, **kwargs: value
 frappe_stub.whitelist = lambda *args, **kwargs: (lambda fn: fn)
 frappe_stub.get_all = lambda *args, **kwargs: []
 frappe_stub.get_meta = lambda *args, **kwargs: None

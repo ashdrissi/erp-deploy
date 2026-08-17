@@ -140,6 +140,8 @@ class TestPurchaseAgentRulesContract(unittest.TestCase):
         self.assertIn("CAPABILITY_PURCHASE_AGENT_RULES_MANAGEMENT", controller)
         self.assertIn("get_price_list_type", controller)
         self.assertIn("BUYING_PRICE_LIST", controller)
+        self.assertIn("if not cint(row.is_active):", controller)
+        self.assertIn("continue", controller)
         self.assertNotIn("Purchase Manager", controller)
 
     def test_menu_uses_capability_not_purchase_role_names(self):

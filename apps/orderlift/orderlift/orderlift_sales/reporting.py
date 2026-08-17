@@ -6,7 +6,7 @@ import frappe
 from frappe.utils import flt
 
 
-BUSINESS_TYPE_BUCKETS = ("Distribution", "Installation", "Maintenance", "Unassigned")
+BUSINESS_TYPE_BUCKETS = ("Unassigned",)
 REPORTING_COMPANY_FIELD = "custom_orderlift_reporting_company"
 
 
@@ -22,7 +22,7 @@ def has_field(doctype: str, fieldname: str) -> bool:
 
 def normalize_business_type(value: str | None) -> str:
     value = (value or "").strip()
-    return value if value in {"Distribution", "Installation", "Maintenance"} else "Unassigned"
+    return value or "Unassigned"
 
 
 def margin_percent(revenue, charges) -> float:
@@ -102,7 +102,7 @@ def project_business_type(project_name: str | None) -> str:
     opportunity = values.get("custom_source_opportunity")
     if opportunity:
         return opportunity_business_type(opportunity)
-    return "Installation"
+    return "Unassigned"
 
 
 def opportunity_business_type(opportunity: str | None) -> str:
@@ -114,10 +114,10 @@ def opportunity_business_type(opportunity: str | None) -> str:
 def sales_order_business_type(row) -> str:
     if row.get("custom_crm_business_type"):
         return normalize_business_type(row.get("custom_crm_business_type"))
-    project_name = row.get("custom_installation_project") or row.get("project")
+    project_name = row.get("project")
     if project_name:
         return project_business_type(project_name)
-    return "Distribution"
+    return "Unassigned"
 
 
 def purchase_order_project(po_name: str | None, direct_project: str | None = None) -> str:

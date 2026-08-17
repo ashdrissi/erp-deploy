@@ -49,6 +49,12 @@ MENU_SECTIONS = [
         "roles": [ALL_USERS_ROLE],
         "links": [
             {"key": "my_work.todo", "label": "My ToDos", "link_type": "Page", "link_to": "my-todos"},
+            {
+                "key": "my_work.notifications",
+                "label": "Notifications",
+                "link_type": "DocType",
+                "link_to": "Notification Log",
+            },
             {"key": "my_work.calendar", "label": "Calendar", "link_type": "DocType", "link_to": "Event"},
         ],
     },
@@ -242,8 +248,10 @@ MENU_SECTIONS = [
         "icon": "briefcase-business",
         "roles": PROJECT_ROLES + SIG_ROLES,
         "links": [
+            {"key": "projects.projects", "label": "Projects", "link_type": "DocType", "link_to": "Project"},
             {"key": "projects.project_pipeline", "label": "Project Pipeline", "link_type": "Page", "link_to": "project-pipeline"},
             {"key": "projects.sales_order_pipeline", "label": "Sales Order Pipeline", "link_type": "Page", "link_to": "sales-order-pipeline", "roles": PROJECT_ROLES + SALES_ROLES},
+            {"key": "projects.technical_list_manager", "label": "Technical List Manager", "link_type": "Page", "link_to": "technical-list-manager"},
             {"key": "projects.contract", "label": "Contract", "link_type": "DocType", "link_to": "Contract", "roles": PROJECT_ROLES + SALES_ROLES},
             {"key": "projects.tasks", "label": "Tasks", "link_type": "DocType", "link_to": "Task"},
             {"key": "projects.timesheet", "label": "Timesheet", "link_type": "DocType", "link_to": "Timesheet"},

@@ -64,7 +64,7 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
     item_codes = sorted({
         (row.get("item_code") or "").strip()
         for row in item_rows
-        if (row.get("item_code") or "").strip() and not _is_manual_charge_item(row.get("item_code"))
+        if (row.get("item_code") or "").strip() and not _is_manual_charge_row(row)
     })
     if not item_codes:
         return
@@ -72,7 +72,7 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
     price_map = _get_transaction_item_price_map(item_codes, price_lists, kind="selling")
     for row in item_rows:
         item_code = (row.get("item_code") or "").strip()
-        if not item_code or _is_manual_charge_item(item_code):
+        if not item_code or _is_manual_charge_row(row):
             continue
         prices = price_map.get(item_code) or []
         if not prices:
@@ -105,7 +105,7 @@ def reprice_quotation_items_from_selected_price_lists(doc) -> None:
 
     for row in item_rows:
         item_code = (row.get("item_code") or "").strip()
-        if not item_code or _is_manual_charge_item(item_code):
+        if not item_code or _is_manual_charge_row(row):
             continue
         prices = price_map.get(item_code) or []
         selected_price = _selected_row_price(row, prices)
@@ -134,7 +134,7 @@ def sync_sales_order_margin_snapshots(doc, method=None) -> None:
     for row in item_rows:
         if _flt(row.get("source_landed_cost")) > 0:
             _recalculate_margin_from_snapshot(row)
-        elif (row.get("item_code") or "").strip() and not _is_manual_charge_item(row.get("item_code")):
+        elif (row.get("item_code") or "").strip() and not _is_manual_charge_row(row):
             unresolved.append(row)
 
     if not unresolved:
@@ -220,7 +220,11 @@ def _validate_doc_price_list(doc, *, fieldname: str, kind: str):
     value = (getattr(doc, fieldname, "") or "").strip()
     if not value:
         return
-    validate_visible_price_list(value, kind=kind, required=True)
+    # Scope to the document's own company, not the session's. Intercompany flows
+    # create documents in a different company; without this the validator falls
+    # back to current_company() and rejects a valid list as "not permitted".
+    company = (getattr(doc, "company", "") or "").strip()
+    validate_visible_price_list(value, kind=kind, required=True, company=company or None)
 
 
 def _validate_doc_price_lists(price_lists: list[str], *, kind: str, company: str | None = None) -> None:
@@ -260,7 +264,7 @@ def _transaction_item_rows(doc) -> list[dict]:
     out = []
     for row in doc.get("items") or []:
         item_code = (row.get("item_code") or "").strip()
-        if not item_code or _is_manual_charge_item(item_code):
+        if not item_code or _is_manual_charge_row(row):
             continue
         out.append(
             {
@@ -276,6 +280,12 @@ def _transaction_item_rows(doc) -> list[dict]:
 
 def _is_manual_charge_item(item_code: str | None) -> bool:
     return (item_code or "").strip() in MANUAL_CHARGE_ITEM_CODES
+
+
+def _is_manual_charge_row(row) -> bool:
+    return bool(_flt(_value(row, "custom_orderlift_other_charge"))) or _is_manual_charge_item(
+        _value(row, "item_code")
+    )
 
 
 def _has_policy_pricing_source(doc, item_rows: list[dict]) -> bool:
@@ -441,7 +451,7 @@ def _source_validated_item_rows(doc) -> list:
         row
         for row in (_value(doc, "items") or [])
         if _text(_value(row, "item_code"))
-        and not _is_manual_charge_item(_value(row, "item_code"))
+        and not _is_manual_charge_row(row)
     ]
 
 

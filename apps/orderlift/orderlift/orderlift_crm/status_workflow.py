@@ -42,6 +42,7 @@ def list_editable_statuses(
         meta.get("required_checks_field"),
         meta.get("confirmation_message_field"),
         meta.get("auto_close_opportunity_field"),
+        meta.get("auto_create_project_field"),
     ]
     for fieldname in optional_fields:
         if not fieldname:
@@ -75,6 +76,7 @@ def list_editable_statuses(
     required_checks_field = meta.get("required_checks_field")
     confirmation_message_field = meta.get("confirmation_message_field")
     auto_close_opportunity_field = meta.get("auto_close_opportunity_field")
+    auto_create_project_field = meta.get("auto_create_project_field")
     display_label_field = meta.get("display_label_field")
     fixed_status_values = bool(meta.get("fixed_status_values"))
     for row in rows:
@@ -119,6 +121,11 @@ def list_editable_statuses(
                 "auto_close_opportunity": cint(
                     row.get(auto_close_opportunity_field)
                     if auto_close_opportunity_field and auto_close_opportunity_field in row
+                    else 0
+                ),
+                "auto_create_project": cint(
+                    row.get(auto_create_project_field)
+                    if auto_create_project_field and auto_create_project_field in row
                     else 0
                 ),
             }

@@ -552,3 +552,25 @@ def get_company_address(company_name):
         address.country,
     ])
     return ", ".join(parts)
+
+
+def annex_print_template(doc):
+    """
+    Return the frozen template definition used to print an annex document.
+
+    The annex stores an immutable template snapshot at creation time. Legacy
+    annexes without a snapshot fall back to the current template so printing
+    never breaks on missing or invalid snapshot JSON.
+    """
+    snapshot_json = getattr(doc, "template_snapshot_json", "") or ""
+    template_name = getattr(doc, "template", "") or ""
+    if snapshot_json:
+        try:
+            snapshot = json.loads(snapshot_json)
+        except (TypeError, ValueError):
+            snapshot = None
+        if isinstance(snapshot, dict) and snapshot.get("fields") is not None:
+            return snapshot
+    if template_name and frappe.db.exists("Orderlift Document Template", template_name):
+        return frappe.get_doc("Orderlift Document Template", template_name)
+    return None

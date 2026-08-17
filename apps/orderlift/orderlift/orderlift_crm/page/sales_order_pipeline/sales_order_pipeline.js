@@ -93,9 +93,9 @@
             <div class="olp-shell">
                 <section class="olp-hero">
                     <div class="olp-hero-copy">
-                        <div class="olp-eyebrow">${__("Orderlift Distribution")}</div>
+                        <div class="olp-eyebrow">${__("Orders without a Project")}</div>
                         <h1>${__("Sales Order Pipeline")}</h1>
-                        <p>${__("Track distribution orders with delivery, billing, purchase, invoice, and project context visible directly on every card.")}</p>
+                        <p>${__("Track every non-cancelled Sales Order that is not yet linked to a Project.")}</p>
                     </div>
                     <div class="olp-hero-kpis">
                         ${kpi(STATE.kpis.primary_label, STATE.kpis.primary_value)}

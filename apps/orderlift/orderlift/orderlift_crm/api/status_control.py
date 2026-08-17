@@ -59,6 +59,7 @@ def get_status_control_data(document_type: str, company: str | None = None) -> d
         "allow_delete": bool(meta.get("allow_delete", True) and frappe.has_permission(status_doctype, ptype="delete")),
         "allow_rename": meta.get("allow_rename", True),
         "show_auto_close_opportunity": bool(meta.get("auto_close_opportunity_field")),
+        "show_auto_create_project": bool(meta.get("auto_create_project_field")),
         "available_quick_actions": pipeline_quick_action_catalog(document_type),
         "selected_quick_actions": get_company_pipeline_quick_action_keys(document_type, company=selected_company) if selected_company else [],
         "users": users,
@@ -143,6 +144,8 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
     _set_if_field(doc, meta.get("confirmation_message_field"), confirmation_message)
     auto_close_opportunity = cint(data.get("auto_close_opportunity", 0))
     _set_if_field(doc, meta.get("auto_close_opportunity_field"), auto_close_opportunity)
+    auto_create_project = cint(data.get("auto_create_project", 0))
+    _set_if_field(doc, meta.get("auto_create_project_field"), auto_create_project)
 
     if doc.is_new():
         doc.insert(ignore_permissions=False)
@@ -157,6 +160,12 @@ def save_status(document_type: str, payload: str | dict, company: str | None = N
         doc.name,
         meta.get("auto_close_opportunity_field"),
         auto_close_opportunity,
+    )
+    _set_db_column_if_available(
+        status_doctype,
+        doc.name,
+        meta.get("auto_create_project_field"),
+        auto_create_project,
     )
     _set_db_column_if_available(status_doctype, doc.name, meta.get("display_label_field"), label)
     _set_db_column_if_available(status_doctype, doc.name, meta.get("company_field"), company)

@@ -11,6 +11,10 @@ from frappe import _
 from frappe.utils import add_days, cint, flt, nowdate
 
 from orderlift.menu_access import resolve_current_company
+from orderlift.orderlift_logistics.effective_demand import (
+    get_effective_demand_by_item,
+    get_effective_demand_by_item_warehouse,
+)
 from orderlift.orderlift_logistics.utils.stock_rate_review import can_manage_stock_rates
 from orderlift.warehouse_access import get_allowed_warehouses
 
@@ -225,6 +229,11 @@ def _get_stock_overview(
     if warehouse:
         warehouse_join = "AND b.warehouse = %(warehouse)s"
         params["warehouse"] = warehouse
+    demand_warehouses = [warehouse] if warehouse else context.get("warehouses") or []
+    demand_by_item = get_effective_demand_by_item(
+        context.get("company"),
+        warehouses=demand_warehouses,
+    )
 
     start = _clean_start(start)
     having = _stock_status_having(stock_status, only_in_stock=only_in_stock)
@@ -272,7 +281,8 @@ def _get_stock_overview(
     result = []
     for row in rows:
         actual_qty = flt(row.actual_qty)
-        available_qty = flt(row.available_qty)
+        demand_qty = flt(demand_by_item.get(row.item_code))
+        available_qty = actual_qty - demand_qty
         payload = {
             "item_code": row.item_code,
             "item_name": row.item_name,
@@ -280,8 +290,8 @@ def _get_stock_overview(
             "stock_uom": row.stock_uom,
             "actual_qty": actual_qty,
             "available_qty": available_qty,
-            "reserved_qty": flt(row.sales_order_reserved_qty),
-            "sales_order_reserved_qty": flt(row.sales_order_reserved_qty),
+            "reserved_qty": demand_qty,
+            "sales_order_reserved_qty": demand_qty,
             "physically_reserved_qty": flt(row.physically_reserved_qty),
             "ordered_qty": flt(row.ordered_qty),
             "projected_qty": flt(row.projected_qty),
@@ -1169,6 +1179,12 @@ def _get_item_warehouse_breakdown(item_code: str, context: dict, warehouse: str 
     if warehouse:
         extra = " AND b.warehouse = %(warehouse)s"
         params["warehouse"] = warehouse
+    demand_warehouses = [warehouse] if warehouse else context.get("warehouses") or []
+    demand_by_item_warehouse = get_effective_demand_by_item_warehouse(
+        context.get("company"),
+        warehouses=demand_warehouses,
+        item_codes=[item_code],
+    )
     rows = frappe.db.sql(
         f"""
         SELECT b.warehouse, w.warehouse_name, b.actual_qty, b.projected_qty, b.reserved_qty,
@@ -1186,7 +1202,7 @@ def _get_item_warehouse_breakdown(item_code: str, context: dict, warehouse: str 
     result = []
     for row in rows:
         actual_qty = flt(row.actual_qty)
-        reserved_qty = flt(row.reserved_qty)
+        reserved_qty = flt(demand_by_item_warehouse.get((item_code, row.warehouse)))
         payload = {
             "warehouse": row.warehouse,
             "warehouse_name": row.warehouse_name,

@@ -121,7 +121,7 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertIn('_upsert_property_setter("Sales Invoice Item", fieldname, "hidden", "1", "Check")', sales_invoice_layout)
         self.assertNotIn('"public/js/logistics_quantity_only_20260804a.js",\n    ],\n    "Purchase Invoice"', hooks)
         self.assertIn("orderlift.orderlift_sales.sales_invoice_hooks.prepare_non_stock_sales_invoice_items", hooks)
-        self.assertIn('"public/js/sales_invoice_mode_20260812c.js"', hooks)
+        self.assertIn('"public/js/sales_invoice_mode_20260812d.js"', hooks)
 
         hooks = (APP_ROOT / "hooks.py").read_text()
         self.assertIn("sales_order_pricing_visibility_20260803a.js", hooks)
@@ -321,6 +321,12 @@ class TestQuotationFormSimplify(unittest.TestCase):
             "def get_other_charge_template",
             "charge.uom = uom",
             "charge.item_code = item_code",
+            "charge.expected_unit_cost = expected_unit_cost",
+            "charge.expected_cost = expected_cost",
+            '"source_landed_cost": expected_unit_cost',
+            "CAPABILITY_PRIVILEGED_PRICING",
+            "previous_values",
+            "template_changed",
             "custom_orderlift_other_charge",
             '"custom_presentation_role": "Print separately"',
         ]:
@@ -346,6 +352,10 @@ class TestQuotationFormSimplify(unittest.TestCase):
             'frappe.ui.form.on("Orderlift Quotation Other Charge",',
             "fillOtherChargeChildRow",
             "updateOtherChargeChildAmount",
+            'fieldname: "expected_unit_cost"',
+            'dialog.set_value("expected_unit_cost"',
+            'frappe.model.set_value(cdt, cdn, "expected_cost"',
+            "source_landed_cost: expectedUnitCost",
             'dialog.set_value("description"',
         ]:
             self.assertIn(token, script)
@@ -356,8 +366,18 @@ class TestQuotationFormSimplify(unittest.TestCase):
         self.assertIn('"fieldname": "other_charge"', child_doctype.read_text())
         self.assertIn('"options": "Orderlift Other Charge"', child_doctype.read_text())
         self.assertIn('"istable": 1', child_doctype.read_text())
+        self.assertIn('"fieldname": "expected_unit_cost"', child_doctype.read_text())
+        self.assertIn('"fieldname": "expected_cost"', child_doctype.read_text())
+        self.assertIn('"permlevel": 2', child_doctype.read_text())
+        self.assertIn('"reqd": 1', child_doctype.read_text())
         self.assertTrue(master_doctype.is_file())
         self.assertIn('"name": "Orderlift Other Charge"', master_doctype.read_text())
+        self.assertIn('"fieldname": "default_expected_unit_cost"', master_doctype.read_text())
+        self.assertIn('"permlevel": 2', master_doctype.read_text())
+        self.assertIn('permission.write = 1 if doctype == "Quotation" else 0', pricing_setup)
+        self.assertIn("canViewQuotationMargins() ? [{", script)
+        self.assertIn("dialog.disable_primary_action()", script)
+        self.assertIn("dialog.enable_primary_action()", script)
 
     def test_opportunity_list_uses_id_first_with_min_width(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
@@ -1021,12 +1041,15 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertLess(customer_name_position, tax_id_position)
             self.assertLess(tax_id_position, address_position)
 
-    def test_draft_quotation_refreshes_customer_ice_from_customer_master(self):
+    def test_draft_quotation_refreshes_party_ice_from_party_master(self):
         script = (APP_ROOT / "public" / "js" / "quotation_form_simplify_20260802a.js").read_text()
 
         for token in [
             "syncCustomerTaxId(frm)",
-            'frappe.db.get_value("Customer", customer, "tax_id")',
+            "partyTaxField(partyType)",
+            'if (partyType === "Customer") return "tax_id";',
+            'if (partyType === "Prospect" || partyType === "Lead") return "custom_tax_id";',
+            "frappe.db.get_value(partyType, partyName, taxField)",
             'frm.set_value("custom_customer_tax_id", taxId)',
             "if (!isDraftQuotation(frm)) return;",
             "party_name(frm)",

@@ -12,7 +12,7 @@ frappe.pages["sig-qc"].on_page_show = function (wrapper) {
     renderSigPage(wrapper, {
         rootId: "sig-qc-page-shell",
         scriptId: "orderlift-sig-qc-script",
-        scriptSrc: "/assets/orderlift/js/sig_qc.js?v=20260408c",
+        scriptSrc: "/assets/orderlift/js/sig_qc.js?v=20260814a",
         mountKey: "orderliftSigQc",
         mountOptions: {
             preloadProject: _getPreloadProject(),

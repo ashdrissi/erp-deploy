@@ -190,6 +190,8 @@ training.quiz_attempts | Quiz Attempts | DocType: Training Quiz Attempt | User; 
 [Gestion de Projets]
 projects.project_pipeline | Project Pipeline | Page: project-pipeline | Project; Project-only manual assignment; ToDo assignment storage; eligible User lookup
 projects.sales_order_pipeline | Sales Order Pipeline | Page: sales-order-pipeline | Sales Order; Sales-Order-only manual assignment; ToDo assignment storage; eligible User lookup
+projects.technical_list_manager | Technical List Manager | Page: technical-list-manager | Sales Order read context; Sales Order Technical List; Sales Order Technical List Revision; Orderlift Annex Document; Approve/Cancel applies only to revisions
+projects.projects | Projects | DocType: Project | Project child tables; status and company references
 projects.contract | Contract | DocType: Contract | Contract Fulfilment Checklist; party and Project references
 projects.tasks | Tasks | DocType: Task | Task Depends On; Project; User
 projects.timesheet | Timesheet | DocType: Timesheet | Timesheet Detail; Employee; Project; Task

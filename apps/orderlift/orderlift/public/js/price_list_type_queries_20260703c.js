@@ -223,12 +223,24 @@
     }
 
     function transactionPriceLists(frm, config) {
+        if (frm.doctype === "Purchase Order") {
+            return purchaseOrderSelectedBuyingPriceLists(frm);
+        }
         if (frm.doctype === "Quotation") {
             const selected = quotationSelectedPriceLists(frm);
             if (selected.length) return selected;
         }
         const priceList = String(frm.doc[config.fieldname] || "").trim();
         return priceList ? [priceList] : [];
+    }
+
+    function purchaseOrderSelectedBuyingPriceLists(frm) {
+        if (!String(frm.doc.supplier || "").trim()) return [];
+        return (frm.doc.selected_buying_price_lists || [])
+            .filter((row) => String(row.price_list || "").trim() && cint(row.is_active) !== 0)
+            .sort((left, right) => Number(left.sequence || 0) - Number(right.sequence || 0))
+            .map((row) => String(row.price_list || "").trim())
+            .filter((value, index, arr) => value && arr.indexOf(value) === index);
     }
 
     function quotationSelectedPriceLists(frm) {

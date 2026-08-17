@@ -103,7 +103,7 @@
                         "customer",
                         "custom_qc_status",
                         "custom_city",
-                        "custom_project_type_ol",
+                        "project_type",
                         "status",
                     ],
                     filters: [["status", "!=", "Cancelled"]],
@@ -147,7 +147,7 @@
                             <div class="sig-qc-picker-item-sub">
                                 ${esc(item.customer || "")}
                                 ${item.custom_city ? " · " + esc(item.custom_city) : ""}
-                                ${item.custom_project_type_ol ? " · " + esc(item.custom_project_type_ol) : ""}
+                                ${item.project_type ? " · " + esc(item.project_type) : ""}
                             </div>
                         </div>
                         <span class="sig-qc-badge ${badgeCls}">${esc(item.custom_qc_status || "Not Started")}</span>

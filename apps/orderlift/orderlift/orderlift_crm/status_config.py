@@ -66,7 +66,7 @@ PIPELINE_QUICK_ACTIONS = {
 }
 
 DEFAULT_PIPELINE_QUICK_ACTIONS = {
-    "Opportunity": ["pricing-sheet", "project"],
+    "Opportunity": ["pricing-sheet"],
     "Project": ["sales-order", "purchase-order"],
     "Sales Order": ["delivery-note", "sales-invoice"],
     "Forecast Load Plan": [],
@@ -149,6 +149,7 @@ STATUS_SOURCES = {
         "required_checks_field": "custom_required_checks",
         "confirmation_message_field": "custom_confirmation_message",
         "auto_close_opportunity_field": "custom_auto_close_opportunity",
+        "auto_create_project_field": "custom_auto_create_project",
         "target_doctype": "Opportunity",
         "target_field": "sales_stage",
         "legacy_label": "ERP Status",

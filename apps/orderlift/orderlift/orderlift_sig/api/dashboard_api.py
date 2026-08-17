@@ -12,7 +12,7 @@ def get_dashboard_data() -> dict:
     projects = frappe.get_list(
         "Project",
         filters={"status": ["!=", "Cancelled"]},
-        fields=["custom_project_type_ol", "custom_qc_status", "custom_latitude"],
+        fields=["project_type", "custom_qc_status", "custom_latitude"],
         limit_page_length=0,
     )
 
@@ -22,7 +22,7 @@ def get_dashboard_data() -> dict:
     blocked_qc = len(_project_names({"custom_qc_status": "Blocked", "status": ["!=", "Completed"]}))
 
     geocoded = sum(1 for row in projects if row.get("custom_latitude") not in (None, 0, 0.0, ""))
-    by_type = _group_counts(projects, "custom_project_type_ol", "Unspecified", "project_type")
+    by_type = _group_counts(projects, "project_type", "Unspecified", "project_type")
     by_qc = _group_counts(projects, "custom_qc_status", "Not Started", "qc_status")
 
     # ── Recent active projects ────────────────────────────────
@@ -31,7 +31,7 @@ def get_dashboard_data() -> dict:
             "Project",
             filters={"status": ["not in", ["Cancelled", "Completed"]]},
             fields=[
-                "name", "project_name", "status", "customer", "custom_project_type_ol",
+                "name", "project_name", "status", "customer", "project_type",
                 "custom_qc_status", "custom_city", "custom_latitude", "custom_longitude", "modified",
             ],
             order_by="modified desc",
@@ -45,7 +45,7 @@ def get_dashboard_data() -> dict:
             "Project",
             filters={"custom_qc_status": "Blocked", "status": ["not in", ["Cancelled", "Completed"]]},
             fields=[
-                "name", "project_name", "status", "customer", "custom_project_type_ol",
+                "name", "project_name", "status", "customer", "project_type",
                 "custom_qc_status", "custom_city", "modified",
             ],
             order_by="modified asc",
@@ -92,7 +92,7 @@ def _serialize_project_rows(rows: list[dict]) -> list[dict]:
             "project_name": row.get("project_name"),
             "status": row.get("status"),
             "customer": row.get("customer"),
-            "project_type": row.get("custom_project_type_ol"),
+            "project_type": row.get("project_type"),
             "qc_status": row.get("custom_qc_status"),
             "city": row.get("custom_city"),
             "latitude": row.get("custom_latitude"),
@@ -130,6 +130,6 @@ def get_qc_checklist(project_name: str) -> dict:
         "customer": project.customer,
         "qc_status": project.custom_qc_status,
         "city": project.custom_city,
-        "project_type": project.custom_project_type_ol,
+        "project_type": project.project_type,
         "rows": rows,
     }

@@ -40,17 +40,17 @@ def before_project_status_change(doc, method=None):
 def on_sales_order_submit(doc, method=None):
     """
     Called on Sales Order on_submit.
-    If a linked installation project exists and its QC status is Blocked,
+    If a linked project exists and its QC status is Blocked,
     post a non-blocking warning on the submitted SO.
     """
-    project_name = doc.get("custom_installation_project")
+    project_name = doc.get("project")
     if not project_name:
         return
 
     qc_status = frappe.db.get_value("Project", project_name, "custom_qc_status")
     if qc_status == "Blocked":
         frappe.msgprint(
-            _("Warning: the linked installation project <b>{0}</b> has a "
+            _("Warning: the linked project <b>{0}</b> has a "
               "<b>Blocked</b> QC status. Please resolve QC issues before "
               "proceeding with delivery.").format(project_name),
             title=_("QC Warning"),
@@ -67,14 +67,20 @@ def on_sales_order_submit(doc, method=None):
 def create_project_from_sales_order(sales_order_name: str) -> str:
     """
     Create an ERPNext Project pre-filled with data from a Sales Order.
-    Links the project back to the SO via custom_installation_project.
+    Links the project back to the Sales Order through its native project field.
     Returns the new Project name.
     """
+    frappe.db.sql(
+        "SELECT name FROM `tabSales Order` WHERE name = %s FOR UPDATE",
+        (sales_order_name,),
+    )
     so = frappe.get_doc("Sales Order", sales_order_name)
+    so.check_permission("write")
+    frappe.has_permission("Project", ptype="create", throw=True)
 
     if not so.company:
         frappe.throw(
-            _("Sales Order <b>{0}</b> is missing Company, so an installation project cannot be created.").format(
+            _("Sales Order <b>{0}</b> is missing Company, so a project cannot be created.").format(
                 so.name
             ),
             title=_("Missing Company"),
@@ -82,17 +88,17 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
 
     # Prevent duplicate projects
     existing = frappe.db.get_value(
-        "Sales Order", sales_order_name, "custom_installation_project"
+        "Sales Order", sales_order_name, "project"
     )
     if existing:
         frappe.throw(
-            _("An installation project already exists for this Sales Order: "
+            _("A project already exists for this Sales Order: "
               "<b>{0}</b>").format(existing),
             title=_("Duplicate Project"),
         )
 
     project = frappe.new_doc("Project")
-    project.project_name = "Install — {0} — {1}".format(so.customer, so.name)
+    project.project_name = "{0} - {1}".format(so.customer, so.name)
     project.company = so.company
     project.customer = so.customer
     if project.meta.get_field("sales_order"):
@@ -102,33 +108,36 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
     project.notes = "Auto-created from Sales Order {0}".format(so.name)
 
     # SIG fields
-    project.custom_project_type_ol = "New Installation"
     project.custom_qc_status = "Not Started"
     copy_crm_classification(so, project)
 
     # Carry the source opportunity so the project fans out to sibling Sales
     # Orders / Quotations of the same opportunity (see project_linkage).
+    opportunity = None
     if project.meta.get_field("custom_source_opportunity"):
-        from orderlift.orderlift_crm.api.pipeline import _sales_order_source_opportunity
+        from orderlift.orderlift_crm.project_linkage import sales_order_source_opportunity
 
-        opportunity = _sales_order_source_opportunity(so.name)
+        opportunity = sales_order_source_opportunity(so.name)
         if opportunity:
             project.custom_source_opportunity = opportunity
 
-    from orderlift.orderlift_crm.project_linkage import _copy_source_context_to_project
+    from orderlift.orderlift_crm.project_linkage import (
+        _copy_source_context_to_project,
+        link_sales_orders_to_project_as_system,
+    )
 
     _copy_source_context_to_project(so, project)
 
     project.insert(ignore_permissions=False)
 
-    # Back-link on Sales Order
-    frappe.db.set_value(
-        "Sales Order", sales_order_name,
-        "custom_installation_project", project.name
+    link_sales_orders_to_project_as_system(
+        project,
+        [{"name": so.name}],
+        expected_opportunity=opportunity,
     )
 
     frappe.msgprint(
-        "Installation project <b>{0}</b> created successfully.".format(project.name),
+        "Project <b>{0}</b> created successfully.".format(project.name),
         title="Project Created",
         indicator="green",
         alert=True,

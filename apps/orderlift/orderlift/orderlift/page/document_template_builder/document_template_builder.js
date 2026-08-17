@@ -1,5 +1,5 @@
 (function () {
-    const STATE = { targets: [], template: null, activeStep: "basics", expandedFields: new Set(), loading: false };
+    const STATE = { targets: [], availableTargets: [], template: null, activeStep: "basics", expandedFields: new Set(), loading: false };
     const FIELD_TYPES = ["Section Break", "Column Break", "Data", "Small Text", "Text", "Text Editor", "Date", "Datetime", "Time", "Int", "Float", "Currency", "Check", "Select", "Link", "Attach", "Attach Image", "Signature", "HTML"];
     const STATUS_COLORS = ["Gray", "Blue", "Green", "Orange", "Red", "Purple"];
     const STEPS = [
@@ -23,7 +23,7 @@
     };
 
     function blankTemplate() {
-        return { name: "", template_name: "", is_active: 1, display_order: 100, print_title: "", print_header: "", print_footer: "", targets: [], fields: [], statuses: [{ status_label: "Draft", color: "Gray", is_default: 1, display_order: 1 }] };
+        return { name: "", template_name: "", is_active: 1, display_order: 100, print_title: "", print_header: "", print_footer: "", targets: [], fields: [], statuses: [{ status_label: "", color: "Gray", is_default: 1, is_complete: 0, display_order: 1 }] };
     }
 
     async function load(page) {
@@ -31,6 +31,7 @@
         const name = route[1] || "new";
         const boot = await frappe.call({ method: "orderlift.document_templates.get_template_manager_bootstrap" });
         STATE.targets = (boot.message || {}).targets || [];
+        STATE.availableTargets = (boot.message || {}).available_targets || [];
         if (name && name !== "new") {
             const res = await frappe.call({ method: "orderlift.document_templates.get_template", args: { name } });
             STATE.template = res.message || blankTemplate();
@@ -69,8 +70,15 @@
     }
 
     function targetsStep(template) {
-        const selected = new Set((template.targets || []).map((target) => target.target_doctype || target.doctype));
-        return `<article class="odtb-card"><div class="odtb-card-head"><h2>${esc(__("Target Documents"))}</h2><p>${esc(__("Choose where this template appears as a document tab."))}</p></div><div class="odtb-target-grid">${STATE.targets.map((target) => `<label class="odtb-target ${selected.has(target.doctype) ? "selected" : ""}"><input type="checkbox" data-target-doctype="${esc(target.doctype)}" ${selected.has(target.doctype) ? "checked" : ""}/><strong>${esc(__(target.label || target.doctype))}</strong><small>${esc(target.doctype)}</small></label>`).join("")}</div></article>`;
+        const rows = template.targets || [];
+        const selected = new Set(rows.map((target) => target.target_doctype || target.doctype));
+        const available = STATE.availableTargets.filter((doctype) => !selected.has(doctype));
+        return `<article class="odtb-card"><div class="odtb-card-head with-action"><div><h2>${esc(__("Target Documents"))}</h2><p>${esc(__("Choose the business documents where this annex template is available."))}</p></div><div class="odtb-mini-actions"><select data-new-target><option value="">${esc(__("Select DocType"))}</option>${options(available, "")}</select><button type="button" class="odtb-secondary" data-add-target="1">${esc(__("Add Target"))}</button></div></div><div class="odtb-status-builder">${rows.length ? rows.map(targetRow).join("") : emptyRow(__("Add at least one target DocType."))}</div></article>`;
+    }
+
+    function targetRow(row, index) {
+        const doctype = row.target_doctype || row.doctype || "";
+        return `<article class="odtb-status-card" data-target-index="${index}"><div class="odtb-status-fields"><label><span>${esc(__("DocType"))}</span><input data-row-field="target_doctype" value="${esc(doctype)}" readonly /></label>${input("display_order", __("Order"), row.display_order || index + 1, "number", false, true)}${check("allow_direct_creation", __("Direct Creation"), row.allow_direct_creation !== 0, __("The annex can be created and edited directly on this document."))}${check("allow_execution_copy", __("Execution Copy from Upstream"), row.allow_execution_copy || row.allow_import_from_sales_order, __("An upstream Quotation or Sales Order annex can be copied into a revision as an editable execution copy."))}${check("required_for_revision", __("Required for Revision"), row.required_for_revision, __("The revision cannot be submitted without this annex."))}${check("must_be_complete", __("Must Be Complete"), row.must_be_complete, __("The annex must be fully completed before the revision can be submitted."))}${check("default_selected", __("Selected by Default"), row.default_selected, __("The annex is created or copied automatically when a new revision is initialized."))}</div><button type="button" class="odtb-danger" data-remove-target="${index}">&times;</button></article>`;
     }
 
     function fieldsStep(template) {
@@ -113,7 +121,7 @@
 
     function fieldMainControls(row, type) {
         if (["Section Break", "Column Break", "HTML"].includes(type)) return "";
-        return `<section class="odtb-fieldset rules"><h3>${esc(__("Validation"))}</h3><label class="odtb-check inline"><input type="checkbox" data-row-field="is_required" ${row.is_required ? "checked" : ""}/><span>${esc(__("Required"))}</span></label></section>`;
+        return `<section class="odtb-fieldset rules"><h3>${esc(__("Validation"))}</h3><label class="odtb-check inline"><input type="checkbox" data-row-field="is_required" ${row.is_required ? "checked" : ""}/><span>${esc(__("Required"))}</span></label>${type === "Check" ? `<label><span>${esc(__("Required Value"))}</span><select data-row-field="required_value_mode">${options(["Present", "Checked"], row.required_value_mode || "Present")}</select></label>` : ""}</section>`;
     }
 
     function fieldAdvancedControls(row, type) {
@@ -142,7 +150,7 @@
     }
 
     function statusRow(row, index) {
-        return `<article class="odtb-status-card" data-status-index="${index}"><div class="odtb-status-fields">${input("status_label", __("Status"), row.status_label || "", "text", true, true)}<label><span>${esc(__("Color"))}</span><select data-row-field="color">${options(STATUS_COLORS, row.color || "Gray")}</select></label>${input("display_order", __("Order"), row.display_order || index + 1, "number", false, true)}<label class="odtb-check inline"><input type="checkbox" data-row-field="is_default" ${row.is_default ? "checked" : ""}/><span>${esc(__("Default"))}</span></label></div><button type="button" class="odtb-danger" title="${esc(__("Remove"))}" aria-label="${esc(__("Remove status"))}" data-remove-status="${index}">&times;</button></article>`;
+        return `<article class="odtb-status-card" data-status-index="${index}"><div class="odtb-status-fields">${input("status_label", __("Status"), row.status_label || "", "text", true, true)}<label><span>${esc(__("Color"))}</span><select data-row-field="color">${options(STATUS_COLORS, row.color || "Gray")}</select></label>${input("display_order", __("Order"), row.display_order || index + 1, "number", false, true)}${check("is_default", __("Default"), row.is_default)}${check("is_complete", __("Complete"), row.is_complete)}</div><button type="button" class="odtb-danger" title="${esc(__("Remove"))}" aria-label="${esc(__("Remove status"))}" data-remove-status="${index}">&times;</button></article>`;
     }
 
     function printStep(template) {
@@ -155,10 +163,12 @@
         page.main.find("[data-back]").on("click", () => frappe.set_route("document-template-manager"));
         page.main.find("[data-step]").on("click", function () { collect(page); STATE.activeStep = $(this).data("step"); render(page); });
         page.main.find("[data-add-field]").on("click", () => { collect(page); const index = STATE.template.fields.length; STATE.template.fields.push({ field_label: "", field_key: "", fieldtype: "Data", display_order: index + 1 }); STATE.expandedFields = new Set([index]); render(page); });
+        page.main.find("[data-add-target]").on("click", () => { collect(page); const doctype = page.main.find("[data-new-target]").val(); if (!doctype) return; STATE.template.targets.push({ target_doctype: doctype, allow_direct_creation: 1, display_order: STATE.template.targets.length + 1 }); render(page); });
         page.main.find("[data-add-layout]").on("click", function () { collect(page); const type = $(this).data("add-layout"); const index = STATE.template.fields.length; const labels = { "Section Break": "New Section", "Column Break": "New Column", HTML: "Advanced HTML" }; STATE.template.fields.push({ field_label: labels[type] || type, field_key: "", fieldtype: type, display_order: index + 1 }); STATE.expandedFields = new Set([index]); render(page); });
         page.main.find("[data-add-special]").on("click", function () { collect(page); const type = $(this).data("add-special"); const index = STATE.template.fields.length; STATE.template.fields.push({ field_label: type === "Signature" ? "New Signature" : "New Attachment", field_key: "", fieldtype: type, display_order: index + 1 }); STATE.expandedFields = new Set([index]); render(page); });
         page.main.find("[data-toggle-field]").on("click", function () { collect(page); const index = Number($(this).data("toggle-field")); const expanded = new Set(STATE.expandedFields); expanded.has(index) ? expanded.delete(index) : expanded.add(index); STATE.expandedFields = expanded; render(page); });
-        page.main.find("[data-add-status]").on("click", () => { collect(page); STATE.template.statuses.push({ status_label: "", color: "Gray", is_default: 0, display_order: STATE.template.statuses.length + 1 }); render(page); });
+        page.main.find("[data-add-status]").on("click", () => { collect(page); STATE.template.statuses.push({ status_label: "", color: "Gray", is_default: 0, is_complete: 0, display_order: STATE.template.statuses.length + 1 }); render(page); });
+        page.main.find("[data-remove-target]").on("click", function () { collect(page); STATE.template.targets.splice(Number($(this).data("remove-target")), 1); render(page); });
         page.main.find("[data-remove-field]").on("click", function (event) { event.stopPropagation(); collect(page); STATE.template.fields.splice(Number($(this).data("remove-field")), 1); STATE.expandedFields = new Set(); render(page); });
         page.main.find("[data-remove-status]").on("click", function () { collect(page); STATE.template.statuses.splice(Number($(this).data("remove-status")), 1); render(page); });
         page.main.find("[data-save]").on("click", () => save(page));
@@ -176,9 +186,9 @@
         if (!STATE.template) STATE.template = blankTemplate();
         ["template_name", "display_order", "print_title", "print_header", "print_footer"].forEach((field) => { const el = root.find(`[data-field="${field}"]`); if (el.length) STATE.template[field] = el.val(); });
         if (root.find('[data-field="is_active"]').length) STATE.template.is_active = root.find('[data-field="is_active"]').is(":checked") ? 1 : 0;
-        if (root.find("[data-target-doctype]").length) STATE.template.targets = root.find("[data-target-doctype]:checked").map(function () { return { target_doctype: $(this).data("target-doctype") }; }).get();
-        if (root.find("[data-field-index]").length) STATE.template.fields = root.find("[data-field-index]").map(function () { const index = Number($(this).data("field-index")); return collectRow($(this), ["field_label", "field_key", "fieldtype", "options", "source_field", "is_required", "default_value", "display_order"], STATE.template.fields[index]); }).get();
-        if (root.find("[data-status-index]").length) STATE.template.statuses = root.find("[data-status-index]").map(function () { return collectRow($(this), ["status_label", "color", "is_default", "display_order"]); }).get();
+        if (root.find("[data-target-index]").length) STATE.template.targets = root.find("[data-target-index]").map(function () { const index = Number($(this).data("target-index")); return collectRow($(this), ["target_doctype", "allow_direct_creation", "allow_execution_copy", "required_for_revision", "must_be_complete", "default_selected", "display_order"], STATE.template.targets[index]); }).get();
+        if (root.find("[data-field-index]").length) STATE.template.fields = root.find("[data-field-index]").map(function () { const index = Number($(this).data("field-index")); return collectRow($(this), ["field_label", "field_key", "fieldtype", "options", "source_field", "is_required", "required_value_mode", "default_value", "display_order"], STATE.template.fields[index]); }).get();
+        if (root.find("[data-status-index]").length) STATE.template.statuses = root.find("[data-status-index]").map(function () { return collectRow($(this), ["status_label", "color", "is_default", "is_complete", "display_order"]); }).get();
     }
 
     function collectRow(row, fields, existing = {}) {
@@ -246,7 +256,7 @@
             fields: [
                 {
                     fieldtype: "HTML",
-                    options: `<div class="alert alert-danger"><strong>${esc(__("This cannot be undone."))}</strong><br>${esc(__("This permanently deletes the template and every saved annex document created from it."))}</div>`,
+                    options: `<div class="alert alert-danger"><strong>${esc(__("This cannot be undone."))}</strong><br>${esc(__("Templates with historical annex documents cannot be deleted."))}</div>`,
                 },
                 {
                     fieldname: "confirmation",
@@ -268,8 +278,7 @@
                     freeze_message: __("Deleting template and saved annex documents..."),
                 });
                 dialog.hide();
-                const annexCount = Number((res.message || {}).annex_count || 0);
-                frappe.show_alert({ message: __("Template deleted ({0} annex documents removed)", [annexCount]), indicator: "green" });
+                frappe.show_alert({ message: __("Template deleted"), indicator: "green" });
                 frappe.set_route("document-template-manager");
             },
         });
@@ -277,6 +286,7 @@
     }
 
     function input(field, label, value, type = "text", required = false, row = false) { return `<label><span>${esc(label)}${required ? " *" : ""}</span><input type="${esc(type)}" ${row ? `data-row-field="${esc(field)}"` : `data-field="${esc(field)}"`} value="${esc(value)}" /></label>`; }
+    function check(field, label, checked, description = "") { return `<label class="odtb-check inline" title="${esc(description)}"><input type="checkbox" data-row-field="${esc(field)}" ${checked ? "checked" : ""}/><span>${esc(label)}</span></label>`; }
     function readonlyInput(field, label, value, row = false, autoKey = false) { return `<label class="odtb-readonly"><span>${esc(label)}</span><input type="text" ${row ? `data-row-field="${esc(field)}"` : `data-field="${esc(field)}"`} data-auto-key="${autoKey ? 1 : 0}" value="${esc(value)}" readonly tabindex="-1" /></label>`; }
     function textarea(field, label, value, row = false) { return `<label class="odtb-textarea"><span>${esc(label)}</span><textarea ${row ? `data-row-field="${esc(field)}"` : `data-field="${esc(field)}"`}>${esc(value)}</textarea></label>`; }
     function options(values, selected) { return values.map((value) => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(__(value))}</option>`).join(""); }

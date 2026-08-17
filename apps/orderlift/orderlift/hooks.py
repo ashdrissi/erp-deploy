@@ -29,7 +29,7 @@ app_include_js = [
     "/assets/orderlift/js/orderlift_print_format_filter_20260628a.js?v=20260628a",
     "/assets/orderlift/js/orderlift_main_sidebar_lock_20260429b.js?v=20260429e",
     "/assets/orderlift/js/orderlift_company_switcher_20260803d.js",
-    "/assets/orderlift/js/orderlift_sidebar_tune_20260423e.js",
+    "/assets/orderlift/js/orderlift_sidebar_tune_20260423e.js?v=20260815d",
     "/assets/orderlift/js/orderlift_section_break_guard_20260423d.js",
     "/assets/orderlift/js/orderlift_main_dashboard_section_state_20260423g.js",
     "/assets/orderlift/js/crm_classification_20260723a.js?v=20260803a",
@@ -45,9 +45,9 @@ app_include_js = [
     "/assets/orderlift/js/finance_account_guard_20260501a.js?v=20260501b",
     "/assets/orderlift/js/item_price_uom_default_20260506a.js?v=20260507a",
     "/assets/orderlift/js/item_form_prices_20260608a.js?v=20260618a",
-    "/assets/orderlift/js/price_list_type_queries_20260703c.js?v=20260713b",
+    "/assets/orderlift/js/price_list_type_queries_20260703c.js?v=20260815a",
     "/assets/orderlift/js/orderlift_print_controls_20260703a.js?v=20260718a",
-    "/assets/orderlift/js/document_annex_dialog_20260519a.js?v=20260810a",
+    "/assets/orderlift/js/document_annex_dialog_20260519a.js?v=20260816a",
     "/assets/orderlift/js/connection_dashboard_links_20260616j.js?v=20260616j",
     "/assets/orderlift/js/orderlift_home_page_scroll_fix_20260520b.js?v=20260520b",
     "/assets/orderlift/js/pricing_policy_import_20260602a.js?v=20260602a",
@@ -159,6 +159,7 @@ doc_events = {
         ],
         "validate": [
             "orderlift.orderlift_finance.account_governance.validate_finance_document",
+            "orderlift.orderlift_finance.cash_flow_setup.validate_purchase_invoice_sales_order",
             "orderlift.orderlift_sales.utils.price_list_usage_guard.validate_purchase_invoice_price_list",
             "orderlift.orderlift_sales.utils.tax_inclusive.sync_purchase_invoice_tax_inclusive_fields",
         ],
@@ -212,22 +213,31 @@ doc_events = {
             "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_pricing_locked_to_quotation",
             "orderlift.orderlift_sales.sales_order_pricing_hooks.validate_sales_order_item_discount_caps",
             "orderlift.orderlift_sales.utils.price_list_usage_guard.validate_sales_order_price_list",
+            "orderlift.orderlift_finance.cash_flow_setup.protect_forecast_finality",
             "orderlift.orderlift_sales.payment_terms_policy.apply_sales_order_payment_terms_policy",
             "orderlift.orderlift_crm.project_linkage.link_sales_order_to_project",
             "orderlift.orderlift_sales.utils.tax_inclusive.sync_sales_order_tax_inclusive_fields",
         ],
-        "before_submit": "orderlift.orderlift_logistics.stock_planning.validate_sales_order_stock_dates",
+        "before_submit": [
+            "orderlift.orderlift_logistics.stock_planning.validate_sales_order_stock_dates",
+            "orderlift.annex_chain.on_sales_order_submit",
+        ],
         # Notify stock reservation recipients when a sales order is confirmed
-        # Also warn if linked installation project has a Blocked QC (SIG)
+        # Also warn if the linked project has a Blocked QC (SIG)
         "on_submit": [
             "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
             "orderlift.sales.utils.commission_calculator.create_sales_order_commissions",
             "orderlift.sales.utils.stock_notifier.notify_stock_reservation_team",
             "orderlift.orderlift_sig.utils.project_status_guard.on_sales_order_submit",
             "orderlift.orderlift_logistics.stock_planning.sync_sales_order_demand_plans",
+            "orderlift.orderlift_sig.technical_list.on_sales_order_submit_or_project_link",
         ],
         "after_insert": "orderlift.orderlift_crm.attachment_propagation.copy_quotation_attachments_to_sales_order",
-        "on_update": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
+        "on_update": [
+            "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
+            "orderlift.orderlift_crm.api.pipeline.sync_pipeline_assignment_on_update",
+        ],
+        "before_update_after_submit": "orderlift.orderlift_finance.cash_flow_setup.protect_forecast_finality",
         "on_cancel": [
             "orderlift.sales.utils.commission_calculator.cancel_sales_order_commissions",
             "orderlift.orderlift_logistics.stock_planning.cancel_sales_order_demand_plans",
@@ -250,6 +260,7 @@ doc_events = {
         "on_update": [
             "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
             "orderlift.orderlift_crm.opportunity_hooks.sync_opportunity_assignment_todo",
+            "orderlift.orderlift_crm.api.pipeline.sync_pipeline_assignment_on_update",
         ],
     },
     "Quotation": {
@@ -277,8 +288,15 @@ doc_events = {
             "orderlift.orderlift_sales.utils.price_list_usage_guard.validate_quotation_price_list",
             "orderlift.orderlift_sales.quotation_hooks.populate_quotation_stock_snapshot",
         ],
-        "after_insert": "orderlift.orderlift_crm.attachment_propagation.copy_opportunity_attachments_to_quotation",
-        "on_update": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
+        "after_insert": [
+            "orderlift.orderlift_crm.attachment_propagation.copy_opportunity_attachments_to_quotation",
+            "orderlift.annex_chain.sync_quotation_annexes",
+        ],
+        "on_update": [
+            "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
+            "orderlift.annex_chain.sync_quotation_annexes",
+        ],
+        "before_submit": "orderlift.annex_chain.on_quotation_submit",
         "on_submit": "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
         "on_trash": "orderlift.orderlift_crm.opportunity_hooks.cleanup_quotation_delete_links",
     },
@@ -336,6 +354,7 @@ doc_events = {
         "before_print": "orderlift.orderlift_sales.print_controls.require_submitted_document_print",
         # Resolve item packaging rows from selected/default packaging profiles.
         "before_validate": [
+            "orderlift.orderlift_logistics.technical_procurement.validate_procurement_document",
             "orderlift.company_scope.apply_transaction_company_scope",
             "orderlift.orderlift_logistics.utils.material_request.default_schedule_date",
         ],
@@ -346,16 +365,20 @@ doc_events = {
             "orderlift.orderlift_sales.utils.tax_inclusive.sync_purchase_order_tax_inclusive_fields",
         ],
         "before_submit": "orderlift.orderlift_sales.utils.purchase_order_pricing.validate_purchase_order_price_update_decisions",
-        "after_insert": "orderlift.intercompany.create_draft_sales_order_from_purchase_order",
+        # Generated on submit, not on draft save: the PO is immutable from here,
+        # so the copied item snapshot cannot go stale and an abandoned draft never
+        # leaves an orphan Sales Order in the supplying company.
         "on_submit": [
             "orderlift.orderlift_sales.utils.purchase_order_pricing.publish_approved_purchase_order_prices",
             "orderlift.orderlift_logistics.stock_planning.queue_supply_recalculation",
+            "orderlift.intercompany.create_draft_sales_order_from_purchase_order",
         ],
         "on_cancel": "orderlift.orderlift_logistics.stock_planning.queue_supply_recalculation",
     },
     "Material Request": {
         "before_print": "orderlift.orderlift_sales.print_controls.require_submitted_document_print",
         "before_validate": [
+            "orderlift.orderlift_logistics.technical_procurement.validate_procurement_document",
             "orderlift.company_scope.apply_transaction_company_scope",
             "orderlift.orderlift_logistics.utils.material_request.default_schedule_date",
         ],
@@ -391,6 +414,7 @@ doc_events = {
         "on_cancel": "orderlift.orderlift_logistics.stock_planning.queue_supply_recalculation",
     },
     "Pick List": {
+        "before_validate": "orderlift.orderlift_logistics.technical_procurement.validate_operational_document",
         "on_submit": [
             "orderlift.orderlift_logistics.utils.pick_list_reservation.reserve_submitted_pick_list",
             "orderlift.orderlift_logistics.stock_planning.queue_supply_recalculation",
@@ -404,8 +428,20 @@ doc_events = {
     "Stock Demand Plan": {
         "validate": "orderlift.company_scope.apply_company_scope",
     },
+    "Sales Order Technical List": {
+        "validate": "orderlift.company_scope.apply_company_scope",
+    },
+    "Sales Order Technical List Revision": {
+        "validate": "orderlift.company_scope.apply_company_scope",
+        "on_submit": "orderlift.orderlift_logistics.stock_planning.sync_technical_revision_demand_plans",
+        "on_cancel": "orderlift.orderlift_logistics.stock_planning.sync_technical_revision_demand_plans",
+    },
     "Supplier Quotation": {
         "before_print": "orderlift.orderlift_sales.print_controls.require_submitted_document_print",
+        "before_validate": [
+            "orderlift.orderlift_logistics.technical_procurement.validate_procurement_document",
+            "orderlift.company_scope.apply_transaction_company_scope",
+        ],
         "validate": [
             "orderlift.orderlift_sales.utils.tax_inclusive.sync_supplier_quotation_tax_inclusive_fields",
         ],
@@ -413,6 +449,7 @@ doc_events = {
     "Delivery Note": {
         "before_print": "orderlift.orderlift_sales.print_controls.require_submitted_document_print",
         "before_validate": [
+            "orderlift.orderlift_logistics.technical_procurement.validate_operational_document",
             "orderlift.company_scope.apply_transaction_company_scope",
             "orderlift.orderlift_crm.party_propagation.sync_downstream_sales_party_context",
             "orderlift.orderlift_sales.utils.commercial_presentation.inherit_commercial_presentation",
@@ -432,7 +469,10 @@ doc_events = {
     },
     "Request for Quotation": {
         "before_print": "orderlift.orderlift_sales.print_controls.require_submitted_document_print",
-        "before_validate": "orderlift.company_scope.apply_transaction_company_scope",
+        "before_validate": [
+            "orderlift.orderlift_logistics.technical_procurement.validate_procurement_document",
+            "orderlift.company_scope.apply_transaction_company_scope",
+        ],
     },
     "Customer": {
         "before_save": "orderlift.sales.utils.customer_tier.sync_customer_tier_mode",
@@ -443,7 +483,10 @@ doc_events = {
         "on_update": "orderlift.sales.utils.customer_tier.apply_dynamic_customer_tier",
     },
     "Supplier": {
-        "validate": "orderlift.company_scope.apply_company_scope",
+        "validate": [
+            "orderlift.company_scope.apply_company_scope",
+            "orderlift.orderlift_crm.party_management.prepare_party",
+        ],
     },
     "Prospect": {
         "before_save": "orderlift.sales.utils.customer_tier.sync_customer_tier_mode",
@@ -509,6 +552,7 @@ doc_events = {
             "orderlift.orderlift_finance.account_governance.ensure_company_finance_defaults",
             "orderlift.orderlift_logistics.doctype.stock_planning_settings.stock_planning_settings.ensure_company_settings",
         ],
+        "validate": "orderlift.orderlift_sig.technical_list.validate_company_settings",
         "on_update": "orderlift.orderlift_finance.account_governance.ensure_company_finance_defaults",
     },
     "SAV Ticket": {
@@ -525,10 +569,20 @@ doc_events = {
             "orderlift.orderlift_sig.utils.project_qc.on_project_save",
             "orderlift.orderlift_sig.utils.project_status_guard.before_project_status_change",
         ],
-        "validate": "orderlift.company_scope.apply_company_scope",
+        "validate": [
+            "orderlift.company_scope.apply_company_scope",
+            "orderlift.orderlift_finance.cash_flow_setup.protect_forecast_finality",
+        ],
         # Stitch the source opportunity's Sales Orders to this project
-        "after_insert": "orderlift.orderlift_crm.project_linkage.link_opportunity_family_to_project",
-        "on_update": "orderlift.orderlift_crm.project_linkage.link_opportunity_family_to_project",
+        "after_insert": [
+            "orderlift.orderlift_crm.project_linkage.link_opportunity_family_to_project",
+            "orderlift.orderlift_sig.technical_list.on_sales_order_submit_or_project_link",
+        ],
+        "on_update": [
+            "orderlift.orderlift_crm.project_linkage.link_opportunity_family_to_project",
+            "orderlift.orderlift_sig.technical_list.on_sales_order_submit_or_project_link",
+            "orderlift.orderlift_crm.api.pipeline.sync_pipeline_assignment_on_update",
+        ],
     },
     "Delivery Trip": {
         # Block Delivery Trip creation for inbound or customer-managed scenarios
@@ -566,7 +620,7 @@ doctype_js = {
     ],
     "Purchase Order": [
         "public/js/purchase_order_pricing_alerts_20260813a.js",
-        "public/js/purchase_order_buying_sources_20260813a.js",
+        "public/js/purchase_order_buying_sources_20260815d.js",
         "public/js/procurement_source_chain_20260726a.js",
         "public/js/generic_ttc_field_sync_20260805b.js",
         "public/js/submitted_print_guard_20260728a.js",
@@ -600,6 +654,7 @@ doctype_js = {
         "public/js/generic_ttc_field_sync_20260805b.js",
         "public/js/sales_order_connected_documents_20260724a.js",
         "public/js/submitted_print_guard_20260728a.js",
+        "public/js/sales_order_technical_list_20260815f.js",
     ],
     "Stock Entry": [
         "public/js/stock_rate_guard_20260721c.js",
@@ -611,15 +666,20 @@ doctype_js = {
     "Customer": ["public/js/customer_tier_mode.js", "public/js/party_form_simplify_20260812a.js"],
     "Prospect": ["public/js/customer_tier_mode.js", "public/js/party_form_simplify_20260812a.js"],
     "Lead": ["public/js/customer_tier_mode.js", "public/js/party_form_simplify_20260812a.js"],
+    "Supplier": "public/js/party_form_simplify_20260812a.js",
     "SAV Ticket": "public/js/sav_ticket_v3.js",
     "Supplier Quotation": [
         "public/js/generic_ttc_field_sync_20260805b.js",
         "public/js/submitted_print_guard_20260728a.js",
     ],
     # SIG module — Project form enhancements (QC Template, Geocoding)
-    "Project": "public/js/project_sig_20260429c.js",
+    "Project": [
+        "public/js/project_sig_20260429c.js",
+        "public/js/project_technical_lists_20260815d.js",
+    ],
+    "Sales Order Technical List Revision": "orderlift_sig/doctype/sales_order_technical_list_revision/sales_order_technical_list_revision.js",
     "Sales Invoice": [
-        "public/js/sales_invoice_mode_20260812c.js",
+        "public/js/sales_invoice_mode_20260812d.js",
         "public/js/finance_account_guard_20260501a.js",
         "public/js/payment_schedule_sync_20260724a.js",
         "public/js/generic_ttc_field_sync_20260805b.js",
@@ -691,6 +751,9 @@ after_migrate = [
     "orderlift.orderlift_logistics.setup.after_migrate",
     "orderlift.orderlift_sig.setup.after_migrate",
     "orderlift.orderlift_crm.setup.after_migrate",
+    "orderlift.orderlift_sig.technical_list.after_migrate",
+    "orderlift.annex_chain.after_migrate",
+    "orderlift.orderlift_logistics.technical_procurement.after_migrate",
     "orderlift.orderlift_crm.deal_abbreviation.after_migrate",
     "orderlift.orderlift_logistics.source_chain.after_migrate",
     "orderlift.company_scope.after_migrate",
@@ -699,6 +762,7 @@ after_migrate = [
     "orderlift.orderlift_sales.doctype.customer_segmentation_engine.customer_segmentation_engine.after_migrate",
     "orderlift.orderlift_finance.account_governance.after_migrate",
     "orderlift.orderlift_finance.payment_entry_currency.after_migrate",
+    "orderlift.orderlift_finance.cash_flow_setup.after_migrate",
     "orderlift.scripts.setup_startup_roles.after_migrate",
     "orderlift.role_capabilities.seed_default_role_capabilities",
     "orderlift.role_capabilities.upgrade_canonical_role_capabilities",
@@ -753,6 +817,7 @@ has_permission = {
     "Stock Entry": "orderlift.company_access.has_company_permission",
     "Material Request": "orderlift.company_access.has_company_permission",
     "Request for Quotation": "orderlift.company_access.has_company_permission",
+    "Supplier Quotation": "orderlift.company_access.has_company_permission",
     "Project": "orderlift.company_access.has_company_permission",
     "Sales Commission": "orderlift.company_access.has_company_permission",
     "SAV Ticket": "orderlift.company_access.has_company_permission",
@@ -775,6 +840,8 @@ has_permission = {
     "Purchase Agent Rules": "orderlift.orderlift_logistics.doctype.purchase_agent_rules.purchase_agent_rules.has_purchase_agent_rules_permission",
     "Stock Planning Settings": "orderlift.company_access.has_company_permission",
     "Stock Demand Plan": "orderlift.company_access.has_company_permission",
+    "Sales Order Technical List": "orderlift.company_access.has_company_permission",
+    "Sales Order Technical List Revision": "orderlift.company_access.has_company_permission",
     "Project Workflow Case": "orderlift.company_access.has_company_permission",
     "Party Company Access Request": "orderlift.orderlift_crm.party_management.has_party_access_request_permission",
     "ToDo": "orderlift.todo_access.has_todo_permission",
@@ -843,10 +910,13 @@ permission_query_conditions = {
     "Stock Entry": "orderlift.company_access.stock_entry_query",
     "Material Request": "orderlift.company_access.material_request_query",
     "Request for Quotation": "orderlift.company_access.request_for_quotation_query",
+    "Supplier Quotation": "orderlift.company_access.supplier_quotation_query",
     "Project": "orderlift.company_access.project_query",
     "Purchase Agent Rules": "orderlift.company_access.purchase_agent_rules_query",
     "Stock Planning Settings": "orderlift.company_access.stock_planning_settings_query",
     "Stock Demand Plan": "orderlift.company_access.stock_demand_plan_query",
+    "Sales Order Technical List": "orderlift.company_access.sales_order_technical_list_query",
+    "Sales Order Technical List Revision": "orderlift.company_access.sales_order_technical_list_revision_query",
     "Sales Commission": "orderlift.company_access.sales_commission_query",
     "SAV Ticket": "orderlift.company_access.sav_ticket_query",
     "Forecast Load Plan": "orderlift.company_access.forecast_load_plan_query",
@@ -910,6 +980,7 @@ jinja = {
         "orderlift.utils.jinja_helpers.get_company_address",
         "orderlift.utils.jinja_helpers.get_company_info",
         "orderlift.utils.jinja_helpers.get_quotation_detail_print_context",
+        "orderlift.utils.jinja_helpers.annex_print_template",
     ]
 }
 

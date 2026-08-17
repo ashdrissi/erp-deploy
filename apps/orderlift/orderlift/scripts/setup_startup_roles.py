@@ -714,7 +714,6 @@ MENU_ROLE_MAP = {
         "sales.pricing_dashboard",
         "sales.sales_order_pipeline",
         "sales.project_pipeline",
-        "finance.sale_financial_dashboard",
         "finance.sales_payment_follow_up",
         "items.catalogue_prix_articles",
     ],

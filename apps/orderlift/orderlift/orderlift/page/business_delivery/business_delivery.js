@@ -86,7 +86,7 @@
         },
         {
             title: "Install",
-            summary: "Track installation projects with project pipeline, map visibility, site data, QC templates, and mobile QC execution.",
+            summary: "Track projects with pipeline, map visibility, site data, QC templates, and mobile QC execution.",
             pages: ["Project Pipeline", "SIG Dashboard", "Project Map", "Mobile QC", "Project"],
             outputs: ["Project", "QC checklist", "Map marker", "Completion readiness"],
             controls: ["Project status", "QC completion", "Geolocation", "Sales Order linkage"],
@@ -121,7 +121,7 @@
             manual: "Advance payment confirmation and final commercial approval are business controls, not hard-coded approval gates.",
         },
         {
-            title: "Installation Project",
+            title: "Project",
             purpose: "How an installation sale moves from opportunity to project tracking, site visibility, QC, and completion readiness.",
             lanes: [
                 ["Sales", ["Opportunity", "Pricing Sheet", "Quotation", "Sales Order"]],

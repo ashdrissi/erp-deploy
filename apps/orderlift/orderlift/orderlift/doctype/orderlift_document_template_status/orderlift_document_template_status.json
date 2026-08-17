@@ -4,11 +4,12 @@
   "doctype": "DocType",
   "editable_grid": 1,
   "engine": "InnoDB",
-  "field_order": ["status_label", "color", "is_default", "display_order"],
+  "field_order": ["status_label", "color", "is_default", "is_complete", "display_order"],
   "fields": [
     {"fieldname": "status_label", "fieldtype": "Data", "label": "Status Label", "reqd": 1, "in_list_view": 1},
     {"fieldname": "color", "fieldtype": "Select", "label": "Color", "options": "Gray\nBlue\nGreen\nOrange\nRed\nPurple", "default": "Gray", "in_list_view": 1},
     {"fieldname": "is_default", "fieldtype": "Check", "label": "Default", "in_list_view": 1},
+    {"fieldname": "is_complete", "fieldtype": "Check", "label": "Complete", "in_list_view": 1},
     {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "default": "100"}
   ],
   "istable": 1,

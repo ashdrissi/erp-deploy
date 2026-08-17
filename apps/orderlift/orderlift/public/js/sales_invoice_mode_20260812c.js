@@ -141,7 +141,7 @@
             ],
             primary_action_label: __("Create Line"),
             primary_action: async (values) => {
-                const response = await frappe.call({ method: "orderlift.orderlift_sales.sales_invoice_modes.build_custom_invoice_payload", args: values });
+                const response = await frappe.call({ method: "orderlift.orderlift_sales.sales_invoice_modes.build_custom_invoice_payload", args: Object.assign({}, values, { sales_order: singleSourceSalesOrder(frm) }) });
                 applyPayload(frm, response.message || {});
                 dialog.hide();
             },
@@ -174,6 +174,11 @@
 
     function sourceSalesOrders(frm) {
         return Array.from(new Set((getStashedItems(frm).concat(frm.doc.items || [])).map((row) => row.sales_order).filter(Boolean)));
+    }
+
+    function singleSourceSalesOrder(frm) {
+        const orders = sourceSalesOrders(frm);
+        return orders.length === 1 ? orders[0] : "";
     }
 
     function formatAdvanceOption(row) {

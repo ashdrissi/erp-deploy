@@ -2869,7 +2869,7 @@ def ensure_margin_snapshot_permissions():
             permission.role = role
             permission.permlevel = 2
             permission.read = 1
-            permission.write = 0
+            permission.write = 1 if doctype == "Quotation" else 0
             if existing:
                 permission.save(ignore_permissions=True)
             else:

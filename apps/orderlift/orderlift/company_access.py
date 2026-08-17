@@ -46,6 +46,7 @@ COMPANY_SCOPED_DOCTYPES = [
     "Stock Entry",
     "Material Request",
     "Request for Quotation",
+    "Supplier Quotation",
     "Project",
     "Sales Commission",
     "SAV Ticket",
@@ -67,6 +68,8 @@ COMPANY_SCOPED_DOCTYPES = [
     "Purchase Agent Rules",
     "Stock Planning Settings",
     "Stock Demand Plan",
+    "Sales Order Technical List",
+    "Sales Order Technical List Revision",
 ]
 ORDERLIFT_MANAGED_PERMISSION_DOCTYPES = tuple(COMPANY_SCOPED_DOCTYPES)
 ORDERLIFT_MANAGED_SHARE_DISABLED_DOCTYPES = tuple(
@@ -156,6 +159,14 @@ def sales_order_query(user: str | None = None) -> str | None:
     return _company_query("Sales Order", user=user)
 
 
+def sales_order_technical_list_query(user: str | None = None) -> str | None:
+    return _company_query("Sales Order Technical List", user=user)
+
+
+def sales_order_technical_list_revision_query(user: str | None = None) -> str | None:
+    return _company_query("Sales Order Technical List Revision", user=user)
+
+
 def sales_invoice_query(user: str | None = None) -> str | None:
     return _company_query("Sales Invoice", user=user)
 
@@ -204,6 +215,10 @@ def material_request_query(user: str | None = None) -> str | None:
 
 def request_for_quotation_query(user: str | None = None) -> str | None:
     return _company_query("Request for Quotation", user=user)
+
+
+def supplier_quotation_query(user: str | None = None) -> str | None:
+    return _company_query("Supplier Quotation", user=user)
 
 
 def project_query(user: str | None = None) -> str | None:
@@ -725,7 +740,7 @@ def _doc_company_allowed(doc, user: str, permission_type: str | None = None) -> 
         return False
     if company in allowed_companies:
         return True
-    if getattr(doc, "doctype", None) in {"Lead", "Prospect", "Customer"}:
+    if getattr(doc, "doctype", None) in {"Lead", "Prospect", "Customer", "Supplier"}:
         return any(
             (row.get("company") or "") in allowed_companies
             for row in (doc.get("custom_internal_company_access") or [])
@@ -736,7 +751,7 @@ def _doc_company_allowed(doc, user: str, permission_type: str | None = None) -> 
 def _company_clause_for_doctype(doctype: str, table: str, field: str, companies: list[str]) -> str:
     escaped = ", ".join(frappe.db.escape(company) for company in companies)
     base_clause = f"{table}.{field} in ({escaped})"
-    if doctype in {"Lead", "Prospect", "Customer"} and _has_company_field(doctype, "custom_internal_company_access"):
+    if doctype in {"Lead", "Prospect", "Customer", "Supplier"} and _has_company_field(doctype, "custom_internal_company_access"):
         access_clause = (
             "exists (select 1 from `tabParty Internal Company Access` _party_company "
             f"where _party_company.parenttype = {frappe.db.escape(doctype)} "

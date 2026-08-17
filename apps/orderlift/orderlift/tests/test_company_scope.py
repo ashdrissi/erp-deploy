@@ -59,6 +59,7 @@ class TestCompanyScopeRegistry(unittest.TestCase):
     def test_internal_parties_are_visible_to_allowed_companies(self):
         for token in [
             "Allowed To Transact With",
+            "Party Internal Company Access",
             "is_internal_customer",
             "is_internal_supplier",
             "_company_clause_for_doctype",

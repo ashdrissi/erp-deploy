@@ -19,7 +19,7 @@ function _renderProjectMapOnce(wrapper) {
     renderSigPage(wrapper, {
         rootId: "sig-map-page-root",
         scriptId: "orderlift-sig-map-script-v10",
-        scriptSrc: "/assets/orderlift/js/sig_map_workspace_20260410d.js",
+        scriptSrc: "/assets/orderlift/js/sig_map_workspace_20260410d.js?v=20260814a",
         mountKey: "orderliftSigMap",
         mountOptions: {
             preloadProject: _getPreloadProject(),

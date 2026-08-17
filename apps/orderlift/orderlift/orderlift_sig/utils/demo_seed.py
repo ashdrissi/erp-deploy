@@ -162,7 +162,7 @@ def _upsert_project(index: int, scenario: dict, sample_customer: str | None, com
     project.notes = f"SIG demo scenario seeded on {today()} to showcase Desk map, dashboard, and QC flows."
     project.expected_start_date = add_days(today(), index)
     project.expected_end_date = add_days(today(), index + 10)
-    project.custom_project_type_ol = scenario["project_type"]
+    project.project_type = scenario["project_type"]
     project.custom_site_address = scenario["address"]
     project.custom_city = scenario["city"]
     project.custom_latitude = scenario["latitude"]

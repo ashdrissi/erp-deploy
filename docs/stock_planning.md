@@ -1,6 +1,6 @@
 # Confirmed Order Stock Planning
 
-Orderlift stock planning starts from submitted Sales Order stock-item rows. It coordinates physical stock, incoming Purchase Orders, logistics dates, Material Requests, and Pick Lists without creating Stock Reservation Entries directly.
+Orderlift stock planning starts from effective confirmed demand. It uses submitted Sales Order stock-item rows until a current submitted Sales Order Technical List revision exists, then uses that approved revision's execution quantities and dates instead. It coordinates physical stock, incoming Purchase Orders, logistics dates, Material Requests, and Pick Lists without creating Stock Reservation Entries directly.
 
 ## Configuration
 

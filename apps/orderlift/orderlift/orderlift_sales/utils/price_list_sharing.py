@@ -10,6 +10,8 @@ from orderlift.orderlift_sales.utils.price_list_scope import (
 
 SHARING_TABLE_FIELD = "custom_price_list_sharing"
 SHARED_FROM_FIELD = "custom_is_shared_from"
+PURCHASE_AGENT_RULES_DOCTYPE = "Purchase Agent Rules"
+PURCHASE_AGENT_ALLOWED_DOCTYPE = "Purchase Agent Allowed Buying Price List"
 
 
 def validate_sharing_rows(doc, method=None):
@@ -50,6 +52,7 @@ def ensure_shared_price_lists(doc, method=None):
         return
     if _is_shared_list(doc):
         return
+    _disable_removed_sharing_rows(doc)
     owner_company = (getattr(doc, "custom_company", "") or "").strip()
     if not owner_company:
         return
@@ -164,6 +167,9 @@ def _mirror_item_prices(source_price_list, target_price_list):
 
 
 def _shared_list_name(source_price_list, target_company):
+    existing = _existing_shared_list(source_price_list, target_company)
+    if existing:
+        return existing
     safe_pl = source_price_list.replace("`", "")
     safe_co = target_company.replace("`", "")
     candidate = "{} ({})".format(safe_pl, safe_co)
@@ -175,6 +181,17 @@ def _shared_list_name(source_price_list, target_company):
         candidate = "{} ({} #{})".format(safe_pl, safe_co, counter)
         counter += 1
     return candidate
+
+
+def _existing_shared_list(source_price_list, target_company):
+    if not frappe.db.has_column("Price List", SHARED_FROM_FIELD) or not frappe.db.has_column("Price List", "custom_company"):
+        return ""
+    return frappe.db.get_value(
+        "Price List",
+        {SHARED_FROM_FIELD: source_price_list, "custom_company": target_company},
+        "name",
+        order_by="enabled desc, modified desc, name asc",
+    ) or ""
 
 
 def sync_shared_item_price(doc, method=None):
@@ -280,6 +297,30 @@ def disable_shared_price_list(shared_price_list):
     if not frappe.db.exists("Price List", shared_price_list):
         return
     frappe.db.set_value("Price List", shared_price_list, "enabled", 0)
+    _retire_purchase_agent_allowances(shared_price_list)
+
+
+def _retire_purchase_agent_allowances(price_list):
+    """Drop the list from Purchase Agent Rules allowances when it stops being shared.
+
+    Every teardown path funnels through disable_shared_price_list, so doing this
+    here covers row deactivation, row removal, and Price List deletion. Left
+    behind, an active allowance points at a disabled list and later surfaces as
+    "The selected Price List is unavailable or not permitted."
+    """
+    if not price_list or not frappe.db.exists("DocType", PURCHASE_AGENT_ALLOWED_DOCTYPE):
+        return
+    rows = frappe.db.get_all(
+        PURCHASE_AGENT_ALLOWED_DOCTYPE,
+        filters={
+            "buying_price_list": price_list,
+            "parenttype": PURCHASE_AGENT_RULES_DOCTYPE,
+            "is_active": 1,
+        },
+        pluck="name",
+    )
+    for row in rows:
+        frappe.db.set_value(PURCHASE_AGENT_ALLOWED_DOCTYPE, row, "is_active", 0, update_modified=False)
 
 
 def _deactivate_sharing_row(row):
@@ -313,24 +354,27 @@ def handle_sharing_rows_deletion(doc, method=None):
         return
     if _is_shared_list(doc):
         return
+    _disable_removed_sharing_rows(doc)
+
+
+def _disable_removed_sharing_rows(doc):
+    before = doc.get_doc_before_save() if hasattr(doc, "get_doc_before_save") else None
+    if not before:
+        return
     rows = doc.get(SHARING_TABLE_FIELD) or []
-    original_rows = _get_original_sharing_rows(doc.name)
+    original_rows = _sharing_rows_by_name(before)
     current_names = {getattr(r, "name", "") for r in rows if getattr(r, "name", "")}
     for original_name, original_shared in original_rows.items():
         if original_name not in current_names and original_shared:
             disable_shared_price_list(original_shared)
 
 
-def _get_original_sharing_rows(price_list_name):
-    if not frappe.db.table_exists("tabPrice List Sharing"):
-        return {}
-    rows = frappe.get_all(
-        "Price List Sharing",
-        filters={"parent": price_list_name},
-        fields=["name", "shared_price_list"],
-        limit_page_length=0,
-    )
-    return {r["name"]: (r.get("shared_price_list") or "").strip() for r in rows}
+def _sharing_rows_by_name(doc):
+    return {
+        getattr(row, "name", ""): (getattr(row, "shared_price_list", "") or "").strip()
+        for row in (doc.get(SHARING_TABLE_FIELD) or [])
+        if getattr(row, "name", "")
+    }
 
 
 def _is_shared_list(doc):

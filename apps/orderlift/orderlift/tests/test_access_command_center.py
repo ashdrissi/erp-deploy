@@ -258,6 +258,42 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
             for doctype in doctypes:
                 self.assertIn(doctype, backing)
 
+    def test_technical_list_manager_exposes_operational_permissions(self):
+        item = {
+            "key": "projects.technical_list_manager",
+            "link_type": "Page",
+            "link_to": "technical-list-manager",
+        }
+
+        self.assertEqual(
+            access_command_center._business_feature_actions(item),
+            ("open", "view", "create_edit", "approve_cancel", "delete", "export"),
+        )
+        backing = access_command_center.BUSINESS_FEATURE_BACKING_DOCTYPES[item["key"]]
+        for doctype in (
+            "Sales Order",
+            "Sales Order Technical List",
+            "Sales Order Technical List Revision",
+            "Orderlift Annex Document",
+        ):
+            self.assertIn(doctype, backing)
+
+    def test_technical_list_approval_only_manages_revision_submit_permissions(self):
+        item = {
+            "key": "projects.technical_list_manager",
+            "link_type": "Page",
+            "link_to": "technical-list-manager",
+        }
+
+        self.assertEqual(
+            access_command_center.BUSINESS_FEATURE_ACTION_BACKING_DOCTYPES[item["key"]]["approve_cancel"],
+            ("Sales Order Technical List Revision",),
+        )
+        self.assertNotIn(
+            "Sales Order",
+            access_command_center.BUSINESS_FEATURE_ACTION_BACKING_DOCTYPES[item["key"]]["create_edit"],
+        )
+
     def test_workflow_documents_grant_hidden_workflow_state_backing_doctype(self):
         for key in ("sales.quotation", "sales.sales_order", "purchasing.purchase_order"):
             self.assertIn("Workflow State", access_command_center.BUSINESS_FEATURE_BACKING_DOCTYPES[key])
@@ -1436,6 +1472,22 @@ class TestAccessCommandCenterHelpers(unittest.TestCase):
             "email=email",
         ]:
             self.assertIn(token, queue_helper)
+
+    def test_company_access_does_not_manage_a_default_company(self):
+        source = (APP_ROOT / "orderlift" / "orderlift" / "page" / "access_command_center" / "access_command_center.js").read_text()
+        api = (APP_ROOT / "orderlift" / "orderlift" / "page" / "access_command_center" / "access_command_center.py").read_text()
+
+        for obsolete in [
+            "userDefaultCompanyDraft",
+            "data-make-default-company",
+            "Make Default",
+            "acc-default-company-btn",
+            "default_company",
+        ]:
+            self.assertNotIn(obsolete, source)
+        company_save = api.split("def save_user_companies(", 1)[1].split("@frappe.whitelist()", 1)[0]
+        self.assertNotIn("default_company", company_save)
+        self.assertIn("_save_user_company_access(user_name, companies)", company_save)
 
     def test_user_type_requires_roles_that_match_manual_selection(self):
         original_get_all = getattr(frappe_stub, "get_all", None)

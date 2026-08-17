@@ -98,16 +98,17 @@
         if (!isDraftQuotation(frm)) return;
 
         const partyType = String(frm.doc.quotation_to || "").trim();
-        const customer = partyType === "Customer" ? String(frm.doc.party_name || "").trim() : "";
+        const partyName = String(frm.doc.party_name || "").trim();
+        const taxField = partyTaxField(partyType);
         let taxId = "";
-        if (customer) {
+        if (taxField && partyName) {
             try {
-                const response = await frappe.db.get_value("Customer", customer, "tax_id");
+                const response = await frappe.db.get_value(partyType, partyName, taxField);
                 if (
-                    String(frm.doc.quotation_to || "").trim() !== "Customer"
-                    || String(frm.doc.party_name || "").trim() !== customer
+                    String(frm.doc.quotation_to || "").trim() !== partyType
+                    || String(frm.doc.party_name || "").trim() !== partyName
                 ) return;
-                taxId = String((response.message || {}).tax_id || "").trim();
+                taxId = String((response.message || {})[taxField] || "").trim();
             } catch (error) {
                 console.warn("Orderlift customer ICE / Tax ID refresh failed", error);
                 return;
@@ -116,6 +117,12 @@
 
         if (String(frm.doc.custom_customer_tax_id || "").trim() === taxId) return;
         await frm.set_value("custom_customer_tax_id", taxId);
+    }
+
+    function partyTaxField(partyType) {
+        if (partyType === "Customer") return "tax_id";
+        if (partyType === "Prospect" || partyType === "Lead") return "custom_tax_id";
+        return "";
     }
 
     frappe.ui.form.on("Quotation", {
@@ -1077,7 +1084,7 @@
                     label: __("Charge"),
                     reqd: 1,
                     get_query: () => ({ filters: { disabled: 0 } }),
-                    onchange: () => loadOtherChargeTemplate(frm, dialog),
+                    onchange: () => void loadOtherChargeTemplate(frm, dialog).catch((error) => console.warn("Unable to load Other Charge template", error)),
                 },
                 {
                     fieldname: "description",
@@ -1107,6 +1114,13 @@
                     default: 0,
                     reqd: 1,
                 },
+                ...(canViewQuotationMargins() ? [{
+                    fieldname: "expected_unit_cost",
+                    fieldtype: "Currency",
+                    label: __("Expected Unit Cost HT"),
+                    default: 0,
+                    description: __("Theoretical direct cost used until Purchase Orders and Purchase Invoices provide real costs."),
+                }] : []),
                 {
                     fieldname: "item_code",
                     fieldtype: "Link",
@@ -1117,8 +1131,13 @@
                 },
             ],
             primary_action_label: __("Add Charge"),
-            primary_action(values) {
-                addOtherChargeRow(frm, values, dialog, item);
+            async primary_action(values) {
+                dialog.disable_primary_action();
+                try {
+                    await addOtherChargeRow(frm, values, dialog, item);
+                } finally {
+                    dialog.enable_primary_action();
+                }
             },
         });
         dialog.show();
@@ -1131,22 +1150,27 @@
             method: OTHER_CHARGE_TEMPLATE_METHOD,
             args: { other_charge: otherCharge, company: frm.doc.company || "" },
         });
+        if (String(dialog.get_value("other_charge") || "").trim() !== otherCharge) return null;
         const charge = res.message || {};
         dialog.set_value("description", charge.description || otherCharge);
         dialog.set_value("uom", charge.uom || "");
         dialog.set_value("unit_amount", Number(charge.rate || 0));
+        if (dialog.fields_dict.expected_unit_cost) dialog.set_value("expected_unit_cost", Number(charge.expected_unit_cost || 0));
         dialog.set_value("item_code", charge.item_code || "");
         return charge;
     }
 
     frappe.ui.form.on("Orderlift Quotation Other Charge", {
         other_charge(frm, cdt, cdn) {
-            fillOtherChargeChildRow(frm, cdt, cdn);
+            void fillOtherChargeChildRow(frm, cdt, cdn).catch((error) => console.warn("Unable to fill Other Charge row", error));
         },
         qty(frm, cdt, cdn) {
             updateOtherChargeChildAmount(frm, cdt, cdn);
         },
         rate(frm, cdt, cdn) {
+            updateOtherChargeChildAmount(frm, cdt, cdn);
+        },
+        expected_unit_cost(frm, cdt, cdn) {
             updateOtherChargeChildAmount(frm, cdt, cdn);
         },
     });
@@ -1159,11 +1183,13 @@
             method: OTHER_CHARGE_TEMPLATE_METHOD,
             args: { other_charge: otherCharge, company: frm.doc.company || "" },
         });
+        if (String(((locals[cdt] && locals[cdt][cdn]) || {}).other_charge || "").trim() !== otherCharge) return;
         const charge = res.message || {};
         const updates = [];
         if (!row.description && charge.description) updates.push(frappe.model.set_value(cdt, cdn, "description", charge.description));
         if (!row.uom && charge.uom) updates.push(frappe.model.set_value(cdt, cdn, "uom", charge.uom));
         if (!Number(row.rate || 0) && Number(charge.rate || 0)) updates.push(frappe.model.set_value(cdt, cdn, "rate", Number(charge.rate || 0)));
+        if (canViewQuotationMargins()) updates.push(frappe.model.set_value(cdt, cdn, "expected_unit_cost", Number(charge.expected_unit_cost || 0)));
         if (!row.item_code && charge.item_code) updates.push(frappe.model.set_value(cdt, cdn, "item_code", charge.item_code));
         if (updates.length) await Promise.all(updates);
         updateOtherChargeChildAmount(frm, cdt, cdn);
@@ -1176,6 +1202,11 @@
         const rate = Number(row.rate || 0);
         const amount = Number.isFinite(qty) && Number.isFinite(rate) ? qty * rate : 0;
         frappe.model.set_value(cdt, cdn, "amount", amount);
+        if (canViewQuotationMargins()) {
+            const expectedUnitCost = Number(row.expected_unit_cost || 0);
+            const expectedCost = Number.isFinite(qty) && Number.isFinite(expectedUnitCost) ? qty * expectedUnitCost : 0;
+            frappe.model.set_value(cdt, cdn, "expected_cost", expectedCost);
+        }
     }
 
     async function addOtherChargeRow(frm, values, dialog, item) {
@@ -1185,6 +1216,7 @@
         }
         const qty = Number(values.qty || 0);
         const unitAmount = Number(values.unit_amount || 0);
+        const expectedUnitCost = canViewQuotationMargins() ? Number(values.expected_unit_cost || 0) : 0;
         const otherCharge = String(values.other_charge || "").trim();
         const description = String(values.description || "").trim() || __("Other Charges");
         const uom = String(values.uom || (item || {}).uom || "").trim();
@@ -1205,8 +1237,13 @@
             frappe.msgprint({ title: __("Invalid Amount"), message: __("Enter an amount of zero or more."), indicator: "red" });
             return;
         }
+        if (!Number.isFinite(expectedUnitCost) || expectedUnitCost < 0) {
+            frappe.msgprint({ title: __("Invalid Expected Cost"), message: __("Enter an expected unit cost of zero or more."), indicator: "red" });
+            return;
+        }
 
         const amount = qty * unitAmount;
+        const expectedCost = qty * expectedUnitCost;
         if (frm.fields_dict.custom_other_charges) {
             frm.add_child("custom_other_charges", {
                 other_charge: otherCharge,
@@ -1215,6 +1252,7 @@
                 uom,
                 rate: unitAmount,
                 amount,
+                ...(canViewQuotationMargins() ? { expected_unit_cost: expectedUnitCost, expected_cost: expectedCost } : {}),
                 item_code: itemCode,
             });
             frm.refresh_field("custom_other_charges");
@@ -1243,6 +1281,7 @@
             source_discount_percent: 0,
             source_max_discount_percent: 0,
             source_discount_amount: 0,
+            ...(canViewQuotationMargins() ? { source_landed_cost: expectedUnitCost } : {}),
             custom_presentation_role: "Print separately",
             custom_orderlift_other_charge: frm.fields_dict.custom_other_charges ? 1 : 0,
         });

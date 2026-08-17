@@ -1,51 +1,184 @@
 (function () {
-    const METHOD = "orderlift.orderlift_sales.page.sale_financial_dashboard.sale_financial_dashboard.get_dashboard_data";
-    const FILTER_KEYS = ["company", "business_type", "crm_segment", "currency", "sales_status", "project_status", "from_date", "to_date", "search"];
+    const METHOD = "orderlift.orderlift_finance.cash_flow.get_portfolio_data";
+    const STYLE_ID = "orderlift-financial-workspace-style";
+    const STYLE_URL = "/assets/orderlift/css/financial_workspace_20260815c.css";
+    const TABS = [
+        ["overview", "Overview", ""],
+        ["profitability", "Profitability", "profitability_rows"],
+        ["cashflow", "Cash Flow", "cash_flow_rows"],
+        ["projects", "Projects", "project_rows"],
+        ["standalone", "Standalone Orders", "standalone_order_rows"],
+        ["customers", "Customers", "customer_rows"],
+        ["monthly", "Monthly", "monthly_rows"],
+        ["quality", "Data Quality", "data_quality_rows"],
+    ];
+    const FILTER_KEYS = ["search", "status", "customer", "project_type", "business_type", "segment", "risk_status", "revenue_forecast_status", "cost_forecast_status", "currency", "horizon", "from_date", "to_date"];
+    const SOURCE_DOCTYPES = new Set(["Customer", "Project", "Sales Order", "Sales Invoice", "Purchase Invoice", "Purchase Order", "Payment Entry"]);
     const STATE = {
-        filters: readFiltersFromUrl(),
+        activeTab: readQuery("tab") || "overview",
+        filters: readFilters(),
         data: null,
         loading: false,
         error: null,
+        filtersOpen: false,
+        sort: { key: "risk", direction: "desc" },
+        requestGeneration: 0,
     };
 
-    const SFD_ICONS = {
-        money: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="14" height="10" rx="2"/><circle cx="10" cy="10" r="2"/><path d="M6 8v4M14 8v4"/></svg>`,
-        project: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12v12H4z"/><path d="M7 8h6M7 11h4"/></svg>`,
-        chart: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V4"/><path d="M4 16h12"/><path d="M7 13V9M10 13V6M13 13v-3"/></svg>`,
-        filter: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h14l-5 6v4l-4 2v-6L3 4z"/></svg>`,
-        refresh: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7a6 6 0 1 0 1 4"/><path d="M16 3v4h-4"/></svg>`,
-        arrow: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h12"/><path d="M11 5l5 5-5 5"/></svg>`,
-        search: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="6"/><path d="M14 14l3 3"/></svg>`,
+    const TABLES = {
+        profitability: {
+            title: "Project & Order Profitability",
+            description: "Expected and actual-to-date profit kept separate from cash movement.",
+            empty: "No profitability contexts match the current filters.",
+            dynamicContext: true,
+            columns: [
+                column("name", "Project / Order", ["title", "context_name", "name"], "primary"),
+                column("customer", "Customer", ["customer"]),
+                column("expected_revenue", "Expected Revenue HT", ["expected_revenue_ht"], "money"),
+                column("expected_cost", "Expected Cost", ["expected_cost"], "profit_money"),
+                column("expected_profit", "Expected Profit", ["expected_profit"], "profit_money"),
+                column("expected_margin", "Profit %", ["expected_profit_pct"], "profit_percent"),
+                column("actual_profit", "Actual Profit to Date", ["actual_profit_to_date"], "money"),
+                column("net_cash", "Net Cash Flow", ["net_cash"], "money"),
+                column("funding_gap", "Funding Gap", ["funding_gap"], "money"),
+                column("closure", "Forecast Status", [], "closure"),
+            ],
+        },
+        cashflow: {
+            title: "Cash Flow by Project & Order",
+            description: "Actual cash, forward commitments, and funding requirements for each financial context.",
+            empty: "No cash-flow contexts match the current filters.",
+            dynamicContext: true,
+            columns: [
+                column("name", "Project / Order", ["title", "context_name", "name"], "primary"),
+                column("customer", "Customer", ["customer"]),
+                column("collected", "Collected", ["collected"], "money"),
+                column("paid", "Supplier Paid", ["supplier_paid"], "money"),
+                column("net_cash", "Net Cash Flow", ["net_cash"], "money"),
+                column("expected_inflow", "Expected Inflow", ["committed_inflow"], "money"),
+                column("expected_outflow", "Expected Outflow", ["committed_outflow"], "money"),
+                column("forecast_outflow", "Forecast Outflow", ["forecast_outflow"], "money"),
+                column("funding_gap", "Funding Gap", ["funding_gap"], "money"),
+                column("next_event", "Next Cash Event", ["next_cash_event"], "event"),
+            ],
+        },
+        projects: {
+            title: "Project Portfolio",
+            description: "Project cash position, exposure, and expected funding movement.",
+            empty: "No projects match the current filters.",
+            contextType: "project",
+            columns: [
+                column("name", "Project", ["project_name", "title", "name", "context_name"], "primary"),
+                column("customer", "Customer", ["customer_name", "customer"]),
+                column("status", "Status", ["workflow_status", "status", "project_status"], "status"),
+                column("project_type", "Project Type", ["project_type"]),
+                column("business_type", "Business Type", ["business_type"]),
+                column("collected", "Collected", ["collected", "collected_amount"], "money"),
+                column("paid", "Paid", ["supplier_paid", "paid", "paid_amount"], "money"),
+                column("expected_profit", "Expected Profit", ["expected_profit"], "money"),
+                column("funding_gap", "Funding Gap", ["funding_gap", "gap"], "money"),
+                column("risk", "Risk", ["risk_status", "risk", "risk_level"], "status"),
+            ],
+        },
+        standalone: {
+            title: "Standalone Orders",
+            description: "Sales orders whose financial context is not grouped under a project.",
+            empty: "No standalone orders match the current filters.",
+            contextType: "sales_order",
+            columns: [
+                column("name", "Sales Order", ["sales_order", "order_name", "name", "context_name"], "primary"),
+                column("customer", "Customer", ["customer_name", "customer"]),
+                column("status", "Status", ["workflow_status", "status", "order_status"], "status"),
+                column("business_type", "Business Type", ["business_type"]),
+                column("collected", "Collected", ["collected", "collected_amount"], "money"),
+                column("paid", "Paid", ["supplier_paid", "paid", "paid_amount"], "money"),
+                column("expected_inflow", "Expected Inflow", ["committed_inflow", "expected_inflow_13w", "expected_inflow"], "money"),
+                column("expected_profit", "Expected Profit", ["expected_profit"], "money"),
+                column("funding_gap", "Funding Gap", ["funding_gap", "gap"], "money"),
+                column("risk", "Risk", ["risk_status", "risk", "risk_level"], "status"),
+            ],
+        },
+        customers: {
+            title: "Customer Exposure",
+            description: "Receivables, collection, and concentration by customer.",
+            empty: "No customer exposure matches the current filters.",
+            documentType: "Customer",
+            columns: [
+                column("customer", "Customer", ["customer_name", "customer", "name"], "primary"),
+                column("contexts", "Contexts", ["context_count", "project_count", "order_count"], "number"),
+                column("collected", "Collected", ["collected", "collected_amount"], "money"),
+                column("paid", "Supplier Paid", ["supplier_paid", "paid"], "money"),
+                column("net", "Net Cash", ["net_cash", "net"], "money"),
+                column("expected_profit", "Expected Profit", ["expected_profit"], "money"),
+                column("risk", "Risk", ["risk_status", "risk", "risk_level"], "status"),
+            ],
+        },
+        monthly: {
+            title: "Monthly Cash Movement",
+            description: "Collected, paid, and expected movement by month.",
+            empty: "No monthly cash movement is available for this period.",
+            columns: [
+                column("month", "Month", ["label", "month", "period"], "primary"),
+                column("collected", "Actual Inflow", ["actual_inflow", "collected", "inflow"], "money"),
+                column("paid", "Actual Outflow", ["actual_outflow", "paid", "outflow"], "money"),
+                column("net", "Net", ["net", "net_cash"], "money"),
+                column("expected_inflow", "Committed Inflow", ["committed_inflow", "expected_inflow"], "money"),
+                column("expected_outflow", "Committed Outflow", ["committed_outflow", "expected_outflow"], "money"),
+                column("forecast_outflow", "Forecast Outflow", ["forecast_outflow"], "money"),
+            ],
+        },
+        quality: {
+            title: "Data Quality",
+            description: "Missing or incomplete source data affecting financial decisions.",
+            empty: "No data-quality issues were reported.",
+            columns: [
+                column("severity", "Severity", ["severity", "level", "status"], "status"),
+                column("context", "Context", ["context", "context_name", "name"], "primary"),
+                column("issue", "Issue", ["issue", "message", "description"]),
+                column("field", "Field", ["field", "fieldname"]),
+                column("count", "Records", ["count", "record_count"], "number"),
+                column("action", "Recommended Action", ["action", "recommendation"]),
+                column("source", "Source Record", ["document_name", "name"], "document"),
+            ],
+        },
     };
 
     frappe.pages["sale-financial-dashboard"].on_page_load = function (wrapper) {
-        const page = frappe.ui.make_app_page({ parent: wrapper, title: __("Sale Financial Dashboard"), single_column: true });
+        ensureStyles();
+        const page = frappe.ui.make_app_page({ parent: wrapper, title: __("Project & Order Finance"), single_column: true });
         wrapper.page = page;
-        page.main.addClass("sfd-root");
-        injectSaleFinancialStyles();
+        page.main.addClass("ofw-root");
+        hideFrappeHeader(wrapper);
+        syncStateFromLocation();
         render(page);
-        loadDashboard(page);
+        load(page);
     };
 
     frappe.pages["sale-financial-dashboard"].on_page_show = function (wrapper) {
         if (!wrapper.page) return;
-        wrapper.page.set_title(__("Sale Financial Dashboard"));
-        if (!STATE.data && !STATE.loading) loadDashboard(wrapper.page);
+        wrapper.page.set_title(__("Project & Order Finance"));
+        const changed = syncStateFromLocation();
+        if (changed.filters || (!STATE.data && !STATE.loading)) load(wrapper.page);
+        else if (changed.tab) render(wrapper.page);
     };
 
-    async function loadDashboard(page) {
+    async function load(page) {
+        const requestGeneration = ++STATE.requestGeneration;
         STATE.loading = true;
         STATE.error = null;
         render(page);
         try {
-            const res = await frappe.call({ method: METHOD, args: { filters: STATE.filters } });
-            STATE.data = res.message || {};
-            STATE.filters = { ...defaultFilters(), ...(STATE.data.active_filters || STATE.filters) };
-            updateUrlFilters();
+            const response = await frappe.call({ method: METHOD, args: { filters: JSON.stringify(STATE.filters) } });
+            if (requestGeneration !== STATE.requestGeneration) return;
+            STATE.data = response.message || {};
+            if (STATE.data.active_filters) STATE.filters = { ...STATE.filters, ...safeFilters(STATE.data.active_filters) };
+            updateUrl();
         } catch (error) {
+            if (requestGeneration !== STATE.requestGeneration) return;
             STATE.error = error;
-            console.warn("Sale Financial Dashboard failed", error);
+            console.warn("Project & Order Finance portfolio failed", error);
         } finally {
+            if (requestGeneration !== STATE.requestGeneration) return;
             STATE.loading = false;
             render(page);
         }
@@ -53,341 +186,462 @@
 
     function render(page) {
         const data = STATE.data || {};
-        const filters = STATE.filters || defaultFilters();
-        const totals = data.currency_totals || [];
-        page.set_title(__("Sale Financial Dashboard"));
+        page.set_title(__("Project & Order Finance"));
         page.main.html(`
-            <div class="sfd-wrapper">
-                <nav class="sfd-breadcrumb" aria-label="${__("Breadcrumb")}">
-                    <a href="/desk/home-page?sidebar=Main+Dashboard">${__("Main Dashboard")}</a>
-                    <span>/</span>
-                    <a href="/desk/home-page?sidebar=Main+Dashboard">${__("Finance")}</a>
-                    <span>/</span>
-                    <strong>${__("Sale Financial Dashboard")}</strong>
-                </nav>
-
-                <section class="sfd-hero">
-                    <div class="sfd-hero-copy">
-                        <div class="sfd-eyebrow">${__("Orderlift · Business Finance")}</div>
-                        <h1>${__("Sale Financial Dashboard")}</h1>
-                        <p>${__("Revenue, charges, margins, projects, and operating context filtered by company, business type, segment, status, date, and currency.")}</p>
-                        <div class="sfd-active-filters">${activeFilterChips(filters)}</div>
+            <main class="ofw-shell" aria-labelledby="ofw-page-title">
+                ${breadcrumb()}
+                <header class="ofw-header">
+                    <div class="ofw-header-copy">
+                        <span class="ofw-eyebrow">${icon("portfolio")}${esc(__("Finance Portfolio"))}</span>
+                        <h1 id="ofw-page-title">${esc(__("Project & Order Finance"))}</h1>
+                        <p>${esc(__("A decision-focused view of collections, supplier payments, commitments, risk, and short-term funding across projects and standalone sales orders."))}</p>
                     </div>
-                    <div class="sfd-hero-panel">
-                        <span>${__("Gross Margin")}</span>
-                        <strong>${moneyList(totals, "margin")}</strong>
-                        <small>${marginPctLabel(totals)}</small>
+                    <div class="ofw-header-meta">
+                        <span class="ofw-company">${icon("company")}<span>${esc(__("Active company"))}: <strong>${esc(activeCompany(data) || __("Session company"))}</strong></span></span>
+                        <button type="button" class="ofw-button" data-refresh ${STATE.loading ? "disabled" : ""}>${icon("refresh")}${esc(__("Refresh"))}</button>
                     </div>
-                </section>
-
-                ${filterPanel(data, filters)}
-                ${STATE.error ? errorBanner(STATE.error) : ""}
-                ${STATE.loading ? skeletonMarkup() : dashboardMarkup(data)}
-            </div>
+                </header>
+                ${tabs(data)}
+                ${filterPanel(data)}
+                <div class="ofw-live" aria-live="polite" aria-busy="${STATE.loading ? "true" : "false"}">
+                    ${STATE.error ? errorState() : STATE.loading ? skeleton() : portfolioContent(data)}
+                </div>
+            </main>
         `);
         bind(page);
     }
 
-    function filterPanel(data, filters) {
-        const options = data.filter_options || {};
-        return `
-            <section class="sfd-filter-card" aria-label="${__("Dashboard filters")}">
-                <div class="sfd-filter-head">
-                    <div><span class="sfd-filter-icon">${SFD_ICONS.filter}</span><strong>${__("Filters")}</strong><small>${activeFilterCount(filters)} ${__("active")}</small></div>
-                    <div class="sfd-filter-actions">
-                        <button type="button" class="sfd-btn ghost" data-period="month">${__("This Month")}</button>
-                        <button type="button" class="sfd-btn ghost" data-period="quarter">${__("Quarter")}</button>
-                        <button type="button" class="sfd-btn ghost" data-period="year">${__("Year")}</button>
-                    </div>
+    function breadcrumb() {
+        return `<nav class="ofw-breadcrumb" aria-label="${esc(__("Breadcrumb"))}"><a href="/app/home-page">${esc(__("Main Dashboard"))}</a><span aria-hidden="true">/</span><span>${esc(__("Finance"))}</span><span aria-hidden="true">/</span><strong>${esc(__("Project & Order Finance"))}</strong></nav>`;
+    }
+
+    function tabs(data) {
+        return `<div class="ofw-tabs-wrap"><nav class="ofw-tabs" aria-label="${esc(__("Portfolio views"))}">${TABS.map(([key, label, source]) => {
+            const count = source ? rows(data, source).length : null;
+            const active = STATE.activeTab === key;
+            return `<button type="button" class="ofw-tab" id="ofw-tab-${key}" aria-pressed="${active}" ${active ? 'aria-current="page"' : ""} data-tab="${key}">${esc(__(label))}${count === null ? "" : `<span class="ofw-tab-count">${count}</span>`}</button>`;
+        }).join("")}</nav></div>`;
+    }
+
+    function filterPanel(data) {
+        const options = data.filter_options || data.filters || {};
+        return `<section class="ofw-filter-card ${STATE.filtersOpen ? "filters-open" : ""}" aria-label="${esc(__("Portfolio filters"))}">
+            <div class="ofw-filter-heading">
+                <div class="ofw-filter-title"><strong>${esc(__("Portfolio"))}</strong><small>${activeFilterCount()} ${esc(__("active filters"))}</small></div>
+                <label class="ofw-filter-search">${icon("search")}<span class="sr-only">${esc(__("Search portfolio"))}</span><input type="search" data-filter="search" value="${esc(STATE.filters.search)}" placeholder="${esc(__("Search project, order, or customer"))}"></label>
+                <button type="button" class="ofw-button compact ofw-filter-toggle" data-toggle-filters aria-expanded="${STATE.filtersOpen}">${icon("filter")}${esc(STATE.filtersOpen ? __("Close filters") : __("Filters"))}${activeFilterCount() ? `<span class="ofw-filter-count">${activeFilterCount()}</span>` : ""}</button>
+            </div>
+            <div class="ofw-filter-body">
+                <div class="ofw-filter-grid">
+                    ${select("status", __("Status"), optionList(options, ["workflow_statuses", "statuses", "status", "project_statuses", "order_statuses"]), __("All statuses"))}
+                    ${select("customer", __("Customer"), optionList(options, ["customers", "customer"]), __("All customers"))}
+                    ${select("project_type", __("Project Type"), optionList(options, ["project_types", "project_type"]), __("All project types"))}
+                    ${select("business_type", __("Business Type"), optionList(options, ["business_types", "business_type"]), __("All business types"))}
+                    ${select("segment", __("Segment"), optionList(options, ["segments", "crm_segments", "segment"]), __("All segments"))}
                 </div>
-                <div class="sfd-filter-grid">
-                    ${selectField("company", __("Company"), companyOptions(options.companies || data.companies || []), filters.company, __("All companies"))}
-                    ${selectField("business_type", __("Business Type"), options.business_types || [], filters.business_type, __("All types"))}
-                    ${selectField("crm_segment", __("CRM Segment"), options.segments || [], filters.crm_segment, __("All segments"))}
-                    ${selectField("currency", __("Currency"), options.currencies || [], filters.currency, __("All currencies"))}
-                    ${selectField("sales_status", __("Sales Order Status"), options.sales_order_statuses || [], filters.sales_status, __("All sales statuses"))}
-                    ${selectField("project_status", __("Project Status"), options.project_statuses || [], filters.project_status, __("All project statuses"))}
-                    ${inputField("from_date", __("From"), "date", filters.from_date)}
-                    ${inputField("to_date", __("To"), "date", filters.to_date)}
-                    <label class="sfd-field sfd-field-search"><span>${__("Search")}</span><div>${SFD_ICONS.search}<input data-filter-field="search" type="search" value="${escapeHtml(filters.search)}" placeholder="${__("Customer, supplier, project, order")}" /></div></label>
+                <div class="ofw-filter-grid secondary">
+                    ${select("risk_status", __("Risk"), optionList(options, ["risk_statuses", "risks", "risk_levels", "risk"]), __("All risk levels"))}
+                    ${select("revenue_forecast_status", __("Revenue Forecast"), forecastStatusOptions(), __("Open or final"))}
+                    ${select("cost_forecast_status", __("Cost Forecast"), forecastStatusOptions(), __("Open or final"))}
+                    ${select("currency", __("Currency"), optionList(options, ["currencies", "currency"]), __("All currencies"))}
+                    ${select("horizon", __("Horizon"), horizonOptions(options), __("Default horizon"))}
+                    ${input("from_date", __("From Date"), "date")}
+                    ${input("to_date", __("To Date"), "date")}
                 </div>
-                <div class="sfd-filter-footer">
-                    <button type="button" class="sfd-btn secondary" data-clear-filters>${__("Clear")}</button>
-                    <button type="button" class="sfd-btn primary" data-apply-filters>${__("Apply Filters")}</button>
-                    <button type="button" class="sfd-btn icon" data-refresh aria-label="${__("Refresh dashboard")}">${SFD_ICONS.refresh}<span>${__("Refresh")}</span></button>
-                </div>
-            </section>
-        `;
+                <div class="ofw-filter-actions"><button type="button" class="ofw-button quiet" data-clear-filters>${esc(__("Clear"))}</button><button type="button" class="ofw-button primary" data-apply-filters>${icon("filter")}${esc(__("Apply Filters"))}</button></div>
+            </div>
+        </section>`;
     }
 
-    function dashboardMarkup(data) {
-        const kpis = data.kpis || {};
-        const totals = data.currency_totals || [];
-        return `
-            <section class="sfd-kpis">
-                ${kpiCard("money", __("Revenue"), moneyList(totals, "revenue"), __("submitted Sales Orders"))}
-                ${kpiCard("money", __("Charges"), moneyList(totals, "charges"), __("submitted Purchase Orders"))}
-                ${kpiCard("chart", __("Gross Margin"), moneyList(totals, "margin"), marginPctLabel(totals))}
-                ${kpiCard("project", __("Sales Orders"), kpis.sales_orders || 0, __("submitted"))}
-                ${kpiCard("project", __("Projects"), kpis.projects || 0, `${kpis.blocked_projects || 0} ${__("blocked")}`)}
-                ${kpiCard("project", __("Purchase Orders"), kpis.purchase_orders || 0, __("charges"))}
-            </section>
-
-            <section class="sfd-grid sfd-grid-main">
-                <article class="sfd-card sfd-card-strong">
-                    <header><div><strong>${__("Currency Performance")}</strong><small>${__("Revenue, charges, and margin by transaction currency")}</small></div></header>
-                    <div class="sfd-card-body">${currencyTotalsMarkup(totals)}</div>
-                </article>
-                <article class="sfd-card">
-                    <header><div><strong>${__("Business Type Mix")}</strong><small>${__("Distribution, installation, maintenance, and unassigned work")}</small></div></header>
-                    <div class="sfd-card-body">${summaryRows(data.by_business_type || [])}</div>
-                </article>
-            </section>
-
-            <section class="sfd-grid sfd-grid-main reverse">
-                <article class="sfd-card">
-                    <header><div><strong>${__("Company Scoreboard")}</strong><small>${__("Company-level operating view")}</small></div></header>
-                    <div class="sfd-card-body">${companyRows(data.by_company || [])}</div>
-                </article>
-                <article class="sfd-card">
-                    <header><div><strong>${__("CRM Segment Mix")}</strong><small>${__("Revenue and workload by active customer segment")}</small></div></header>
-                    <div class="sfd-card-body">${summaryRows(data.by_segment || [])}</div>
-                </article>
-            </section>
-
-            <section class="sfd-grid">
-                <article class="sfd-card"><header><div><strong>${__("Sales Order Status")}</strong><small>${__("Submitted order workflow")}</small></div></header><div class="sfd-card-body">${statusBars(data.sales_order_statuses || [])}</div></article>
-                <article class="sfd-card"><header><div><strong>${__("Project Status")}</strong><small>${__("Execution and installation follow-up")}</small></div></header><div class="sfd-card-body">${statusBars(data.project_statuses || [])}</div></article>
-            </section>
-
-            <section class="sfd-grid sfd-grid-recent">
-                <article class="sfd-card"><header><div><strong>${__("Recent Sales Orders")}</strong><small>${__("Latest matching submitted orders")}</small></div><a href="/app/sales-order">${__("Open")} ${SFD_ICONS.arrow}</a></header><div class="sfd-card-body">${recentList(data.recent_sales_orders || [])}</div></article>
-                <article class="sfd-card"><header><div><strong>${__("Recent Projects")}</strong><small>${__("Latest matching execution records")}</small></div><a href="/app/project">${__("Open")} ${SFD_ICONS.arrow}</a></header><div class="sfd-card-body">${recentList(data.recent_projects || [])}</div></article>
-                <article class="sfd-card"><header><div><strong>${__("Recent Charges")}</strong><small>${__("Latest matching purchase charges")}</small></div><a href="/app/purchase-order">${__("Open")} ${SFD_ICONS.arrow}</a></header><div class="sfd-card-body">${recentList(data.recent_charges || [])}</div></article>
-            </section>
-        `;
+    function portfolioContent(data) {
+        if (!hasPortfolioData(data)) return emptyState(__("No financial portfolio data"), __("No projects, standalone orders, or financial movements match the current filters."));
+        const active = TABLES[STATE.activeTab];
+        const summary = ["overview", "profitability"].includes(STATE.activeTab) ? profitabilitySummary(data) : summaryCards(data);
+        return `${summary}<section id="ofw-panel-${STATE.activeTab}" aria-labelledby="ofw-tab-${STATE.activeTab}">${STATE.activeTab === "overview" ? overview(data) : tablePanel(rows(data, TABS.find((tab) => tab[0] === STATE.activeTab)?.[2]), active, true)}</section>`;
     }
 
-    function kpiCard(icon, label, value, sub) {
-        return `<article class="sfd-kpi"><span>${SFD_ICONS[icon] || ""}</span><strong>${escapeHtml(value)}</strong><em>${escapeHtml(label)}</em><small>${escapeHtml(sub)}</small></article>`;
+    function profitabilitySummary(data) {
+        const summary = data.summary || {};
+        const currency = pick(data, ["company_currency"]) || pick(summary, ["currency", "presentation_currency", "base_currency"]);
+        const complete = Boolean(summary.profitability_complete);
+        return `<section class="ofw-finance-groups" aria-label="${esc(__("Profitability and cash summary"))}">
+            ${financeGroup("Expected", "Sales Orders and remaining direct costs", "expected", [
+                ["Revenue HT", money(pick(summary, ["expected_revenue_ht"]), currency)],
+                ["Revenue TTC", money(pick(summary, ["expected_revenue_ttc"]), currency)],
+                ["Cost", complete ? money(pick(summary, ["expected_cost"]), currency) : incompleteValue(summary)],
+                ["Profit", complete ? money(pick(summary, ["expected_profit"]), currency) : incompleteValue(summary), complete && Number(summary.expected_profit || 0) < 0],
+                ["Profit %", complete ? percent(pick(summary, ["expected_profit_pct"])) : incompleteValue(summary), complete && Number(summary.expected_profit_pct || 0) < 0],
+            ])}
+            ${financeGroup("Actual to Date", "Submitted invoices, independent of payments", "actual", [
+                ["Invoiced HT", money(pick(summary, ["invoiced_revenue_ht"]), currency)],
+                ["Invoiced TTC", money(pick(summary, ["invoiced_revenue_ttc"]), currency)],
+                ["Actual Cost", money(pick(summary, ["actual_cost_ht"]), currency)],
+                ["Profit to Date", money(pick(summary, ["actual_profit_to_date"]), currency), Number(summary.actual_profit_to_date || 0) < 0],
+                ["Profit %", percent(pick(summary, ["actual_profit_pct"])), Number(summary.actual_profit_pct || 0) < 0],
+            ])}
+            ${financeGroup("Cash", "Money received, paid, and required", "cash", [
+                ["Collected", money(pick(summary, ["collected"]), currency)],
+                ["Supplier Paid", money(pick(summary, ["supplier_paid", "paid"]), currency)],
+                ["Net Cash Flow", money(pick(summary, ["net_cash"]), currency), Number(summary.net_cash || 0) < 0],
+                ["Expected Outflow", money(expectedOutflow(summary), currency)],
+                ["Funding Gap", money(pick(summary, ["funding_gap"]), currency), Number(summary.funding_gap || 0) > 0],
+            ])}
+        </section>`;
     }
 
-    function currencyTotalsMarkup(rows) {
-        if (!rows.length) return emptyState(__("No submitted financial documents match these filters."));
-        const max = Math.max(...rows.flatMap((row) => [Math.abs(row.revenue || 0), Math.abs(row.charges || 0), Math.abs(row.margin || 0)]), 1);
-        return `<div class="sfd-money-stack">${rows.map((row) => `
-            <section class="sfd-money-card">
-                <div class="sfd-money-head"><strong>${escapeHtml(row.currency || __("Currency"))}</strong><span class="${Number(row.margin || 0) < 0 ? "negative" : "positive"}">${formatNumber(row.margin_pct || 0)}%</span></div>
-                ${moneyBar(__("Revenue"), row.revenue, max, "revenue")}
-                ${moneyBar(__("Charges"), row.charges, max, "charges")}
-                ${moneyBar(__("Margin"), row.margin, max, Number(row.margin || 0) < 0 ? "negative" : "margin")}
-            </section>
-        `).join("")}</div>`;
+    function financeGroup(title, description, tone, metrics) {
+        return `<article class="ofw-finance-group ${tone}"><header><div><span>${esc(__(title))}</span><small>${esc(__(description))}</small></div>${icon(tone === "cash" ? "cash" : tone === "actual" ? "document" : "portfolio")}</header><div class="ofw-finance-metrics">${metrics.map(([label, value, negative]) => `<div><span>${esc(__(label))}</span><strong class="${negative ? "negative" : ""}">${value}</strong></div>`).join("")}</div></article>`;
     }
 
-    function moneyBar(label, value, max, tone) {
-        const width = Math.max(3, Math.min(100, (Math.abs(Number(value || 0)) / max) * 100));
-        return `<div class="sfd-money-bar-row"><div><span>${escapeHtml(label)}</span><strong>${formatNumber(value || 0)}</strong></div><div class="sfd-bar-track"><i class="${tone}" style="width:${width}%"></i></div></div>`;
+    function incompleteValue(summary) {
+        const count = Number(summary.incomplete_profitability || 0);
+        return `<span class="ofw-incomplete">${esc(__("Incomplete"))}${count ? ` · ${number(count)} ${esc(__("contexts"))}` : ""}</span>`;
     }
 
-    function summaryRows(rows) {
-        if (!rows.length) return emptyState(__("No matching summary data."));
-        return `<div class="sfd-summary-stack">${rows.map((row) => {
-            const primary = primaryAmount(row.amounts || []);
-            return `<section class="sfd-summary-row">
-                <div class="sfd-summary-main"><strong>${escapeHtml(row.label || __("Unassigned"))}</strong><small>${row.projects || 0} ${__("projects")} · ${row.sales_orders || 0} ${__("sales orders")} · ${row.purchase_orders || 0} ${__("charges")}</small></div>
-                <div class="sfd-summary-money"><strong>${escapeHtml(primary.margin)}</strong><small>${escapeHtml(primary.revenue)} ${__("revenue")}</small></div>
-            </section>`;
-        }).join("")}</div>`;
+    function summaryCards(data) {
+        const summary = data.summary || {};
+        const currency = pick(data, ["company_currency"]) || pick(summary, ["currency", "presentation_currency", "base_currency"]) || "";
+        const portfolioRows = [...rows(data, "project_rows"), ...rows(data, "standalone_order_rows")];
+        const overdue = portfolioRows.filter((row) => String(row.risk_status || "").toLowerCase() === "overdue").length;
+        const qualityCount = rows(data, "data_quality_rows").length;
+        const period = horizonLabel(data);
+        const cards = [
+            ["Collected", ["collected", "total_collected"], "money", "Cash received"],
+            ["Paid", ["supplier_paid", "paid", "total_paid"], "money", "Supplier cash paid"],
+            ["Net", ["net_cash", "net", "net_position"], "money", "Collected less supplier paid"],
+            [`${period} Expected Inflow`, ["expected_inflow_13w", "thirteen_week_expected_inflow", "expected_inflow", "committed_inflow"], "money", `Forward receipts for ${period.toLowerCase()}`],
+            [`${period} Expected Outflow`, ["expected_outflow_13w", "thirteen_week_expected_outflow", "expected_outflow"], "outflow", `Commitments and forecast for ${period.toLowerCase()}`],
+            ["Funding Gap", ["funding_gap", "gap"], "money", "Peak shortfall"],
+            ["At Risk", ["at_risk", "at_risk_count"], "number", "Contexts requiring attention"],
+            ["Overdue", ["overdue", "overdue_count"], "number", "Overdue contexts", overdue],
+            ["Completeness", ["completeness", "data_completeness", "completeness_pct"], "completeness", `${qualityCount} ${__("quality issues")}`],
+        ];
+        return `<section class="ofw-kpis" aria-label="${esc(__("Portfolio summary"))}">${cards.map(([label, aliases, type, hint, fallback], index) => {
+            const sourceValue = pick(summary, aliases);
+            const value = sourceValue === "" ? fallback : sourceValue;
+            const negative = Number(value || 0) < 0 || (label === "Funding Gap" && Number(value || 0) > 0);
+            const display = type === "money" ? money(value, currency) : type === "outflow" ? money(expectedOutflow(summary), currency) : type === "completeness" ? completenessValue(value) : number(value);
+            return `<article class="ofw-kpi ${index < 3 ? "primary" : "secondary"} ${negative ? "negative" : ""}"><span class="ofw-kpi-label">${esc(__(label))}${icon(label === "Funding Gap" || label === "At Risk" || label === "Overdue" ? "alert" : "cash")}</span><strong>${display}</strong><small>${esc(hint)}</small></article>`;
+        }).join("")}</section>`;
     }
 
-    function companyRows(rows) {
-        if (!rows.length) return emptyState(__("No company data matches these filters."));
-        return `<div class="sfd-company-table">${rows.map((row) => {
-            const primary = primaryAmount(row.amounts || []);
-            return `<section class="sfd-company-row">
-                <div><strong>${escapeHtml(row.label || "")}</strong><small>${escapeHtml(row.currency || "")}</small></div>
-                <span>${row.sales_orders || 0}<small>${__("SO")}</small></span>
-                <span>${row.projects || 0}<small>${__("Projects")}</small></span>
-                <span>${row.purchase_orders || 0}<small>${__("PO")}</small></span>
-                <div class="sfd-company-money"><strong>${escapeHtml(primary.margin)}</strong><small>${escapeHtml(primary.revenue)} ${__("revenue")}</small></div>
-            </section>`;
-        }).join("")}</div>`;
+    function overview(data) {
+        const projects = riskFirst(rows(data, "project_rows")).slice(0, 6);
+        const orders = riskFirst(rows(data, "standalone_order_rows")).slice(0, 6);
+        return `<div class="ofw-overview-grid">${focusPanel(projects, TABLES.projects, "projects")}${focusPanel(orders, TABLES.standalone, "standalone")}</div>${tablePanel(rows(data, "monthly_rows").slice(0, 12), TABLES.monthly, false, "monthly")}`;
     }
 
-    function statusBars(rows) {
-        if (!rows.length) return emptyState(__("No status data."));
-        const max = Math.max(...rows.map((row) => Number(row.value || 0)), 1);
-        return `<div class="sfd-status-stack">${rows.map((row) => `<div class="sfd-status-row"><div><span>${escapeHtml(row.label || "")}</span><strong>${row.value || 0}</strong></div><div class="sfd-status-track"><i style="width:${Math.max(5, ((row.value || 0) / max) * 100)}%"></i></div></div>`).join("")}</div>`;
+    function focusPanel(inputRows, config, targetTab) {
+        const total = rows(STATE.data || {}, targetTab === "projects" ? "project_rows" : "standalone_order_rows").length;
+        return `<article class="ofw-panel ofw-focus-panel"><header class="ofw-panel-head"><div><h2>${esc(__(config.title))}</h2><p>${esc(__(config.description))}</p></div><button type="button" class="ofw-button compact" data-show-tab="${targetTab}">${esc(__("View all"))}<span class="ofw-button-count">${total}</span>${icon("arrow")}</button></header>${inputRows.length ? `<div class="ofw-focus-list">${inputRows.map((row) => focusRow(row, config)).join("")}</div>` : emptyState(__("Nothing to show"), __(config.empty))}</article>`;
     }
 
-    function recentList(rows) {
-        if (!rows.length) return emptyState(__("No recent records match these filters."));
-        return `<div class="sfd-recent-list">${rows.map((row) => `<a class="sfd-recent-row" href="${escapeHtml(row.link || "#")}"><strong>${escapeHtml(row.label || "")}</strong><span>${escapeHtml(row.meta || "")}${row.currency ? ` · ${escapeHtml(row.currency)} ${formatNumber(row.amount || 0)}` : ""}</span></a>`).join("")}</div>`;
+    function focusRow(row, config) {
+        const contextName = pick(row, ["context_name", "project", "project_name", "sales_order", "order_name", "name"]);
+        const contextType = safeContextType(pick(row, ["context_type"]) || config.contextType);
+        const title = pick(row, config.columns[0].aliases) || contextName || "-";
+        const customer = pick(row, ["customer_name", "customer"]) || __("No customer");
+        const subtype = pick(row, ["project_type", "business_type", "context_type"]);
+        const risk = pick(row, ["risk_status", "risk", "risk_level"]);
+        const workflowStatus = pick(row, ["workflow_status", "status", "project_status", "order_status"]);
+        const profit = pick(row, ["expected_profit"]);
+        const netCash = pick(row, ["net_cash"]);
+        const currency = pick(row, ["company_currency", "currency", "presentation_currency"]);
+        const canOpen = contextType && safeRouteName(contextName);
+        return `<button type="button" class="ofw-focus-row" ${canOpen ? `data-open-context data-context-type="${esc(contextType)}" data-context-name="${esc(contextName)}"` : "disabled"}>
+            <span class="ofw-focus-mark" aria-hidden="true">${contextType === "Project" ? "P" : "SO"}</span>
+            <span class="ofw-focus-copy"><strong title="${esc(title)}">${esc(title)}</strong><small>${esc(customer)}${subtype ? `<span aria-hidden="true">·</span>${esc(subtype)}` : ""}</small></span>
+            <span class="ofw-focus-state">${status(risk || workflowStatus)}${risk && workflowStatus ? `<small title="${esc(workflowStatus)}">${esc(workflowStatus)}</small>` : ""}</span>
+            <span class="ofw-focus-value"><small>${esc(__("Expected profit"))}</small><strong class="${Number(profit || 0) < 0 ? "negative" : ""}">${row.profitability_complete ? money(profit, currency) : `<span class="ofw-incomplete">${esc(__("Incomplete"))}</span>`}</strong><small>${esc(__("Net cash"))}: ${money(netCash, currency)}</small></span>
+            ${icon("arrow")}
+        </button>`;
+    }
+
+    function tablePanel(inputRows, config, sortable, targetTab) {
+        if (!config) return emptyState(__("View unavailable"), __("This portfolio view is not available."));
+        const displayRows = sortable ? sortedRows(inputRows, config) : inputRows;
+        return `<article class="ofw-panel"><header class="ofw-panel-head"><div><h2>${esc(__(config.title))}</h2><p>${esc(__(config.description))}</p></div>${targetTab ? `<button type="button" class="ofw-button compact" data-show-tab="${targetTab}">${esc(__("View all"))}${icon("arrow")}</button>` : `<span class="ofw-context-pill">${displayRows.length} ${esc(__("rows"))}</span>`}</header>${displayRows.length ? table(displayRows, config, sortable) : emptyState(__("Nothing to show"), __(config.empty))}</article>`;
+    }
+
+    function table(inputRows, config, sortable) {
+        return `<div class="ofw-table-wrap"><table class="ofw-table"><thead><tr>${config.columns.map((col) => {
+            const active = STATE.sort.key === col.key;
+            const aria = active ? (STATE.sort.direction === "asc" ? "ascending" : "descending") : "none";
+            return `<th scope="col" aria-sort="${aria}" data-align="${col.align}">${sortable ? `<button type="button" class="ofw-sort" data-sort="${col.key}">${esc(__(col.label))}<i aria-hidden="true">${active ? (STATE.sort.direction === "asc" ? "↑" : "↓") : "↕"}</i></button>` : esc(__(col.label))}</th>`;
+        }).join("")}</tr></thead><tbody>${inputRows.map((row) => tableRow(row, config)).join("")}</tbody></table></div>`;
+    }
+
+    function tableRow(row, config) {
+        const contextName = pick(row, ["context_name", "project", "project_name", "sales_order", "order_name", "name"]);
+        const contextType = pick(row, ["context_type"]) || config.contextType || "";
+        return `<tr>${config.columns.map((col) => `<td data-label="${esc(__(col.label))}" data-align="${col.align}">${cell(row, col, config, contextType, contextName)}</td>`).join("")}</tr>`;
+    }
+
+    function cell(row, col, config, contextType, contextName) {
+        const value = pick(row, col.aliases);
+        if (col.type === "primary") {
+            const secondary = pick(row, ["description", "company", "currency", "context_type"]);
+            const content = `<span class="ofw-primary-cell"><strong>${esc(value || "-")}</strong>${secondary ? `<small>${esc(secondary)}</small>` : ""}</span>`;
+            if (config.documentType && safeRouteName(contextName)) return `<button type="button" class="ofw-primary-action" data-open-document data-doctype="${esc(config.documentType)}" data-name="${esc(contextName)}">${content}</button>`;
+            if ((config.contextType || config.dynamicContext) && safeContextType(contextType) && safeRouteName(contextName)) return `<button type="button" class="ofw-primary-action" data-open-context data-context-type="${esc(safeContextType(contextType))}" data-context-name="${esc(contextName)}" aria-label="${esc(__("Open financial detail for {0}", [contextName]))}">${content}</button>`;
+            return content;
+        }
+        if (col.type === "money") return `<span class="ofw-number ${Number(value || 0) < 0 ? "negative" : ""}">${money(value, pick(row, ["company_currency", "currency", "presentation_currency"]))}</span>`;
+        if (col.type === "profit_money") return row.profitability_complete ? `<span class="ofw-number ${Number(value || 0) < 0 ? "negative" : ""}">${money(value, pick(row, ["company_currency", "currency", "presentation_currency"]))}</span>` : `<span class="ofw-incomplete">${esc(__("Incomplete"))}</span>`;
+        if (col.type === "number") return `<span class="ofw-number">${number(value)}</span>`;
+        if (col.type === "percent") return `<span class="ofw-number ${Number(value || 0) < 0 ? "negative" : ""}">${percent(value)}</span>`;
+        if (col.type === "profit_percent") return row.profitability_complete ? `<span class="ofw-number ${Number(value || 0) < 0 ? "negative" : ""}">${percent(value)}</span>` : `<span class="ofw-incomplete">${esc(__("Incomplete"))}</span>`;
+        if (col.type === "status") return status(value);
+        if (col.type === "closure") return closureStatus(row);
+        if (col.type === "event") return cashEvent(value);
+        if (col.type === "document") return documentLink(row, value);
+        return esc(value == null || value === "" ? "-" : value);
+    }
+
+    function status(value) {
+        const text = String(value || __("Not set"));
+        const lower = text.toLowerCase();
+        const tone = /critical|high|overdue|blocked|danger|missing/.test(lower) ? "danger" : /medium|warning|risk|partial|pending/.test(lower) ? "warning" : /low|complete|paid|healthy|on track/.test(lower) ? "positive" : "";
+        return `<span class="ofw-status ${tone}" title="${esc(text)}">${esc(text)}</span>`;
+    }
+
+    function closureStatus(row) {
+        const revenue = row.revenue_forecast_final ? __("Revenue Final") : __("Revenue Open");
+        const cost = row.cost_forecast_final ? __("Cost Final") : __("Cost Open");
+        return `<span class="ofw-closure-pair"><span class="ofw-status ${row.revenue_forecast_final ? "positive" : "warning"}">${esc(revenue)}</span><span class="ofw-status ${row.cost_forecast_final ? "positive" : "warning"}">${esc(cost)}</span></span>`;
+    }
+
+    function cashEvent(value) {
+        if (!value || typeof value !== "object") return esc(__("No upcoming event"));
+        const currency = value.currency || "";
+        const direction = value.direction === "outflow" ? __("Pay") : __("Receive");
+        return `<span class="ofw-primary-cell"><strong>${esc(value.date || "-")} · ${esc(direction)}</strong><small>${money(value.amount, currency)} · ${esc(value.event_type || "")}</small></span>`;
     }
 
     function bind(page) {
-        page.main.find("[data-refresh]").on("click", () => loadDashboard(page));
-        page.main.find("[data-apply-filters]").on("click", () => applyFilters(page));
-        page.main.find("[data-clear-filters]").on("click", () => {
-            STATE.filters = defaultFilters();
-            loadDashboard(page);
+        page.main.find("[data-refresh]").on("click", () => load(page));
+        page.main.find("[data-apply-filters]").on("click", () => { STATE.filters = collectFilters(page); load(page); });
+        page.main.find("[data-clear-filters]").on("click", () => { STATE.filters = defaultFilters(); load(page); });
+        page.main.find("[data-toggle-filters]").on("click", () => { STATE.filtersOpen = !STATE.filtersOpen; render(page); });
+        page.main.find('[data-filter="search"]').on("keydown", (event) => { if (event.key === "Enter") { STATE.filters = collectFilters(page); load(page); } });
+        page.main.find("[data-tab], [data-show-tab]").on("click", function () { activateTab(page, $(this).data("tab") || $(this).data("show-tab"), true); });
+        page.main.find("[data-tab]").on("keydown", function (event) { handleTabKeys(page, event, this); });
+        page.main.find("[data-sort]").on("click", function () {
+            const key = String($(this).data("sort"));
+            STATE.sort = { key, direction: STATE.sort.key === key && STATE.sort.direction === "asc" ? "desc" : "asc" };
+            render(page);
         });
-        page.main.find("[data-period]").on("click", function () {
-            STATE.filters = { ...collectFilters(page), ...periodRange($(this).data("period")) };
-            loadDashboard(page);
-        });
-        page.main.find('[data-filter-field="search"]').on("keydown", function (event) {
-            if (event.key === "Enter") applyFilters(page);
-        });
+        page.main.find("[data-open-context]").on("click", openContext);
+        page.main.find("[data-open-document]").on("click", openDocument);
     }
 
-    function applyFilters(page) {
-        STATE.filters = collectFilters(page);
-        loadDashboard(page);
+    function activateTab(page, key, focus) {
+        if (!TABS.some((tab) => tab[0] === key)) return;
+        STATE.activeTab = key;
+        updateUrl();
+        render(page);
+        if (focus) page.main.find(`[data-tab="${key}"]`).trigger("focus");
+    }
+
+    function handleTabKeys(page, event, element) {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const keys = TABS.map((tab) => tab[0]);
+        let index = keys.indexOf($(element).data("tab"));
+        if (event.key === "Home") index = 0;
+        else if (event.key === "End") index = keys.length - 1;
+        else index = (index + (event.key === "ArrowRight" ? 1 : -1) + keys.length) % keys.length;
+        activateTab(page, keys[index], true);
+    }
+
+    function openContext() {
+        const contextType = safeContextType($(this).data("context-type"));
+        const contextName = safeRouteName($(this).data("context-name"));
+        if (contextType && contextName) frappe.set_route("sale-financial-workspace", contextType, contextName);
+    }
+
+    function openDocument() {
+        const doctype = safeDoctype($(this).data("doctype"));
+        const name = safeRouteName($(this).data("name"));
+        if (doctype && name) frappe.set_route("Form", doctype, name);
     }
 
     function collectFilters(page) {
         const filters = defaultFilters();
-        page.main.find("[data-filter-field]").each(function () {
-            filters[$(this).data("filter-field")] = String($(this).val() || "").trim();
-        });
+        page.main.find("[data-filter]").each(function () { filters[$(this).data("filter")] = String($(this).val() || "").trim(); });
         return filters;
     }
 
-    function selectField(key, label, options, value, allLabel) {
-        const cleanOptions = withSelected(options, value);
-        return `<label class="sfd-field"><span>${escapeHtml(label)}</span><select data-filter-field="${key}"><option value="">${escapeHtml(allLabel)}</option>${cleanOptions.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+    function input(key, label, type, placeholder) {
+        return `<label class="ofw-field"><span>${esc(label)}</span><input type="${type}" data-filter="${key}" value="${esc(STATE.filters[key])}" ${placeholder ? `placeholder="${esc(placeholder)}"` : ""}></label>`;
     }
 
-    function inputField(key, label, type, value) {
-        return `<label class="sfd-field"><span>${escapeHtml(label)}</span><input data-filter-field="${key}" type="${type}" value="${escapeHtml(value || "")}" /></label>`;
+    function select(key, label, options, placeholder) {
+        const values = withSelected(options, STATE.filters[key]);
+        return `<label class="ofw-field"><span>${esc(label)}</span><select data-filter="${key}"><option value="">${esc(placeholder)}</option>${values.map((option) => `<option value="${esc(option.value)}" ${option.value === STATE.filters[key] ? "selected" : ""}>${esc(option.label)}</option>`).join("")}</select></label>`;
     }
 
-    function companyOptions(companies) {
-        return (companies || []).map((company) => company.name).filter(Boolean);
+    function sortedRows(inputRows, config) {
+        const columnConfig = config.columns.find((col) => col.key === STATE.sort.key) || config.columns[0];
+        const direction = STATE.sort.direction === "asc" ? 1 : -1;
+        return [...inputRows].sort((left, right) => compare(pick(left, columnConfig.aliases), pick(right, columnConfig.aliases)) * direction);
+    }
+
+    function compare(left, right) {
+        const aNumber = Number(left);
+        const bNumber = Number(right);
+        if (left !== "" && right !== "" && Number.isFinite(aNumber) && Number.isFinite(bNumber)) return aNumber - bNumber;
+        return String(left || "").localeCompare(String(right || ""), undefined, { numeric: true, sensitivity: "base" });
+    }
+
+    function riskFirst(inputRows) {
+        const weights = { "funding gap": 5, overdue: 4, critical: 5, high: 4, medium: 3, warning: 3, "on track": 1, low: 1 };
+        return [...inputRows].sort((a, b) => (weights[String(pick(b, ["risk_status", "risk", "risk_level", "severity"]) || "").toLowerCase()] || 0) - (weights[String(pick(a, ["risk_status", "risk", "risk_level", "severity"]) || "").toLowerCase()] || 0));
+    }
+
+    function column(key, label, aliases, type = "text") {
+        return { key, label, aliases, type, align: ["money", "number", "percent", "profit_money", "profit_percent"].includes(type) ? "right" : "left" };
+    }
+
+    function rows(data, key) { return Array.isArray(data[key]) ? data[key] : []; }
+    function pick(object, aliases) { for (const key of aliases) if (object && object[key] !== undefined && object[key] !== null) return object[key]; return ""; }
+    function activeCompany(data) { return pick(data, ["active_company", "company", "session_company"]) || pick(data.summary || {}, ["company"]); }
+    function hasPortfolioData(data) { return TABS.some((tab) => tab[2] && rows(data, tab[2]).length); }
+
+    function optionList(options, keys) {
+        const output = [];
+        keys.forEach((key) => {
+            const value = options[key];
+            (Array.isArray(value) ? value : value ? [value] : []).forEach((entry) => {
+                const option = typeof entry === "object" ? { value: String(entry.value || entry.name || entry.label || ""), label: String(entry.label || entry.name || entry.value || "") } : { value: String(entry), label: String(entry) };
+                if (option.value && !output.some((existing) => existing.value === option.value)) output.push(option);
+            });
+        });
+        return output;
+    }
+
+    function horizonOptions(options) {
+        const supplied = optionList(options, ["horizons", "horizon"]);
+        return supplied.length ? supplied : [["13_weeks", __("13 weeks")], ["monthly", __("12 months")], ["lifetime", __("Lifetime")]].map(([value, label]) => ({ value, label }));
+    }
+
+    function forecastStatusOptions() {
+        return [{ value: "Open", label: __("Open") }, { value: "Final", label: __("Final") }];
+    }
+
+    function horizonLabel(data) {
+        const horizon = String(pick(data.active_filters || {}, ["horizon"]) || STATE.filters.horizon || "13_weeks").toLowerCase();
+        if (STATE.filters.from_date || STATE.filters.to_date) return __("Selected Period");
+        if (["monthly", "12_months"].includes(horizon)) return __("12M");
+        if (horizon === "lifetime") return __("Lifetime");
+        return __("13W");
     }
 
     function withSelected(options, selected) {
-        const clean = [...new Set((options || []).filter(Boolean).map(String))];
-        if (selected && !clean.includes(selected)) clean.unshift(selected);
+        const clean = [...options];
+        if (selected && !clean.some((option) => option.value === selected)) clean.unshift({ value: selected, label: selected });
         return clean;
     }
 
-    function activeFilterChips(filters) {
-        const labels = {
-            company: __("Company"),
-            business_type: __("Type"),
-            crm_segment: __("Segment"),
-            currency: __("Currency"),
-            sales_status: __("SO Status"),
-            project_status: __("Project Status"),
-            from_date: __("From"),
-            to_date: __("To"),
-            search: __("Search"),
+    function defaultFilters() { return { search: "", status: "", customer: "", project_type: "", business_type: "", segment: "", risk_status: "", revenue_forecast_status: "", cost_forecast_status: "", currency: "", horizon: "13_weeks", from_date: "", to_date: "" }; }
+    function safeFilters(filters) { const output = {}; FILTER_KEYS.forEach((key) => { output[key] = String(filters[key] ?? STATE.filters[key] ?? "").trim(); }); return output; }
+    function readFilters() { const filters = defaultFilters(); FILTER_KEYS.forEach((key) => { const value = readQuery(key); if (value) filters[key] = value; }); return filters; }
+    function activeFilterCount() { return FILTER_KEYS.filter((key) => STATE.filters[key] && !(key === "horizon" && STATE.filters[key] === "13_weeks")).length; }
+    function readQuery(key) { return String(new URLSearchParams(window.location.search || "").get(key) || "").trim(); }
+
+    function syncStateFromLocation() {
+        const nextFilters = readFilters();
+        const requestedTab = readQuery("tab");
+        const nextTab = TABS.some((tab) => tab[0] === requestedTab) ? requestedTab : "overview";
+        const changed = { filters: JSON.stringify(nextFilters) !== JSON.stringify(STATE.filters), tab: nextTab !== STATE.activeTab };
+        STATE.filters = nextFilters;
+        STATE.activeTab = nextTab;
+        return changed;
+    }
+
+    function updateUrl() {
+        const params = new URLSearchParams(window.location.search || "");
+        params.delete("company");
+        FILTER_KEYS.forEach((key) => { if (STATE.filters[key] && !(key === "horizon" && STATE.filters[key] === "13_weeks")) params.set(key, STATE.filters[key]); else params.delete(key); });
+        if (STATE.activeTab !== "overview") params.set("tab", STATE.activeTab); else params.delete("tab");
+        window.history.replaceState(null, "", `${window.location.pathname}${params.toString() ? `?${params}` : ""}`);
+    }
+
+    function completenessValue(rawValue) {
+        if (rawValue === "" || rawValue === undefined || rawValue === null) return esc(__("Not reported"));
+        let value = Number(rawValue);
+        if (!Number.isFinite(value)) return esc(rawValue);
+        if (value > 0 && value <= 1) value *= 100;
+        return `${number(value, 1)}%`;
+    }
+
+    function expectedOutflow(summary) {
+        const direct = Number(pick(summary, ["expected_outflow_13w", "thirteen_week_expected_outflow", "expected_outflow"]) || 0);
+        return direct || Number(pick(summary, ["committed_outflow"]) || 0) + Number(pick(summary, ["forecast_outflow"]) || 0);
+    }
+
+    function money(value, currency) {
+        const amount = typeof value === "object" && value ? Number(value.amount ?? value.value ?? 0) : Number(value || 0);
+        const code = String((typeof value === "object" && value ? value.currency : "") || currency || "").trim();
+        try { return esc(code ? new Intl.NumberFormat(undefined, { style: "currency", currency: code, maximumFractionDigits: 0 }).format(amount) : number(amount)); }
+        catch (_error) { return esc(`${code} ${number(amount)}`.trim()); }
+    }
+
+    function documentLink(row, fallback) {
+        const doctype = safeDoctype(pick(row, ["reference_doctype", "document_type", "doctype"]));
+        const name = safeRouteName(pick(row, ["reference_name", "document_name", "name"]) || fallback);
+        if (!doctype || !name) return esc(fallback || "-");
+        return `<button type="button" class="ofw-doc-link" data-open-document data-doctype="${esc(doctype)}" data-name="${esc(name)}">${esc(__("Open {0}", [name]))}</button>`;
+    }
+
+    function safeContextType(value) { const text = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " "); return text === "project" ? "Project" : ["sales order", "standalone", "standalone order"].includes(text) ? "Sales Order" : ""; }
+    function safeDoctype(value) { const text = String(value || "").trim(); return SOURCE_DOCTYPES.has(text) ? text : ""; }
+    function safeRouteName(value) { const text = String(value || "").trim(); return text && text.length <= 180 && !/[\u0000-\u001f]/.test(text) ? text : ""; }
+
+    function number(value, precision = 0) { return new Intl.NumberFormat(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision }).format(Number(value || 0)); }
+    function percent(value) { return `${number(value, 1)}%`; }
+
+    function skeleton() {
+        return `<span class="sr-only">${esc(__("Loading financial portfolio"))}</span><div class="ofw-skeleton-grid">${Array.from({ length: 8 }, () => '<div class="ofw-skeleton"></div>').join("")}</div><div class="ofw-skeleton large"></div>`;
+    }
+
+    function emptyState(title, message) {
+        return `<div class="ofw-empty">${icon("empty")}<strong>${esc(title)}</strong><p>${esc(message)}</p></div>`;
+    }
+
+    function errorState() {
+        const message = STATE.error && (STATE.error.message || STATE.error.exc) ? (STATE.error.message || STATE.error.exc) : __("Check your access or connection, then retry.");
+        return `<div class="ofw-error" role="alert">${icon("alert")}<strong>${esc(__("Financial portfolio could not load"))}</strong><p>${esc(message)}</p><button type="button" class="ofw-button primary" data-refresh>${icon("refresh")}${esc(__("Retry"))}</button></div>`;
+    }
+
+    function ensureStyles() {
+        if (document.getElementById(STYLE_ID)) return;
+        const link = document.createElement("link");
+        link.id = STYLE_ID;
+        link.rel = "stylesheet";
+        link.href = STYLE_URL;
+        document.head.appendChild(link);
+    }
+
+    function hideFrappeHeader(wrapper) {
+        $(wrapper).closest(".page-container").find(".page-head").hide();
+    }
+
+    function esc(value) { return frappe.utils.escape_html(String(value ?? "")); }
+
+    function icon(name) {
+        const icons = {
+            portfolio: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M3 12h18"/></svg>',
+            company: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/></svg>',
+            refresh: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 006 6.5L4 11m16 2-2 4.5A7 7 0 015.5 15"/></svg>',
+            filter: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/></svg>',
+            search: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+            cash: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 9v6m10-6v6"/></svg>',
+            document: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>',
+            alert: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3L2.5 20h19L12 3z"/><path d="M12 9v5m0 3h.01"/></svg>',
+            arrow: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>',
+            empty: '<svg class="ofw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg>',
         };
-        const chips = FILTER_KEYS.filter((key) => filters[key]).map((key) => `<span>${escapeHtml(labels[key])}: <strong>${escapeHtml(filters[key])}</strong></span>`);
-        return chips.join("") || `<span>${__("All reporting companies and business contexts")}</span>`;
-    }
-
-    function activeFilterCount(filters) {
-        return FILTER_KEYS.filter((key) => filters[key]).length;
-    }
-
-    function periodRange(period) {
-        if (period === "year") {
-            const now = new Date();
-            return { from_date: `${now.getFullYear()}-01-01`, to_date: isoDate(now) };
-        }
-        if (period === "quarter") {
-            const now = new Date();
-            const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
-            return { from_date: isoDate(new Date(now.getFullYear(), quarterStartMonth, 1)), to_date: isoDate(now) };
-        }
-        if (period === "month") {
-            const now = new Date();
-            return { from_date: isoDate(new Date(now.getFullYear(), now.getMonth(), 1)), to_date: isoDate(now) };
-        }
-        return { from_date: "", to_date: "" };
-    }
-
-    function defaultFilters() {
-        return { company: "", business_type: "", crm_segment: "", currency: "", sales_status: "", project_status: "", from_date: "", to_date: "", search: "" };
-    }
-
-    function readFiltersFromUrl() {
-        const filters = defaultFilters();
-        const params = new URLSearchParams(window.location.search || "");
-        FILTER_KEYS.forEach((key) => {
-            filters[key] = String(params.get(key) || "").trim();
-        });
-        return filters;
-    }
-
-    function updateUrlFilters() {
-        const params = new URLSearchParams(window.location.search || "");
-        FILTER_KEYS.forEach((key) => {
-            if (STATE.filters[key]) params.set(key, STATE.filters[key]);
-            else params.delete(key);
-        });
-        const query = params.toString();
-        window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
-    }
-
-    function primaryAmount(amounts) {
-        const row = [...(amounts || [])].sort((a, b) => Math.abs((b.revenue || 0) + (b.charges || 0)) - Math.abs((a.revenue || 0) + (a.charges || 0)))[0];
-        if (!row) return { revenue: "0", margin: "0" };
-        return { revenue: `${row.currency || ""} ${formatNumber(row.revenue || 0)}`.trim(), margin: `${row.currency || ""} ${formatNumber(row.margin || 0)}`.trim() };
-    }
-
-    function moneyList(rows, key) {
-        return (rows || []).map((row) => `${row.currency || ""} ${formatNumber(row[key] || 0)}`.trim()).join(" · ") || "0";
-    }
-
-    function marginPctLabel(rows) {
-        if (!rows || !rows.length) return __("no margin yet");
-        if (rows.length === 1) return `${formatNumber(rows[0].margin_pct || 0)}% ${__("margin")}`;
-        return __("multi-currency margin") + ` · ${rows.length}`;
-    }
-
-    function errorBanner(error) {
-        return `<div class="sfd-error"><strong>${__("Dashboard could not load")}</strong><span>${escapeHtml(error.message || __("Check permissions or try again."))}</span></div>`;
-    }
-
-    function skeletonMarkup() {
-        return `<section class="sfd-kpis">${Array.from({ length: 6 }, () => `<div class="sfd-kpi sfd-shimmer"></div>`).join("")}</section><section class="sfd-grid sfd-grid-main"><article class="sfd-card sfd-shimmer big"></article><article class="sfd-card sfd-shimmer big"></article></section>`;
-    }
-
-    function emptyState(message) {
-        return `<div class="sfd-empty">${escapeHtml(message || "")}</div>`;
-    }
-
-    function formatNumber(value) {
-        return frappe.format(Number(value || 0), { fieldtype: "Float", precision: 0 }, { only_value: true });
-    }
-
-    function isoDate(date) {
-        return date.toISOString().slice(0, 10);
-    }
-
-    function escapeHtml(value) {
-        return frappe.utils.escape_html(String(value ?? ""));
-    }
-
-    function injectSaleFinancialStyles() {
-        if (document.getElementById("sfd-styles")) return;
-        const style = document.createElement("style");
-        style.id = "sfd-styles";
-        style.textContent = `
-            .sfd-root{background:linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%);min-height:calc(100vh - 88px);color:#0f172a}.sfd-wrapper{max-width:1440px;margin:0 auto;padding:20px 24px 32px}.sfd-breadcrumb{display:flex;align-items:center;gap:8px;margin:0 0 14px;color:#64748b;font-size:12px}.sfd-breadcrumb a{color:#475569;text-decoration:none}.sfd-breadcrumb strong{color:#0f172a}.sfd-hero,.sfd-filter-card,.sfd-card,.sfd-kpi{background:rgba(255,255,255,.92);border:1px solid rgba(148,163,184,.18);box-shadow:0 18px 52px rgba(15,23,42,.08);backdrop-filter:blur(12px)}
-            .sfd-hero{border-radius:28px;padding:26px;display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px);gap:22px;align-items:stretch;margin-bottom:16px;background:radial-gradient(circle at top left,rgba(99,102,241,.18),transparent 34%),rgba(255,255,255,.92)}.sfd-eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#4f46e5;font-weight:800}.sfd-hero h1{margin:5px 0 8px;font-size:34px;line-height:1.08;letter-spacing:-.03em;color:#0f172a}.sfd-hero p{max-width:820px;margin:0;color:#475569;line-height:1.6}.sfd-active-filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.sfd-active-filters span{border:1px solid rgba(99,102,241,.16);background:#eef2ff;color:#4338ca;border-radius:999px;padding:7px 10px;font-size:12px}.sfd-hero-panel{border-radius:22px;background:linear-gradient(135deg,#312e81,#4338ca);color:#fff;padding:20px;display:flex;flex-direction:column;justify-content:center}.sfd-hero-panel span{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#c7d2fe}.sfd-hero-panel strong{margin-top:8px;font-size:27px;line-height:1.18}.sfd-hero-panel small{margin-top:8px;color:#ddd6fe}
-            .sfd-filter-card{border-radius:24px;padding:18px;margin-bottom:16px}.sfd-filter-head,.sfd-filter-footer{display:flex;align-items:center;justify-content:space-between;gap:14px}.sfd-filter-head>div:first-child{display:flex;align-items:center;gap:9px}.sfd-filter-head strong{font-size:16px}.sfd-filter-head small{color:#64748b}.sfd-filter-icon svg{width:18px;height:18px;color:#4f46e5}.sfd-filter-actions,.sfd-filter-footer{display:flex;flex-wrap:wrap;gap:8px}.sfd-filter-grid{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:12px;margin-top:14px}.sfd-field{display:flex;flex-direction:column;gap:6px;min-width:0}.sfd-field span{font-size:12px;font-weight:800;color:#475569}.sfd-field select,.sfd-field input{width:100%;min-height:42px;border:1px solid rgba(148,163,184,.35);border-radius:13px;background:#fff;color:#0f172a;padding:0 11px;outline:none}.sfd-field select:focus,.sfd-field input:focus{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.14)}.sfd-field-search{grid-column:span 2}.sfd-field-search div{position:relative}.sfd-field-search svg{position:absolute;left:11px;top:11px;width:18px;height:18px;color:#64748b}.sfd-field-search input{padding-left:38px}.sfd-filter-footer{margin-top:14px;justify-content:flex-end}.sfd-btn{min-height:42px;border-radius:13px;border:1px solid rgba(148,163,184,.28);padding:0 14px;background:#fff;color:#334155;font-weight:800;display:inline-flex;align-items:center;gap:8px;cursor:pointer}.sfd-btn:hover{box-shadow:0 10px 24px rgba(15,23,42,.08)}.sfd-btn.primary{background:#4f46e5;border-color:#4f46e5;color:#fff}.sfd-btn.secondary{background:#f8fafc}.sfd-btn.ghost{min-height:34px;background:#eef2ff;color:#4338ca}.sfd-btn.icon svg{width:17px;height:17px}
-            .sfd-kpis{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:14px;margin-bottom:16px}.sfd-kpi{border-radius:20px;padding:16px;min-height:136px}.sfd-kpi>span svg{width:21px;height:21px;color:#4f46e5}.sfd-kpi strong{display:block;margin-top:12px;font-size:24px;line-height:1.12;color:#0f172a;word-break:break-word}.sfd-kpi em{display:block;margin-top:7px;font-style:normal;font-weight:800;color:#1e293b}.sfd-kpi small{display:block;margin-top:5px;color:#64748b}.sfd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}.sfd-grid-main{grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr)}.sfd-grid-main.reverse{grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr)}.sfd-grid-recent{grid-template-columns:repeat(3,minmax(0,1fr))}.sfd-card{border-radius:24px;overflow:hidden;min-height:170px}.sfd-card.big{min-height:320px}.sfd-card header{padding:18px 20px 10px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.sfd-card header strong{display:block;font-size:16px;color:#0f172a}.sfd-card header small{display:block;margin-top:3px;color:#64748b}.sfd-card header a{display:inline-flex;align-items:center;gap:6px;color:#4f46e5;text-decoration:none;font-weight:800}.sfd-card header svg{width:15px;height:15px}.sfd-card-body{padding:0 16px 16px}.sfd-card-strong{background:linear-gradient(180deg,#fff,#f8fafc)}
-            .sfd-money-stack,.sfd-summary-stack,.sfd-status-stack,.sfd-recent-list,.sfd-company-table{display:flex;flex-direction:column;gap:10px}.sfd-money-card,.sfd-summary-row,.sfd-company-row,.sfd-recent-row{border:1px solid rgba(148,163,184,.18);background:#f8fafc;border-radius:16px}.sfd-money-card{padding:14px}.sfd-money-head,.sfd-summary-row,.sfd-company-row,.sfd-status-row>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px}.sfd-money-head strong{font-size:18px}.sfd-money-head span{font-weight:900;border-radius:999px;padding:5px 9px;background:#ecfdf5;color:#15803d}.sfd-money-head span.negative{background:#fef2f2;color:#b91c1c}.sfd-money-bar-row{margin-top:12px}.sfd-money-bar-row>div:first-child{display:flex;justify-content:space-between;gap:12px;margin-bottom:6px}.sfd-money-bar-row span,.sfd-status-row span{color:#64748b}.sfd-money-bar-row strong,.sfd-status-row strong{font-variant-numeric:tabular-nums}.sfd-bar-track,.sfd-status-track{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden}.sfd-bar-track i,.sfd-status-track i{display:block;height:100%;border-radius:999px;background:#4f46e5}.sfd-bar-track i.charges{background:#f59e0b}.sfd-bar-track i.margin{background:#16a34a}.sfd-bar-track i.negative{background:#dc2626}.sfd-summary-row{padding:13px 14px}.sfd-summary-main strong{display:block}.sfd-summary-main small,.sfd-summary-money small,.sfd-company-row small{display:block;margin-top:3px;color:#64748b;font-size:12px}.sfd-summary-money{text-align:right}.sfd-summary-money strong,.sfd-company-money strong{font-variant-numeric:tabular-nums}.sfd-company-row{display:grid;grid-template-columns:minmax(180px,1fr) 68px 82px 68px minmax(130px,.7fr);align-items:center;padding:12px 14px;gap:10px}.sfd-company-row>span{font-weight:900;text-align:center}.sfd-company-money{text-align:right}.sfd-status-row{padding:9px 0;border-bottom:1px solid rgba(226,232,240,.9)}.sfd-recent-row{display:block;text-decoration:none;padding:13px 14px}.sfd-recent-row strong{display:block;color:#111827}.sfd-recent-row span{display:block;margin-top:5px;color:#64748b;font-size:12px;line-height:1.45}.sfd-recent-row:hover{border-color:rgba(79,70,229,.34);background:#eef2ff}.sfd-empty{border:1px dashed rgba(148,163,184,.35);border-radius:16px;padding:24px;text-align:center;color:#64748b;background:#f8fafc}.sfd-error{display:flex;gap:10px;align-items:center;border-radius:16px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;padding:12px 14px;margin-bottom:16px}.sfd-error span{color:#b91c1c}.sfd-shimmer{position:relative;overflow:hidden;min-height:128px}.sfd-shimmer:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.78),transparent);animation:sfdShimmer 1.4s infinite}@keyframes sfdShimmer{100%{transform:translateX(100%)}}
-            @media(max-width:1200px){.sfd-filter-grid{grid-template-columns:repeat(3,minmax(150px,1fr))}.sfd-kpis{grid-template-columns:repeat(3,minmax(170px,1fr))}.sfd-grid,.sfd-grid-main,.sfd-grid-main.reverse,.sfd-grid-recent{grid-template-columns:1fr}.sfd-hero{grid-template-columns:1fr}.sfd-company-row{grid-template-columns:minmax(180px,1fr) repeat(3,70px) minmax(130px,.7fr)}}
-            @media(max-width:760px){.sfd-wrapper{padding:16px 12px 28px}.sfd-hero{padding:20px;border-radius:22px}.sfd-hero h1{font-size:28px}.sfd-filter-head,.sfd-filter-footer{align-items:stretch;flex-direction:column}.sfd-filter-actions,.sfd-filter-footer{width:100%}.sfd-btn{justify-content:center;flex:1}.sfd-filter-grid{grid-template-columns:1fr}.sfd-field-search{grid-column:auto}.sfd-kpis{grid-template-columns:1fr}.sfd-summary-row{align-items:flex-start;flex-direction:column}.sfd-summary-money{text-align:left}.sfd-company-row{grid-template-columns:1fr 1fr 1fr;align-items:start}.sfd-company-row>div:first-child,.sfd-company-money{grid-column:1/-1;text-align:left}.sfd-error{align-items:flex-start;flex-direction:column}}
-            @media(prefers-reduced-motion:reduce){.sfd-shimmer:after{animation:none}.sfd-btn:hover,.sfd-recent-row:hover{box-shadow:none}}
-        `;
-        document.head.appendChild(style);
+        return icons[name] || "";
     }
 })();

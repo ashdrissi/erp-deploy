@@ -132,7 +132,7 @@ class TestPurchaseOrderBuyingSources(unittest.TestCase):
         self.assertNotIn("Purchase Taxes Template {0} has no tax rows", purchase_tax_function)
 
     def test_purchase_order_ui_loads_sources_and_requires_submit_decision(self):
-        source = (APP_ROOT / "public" / "js" / "purchase_order_buying_sources_20260813a.js").read_text()
+        source = (APP_ROOT / "public" / "js" / "purchase_order_buying_sources_20260815d.js").read_text()
         alerts = (APP_ROOT / "public" / "js" / "purchase_order_pricing_alerts_20260813a.js").read_text()
         review_page = (APP_ROOT / "orderlift_sales" / "page" / "buying_price_review" / "buying_price_review.js").read_text()
         review_backend = (APP_ROOT / "orderlift_sales" / "page" / "buying_price_review" / "buying_price_review.py").read_text()
@@ -142,6 +142,10 @@ class TestPurchaseOrderBuyingSources(unittest.TestCase):
             "Load Buying Prices",
             "selectedBuyingLists",
             "syncSupplierBuyingPriceLists",
+            "supplierFilters",
+            "resetSupplierIfOutsideCompany",
+            "clearBuyingPriceRow(row, { clearRate: true })",
+            "clearAllBuyingPriceRows(frm, { clearRate: true })",
             "__orderliftSupplierBuyingLists",
             "custom_source_buying_price_list",
             "get_purchase_order_price_candidates",
@@ -202,7 +206,38 @@ class TestPurchaseOrderBuyingSources(unittest.TestCase):
             self.assertIn(token, review_page)
         for token in ["target_price_lists", "stock_uom", "conversion_factor"]:
             self.assertIn(token, pricing_backend)
+        self.assertIn("purchaseOrderSelectedBuyingPriceLists", price_list_queries := (APP_ROOT / "public" / "js" / "price_list_type_queries_20260703c.js").read_text())
+        self.assertIn('if (frm.doctype === "Purchase Order")', price_list_queries)
+        supplier_filter = source.split("function supplierFilters", 1)[1].split("function buyingListFilters", 1)[0]
+        self.assertNotIn("custom_company", supplier_filter)
+        supplier_reset = source.split("function resetSupplierIfOutsideCompany", 1)[1].split(
+            "function clearRowSourceLocks", 1
+        )[0]
+        self.assertIn("is_supplier_allowed_for_purchase_company", supplier_reset)
+        self.assertNotIn('frappe.db.get_value("Supplier", supplier, "custom_company")', supplier_reset)
+        self.assertIn("_supplier_allowed_for_company", pricing_backend)
+        self.assertIn("party_has_company_access(\"Supplier\", supplier, company)", pricing_backend)
+        self.assertIn("not _supplier_allowed_for_company(supplier, company)", pricing_backend)
         self.assertIn("set_purchase_order_price_review_decisions", review_backend)
+
+    def test_material_request_po_mapper_initializes_buying_lists(self):
+        source = (APP_ROOT / "orderlift_logistics" / "utils" / "material_request.py").read_text()
+        mapper = source.split("def make_purchase_order_from_material_requests", 1)[1].split(
+            "def _purchase_order_source_rows", 1
+        )[0]
+
+        self.assertIn("get_supplier_buying_price_lists", mapper)
+        self.assertIn("_supplier_allowed_for_company", mapper)
+        self.assertIn("not _supplier_allowed_for_company(supplier, company)", mapper)
+        self.assertLess(
+            mapper.index("get_supplier_buying_price_lists"),
+            mapper.index("sync_purchase_order_buying_price_lists(purchase_order)"),
+        )
+        self.assertIn("sync_purchase_order_buying_price_lists", mapper)
+        self.assertLess(
+            mapper.index("sync_purchase_order_buying_price_lists(purchase_order)"),
+            mapper.index("payload = purchase_order.as_dict()"),
+        )
 
     def test_purchase_order_item_details_guard_disables_native_auto_item_price_insert(self):
         hooks = (APP_ROOT / "hooks.py").read_text()

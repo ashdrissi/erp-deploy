@@ -63,6 +63,8 @@ class TestMaterialRequestNoPriceList(unittest.TestCase):
             '"material_request_item"',
             'purchase_order.currency = supplier_currency',
             "_currency_rate(supplier_currency, company_currency",
+            "MANUAL_CHARGE_ITEM_CODES",
+            "Manual charge, fully ordered, or missing item",
         ]:
             self.assertIn(token, utility)
         for token in [

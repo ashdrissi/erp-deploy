@@ -99,13 +99,18 @@ When troubleshooting a hidden record, check role permission, company, business t
 - If the user has the backing permission, Menu Access can still hide that related menu item for the user's role.
 - Menu Editor can change only labels and menu order. It cannot create links or edit link targets.
 - Company access is stored as global `User Permission` records on `Company`.
-- The preferred startup company is stored in the `orderlift_preferred_company` user default. The legacy `Company` default is retained for ERPNext compatibility but is not the active browser context.
+- Company Access assigns the allowed-company security boundary only; Access Command Center does not choose a default working company.
+- The most recent explicit sidebar selection is stored in the `orderlift_last_selected_company` user default and is used only to initialize a new authenticated browser session.
+- Legacy `Company` defaults are retained for ERPNext compatibility but are never used as the Orderlift runtime company context.
 - The active company is stored per authenticated browser session in Redis. Tabs sharing one browser session use one active company; another browser or device using the same user has an independent active company.
+- Existing browser sessions keep their own Redis company when another browser switches. The latest explicit switch affects only future sessions.
+- Multi-company users without an active SID context or last-selected company must choose a company; single-company users are focused automatically.
 - Company switching never changes Company User Permissions and does not accept a company through the URL. Use the Orderlift sidebar company switcher.
 - Non-admin users without assigned companies have no access to configured company-scoped business records. `Orderlift Admin` is the full-business exception.
 - Existing Company user permissions scoped to a single `Applicable For` DocType are left untouched by the Company Access panel.
 - `Orderlift Admin` can use Access Command Center for business users, business roles, business menu access, and business role permissions only.
 - The `Access Command Center` Business Permissions row is available only for high-access roles. Open/View grants the Page and native `User` read/select access; Create/Edit adds `User` write/create; Delete adds `User` delete; Export adds `User` export. The Menu toggle controls its Main Dashboard link.
+- The `Technical List Manager` row manages its Page and execution documents as one business bundle. Open/View grants read-only Sales Order context plus Technical List, revision, and annex access; Create/Edit and Delete apply only to Technical List execution documents; Approve/Cancel applies only to submitted-capable Technical List revisions and never grants Sales Order submit rights.
 - This permission bundle does not broaden the Access Command Center server-side ceiling: only `Orderlift Admin`, `Administrator`, and `System Manager` can call its APIs.
 - Superadmin users (`Administrator` and `System Manager`) can also use Access Command Center and are the only users who can see or manage superadmin roles and superadmin permissions.
 - Backend finance structure permissions (`Account`, `Cost Center`, and accounting dimensions) remain outside Business Permissions; only superadmin roles can manage them.

@@ -13,6 +13,9 @@
             hideRedundantNativePriceListCurrency(frm);
             addLoadPricesButton(frm);
             frm.__orderliftPreviousCurrency = frm.doc.currency || frm.__orderliftPreviousCurrency || "";
+            if (!frm.doc.supplier) {
+                clearAllBuyingPriceRows(frm, { clearRate: true });
+            }
             if (frm.doc.supplier && !frm.__orderliftSupplierBuyingLists) {
                 syncSupplierBuyingPriceLists(frm, { replaceSelection: !selectedBuyingLists(frm).length });
             }
@@ -21,7 +24,9 @@
             clearRowSourceLocks(frm);
             hideRedundantNativePriceListCurrency(frm);
             configureQueries(frm);
-            syncSupplierBuyingPriceLists(frm, { replaceSelection: true });
+            resetSupplierIfOutsideCompany(frm).then(() => {
+                syncSupplierBuyingPriceLists(frm, { replaceSelection: true });
+            });
         },
         supplier(frm) {
             clearRowSourceLocks(frm);
@@ -94,7 +99,13 @@
     frappe.ui.form.on("Purchase Order Item", {
         item_code(frm, cdt, cdn) {
             const row = locals[cdt]?.[cdn];
-            if (row?.item_code) loadBuyingPrices(frm, { force: true, itemNames: [row.name] });
+            if (!row?.item_code) return;
+            if (!String(frm.doc.supplier || "").trim()) {
+                clearBuyingPriceRow(row, { clearRate: true });
+                frm.refresh_field("items");
+                return;
+            }
+            loadBuyingPrices(frm, { force: true, itemNames: [row.name] });
         },
         qty(frm, cdt, cdn) {
             const row = locals[cdt]?.[cdn];
@@ -120,6 +131,9 @@
     function configureQueries(frm) {
         if (!frm?.set_query) return;
         const filters = buyingListFilters(frm);
+        if (frm.fields_dict?.supplier) {
+            frm.set_query("supplier", () => ({ filters: supplierFilters(frm) }));
+        }
         if (frm.fields_dict?.selected_buying_price_lists) {
             frm.set_query("price_list", "selected_buying_price_lists", () => ({ filters }));
         }
@@ -144,6 +158,10 @@
             });
         }
         syncPrimaryBuyingList(frm);
+    }
+
+    function supplierFilters(frm) {
+        return {};
     }
 
     function buyingListFilters(frm) {
@@ -185,6 +203,7 @@
             if (options.replaceSelection) {
                 frm.clear_table("selected_buying_price_lists");
                 syncPrimaryBuyingList(frm);
+                clearAllBuyingPriceRows(frm, { clearRate: true });
             }
             configureQueries(frm);
             return;
@@ -447,6 +466,45 @@
         setValue(row, "custom_price_variance_percent", 0);
         setValue(row, "custom_price_update_decision", "Pending");
         clearPriceReview(row);
+    }
+
+    function clearBuyingPriceRow(row, options = {}) {
+        if (!row) return;
+        clearBuyingPriceSourceSnapshot(row);
+        row.custom_source_buying_price_list = "";
+        setValue(row, "custom_source_buying_price_list", "");
+        setValue(row, "custom_lock_buying_price_source", 0);
+        setValue(row, "price_list_rate", 0);
+        if (options.clearRate) {
+            setValue(row, "rate", 0);
+            setValue(row, "amount", 0);
+        }
+    }
+
+    function clearAllBuyingPriceRows(frm, options = {}) {
+        (frm.doc.items || []).forEach((row) => clearBuyingPriceRow(row, options));
+        frm.refresh_field("items");
+    }
+
+    async function resetSupplierIfOutsideCompany(frm) {
+        const supplier = String(frm.doc.supplier || "").trim();
+        const company = String(frm.doc.company || "").trim();
+        if (!supplier || !company) return;
+        try {
+            const response = await frappe.call({
+                method: "orderlift.orderlift_sales.utils.purchase_order_pricing.is_supplier_allowed_for_purchase_company",
+                args: { supplier, company },
+            });
+            if (!response.message?.allowed) {
+                frm.__orderliftSupplierBuyingLists = [];
+                frm.clear_table("selected_buying_price_lists");
+                await frm.set_value("supplier", "");
+                await frm.set_value("buying_price_list", "");
+                frm.refresh_field("selected_buying_price_lists");
+            }
+        } catch (error) {
+            console.error("Unable to validate Purchase Order supplier company", error);
+        }
     }
 
     function clearRowSourceLocks(frm) {

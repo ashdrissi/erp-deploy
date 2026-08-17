@@ -37,6 +37,7 @@ class _FakeTodoDoc:
 class _FakeFrappe:
     def __init__(self):
         self.todos = []
+        self.notifications = []
         self.shares = []
         self.users = {
             "sales@example.com": {"enabled": 1, "full_name": "Sales User"},
@@ -78,6 +79,8 @@ class _FakeFrappe:
 
     def get_doc(self, doctype_or_data, name=None):
         if isinstance(doctype_or_data, dict):
+            if doctype_or_data.get("doctype") == "Notification Log":
+                return _FakeTodoDoc(self.notifications, doctype_or_data)
             return _FakeTodoDoc(self.todos, doctype_or_data)
         if doctype_or_data == "ToDo":
             for todo in self.todos:
@@ -147,7 +150,7 @@ class TestCrmPipelineAssignment(unittest.TestCase):
 
         self.assertEqual(self.fake.todos[0]["priority"], "Important Urgent")
 
-    def test_status_assignment_closes_existing_pipeline_todos_before_new_task(self):
+    def test_status_assignment_reuses_same_user_pipeline_todo(self):
         self.fake.todos.append(
             {
                 "name": "TODO-OLD",
@@ -178,11 +181,57 @@ class TestCrmPipelineAssignment(unittest.TestCase):
         )
 
         by_name = {todo["name"]: todo for todo in self.fake.todos}
-        self.assertEqual(by_name["TODO-OLD"]["status"], "Closed")
+        self.assertEqual(by_name["TODO-OLD"]["status"], "Open")
         self.assertEqual(by_name["TODO-OTHER"]["status"], "Open")
-        self.assertEqual(by_name[result["todo"]]["status"], "Open")
-        self.assertEqual(by_name[result["todo"]]["priority"], "Non Important Urgent")
-        self.assertEqual(by_name[result["todo"]]["assigned_by"], "manager@example.com")
+        self.assertEqual(result["todo"], "TODO-OLD")
+        self.assertEqual(by_name["TODO-OLD"]["priority"], "Non Important Urgent")
+        self.assertEqual(by_name["TODO-OLD"]["assigned_by"], "manager@example.com")
+        self.assertEqual(self.fake.notifications, [])
+
+    def test_status_without_configured_user_preserves_manual_assignment(self):
+        self.fake.todos.append(
+            {
+                "name": "TODO-MANUAL",
+                "allocated_to": "sales@example.com",
+                "reference_type": "Opportunity",
+                "reference_name": "OPP-1",
+                "description": "[Orderlift Pipeline] Opportunity OPP-1 assigned manually.",
+                "status": "Open",
+            }
+        )
+
+        result = pipeline.sync_pipeline_status_assignment("Opportunity", "OPP-1", {}, "Qualified")
+
+        self.assertEqual(result["todo"], "TODO-MANUAL")
+        self.assertEqual(result["user"], "sales@example.com")
+        self.assertEqual(self.fake.todos[0]["status"], "Open")
+
+    def test_direct_form_status_change_syncs_configured_assignment(self):
+        original_list_statuses = pipeline.list_editable_statuses
+        original_sync = pipeline.sync_pipeline_status_assignment
+        calls = []
+        doc = _Row(
+            doctype="Project",
+            name="PROJ-1",
+            company="Orderlift",
+            custom_project_status="Purchasing",
+            has_value_changed=lambda fieldname: fieldname == "custom_project_status",
+        )
+        try:
+            pipeline.list_editable_statuses = lambda *args, **kwargs: [
+                {"name": "Purchasing", "assigned_user": "project@example.com"}
+            ]
+            pipeline.sync_pipeline_status_assignment = lambda *args: calls.append(args)
+
+            pipeline.sync_pipeline_assignment_on_update(doc)
+        finally:
+            pipeline.list_editable_statuses = original_list_statuses
+            pipeline.sync_pipeline_status_assignment = original_sync
+
+        self.assertEqual(
+            calls,
+            [("Project", "PROJ-1", {"name": "Purchasing", "assigned_user": "project@example.com"}, "Purchasing")],
+        )
 
     def test_assignment_closes_previous_pipeline_assignment_only(self):
         self.fake.todos.append(
@@ -212,6 +261,9 @@ class TestCrmPipelineAssignment(unittest.TestCase):
         self.assertEqual(by_name["TODO-OLD"]["status"], "Closed")
         self.assertEqual(by_name["TODO-OTHER"]["status"], "Open")
         self.assertEqual(by_name["TODO-3"]["allocated_to"], "new@example.com")
+        self.assertEqual(len(self.fake.notifications), 1)
+        self.assertEqual(self.fake.notifications[0]["for_user"], "new@example.com")
+        self.assertEqual(self.fake.notifications[0]["type"], "Assignment")
 
     def test_card_assignment_uses_actual_open_pipeline_todo_only(self):
         assignment = pipeline._assignment_for_card(

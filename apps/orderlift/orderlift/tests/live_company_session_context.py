@@ -6,10 +6,13 @@ from uuid import uuid4
 import frappe
 
 from orderlift.menu_access import (
+    LAST_SELECTED_COMPANY_DEFAULT_KEY,
     _session_company_cache_key,
     get_all_companies,
     get_company_access_payload,
     get_session_company_context,
+    resolve_current_company,
+    set_current_company,
     set_session_current_company,
 )
 
@@ -107,12 +110,75 @@ def run_user_matrix() -> dict:
                 "user": user,
                 "unrestricted": payload.get("unrestricted"),
                 "companies": companies,
-                "preferred_company": payload.get("preferred_company"),
+                "last_selected_company": payload.get("last_selected_company"),
                 "current_company": current_company,
                 "query_mode": "all_allowed" if any(" in (" in query for query in queries.values()) else "single_or_denied",
             }
         )
     return {"passed": True, "rows": rows}
+
+
+def run_last_selected_fallback() -> dict:
+    companies = get_all_companies()
+    if len(companies) < 2:
+        return {"skipped": True, "reason": "At least two companies are required"}
+
+    user = "Administrator"
+    sid_a = f"orderlift-live-last-a-{uuid4().hex}"
+    sid_b = f"orderlift-live-last-b-{uuid4().hex}"
+    sid_c = f"orderlift-live-last-c-{uuid4().hex}"
+    original_user = frappe.session.user
+    original_sid = getattr(frappe.session, "sid", None)
+    original_request = getattr(frappe.local, "request", None)
+    previous_last = frappe.defaults.get_user_default(LAST_SELECTED_COMPANY_DEFAULT_KEY, user=user) or ""
+    try:
+        frappe.session.user = user
+        frappe.session.sid = sid_a
+        frappe.local.request = SimpleNamespace(cookies={"sid": sid_a}, method="POST")
+        set_current_company(companies[0])
+
+        if hasattr(frappe.local, "orderlift_company_context"):
+            delattr(frappe.local, "orderlift_company_context")
+        frappe.session.sid = sid_b
+        frappe.local.request = SimpleNamespace(cookies={"sid": sid_b}, method="POST")
+        set_current_company(companies[1])
+
+        if hasattr(frappe.local, "orderlift_company_context"):
+            delattr(frappe.local, "orderlift_company_context")
+        frappe.session.sid = sid_a
+        frappe.local.request = SimpleNamespace(cookies={"sid": sid_a}, method="GET")
+        company_a = resolve_current_company(user=user, allowed_companies=companies)
+
+        if hasattr(frappe.local, "orderlift_company_context"):
+            delattr(frappe.local, "orderlift_company_context")
+        frappe.session.sid = sid_c
+        frappe.local.request = SimpleNamespace(cookies={"sid": sid_c}, method="GET")
+        company_c = resolve_current_company(user=user, allowed_companies=companies)
+
+        if company_a != companies[0] or company_c != companies[1]:
+            raise AssertionError(f"Last-selected fallback failed: {company_a!r}, {company_c!r}")
+        return {
+            "passed": True,
+            "existing_sid_company": company_a,
+            "new_sid_company": company_c,
+            "last_selected_company": companies[1],
+        }
+    finally:
+        if previous_last:
+            frappe.defaults.set_user_default(LAST_SELECTED_COMPANY_DEFAULT_KEY, previous_last, user=user)
+        else:
+            frappe.db.delete(
+                "DefaultValue",
+                {"parent": user, "defkey": LAST_SELECTED_COMPANY_DEFAULT_KEY},
+            )
+        frappe.db.commit()
+        for sid in (sid_a, sid_b, sid_c):
+            frappe.cache.delete_value(_session_company_cache_key(sid))
+        if hasattr(frappe.local, "orderlift_company_context"):
+            delattr(frappe.local, "orderlift_company_context")
+        frappe.session.user = original_user
+        frappe.session.sid = original_sid
+        frappe.local.request = original_request
 
 
 def run_interactive_query_matrix() -> dict:

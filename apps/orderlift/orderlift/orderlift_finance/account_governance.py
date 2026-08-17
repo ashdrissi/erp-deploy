@@ -98,30 +98,35 @@ def has_cost_center_permission(doc=None, ptype: str | None = None, user: str | N
     return is_account_superadmin(user)
 
 
-def ensure_company_finance_defaults(doc, method=None) -> dict:
+def ensure_company_finance_defaults(doc, method=None, configure_payment_modes: bool = True) -> dict:
     company = _doc_name(doc)
     if not company or not _doctype_exists("Company") or not _doctype_exists("Account"):
         return {"skipped": True, "reason": "missing Company or Account doctype"}
     if _company_is_group(company):
-        return {"skipped": True, "reason": "group company"}
+        result = {"skipped": True, "reason": "group company"}
+        if configure_payment_modes:
+            result["payment_modes"] = ensure_mode_of_payment_accounts([company])
+        return result
 
     cost_center = get_company_cost_center(company, create_missing=True)
     account_map = get_company_account_map(company, create_missing=True)
     updated_fields = set_company_default_accounts(company, account_map)
-    return {
+    result = {
         "company": company,
         "accounts": account_map,
         "cost_center": cost_center,
         "missing": sorted(set(ACCOUNT_DEFINITION_BY_KEY) - set(account_map)),
         "updated_fields": updated_fields,
     }
+    if configure_payment_modes:
+        result["payment_modes"] = ensure_mode_of_payment_accounts([company])
+    return result
 
 
 def after_migrate() -> dict:
     turkey_bank = _ensure_turkey_bank_currency()
     result = ensure_all_company_finance_defaults()
     result["turkey_bank"] = turkey_bank
-    result["wire_transfer"] = ensure_wire_transfer_accounts()
     return result
 
 
@@ -139,43 +144,93 @@ def ensure_all_company_finance_defaults() -> dict:
     )
     results = {"companies": [], "missing": {}, "updated_fields": {}}
     for company in rows:
-        result = ensure_company_finance_defaults(company)
+        result = ensure_company_finance_defaults(company, configure_payment_modes=False)
         results["companies"].append(company)
         if result.get("missing"):
             results["missing"][company] = result.get("missing")
         if result.get("updated_fields"):
             results["updated_fields"][company] = result.get("updated_fields")
+    results["payment_modes"] = ensure_mode_of_payment_accounts()
     return results
 
 
-def ensure_wire_transfer_accounts() -> dict:
-    if not _doctype_exists("Mode of Payment") or not frappe.db.exists("Mode of Payment", "Wire Transfer"):
-        return {"skipped": True, "reason": "Wire Transfer does not exist"}
+def ensure_mode_of_payment_accounts(companies=None) -> dict:
+    if not _doctype_exists("Mode of Payment") or not _doctype_exists("Mode of Payment Account"):
+        return {"skipped": True, "reason": "Mode of Payment is not installed"}
 
-    mode = frappe.get_doc("Mode of Payment", "Wire Transfer")
-    rows_by_company = {row.company: row for row in mode.get("accounts") or []}
-    mapped = {}
-    missing = {}
-    for company, account in WIRE_TRANSFER_ACCOUNT_BY_COMPANY.items():
-        if not frappe.db.exists("Company", company) or not frappe.db.exists("Account", account):
-            missing[company] = account
-            continue
-        if not _account_belongs_to_company(account, company):
-            missing[company] = account
-            continue
-        row = rows_by_company.get(company)
-        if row:
-            row.default_account = account
-        else:
-            mode.append("accounts", {"company": company, "default_account": account})
-        if _has_field("Company", "default_bank_account"):
-            frappe.db.set_value("Company", company, "default_bank_account", account, update_modified=False)
-        mapped[company] = account
+    company_names = _normalize_company_names(companies)
+    if not company_names:
+        company_names = frappe.get_all(
+            "Company",
+            pluck="name",
+            order_by="name asc",
+            limit_page_length=0,
+        )
+    modes = frappe.get_all(
+        "Mode of Payment",
+        filters={"enabled": 1},
+        fields=["name", "type"],
+        order_by="name asc",
+        limit_page_length=0,
+    )
+    account_maps = {
+        company: get_company_account_map(company, create_missing=False)
+        for company in company_names
+    }
+    mapped: dict[str, dict[str, str]] = {}
+    missing: dict[str, list[str]] = {}
+    updated: list[str] = []
 
-    mode.type = "Bank"
-    mode.enabled = 1
-    mode.save(ignore_permissions=True)
-    return {"mapped": mapped, "missing": missing}
+    for mode_row in modes:
+        mode_name = (_value(mode_row, "name") or "").strip()
+        if not mode_name:
+            continue
+        account_key = _payment_mode_account_key(mode_name, _value(mode_row, "type"))
+        mode = frappe.get_doc("Mode of Payment", mode_name)
+        rows_by_company = {
+            (_value(row, "company") or "").strip(): row
+            for row in mode.get("accounts") or []
+        }
+        changed = False
+        for company in company_names:
+            account = (account_maps.get(company) or {}).get(account_key) or ""
+            if not account or not _account_belongs_to_company(account, company):
+                missing.setdefault(mode_name, []).append(company)
+                continue
+            row = rows_by_company.get(company)
+            if row:
+                if (_value(row, "default_account") or "") != account:
+                    row.default_account = account
+                    changed = True
+            else:
+                mode.append("accounts", {"company": company, "default_account": account})
+                changed = True
+            mapped.setdefault(mode_name, {})[company] = account
+        if changed:
+            mode.save(ignore_permissions=True)
+            updated.append(mode_name)
+
+    return {"mapped": mapped, "missing": missing, "updated": updated}
+
+
+def _normalize_company_names(companies) -> list[str]:
+    if isinstance(companies, str):
+        companies = companies.split(",")
+    return list(
+        dict.fromkeys(
+            (company or "").strip()
+            for company in (companies or [])
+            if (company or "").strip()
+        )
+    )
+
+
+def _payment_mode_account_key(mode_name: str, mode_type: str | None) -> str:
+    normalized_type = (mode_type or "").strip().lower()
+    normalized_name = (mode_name or "").strip().lower()
+    if normalized_type == "cash" or any(token in normalized_name for token in ("cash", "espèce", "espece")):
+        return "cash"
+    return "bank"
 
 
 def get_company_account_map(company: str, create_missing: bool = False) -> dict[str, str]:
@@ -251,6 +306,8 @@ def apply_document_account_defaults(doc, method=None) -> None:
         account_map = get_company_account_map(company, create_missing=False)
         _apply_parent_account_defaults(doc, company, account_map)
         _apply_child_account_defaults(doc, company, account_map)
+    if getattr(doc, "doctype", "") == "Purchase Invoice":
+        _apply_purchase_invoice_payment_defaults(doc, company, account_map)
     if getattr(doc, "doctype", "") == "Payment Entry":
         _apply_payment_entry_defaults(doc, company, account_map)
     _apply_cost_center_defaults(doc, company)
@@ -325,6 +382,20 @@ def _apply_payment_entry_defaults(doc, company: str, account_map: dict[str, str]
         _set_account_if_needed(doc, "paid_from", cash_bank, company)
         if party_type == "Supplier":
             _set_transaction_party_account_if_needed(doc, "paid_to", account_map.get("payable"), company)
+
+
+def _apply_purchase_invoice_payment_defaults(doc, company: str, account_map: dict[str, str]) -> None:
+    if not doc.get("is_paid"):
+        return
+    if not (doc.get("mode_of_payment") or "").strip():
+        frappe.throw(_("Select a Mode of Payment for this paid invoice."))
+
+    cash_bank = _cash_or_bank_account(doc, account_map)
+    if not cash_bank:
+        frappe.throw(
+            _("Company payment setup is incomplete for {0}. Contact Superadmin.").format(company)
+        )
+    _set_account_if_needed(doc, "cash_bank_account", cash_bank, company)
 
 
 def _apply_cost_center_defaults(doc, company: str) -> None:

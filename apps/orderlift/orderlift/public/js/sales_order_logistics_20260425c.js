@@ -11,7 +11,7 @@ frappe.ui.form.on("Sales Order", {
         _render_so_status_bar(frm);
         _load_so_status_names().then(() => _render_so_status_bar(frm));
 
-        // SIG — Create or open installation project
+        // SIG - create or open the linked project
         _sig_project_button(frm);
 
         frm.add_custom_button(__("Forecast Container"), async () => {
@@ -47,28 +47,28 @@ frappe.ui.form.on("Sales Order", {
     custom_crm_segment(frm) {
         _render_so_status_bar(frm);
     },
-    custom_installation_project(frm) {
+    project(frm) {
         _render_so_status_bar(frm);
     },
 });
 
-// ── SIG: Create / Open Installation Project button ─────────────────────────
+// SIG: Create / Open Project button
 
 function _sig_project_button(frm) {
-    const linked = frm.doc.custom_installation_project;
+    const linked = frm.doc.project;
 
     if (linked) {
         // Project already exists — show shortcut to open it
-        frm.add_custom_button(__("Open Installation Project"), () => {
+        frm.add_custom_button(__("Open Project"), () => {
             frappe.set_route("Form", "Project", linked);
         }, __("SIG"));
     } else {
         // Only offer creation on submitted SO
         if (frm.doc.docstatus !== 1) return;
 
-        frm.add_custom_button(__("Create Installation Project"), () => {
+        frm.add_custom_button(__("Create Project"), () => {
             frappe.confirm(
-                __("Create an installation project for Sales Order {0}?", [frm.doc.name]),
+                __("Create a project for Sales Order {0}?", [frm.doc.name]),
                 () => {
                     frappe.call({
                         method: "orderlift.orderlift_sig.utils.project_status_guard.create_project_from_sales_order",
@@ -140,8 +140,8 @@ function _render_so_status_bar(frm) {
         _order_status_chip(__("Type"), frm.doc.custom_crm_business_type || __("Not set"), "type", "truck"),
         _order_status_chip(__("Segment"), frm.doc.custom_crm_segment || __("Not set"), "segment", "tool"),
     ];
-    if (frm.doc.custom_installation_project) {
-        chips.push(_order_project_chip(__("Project"), frm.doc.custom_installation_project));
+    if (frm.doc.project) {
+        chips.push(_order_project_chip(__("Project"), frm.doc.project));
     }
 
     const html = `

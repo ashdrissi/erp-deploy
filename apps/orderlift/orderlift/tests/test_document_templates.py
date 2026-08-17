@@ -1,15 +1,13 @@
 import json
-import sys
-import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from orderlift.document_templates import (
-    delete_template,
+    _annex_is_read_only,
+    _is_revision_owned,
+    _target_allows_direct_creation,
     get_template_prefill_values,
     get_document_template_target_label,
-    get_supported_document_template_targets,
     normalize_field_key,
     resolve_template_field_value,
 )
@@ -19,15 +17,31 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestDocumentTemplates(unittest.TestCase):
-    def test_supported_targets_include_shipment_plan_display_label(self):
-        targets = {row["doctype"]: row["label"] for row in get_supported_document_template_targets()}
+    def test_supported_targets_are_configured_as_dynamic_doctype_links(self):
+        target = self._read_doctype("orderlift_document_template_target")
+        fields = {row["fieldname"]: row for row in target["fields"]}
 
-        self.assertEqual(targets["Opportunity"], "Opportunity")
-        self.assertEqual(targets["Project"], "Project")
-        self.assertEqual(targets["Quotation"], "Quotation")
-        self.assertEqual(targets["Sales Order"], "Sales Order")
-        self.assertEqual(targets["Forecast Load Plan"], "Shipment Plan")
-        self.assertEqual(get_document_template_target_label("Forecast Load Plan"), "Shipment Plan")
+        self.assertEqual(fields["target_doctype"]["fieldtype"], "Select")
+        options = set(str(fields["target_doctype"]["options"] or "").split("\n"))
+        self.assertTrue({"Opportunity", "Quotation", "Sales Order", "Project", "Forecast Load Plan", "Sales Order Technical List Revision"}.issubset(options))
+        self.assertNotIn("DocType", options)
+        self.assertEqual(get_document_template_target_label("Forecast Load Plan"), "Forecast Load Plan")
+
+    def test_target_settings_explain_their_behavior(self):
+        target = self._read_doctype("orderlift_document_template_target")
+        fields = {row["fieldname"]: row for row in target["fields"]}
+        for fieldname in (
+            "allow_direct_creation",
+            "allow_execution_copy",
+            "required_for_revision",
+            "must_be_complete",
+            "default_selected",
+        ):
+            self.assertTrue(fields[fieldname].get("description"), fieldname)
+        builder = (APP_ROOT / "orderlift" / "page" / "document_template_builder" / "document_template_builder.js").read_text()
+        self.assertIn('check("required_for_revision", __("Required for Revision")', builder)
+        self.assertIn('check("must_be_complete", __("Must Be Complete")', builder)
+        self.assertIn('check("default_selected", __("Selected by Default")', builder)
 
     def test_normalize_field_key_is_stable(self):
         self.assertEqual(normalize_field_key("Fiche de Mesure / Hauteur"), "fiche_de_mesure_hauteur")
@@ -93,8 +107,44 @@ class TestDocumentTemplates(unittest.TestCase):
         self.assertEqual(fields["template"]["options"], "Orderlift Document Template")
         self.assertEqual(fields["reference_name"]["fieldtype"], "Dynamic Link")
         self.assertEqual(fields["reference_name"]["options"], "reference_doctype")
-        self.assertIn("Forecast Load Plan", fields["reference_doctype"]["options"])
+        self.assertEqual(fields["reference_doctype"]["fieldtype"], "Link")
+        self.assertEqual(fields["reference_doctype"]["options"], "DocType")
         self.assertEqual(fields["values"]["options"], "Orderlift Annex Document Value")
+
+    def test_revision_ownership_metadata_does_not_lock_sales_order_annexes(self):
+        definition = {
+            "revision_owned": True,
+            "targets": [
+                {"target_doctype": "Sales Order", "allow_direct_creation": 1},
+                {"target_doctype": "Sales Order Technical List Revision", "allow_direct_creation": 1},
+            ],
+        }
+
+        self.assertFalse(
+            _is_revision_owned({"reference_doctype": "Sales Order"}, definition)
+        )
+        self.assertTrue(
+            _is_revision_owned(
+                {"reference_doctype": "Sales Order Technical List Revision"},
+                definition,
+            )
+        )
+
+    def test_snapshot_origins_are_backend_read_only(self):
+        self.assertTrue(_annex_is_read_only({"origin": "Opportunity Snapshot"}))
+        self.assertTrue(_annex_is_read_only({"origin": "Quotation Snapshot"}))
+        self.assertFalse(_annex_is_read_only({"origin": "Execution Copy"}))
+
+    def test_direct_creation_uses_target_policy(self):
+        template = {
+            "is_active": 1,
+            "targets": [{"target_doctype": "Quotation", "allow_direct_creation": 0}],
+            "fields": [],
+            "statuses": [],
+        }
+        self.assertFalse(_target_allows_direct_creation(template, "Quotation"))
+        template["targets"][0]["allow_direct_creation"] = 1
+        self.assertTrue(_target_allows_direct_creation(template, "Quotation"))
 
     def test_generic_print_format_targets_annex_document(self):
         path = APP_ROOT / "orderlift" / "print_format" / "orderlift_annex_document" / "orderlift_annex_document.json"
@@ -116,9 +166,17 @@ class TestDocumentTemplates(unittest.TestCase):
         self.assertIn("template.print_header", source)
         self.assertIn("template.print_footer", source)
         self.assertIn("company.company_name", source)
+        self.assertIn("annex_print_template(doc)", source)
+        self.assertNotIn("parse_json", source)
         self.assertNotIn("ORDER LIFT MOROCCO", source)
         self.assertNotIn("Responsable installation", source)
         self.assertNotIn("Projet N°", source)
+
+    def test_bootstrap_offers_curated_business_targets(self):
+        source = (APP_ROOT / "document_templates.py").read_text()
+        self.assertIn('"available_targets": DOCUMENT_TEMPLATE_TARGET_DOCTYPES', source)
+        self.assertIn('"Forecast Load Plan"', source)
+        self.assertNotIn('"available_targets": frappe.get_all(\n            "DocType"', source)
 
     def test_template_builder_is_separate_page(self):
         manager = json.loads((APP_ROOT / "orderlift" / "page" / "document_template_manager" / "document_template_manager.json").read_text())
@@ -147,6 +205,10 @@ class TestDocumentTemplates(unittest.TestCase):
                 self.assertIn('field.fieldtype === "Column Break"', source)
                 self.assertIn("frappe.ui.FileUploader", source)
                 self.assertIn('"Attach Image", "Signature"', source)
+        dialog = (APP_ROOT / "public" / "js" / "document_annex_dialog_20260519a.js").read_text()
+        self.assertIn("bundle.read_only", dialog)
+        self.assertIn("lecture seule", dialog)
+        self.assertIn("expect_absent", dialog)
 
     def test_template_builder_exposes_target_selection_and_source_mapping(self):
         source = (APP_ROOT / "orderlift" / "page" / "document_template_builder" / "document_template_builder.js").read_text()
@@ -183,28 +245,13 @@ class TestDocumentTemplates(unittest.TestCase):
         self.assertIn('{"target_doctype": "Project"}', source)
         self.assertIn('"Voile de gaine en béton"', source)
 
-    def test_delete_template_cascades_annexes_before_the_template(self):
-        deleted = []
-        frappe_stub = types.ModuleType("frappe")
-        frappe_stub._ = lambda message: message
-        frappe_stub.PermissionError = PermissionError
-        frappe_stub.session = types.SimpleNamespace(user="Administrator")
-        frappe_stub.db = types.SimpleNamespace(commit=lambda: None)
-        frappe_stub.get_doc = lambda doctype, name: types.SimpleNamespace(name=name, template_name="Test Template")
-        frappe_stub.get_all = lambda *args, **kwargs: ["ANNEX-0001", "ANNEX-0002"]
-        frappe_stub.delete_doc = lambda *args, **kwargs: deleted.append((args, kwargs))
+    def test_used_templates_are_protected_from_cascade_deletion(self):
+        source = (APP_ROOT / "document_templates.py").read_text()
 
-        with patch.dict(sys.modules, {"frappe": frappe_stub}):
-            result = delete_template("Test Template")
-
-        self.assertEqual(result, {"template_name": "Test Template", "annex_count": 2})
-        self.assertEqual([row[0][:2] for row in deleted], [
-            ("Orderlift Annex Document", "ANNEX-0001"),
-            ("Orderlift Annex Document", "ANNEX-0002"),
-            ("Orderlift Document Template", "Test Template"),
-        ])
-        self.assertTrue(all(row[1]["force"] for row in deleted))
-        self.assertTrue(all(row[1]["ignore_permissions"] for row in deleted))
+        delete_body = source.split("def delete_template", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('frappe.db.count("Orderlift Annex Document"', delete_body)
+        self.assertIn("cannot be deleted", delete_body)
+        self.assertNotIn('frappe.delete_doc("Orderlift Annex Document"', delete_body)
 
     def test_template_pages_require_typed_confirmation_for_cascade_delete(self):
         manager = (APP_ROOT / "orderlift" / "page" / "document_template_manager" / "document_template_manager.js").read_text()

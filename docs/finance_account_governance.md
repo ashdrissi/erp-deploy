@@ -38,15 +38,19 @@ Do not create accounts per project, sales order, business type, CRM segment, cus
 ## Document Behavior
 - Sales Invoice defaults `debit_to` and item income/expense accounts from Company setup.
 - Purchase Invoice defaults `credit_to` and item expense accounts from Company setup.
+- A paid Purchase Invoice requires only a Mode of Payment; its hidden cash/bank account is resolved from the selected Mode of Payment and Company defaults.
+- An unpaid Purchase Invoice remains outstanding and can be settled later through a Payment Entry.
 - Payment Entry defaults customer receive payments to receivable + bank/cash, and supplier pay payments to bank/cash + payable.
 - Payment Entry preserves a valid same-company party account selected from the source document. The selected Mode of Payment account remains authoritative for the bank/cash side.
 - Sales Order, Sales Invoice, Purchase Invoice, and Payment Entry rows default Cost Center from Company setup.
 - For non-superadmins, account and Cost Center fields are hidden/read-only in the form and protected server-side after save.
 - For non-superadmins, backend account and Cost Center values supplied through API/import are normalized during validation. Payment Entry party accounts are retained when they are valid for the selected Company and source document.
 
-## Wire Transfer
-- `Wire Transfer` is an enabled Bank Mode of Payment with one company-specific default account: `Sortie - OL`, `Sortie - OMD`, `Sortie - OMI`, and `Sortie - OTR`.
-- Those ledgers are also the Company default bank accounts. `Sortie - OTR` and Orderlift Turkey use TRY.
+## Modes of Payment
+- Every enabled Mode of Payment receives one default account row for every Company, including the parent Company.
+- Cash modes use the Company's default cash account. Bank and other non-cash modes use the Company's default bank account.
+- This setup is maintained when a Company is created or updated and during `after_migrate`.
+- `Wire Transfer`, `Bank Draft`, `Cheque`, and `Credit Card` therefore use `Sortie - OL`, `Sortie - OMD`, `Sortie - OMI`, or `Sortie - OTR` according to Company. `Cash` uses the corresponding `Cash - ABBR` ledger.
 - Payment Entry resolves the Mode of Payment company row before falling back to Company bank/cash defaults.
 
 ## Source-Currency Payments

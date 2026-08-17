@@ -48,14 +48,16 @@ class PurchaseAgentRules(Document):
             price_list = (row.buying_price_list or "").strip()
             if not price_list:
                 continue
+            if not cint(row.is_active):
+                if cint(row.is_default):
+                    frappe.throw(_("A default Buying Price List must be active."))
+                continue
             if price_list in seen:
                 frappe.throw(_("Buying Price List {0} is duplicated.").format(price_list))
             seen.add(price_list)
             self._validate_buying_price_list(price_list)
             if cint(row.is_active) and cint(row.is_default):
                 active_defaults += 1
-            if cint(row.is_default) and not cint(row.is_active):
-                frappe.throw(_("A default Buying Price List must be active."))
         if active_defaults > 1:
             frappe.throw(_("Only one active Buying Price List can be the default."))
 

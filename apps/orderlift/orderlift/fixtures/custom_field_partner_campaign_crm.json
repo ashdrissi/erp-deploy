@@ -29,7 +29,7 @@
   {"doctype": "Custom Field", "name": "Sales Order-custom_partner_campaign", "dt": "Sales Order", "fieldname": "custom_partner_campaign", "fieldtype": "Link", "label": "Partner Campaign", "options": "Partner Campaign", "insert_after": "custom_partner_campaign_section", "in_standard_filter": 1, "read_only": 0},
   {"doctype": "Custom Field", "name": "Sales Order-custom_partner_campaign_target", "dt": "Sales Order", "fieldname": "custom_partner_campaign_target", "fieldtype": "Data", "label": "Partner Campaign Target", "insert_after": "custom_partner_campaign", "read_only": 1},
 
-  {"doctype": "Custom Field", "name": "Project-custom_source_opportunity", "dt": "Project", "fieldname": "custom_source_opportunity", "fieldtype": "Link", "label": "Source Opportunity", "options": "Opportunity", "insert_after": "custom_project_type_ol", "in_standard_filter": 1},
+  {"doctype": "Custom Field", "name": "Project-custom_source_opportunity", "dt": "Project", "fieldname": "custom_source_opportunity", "fieldtype": "Link", "label": "Source Opportunity", "options": "Opportunity", "insert_after": "project_type", "in_standard_filter": 1},
   {"doctype": "Custom Field", "name": "Project-custom_partner_campaign", "dt": "Project", "fieldname": "custom_partner_campaign", "fieldtype": "Link", "label": "Partner Campaign", "options": "Partner Campaign", "insert_after": "custom_source_opportunity", "in_standard_filter": 1},
 
   {"doctype": "Custom Field", "name": "Item Price-custom_supplier_payment_mode", "dt": "Item Price", "fieldname": "custom_supplier_payment_mode", "fieldtype": "Select", "label": "Supplier Payment Mode", "options": "\nPaid Before Delivery\nSupplier Payment Delay", "insert_after": "supplier", "in_standard_filter": 1},

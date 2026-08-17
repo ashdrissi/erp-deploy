@@ -14,12 +14,35 @@ class Meta:
         return fieldname != "disabled"
 
 
+class AttrDict(dict):
+    __getattr__ = dict.get
+
+
+class PartyDoc(AttrDict):
+    def __init__(self, doctype, name=None, **values):
+        super().__init__(values)
+        self.doctype = doctype
+        self.name = name
+        self.meta = Meta()
+        self.flags = types.SimpleNamespace()
+
+    def is_new(self):
+        return not bool(self.name)
+
+
+class DuplicatePartyError(Exception):
+    pass
+
+
 def load_module():
     frappe = types.ModuleType("frappe")
     frappe._ = lambda value, *args, **kwargs: value
     frappe.whitelist = lambda *args, **kwargs: (lambda fn: fn) if args == () else args[0]
     frappe.get_meta = lambda doctype: Meta()
-    frappe.db = types.SimpleNamespace(exists=lambda *args, **kwargs: True)
+    frappe.db = types.SimpleNamespace(
+        exists=lambda *args, **kwargs: True,
+        get_value=lambda *args, **kwargs: None,
+    )
     frappe_utils = types.ModuleType("frappe.utils")
     frappe_utils.now_datetime = lambda: "2026-08-12 00:00:00"
 
@@ -69,6 +92,69 @@ class TestPartyWorkspace(unittest.TestCase):
         contacts = module._linked_contacts("Prospect", "PROSPECT-1")
 
         self.assertEqual(contacts[0]["status"], "Passive")
+
+    def test_customer_normalized_duplicate_name_is_blocked(self):
+        module = load_module()
+        module.frappe.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(DuplicatePartyError(message))
+        module.frappe.has_permission = lambda *args, **kwargs: True
+        module.frappe.get_all = lambda doctype, **kwargs: (
+            [AttrDict(name="Gerivall", customer_name="Gerivall", custom_company="Orderlift")]
+            if doctype == "Customer"
+            else []
+        )
+
+        with self.assertRaisesRegex(DuplicatePartyError, "Gerivall"):
+            module._validate_unique_party_name(PartyDoc("Customer", customer_name="  GERIVALL  "))
+
+    def test_supplier_normalized_duplicate_name_is_blocked(self):
+        module = load_module()
+        module.frappe.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(DuplicatePartyError(message))
+        module.frappe.has_permission = lambda *args, **kwargs: True
+        module.frappe.get_all = lambda doctype, **kwargs: (
+            [AttrDict(name="SUP-GERIVALL", supplier_name="Gerivall", custom_company="Orderlift")]
+            if doctype == "Supplier"
+            else []
+        )
+
+        with self.assertRaisesRegex(DuplicatePartyError, "SUP-GERIVALL"):
+            module._validate_unique_party_name(PartyDoc("Supplier", supplier_name="Gerivall"))
+
+    def test_customer_and_supplier_names_use_separate_duplicate_domains(self):
+        module = load_module()
+        module.frappe.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(DuplicatePartyError(message))
+        module.frappe.has_permission = lambda *args, **kwargs: True
+        module.frappe.get_all = lambda doctype, **kwargs: (
+            [AttrDict(name="Gerivall", customer_name="Gerivall", custom_company="Orderlift")]
+            if doctype == "Customer"
+            else []
+        )
+
+        module._validate_unique_party_name(PartyDoc("Supplier", supplier_name="Gerivall"))
+
+    def test_existing_party_does_not_match_itself(self):
+        module = load_module()
+        module.frappe.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(DuplicatePartyError(message))
+        module.frappe.has_permission = lambda *args, **kwargs: True
+        module.frappe.get_all = lambda doctype, **kwargs: (
+            [AttrDict(name="Gerivall", customer_name="Gerivall", custom_company="Orderlift")]
+            if doctype == "Customer"
+            else []
+        )
+
+        module._validate_unique_party_name(PartyDoc("Customer", name="Gerivall", customer_name="Gerivall"))
+
+    def test_unchanged_existing_duplicate_name_remains_editable(self):
+        module = load_module()
+        module.frappe.throw = lambda message, *args, **kwargs: (_ for _ in ()).throw(DuplicatePartyError(message))
+        module.frappe.has_permission = lambda *args, **kwargs: True
+        module.frappe.db.get_value = lambda *args, **kwargs: AttrDict(customer_name="Gerivall")
+        module.frappe.get_all = lambda doctype, **kwargs: [
+            AttrDict(name="Gerivall", customer_name="Gerivall", custom_company="Orderlift")
+        ]
+
+        module._validate_unique_party_name(
+            PartyDoc("Customer", name="Gerivall - 1", customer_name="Gerivall")
+        )
 
 
 if __name__ == "__main__":

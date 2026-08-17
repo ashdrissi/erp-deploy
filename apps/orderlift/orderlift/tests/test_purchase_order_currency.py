@@ -25,6 +25,9 @@ class AttrDict(dict):
     def set(self, key, value):
         self[key] = value
 
+    def append(self, key, value):
+        self.setdefault(key, []).append(AttrDict(value))
+
     def precision(self, fieldname):
         return 2 if fieldname == "rate" else 9
 
@@ -469,6 +472,7 @@ class TestPurchaseOrderCurrency(unittest.TestCase):
         doc = PurchaseOrderStub(
             name="PO-STALE",
             company="Test Company",
+            supplier="SUP-1",
             currency="MAD",
             transaction_date="2026-08-05",
             docstatus=0,
@@ -515,6 +519,7 @@ class TestPurchaseOrderCurrency(unittest.TestCase):
         )
         doc = PurchaseOrderStub(
             company="Orderlift Maroc Distribution",
+            supplier="SUP-1",
             name="PO-V",
             docstatus=0,
             transaction_date="2026-08-05",
@@ -550,6 +555,134 @@ class TestPurchaseOrderCurrency(unittest.TestCase):
         self.assertEqual(row.custom_price_update_decision, "Approved")
         self.assertEqual(row.custom_update_price_list_on_submit, 1)
         self.assertEqual(row.rate, 3200)
+
+    def test_sync_auto_selects_supplier_buying_lists_for_stale_draft(self):
+        doc = PurchaseOrderStub(
+            company="Orderlift Maroc Installation",
+            supplier="SUP-1",
+            currency="MAD",
+            transaction_date="2026-08-05",
+            buying_price_list="PRIX FOURNISSEUR MAD",
+            selected_buying_price_lists=[],
+            items=[],
+        )
+
+        with mock.patch.object(
+            purchase_order_pricing,
+            "get_supplier_buying_price_lists",
+            return_value=[{
+                "price_list": "BUY-INSTALL",
+                "source_currency": "MAD",
+                "exchange_rate": 1,
+                "exchange_rate_source": "System",
+            }],
+        ):
+            active = purchase_order_pricing.sync_purchase_order_buying_price_lists(doc)
+
+        self.assertEqual(active, ["BUY-INSTALL"])
+        self.assertEqual(doc.buying_price_list, "BUY-INSTALL")
+        self.assertEqual([row.price_list for row in doc.selected_buying_price_lists], ["BUY-INSTALL"])
+
+    def test_sync_discards_invalid_native_parent_buying_list_without_supplier(self):
+        doc = PurchaseOrderStub(
+            company="Orderlift Maroc Installation",
+            supplier="",
+            currency="MAD",
+            transaction_date="2026-08-05",
+            buying_price_list="PRIX FOURNISSEUR MAD",
+            selected_buying_price_lists=[],
+            items=[],
+        )
+
+        with (
+            mock.patch.object(purchase_order_pricing, "get_supplier_buying_price_lists", return_value=[]),
+            mock.patch.object(purchase_order_pricing, "validate_visible_price_list", side_effect=Exception("bad list")),
+        ):
+            active = purchase_order_pricing.sync_purchase_order_buying_price_lists(doc)
+
+        self.assertEqual(active, [])
+        self.assertEqual(doc.buying_price_list, "")
+        self.assertEqual(doc.selected_buying_price_lists, [])
+
+    def test_validate_clears_loaded_price_when_supplier_is_blank(self):
+        row = self.row(
+            name="POI-NO-SUP",
+            rate=1000,
+            amount=1000,
+            price_list_rate=1000,
+            custom_source_buying_price_list="PRIX FOURNISSEUR MAD",
+            custom_source_item_price="IP-DIST",
+            custom_loaded_buying_rate=1000,
+            custom_loaded_buying_currency="MAD",
+        )
+        doc = PurchaseOrderStub(
+            company="Orderlift Maroc Installation",
+            supplier="",
+            currency="MAD",
+            transaction_date="2026-08-05",
+            buying_price_list="PRIX FOURNISSEUR MAD",
+            selected_buying_price_lists=[],
+            items=[row],
+            docstatus=0,
+        )
+
+        with (
+            mock.patch.object(purchase_order_pricing, "get_supplier_buying_price_lists", return_value=[]),
+            mock.patch.object(purchase_order_pricing, "can_manage_purchase_price_approvals", return_value=True),
+        ):
+            purchase_order_pricing.validate_purchase_order_buying_prices(doc)
+
+        self.assertEqual(doc.buying_price_list, "")
+        self.assertEqual(row.rate, 0)
+        self.assertEqual(row.price_list_rate, 0)
+        self.assertEqual(row.custom_source_buying_price_list, "")
+        self.assertEqual(row.custom_source_item_price, "")
+
+    def test_validate_replaces_row_source_outside_selected_dynamic_lists(self):
+        row = self.row(
+            name="POI-ROW-LEAK",
+            rate=1000,
+            amount=1000,
+            price_list_rate=1000,
+            custom_source_buying_price_list="PRIX FOURNISSEUR MAD",
+            custom_source_item_price="IP-DIST",
+            custom_loaded_buying_rate=1000,
+            custom_loaded_buying_currency="MAD",
+        )
+        doc = PurchaseOrderStub(
+            company="Orderlift Maroc Installation",
+            supplier="SUP-INSTALL",
+            currency="MAD",
+            transaction_date="2026-08-05",
+            buying_price_list="BUY-INSTALL",
+            selected_buying_price_lists=[AttrDict(price_list="BUY-INSTALL", is_active=1, sequence=10)],
+            items=[row],
+            docstatus=0,
+        )
+        candidate = {
+            "name": "IP-INSTALL",
+            "item_code": "ITEM-1",
+            "price_list": "BUY-INSTALL",
+            "source_rate": 1085,
+            "source_currency": "MAD",
+            "source_exchange_rate": 1,
+            "uom": "Pc",
+            "normalized_rate": 1085,
+            "rate": 1085,
+            "sequence": 0,
+        }
+
+        with (
+            mock.patch.object(purchase_order_pricing, "sync_purchase_order_buying_price_lists", return_value=["BUY-INSTALL"]),
+            mock.patch.object(purchase_order_pricing, "get_visible_price_lists", return_value=["BUY-INSTALL"]),
+            mock.patch.object(purchase_order_pricing, "_resolve_document_candidates", return_value={"POI-ROW-LEAK": candidate}),
+            mock.patch.object(purchase_order_pricing, "can_manage_purchase_price_approvals", return_value=True),
+        ):
+            purchase_order_pricing.validate_purchase_order_buying_prices(doc)
+
+        self.assertEqual(row.custom_source_buying_price_list, "BUY-INSTALL")
+        self.assertEqual(row.custom_source_item_price, "IP-INSTALL")
+        self.assertEqual(row.rate, 1085)
 
     def test_before_submit_guard_blocks_pending_decision(self):
         row = self.row(

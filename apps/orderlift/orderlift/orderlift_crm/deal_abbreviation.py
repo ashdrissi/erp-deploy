@@ -345,7 +345,7 @@ def _upstream_references(doc) -> list[tuple[str, str]]:
     if doctype == "Sales Order":
         for row in _rows(doc, "items"):
             _append_reference(references, "Quotation", _value(row, "prevdoc_docname"))
-        _append_reference(references, "Project", _value(doc, "project") or _value(doc, "custom_installation_project"))
+        _append_reference(references, "Project", _value(doc, "project"))
     elif doctype == "Project":
         _append_reference(references, "Sales Order", _value(doc, "sales_order"))
     elif doctype == "Material Request":

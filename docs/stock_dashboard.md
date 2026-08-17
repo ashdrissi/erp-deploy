@@ -16,8 +16,8 @@ It also includes confirmed-order stock planning. See `docs/stock_planning.md`.
 Use the toolbar to filter by warehouse, item group, and stock status, or to sort by stock quantities and item identity.
 
 - `On Hand`: current physical quantity in Bin.
-- `Available After SO`: on-hand quantity minus open Sales Order reservations.
-- `Open SO Qty`: quantity reserved by Sales Orders.
+- `Available After SO`: on-hand quantity minus open confirmed demand.
+- `Open SO Qty`: open confirmed demand. Submitted Sales Order rows are used until the Sales Order has a current submitted Technical List revision; after that, the approved Technical List execution quantities are used.
 - `Reserved Stock`: physically reserved stock.
 - `Incoming`: ordered quantity expected into stock.
 
@@ -38,6 +38,6 @@ Quantity and movement data follow normal stock and warehouse permissions. Valuat
 
 ## Confirmed Order Stock Planning
 
-The planning card shows company-scoped `Stock Demand Plan` rows generated from submitted Sales Orders. Incoming Purchase Order quantity is allocated once by delivery priority, and protection actions create Pick Lists. The planner does not create Stock Reservation Entries directly.
+The planning card shows company-scoped `Stock Demand Plan` rows generated from effective confirmed demand. Submitted Sales Order rows are used until a current submitted Technical List revision exists, then the approved Technical List execution rows replace the Sales Order quantities. Incoming Purchase Order quantity is allocated once by delivery priority, and protection actions create Pick Lists. The planner does not create Stock Reservation Entries directly.
 
 Status colors are green for covered/reserved, blue for incoming coverage, gray for not due, orange for due/partial risk, and red for late or uncovered demand. Stock Managers can open `/app/stock-planning-settings-control` or run recalculation from the dashboard.

@@ -92,10 +92,10 @@ class TestOrderliftGuards(unittest.TestCase):
         orderlift_guards.user_can_access_all_companies = lambda user=None: False
         clause = orderlift_guards.annex_document_query()
         self.assertIsNotNone(clause)
-        self.assertIn("company", clause)
-        self.assertIn("OMD", clause)
+        self.assertIn("name is null", clause)
 
     def test_annex_document_query_all_access(self):
+        frappe_stub.session.user = "Administrator"
         orderlift_guards.user_can_access_all_companies = lambda user=None: True
         self.assertIsNone(orderlift_guards.annex_document_query())
 
