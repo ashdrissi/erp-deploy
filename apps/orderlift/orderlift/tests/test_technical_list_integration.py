@@ -57,6 +57,15 @@ class TestTechnicalListIntegration(unittest.TestCase):
             hooks.doctype_js["Project"],
         )
 
+    def test_material_request_qty_limit_mixin_is_wired(self):
+        """Rule 20: without this, ERPNext caps a Material Request at the sold quantity
+        and a revision that raised a quantity cannot be procured at all. Purchase Order
+        is deliberately absent -- its status_updater links to Material Request Item, so
+        it has no Sales-Order-qty guard to relax."""
+        mixin = "orderlift.orderlift_logistics.technical_qty_limit.OrderliftTechnicalQtyLimitMixin"
+        self.assertEqual(hooks.extend_doctype_class["Material Request"], mixin)
+        self.assertNotIn("Purchase Order", hooks.extend_doctype_class)
+
     def test_migration_installs_company_policy_and_lineage(self):
         self.assertIn("orderlift.orderlift_sig.technical_list.after_migrate", hooks.after_migrate)
         self.assertIn(

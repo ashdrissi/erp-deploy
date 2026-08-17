@@ -580,6 +580,7 @@ doc_events = {
         "validate": [
             "orderlift.company_scope.apply_company_scope",
             "orderlift.orderlift_finance.cash_flow_setup.protect_forecast_finality",
+            "orderlift.orderlift_crm.project_linkage.block_duplicate_project_for_sales_order",
         ],
         # Stitch the source opportunity's Sales Orders to this project
         "after_insert": [
@@ -657,7 +658,7 @@ doctype_js = {
         "public/js/dimensioning_document_tool_20260724d.js",
     ],
     "Sales Order": [
-        "public/js/sales_order_logistics_20260425d.js",
+        "public/js/sales_order_logistics_20260425g.js",
         "public/js/sales_order_pricing_visibility_20260803a.js",
         "public/js/payment_schedule_sync_20260724a.js",
         "public/js/generic_ttc_field_sync_20260805b.js",
@@ -724,6 +725,9 @@ extend_doctype_class = {
     "Customer": "orderlift.sales.utils.customer_tier.CustomerGroupFallbackMixin",
     "Contract": "orderlift.crm.extensions.contract.ContractDateValidationMixin",
     "Pick List": "orderlift.orderlift_logistics.pick_list_override.OrderliftPickListMixin",
+    # Material Request only: Purchase Order's status_updater links to Material Request
+    # Item, not Sales Order Item, so it has no Sales-Order-qty guard to relax.
+    "Material Request": "orderlift.orderlift_logistics.technical_qty_limit.OrderliftTechnicalQtyLimitMixin",
 }
 
 override_doctype_class = {
@@ -1001,6 +1005,7 @@ jinja = {
 override_whitelisted_methods = {
     "erpnext.stock.get_item_details.get_item_details": "orderlift.orderlift_sales.utils.item_details_guard.get_item_details",
     "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry": "orderlift.orderlift_finance.payment_entry_currency.get_payment_entry",
+    "erpnext.selling.doctype.sales_order.sales_order.make_project": "orderlift.orderlift_crm.project_linkage.override_sales_order_make_project",
 }
 
 # ---------------------------------------------------------

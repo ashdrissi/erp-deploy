@@ -165,6 +165,31 @@ Pick List.
     where Pick List deliveries did not count toward the delivery cap (spec rule 8
     requires each route to enforce rule 1 independently).
 
+## Rule 16 extends to procurement
+
+Agreed 2026-08-17, after a live Material Request was refused.
+
+20. **A Material Request row carrying technical lineage is exempt from ERPNext's
+    Sales-Order-qty overflow guard.** The native guard caps a Material Request row at its
+    linked `Sales Order Item.stock_qty` (`status_updater`, joining on `sales_order_item`).
+    Rule 16 already made the approved execution qty the cap for policy-covered Sales
+    Orders, and rule 5 makes raising it an engineering decision that does *not* amend the
+    Sales Order — so without this exemption rule 5 is unusable for procurement: a revision
+    that raises a quantity above the sold quantity cannot be requested at all.
+
+    Observed live: `SAL-ORD-2026-00139~TESTOPP` item `ECL-00001` sold 4, revision
+    `TLR-11397` approved 7, and `MAT-MR-2026-00042~TESTOPP` was refused on submit as "over
+    limit by Stock Qty 3.0".
+
+    These rows are not uncapped. `validate_procurement_document` holds them to the approved
+    execution qty through the procurement pool before the native guard ever runs — the cap
+    moves to the correct document rather than disappearing. Rows with no lineage stamp keep
+    the native guard exactly, and non-policy companies are untouched.
+
+    **Purchase Order needs no equivalent change.** Its `status_updater` links only to
+    `Material Request Item`, so a direct Purchase Order has no Sales-Order-qty guard to
+    relax. Widening the mixin to it would be dead code.
+
 ## Invoicing and closure rules
 
 Agreed 2026-08-17, after the Pick List work landed.
