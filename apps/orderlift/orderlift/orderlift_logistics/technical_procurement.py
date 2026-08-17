@@ -1122,6 +1122,59 @@ def _allocated_stock_qty(revision_name, *, exclude_doctype="", exclude_name=""):
     return totals
 
 
+def _delivered_stock_qty(technical_list, *, exclude_doctype="", exclude_name=""):
+    """Stock qty already delivered per allocation key for a whole Technical List.
+
+    Anchored on custom_technical_list rather than the revision: the Technical List
+    is stable for the life of the Sales Order while revisions are immutable
+    snapshots, so counting per revision would reset delivered totals to zero every
+    time engineering approves a new one. It is also anchored on the Technical List
+    rather than against_sales_order because engineering additions carry no Sales
+    Order link and would otherwise escape the cap entirely.
+    """
+    totals = defaultdict(float)
+    meta = _meta("Delivery Note Item")
+    if not meta or not meta.get_field("custom_technical_list"):
+        return totals
+    conditions = []
+    parameters = [technical_list]
+    if exclude_doctype == "Delivery Note" and exclude_name:
+        conditions.append("parent_doc.name != %s")
+        parameters.append(exclude_name)
+    extra = "".join(f" AND {condition}" for condition in conditions)
+    rows = frappe.db.sql(
+        f"""
+        SELECT child.so_detail AS sales_order_item,
+               child.item_code,
+               child.qty,
+               child.stock_qty,
+               child.conversion_factor
+          FROM `tabDelivery Note Item` child
+          INNER JOIN `tabDelivery Note` parent_doc ON parent_doc.name = child.parent
+         WHERE parent_doc.docstatus < 2
+           AND child.custom_technical_list = %s{extra}
+        """,
+        tuple(parameters),
+        as_dict=True,
+    )
+    for row in rows:
+        totals[_allocation_key(row)] += _row_stock_qty(row)
+    return totals
+
+
+def _delivery_remaining_by_line(revision):
+    """Remaining deliverable stock qty per execution-relevant revision line."""
+    delivered = _delivered_stock_qty(revision.technical_list)
+    result = {}
+    for line in revision.get("items") or []:
+        if not cint(line.execution_relevant):
+            continue
+        result[line.name] = max(
+            _line_stock_qty(line) - delivered.get(_allocation_key(line), 0), 0
+        )
+    return result
+
+
 def _normalise_selection(selected_row_ids, quantities=None):
     selected = _parse_json(selected_row_ids)
     parsed_quantities = _parse_json(quantities)

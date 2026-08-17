@@ -322,6 +322,57 @@ class TestTechnicalProcurement(unittest.TestCase):
         # Only the allocation pool may be keyed off the allocation registry.
         self.assertEqual(source.count("ALLOCATION_ITEM_DOCTYPES"), 2)
 
+    def test_delivery_remaining_survives_a_new_revision(self):
+        """Counting delivered per revision would reset the total to zero whenever a
+        revision is approved, making the hard cap bypassable by the very mechanism
+        that is supposed to raise it. Delivered totals are keyed per Sales Order
+        line across the whole Technical List."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        delivered = source.split("def _delivered_stock_qty", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("child.custom_technical_list = %s", delivered)
+        self.assertNotIn("custom_technical_revision = %s", delivered)
+        self.assertIn("parent_doc.docstatus < 2", delivered)
+
+    def test_delivery_remaining_subtracts_delivered_from_execution_qty(self):
+        revision = AttrDict(
+            name="TLR-2",
+            technical_list="TL-1",
+            items=[
+                AttrDict(name="R1", sales_order_item="SOI-1", item_code="I-1",
+                         execution_stock_qty=12, execution_relevant=1),
+                AttrDict(name="R2", sales_order_item="", item_code="I-2",
+                         execution_stock_qty=5, execution_relevant=1),
+                AttrDict(name="R3", sales_order_item="SOI-3", item_code="I-3",
+                         execution_stock_qty=9, execution_relevant=0),
+            ],
+        )
+        with patch.object(
+            technical_procurement,
+            "_delivered_stock_qty",
+            return_value={"SOI-1": 8, "item::I-2": 5},
+        ):
+            remaining = technical_procurement._delivery_remaining_by_line(revision)
+
+        self.assertEqual(remaining["R1"], 4)      # 12 approved - 8 delivered
+        self.assertEqual(remaining["R2"], 0)      # added line, fully delivered
+        self.assertNotIn("R3", remaining)         # not execution relevant
+
+    def test_delivery_remaining_never_goes_negative(self):
+        """A revision that lowers execution qty below what already shipped must
+        report zero remaining, not a negative that would read as credit."""
+        revision = AttrDict(
+            name="TLR-3",
+            technical_list="TL-1",
+            items=[AttrDict(name="R1", sales_order_item="SOI-1", item_code="I-1",
+                            execution_stock_qty=6, execution_relevant=1)],
+        )
+        with patch.object(
+            technical_procurement, "_delivered_stock_qty", return_value={"SOI-1": 10}
+        ):
+            self.assertEqual(
+                technical_procurement._delivery_remaining_by_line(revision)["R1"], 0
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
