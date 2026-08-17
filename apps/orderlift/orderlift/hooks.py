@@ -414,7 +414,10 @@ doc_events = {
         "on_cancel": "orderlift.orderlift_logistics.stock_planning.queue_supply_recalculation",
     },
     "Pick List": {
-        "before_validate": "orderlift.orderlift_logistics.technical_procurement.validate_operational_document",
+        "before_validate": [
+            "orderlift.orderlift_logistics.technical_procurement.validate_procurement_document",
+            "orderlift.orderlift_logistics.technical_procurement.validate_operational_document",
+        ],
         "on_submit": [
             "orderlift.orderlift_logistics.utils.pick_list_reservation.reserve_submitted_pick_list",
             "orderlift.orderlift_logistics.stock_planning.queue_supply_recalculation",

@@ -508,14 +508,6 @@ def validate_procurement_document(doc, method=None) -> None:
                 )
             continue
 
-        # Rows sourced from a Pick List are allowed through without lineage until
-        # Pick Lists become revision-aware (Plan 2). The Pick List is already gated
-        # by validate_operational_document, and delivery_note_reservation_guard
-        # forces this route for reserved stock, so blocking here would make
-        # reserved-stock deliveries impossible. Remove this skip in Plan 2.
-        if doctype == "Delivery Note" and _text(_get(row, "pick_list_item")):
-            continue
-
         source = _procurement_source(doc, row)
         if source and _technical_policy_applies(source):
             _require_current_approved_revision(source, doctype)

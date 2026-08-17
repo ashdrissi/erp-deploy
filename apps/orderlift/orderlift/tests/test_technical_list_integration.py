@@ -24,7 +24,12 @@ class TestTechnicalListIntegration(unittest.TestCase):
             hooks.doc_events["Supplier Quotation"]["before_validate"],
         )
         operational_guard = "orderlift.orderlift_logistics.technical_procurement.validate_operational_document"
-        self.assertEqual(hooks.doc_events["Pick List"]["before_validate"], operational_guard)
+        # Pick Lists now carry row-level lineage too, so they get the same pair of
+        # validators as Delivery Note, in the same order.
+        pick_list = hooks.doc_events["Pick List"]["before_validate"]
+        self.assertIn(guard, pick_list)
+        self.assertIn(operational_guard, pick_list)
+        self.assertLess(pick_list.index(guard), pick_list.index(operational_guard))
         self.assertIn(operational_guard, hooks.doc_events["Delivery Note"]["before_validate"])
         # Delivery Note now carries row-level lineage validation, not just the
         # "an approved revision must exist" gate.

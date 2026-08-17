@@ -1187,14 +1187,39 @@ class TestTechnicalProcurement(unittest.TestCase):
             body,
         )
 
-    def test_pick_list_sourced_delivery_rows_are_not_blocked_yet(self):
-        """delivery_note_reservation_guard forces the Pick List route for reserved
-        stock, and Pick Lists carry no lineage until Plan 2, so blocking these rows
-        would make reserved-stock delivery impossible."""
+    def test_a_pick_list_sourced_delivery_row_now_needs_lineage(self):
+        """Rule 17: the interim allowance let a Delivery Note row sourced from a Pick
+        List through without lineage, because Pick Lists had none. Pick Lists are now
+        revision-aware, so the row has no excuse — and leaving the skip in place kept
+        the gap where the approved quantity could be shipped twice, once via the Pick
+        List route and once via the technical route.
+
+        The inverse of test_pick_list_sourced_delivery_rows_are_not_blocked_yet, which
+        this replaces: the behaviour it protected is the behaviour rule 17 removes."""
+        row = AttrDict(
+            idx=1,
+            item_code="I-1",
+            qty=1,
+            stock_qty=1,
+            pick_list_item="PL-1-ROW-1",
+            custom_technical_revision="",
+            custom_technical_revision_item="",
+        )
+        doc = AttrDict(doctype="Delivery Note", name="DN-1", docstatus=0, items=[row])
+        with patch.object(
+            technical_procurement, "_procurement_source", return_value=AttrDict(name="SO-1")
+        ), patch.object(
+            technical_procurement, "_technical_policy_applies", return_value=True
+        ), patch.object(
+            technical_procurement, "_require_current_approved_revision"
+        ):
+            with self.assertRaisesRegex(ValueError, "from the approved Technical List"):
+                technical_procurement.validate_procurement_document(doc)
+
+    def test_the_interim_pick_list_allowance_is_gone(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn('_text(_get(row, "pick_list_item"))', body)
-        self.assertIn("Remove this skip in Plan 2.", body)
+        self.assertNotIn('_text(_get(row, "pick_list_item"))', source)
+        self.assertNotIn("Remove this skip in Plan 2.", source)
 
     def _project_check_row(self, *, row_meta):
         source_line = AttrDict(
