@@ -410,6 +410,14 @@ def validate_procurement_document(doc, method=None) -> None:
                 )
             continue
 
+        # Rows sourced from a Pick List are allowed through without lineage until
+        # Pick Lists become revision-aware (Plan 2). The Pick List is already gated
+        # by validate_operational_document, and delivery_note_reservation_guard
+        # forces this route for reserved stock, so blocking here would make
+        # reserved-stock deliveries impossible. Remove this skip in Plan 2.
+        if doctype == "Delivery Note" and _text(_get(row, "pick_list_item")):
+            continue
+
         source = _procurement_source(doc, row)
         if source and _technical_policy_applies(source):
             _require_current_approved_revision(source, doctype)
@@ -418,6 +426,31 @@ def validate_procurement_document(doc, method=None) -> None:
                     "Row {0}: create {1} from the approved Technical List instead of directly from the Sales Order."
                 ).format(_row_label(row), doctype)
             )
+
+    if doctype == "Delivery Note":
+        # Delivery is capped by the delivery pool, not the procurement pool:
+        # _is_root_allocation is False for Delivery Note, so the block below would
+        # leave delivery with no cumulative cap at all.
+        delivered_by_list = {}
+        for revision_name, revision_item in line_totals:
+            revision = revisions[revision_name]
+            technical_list = _text(revision.technical_list)
+            if technical_list not in delivered_by_list:
+                delivered_by_list[technical_list] = _delivered_stock_qty(
+                    technical_list,
+                    exclude_doctype=doctype,
+                    exclude_name=_text(_get(doc, "name")),
+                )
+            source_line = _revision_lines(revision)[revision_item]
+            key = _allocation_key(source_line)
+            existing = delivered_by_list[technical_list].get(key, 0)
+            if existing + line_totals[(revision_name, revision_item)] > _line_stock_qty(source_line) + 1e-9:
+                frappe.throw(
+                    _("Row {0}: quantity exceeds the remaining delivery quantity.").format(
+                        _row_label(source_line)
+                    )
+                )
+        return
 
     allocated_by_revision = {}
     for revision_name, revision_item in root_totals:
@@ -1035,7 +1068,9 @@ def _validate_target_row(doc, row, revision, source_line):
             )
         )
     project = _target_project(doc, row)
-    if revision.project and project != revision.project:
+    # Only enforce when the target actually carries a project value: some stock
+    # doctypes have no project field at all, and an absent value is not a mismatch.
+    if revision.project and project and project != revision.project:
         frappe.throw(_("Row {0}: Project does not match the technical revision.").format(_row_label(row)))
     sales_order = _target_sales_order(row)
     if sales_order and sales_order != revision.sales_order:
@@ -1068,12 +1103,14 @@ def _procurement_source(doc, row):
 
 
 def _target_sales_order(row):
-    sales_order = _text(_get(row, "sales_order"))
-    sales_order_item = _text(_get(row, "sales_order_item"))
-    if not sales_order and sales_order_item:
-        sales_order = _text(frappe.db.get_value("Sales Order Item", sales_order_item, "parent"))
+    # Delivery Note Item uses against_sales_order/so_detail; the procurement
+    # doctypes use sales_order/sales_order_item. _operational_sales_order already
+    # normalises both, so delegate rather than duplicating the fallbacks.
+    sales_order = _operational_sales_order(row)
+    if sales_order:
+        return sales_order
     material_request_item = _text(_get(row, "material_request_item"))
-    if not sales_order and material_request_item:
+    if material_request_item:
         meta = _meta("Material Request Item")
         fields = [name for name in ("sales_order", "sales_order_item") if meta and meta.get_field(name)]
         source = (

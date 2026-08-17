@@ -480,6 +480,64 @@ class TestTechnicalProcurement(unittest.TestCase):
                 technical_procurement._delivery_remaining_by_line(revision)["R1"], 0
             )
 
+    def test_target_sales_order_resolves_delivery_note_rows(self):
+        """Delivery Note Item stores the link as against_sales_order/so_detail.
+        Without this the native block cannot find the source Sales Order and every
+        Opportunity-origin Delivery Note would pass unchecked."""
+        with patch.object(
+            frappe_stub.db, "get_value", return_value="SO-1"
+        ):
+            self.assertEqual(
+                technical_procurement._target_sales_order({"so_detail": "SOI-1"}),
+                "SO-1",
+            )
+        self.assertEqual(
+            technical_procurement._target_sales_order(
+                {"against_sales_order": "SO-2", "so_detail": ""}
+            ),
+            "SO-2",
+        )
+
+    def test_delivery_cumulative_cap_uses_the_delivery_pool(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("_delivered_stock_qty(", body)
+        self.assertIn("exceeds the remaining delivery quantity", body)
+
+    def test_native_delivery_note_from_sales_order_is_blocked(self):
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn(
+            "create {1} from the approved Technical List instead of directly from the Sales Order.",
+            body,
+        )
+
+    def test_pick_list_sourced_delivery_rows_are_not_blocked_yet(self):
+        """delivery_note_reservation_guard forces the Pick List route for reserved
+        stock, and Pick Lists carry no lineage until Plan 2, so blocking these rows
+        would make reserved-stock delivery impossible."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('_text(_get(row, "pick_list_item"))', body)
+        self.assertIn("Remove this skip in Plan 2.", body)
+
+    def test_project_check_tolerates_a_missing_project(self):
+        """Some stock doctypes have no project field at all; an absent value is not
+        a mismatch and must not block the document."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def _validate_target_row", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn(
+            "if revision.project and project and project != revision.project:", body
+        )
+
+    def test_procurement_cumulative_cap_stays_reachable_for_other_doctypes(self):
+        """The delivery branch ends in `return`; the procurement pool below it must
+        still run for Material Request and Purchase Order."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("allocated_by_revision = {}", body)
+        self.assertLess(body.index('if doctype == "Delivery Note":'), body.index("allocated_by_revision = {}"))
+
 
 if __name__ == "__main__":
     unittest.main()
