@@ -56,7 +56,7 @@ document_stub.Document = _StubDocument
 sys.modules.setdefault("frappe.model", model_stub)
 sys.modules.setdefault("frappe.model.document", document_stub)
 
-from orderlift.orderlift_logistics import technical_procurement
+from orderlift.orderlift_logistics import technical_allocation, technical_procurement
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -206,16 +206,16 @@ class TestTechnicalProcurement(unittest.TestCase):
         one get_available_actions filters with."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def _create_from_revision", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("_remaining_for_adapter(adapter_key, revision, {})", body)
-        self.assertNotIn("_delivery_remaining_by_line(", body)
+        self.assertIn("remaining_for_adapter(adapter_key, revision, {})", body)
+        self.assertNotIn("delivery_remaining_by_line(", body)
         self.assertEqual(
-            technical_procurement.ADAPTER_POOLS["revision_to_delivery_note"], "delivery"
+            technical_allocation.ADAPTER_POOLS["revision_to_delivery_note"], "delivery"
         )
         self.assertEqual(
-            technical_procurement.ADAPTER_POOLS["revision_to_material_request"], "procurement"
+            technical_allocation.ADAPTER_POOLS["revision_to_material_request"], "procurement"
         )
         self.assertEqual(
-            technical_procurement.ADAPTER_POOLS["revision_to_purchase_order"], "procurement"
+            technical_allocation.ADAPTER_POOLS["revision_to_purchase_order"], "procurement"
         )
 
     def test_create_delivery_note_is_whitelisted_and_takes_no_supplier(self):
@@ -288,9 +288,9 @@ class TestTechnicalProcurement(unittest.TestCase):
 
     def test_revision_quantity_uses_execution_stock_quantity(self):
         line = AttrDict(execution_qty=3, execution_stock_qty=12, conversion_factor=4)
-        self.assertEqual(technical_procurement._line_stock_qty(line), 12)
+        self.assertEqual(technical_allocation.line_stock_qty(line), 12)
         self.assertEqual(
-            technical_procurement._row_stock_qty(
+            technical_allocation.row_stock_qty(
                 {"qty": 3, "stock_qty": 0, "conversion_factor": 4}
             ),
             12,
@@ -298,29 +298,29 @@ class TestTechnicalProcurement(unittest.TestCase):
 
     def test_allocation_key_prefers_sales_order_item(self):
         self.assertEqual(
-            technical_procurement._allocation_key(
+            technical_allocation.allocation_key(
                 {"sales_order_item": "SOI-1", "item_code": "I-1"}
             ),
             "SOI-1",
         )
         self.assertEqual(
-            technical_procurement._allocation_key({"sales_order_item": "", "item_code": "I-1"}),
+            technical_allocation.allocation_key({"sales_order_item": "", "item_code": "I-1"}),
             "item::I-1",
         )
 
     def test_only_material_requests_and_direct_purchase_orders_reserve_quantity(self):
         self.assertTrue(
-            technical_procurement._is_root_allocation(
+            technical_allocation.is_root_allocation(
                 {"doctype": "Material Request"}, {"material_request_item": ""}
             )
         )
         self.assertTrue(
-            technical_procurement._is_root_allocation(
+            technical_allocation.is_root_allocation(
                 {"doctype": "Purchase Order"}, {"material_request_item": ""}
             )
         )
         self.assertFalse(
-            technical_procurement._is_root_allocation(
+            technical_allocation.is_root_allocation(
                 {"doctype": "Purchase Order"}, {"material_request_item": "MRI-1"}
             )
         )
@@ -453,8 +453,10 @@ class TestTechnicalProcurement(unittest.TestCase):
             self.assertIn(fieldname, source)
         self.assertIn("_recalculate_approval_hash", source)
         self.assertIn("parent_doc.docstatus < 2", source)
-        self.assertIn("AND child.sales_order = %s{extra}", source)
-        self.assertIn("def _allocation_key", source)
+        allocation_source = (APP_ROOT / "orderlift_logistics" / "technical_allocation.py").read_text()
+        self.assertIn("parent_doc.docstatus < 2", allocation_source)
+        self.assertIn("AND child.sales_order = %s{extra}", allocation_source)
+        self.assertIn("def allocation_key", allocation_source)
         self.assertNotIn('"custom_technical_revision_item", "qty"', source)
         self.assertIn("FOR UPDATE", source)
         self.assertIn("target.insert()", source)
@@ -467,13 +469,13 @@ class TestTechnicalProcurement(unittest.TestCase):
         allocation pool: _allocated_stock_qty joins on child.sales_order, a column
         Delivery Note Item does not have, and deliveries are not procurement."""
         self.assertEqual(
-            technical_procurement.ALLOCATION_ITEM_DOCTYPES,
+            technical_allocation.ALLOCATION_ITEM_DOCTYPES,
             {
                 "Material Request": "Material Request Item",
                 "Purchase Order": "Purchase Order Item",
             },
         )
-        self.assertNotIn("Delivery Note", technical_procurement.ALLOCATION_ITEM_DOCTYPES)
+        self.assertNotIn("Delivery Note", technical_allocation.ALLOCATION_ITEM_DOCTYPES)
         self.assertFalse(hasattr(technical_procurement, "ROOT_TARGET_ITEM_DOCTYPES"))
 
     def test_lineage_lookups_use_the_lineage_registry_not_the_allocation_registry(self):
@@ -481,17 +483,20 @@ class TestTechnicalProcurement(unittest.TestCase):
         # These three read a child doctype for lineage purposes and must resolve
         # Delivery Note, so they cannot read the allocation registry.
         self.assertIn("PROCUREMENT_ITEM_DOCTYPES.get(target_doctype)", source)
-        self.assertIn("ALLOCATION_ITEM_DOCTYPES.items()", source)
-        # Only the allocation pool may be keyed off the allocation registry.
-        self.assertEqual(source.count("ALLOCATION_ITEM_DOCTYPES"), 2)
+        self.assertNotIn("ALLOCATION_ITEM_DOCTYPES", source)
+        # Only the allocation pool may be keyed off the allocation registry, and it
+        # now lives in technical_allocation: one definition, one reader.
+        allocation_source = (APP_ROOT / "orderlift_logistics" / "technical_allocation.py").read_text()
+        self.assertIn("ALLOCATION_ITEM_DOCTYPES.items()", allocation_source)
+        self.assertEqual(allocation_source.count("ALLOCATION_ITEM_DOCTYPES"), 2)
 
     def test_delivery_remaining_survives_a_new_revision(self):
         """Counting delivered per revision would reset the total to zero whenever a
         revision is approved, making the hard cap bypassable by the very mechanism
         that is supposed to raise it. Delivered totals are keyed per Sales Order
         line across the whole Technical List."""
-        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        delivered = source.split("def _delivered_stock_qty", 1)[1].split("\ndef ", 1)[0]
+        source = (APP_ROOT / "orderlift_logistics" / "technical_allocation.py").read_text()
+        delivered = source.split("def delivered_stock_qty", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("child.custom_technical_list = %s", delivered)
         self.assertNotIn("custom_technical_revision = %s", delivered)
         self.assertIn("parent_doc.docstatus < 2", delivered)
@@ -510,11 +515,11 @@ class TestTechnicalProcurement(unittest.TestCase):
             ],
         )
         with patch.object(
-            technical_procurement,
-            "_delivered_stock_qty",
+            technical_allocation,
+            "delivered_stock_qty",
             return_value={"SOI-1": 8, "item::I-2": 5},
         ):
-            remaining = technical_procurement._delivery_remaining_by_line(revision)
+            remaining = technical_allocation.delivery_remaining_by_line(revision)
 
         self.assertEqual(remaining["R1"], 4)      # 12 approved - 8 delivered
         self.assertEqual(remaining["R2"], 0)      # added line, fully delivered
@@ -530,10 +535,10 @@ class TestTechnicalProcurement(unittest.TestCase):
                             execution_stock_qty=6, execution_relevant=1)],
         )
         with patch.object(
-            technical_procurement, "_delivered_stock_qty", return_value={"SOI-1": 10}
+            technical_allocation, "delivered_stock_qty", return_value={"SOI-1": 10}
         ):
             self.assertEqual(
-                technical_procurement._delivery_remaining_by_line(revision)["R1"], 0
+                technical_allocation.delivery_remaining_by_line(revision)["R1"], 0
             )
 
     def test_target_sales_order_resolves_delivery_note_rows(self):
@@ -557,7 +562,7 @@ class TestTechnicalProcurement(unittest.TestCase):
     def test_delivery_cumulative_cap_uses_the_delivery_pool(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("_delivered_stock_qty(", body)
+        self.assertIn("delivered_stock_qty(", body)
         self.assertIn("exceeds the remaining delivery quantity", body)
 
     def test_delivery_cap_aggregates_lines_sharing_an_allocation_key(self):
@@ -570,7 +575,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         delivery = body.split('if doctype == "Delivery Note":', 1)[1]
         self.assertIn("requested[key] += total", delivery)
         # The budget comes from the whole revision, not from this document's rows.
-        self.assertIn("_delivery_budget_by_key(revision)", delivery)
+        self.assertIn("delivery_budget_by_key(revision)", delivery)
         # The cap must be evaluated once per key, after aggregation -- not inside
         # the loop that walks revision lines.
         self.assertLess(
@@ -646,9 +651,9 @@ class TestTechnicalProcurement(unittest.TestCase):
         ), patch.object(
             technical_procurement, "_route_actions", return_value=steps
         ), patch.object(
-            technical_procurement, "_remaining_by_line", return_value={}
+            technical_allocation, "remaining_by_line", return_value={}
         ) as procurement_pool, patch.object(
-            technical_procurement, "_delivery_remaining_by_line", return_value={"R1": 5}
+            technical_allocation, "delivery_remaining_by_line", return_value={"R1": 5}
         ) as delivery_pool:
             payload = technical_procurement.get_available_actions("Sales Order", "SO-1")
 
@@ -739,7 +744,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         ), patch.object(
             technical_procurement, "_validate_source_line"
         ), patch.object(
-            technical_procurement, "_delivered_stock_qty", return_value={}
+            technical_procurement, "delivered_stock_qty", return_value={}
         ):
             technical_procurement.validate_procurement_document(doc)
 
@@ -757,7 +762,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         ), patch.object(
             technical_procurement, "_validate_source_line"
         ), patch.object(
-            technical_procurement, "_delivered_stock_qty", return_value={}
+            technical_procurement, "delivered_stock_qty", return_value={}
         ):
             with self.assertRaisesRegex(ValueError, "must be greater than zero"):
                 technical_procurement.validate_procurement_document(doc)
@@ -774,8 +779,8 @@ class TestTechnicalProcurement(unittest.TestCase):
     def test_delivered_totals_keep_counting_return_rows(self):
         """A return's negative rows must stay in the delivered pool: that is what
         credits the quantity back so the line can be delivered again."""
-        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        delivered = source.split("def _delivered_stock_qty", 1)[1].split("\ndef ", 1)[0]
+        source = (APP_ROOT / "orderlift_logistics" / "technical_allocation.py").read_text()
+        delivered = source.split("def delivered_stock_qty", 1)[1].split("\ndef ", 1)[0]
         self.assertNotIn("parent_doc.is_return", delivered)
         self.assertNotIn("child.is_return", delivered)
         self.assertIn("credits the quantity back", delivered)
@@ -858,7 +863,7 @@ class TestTechnicalProcurement(unittest.TestCase):
         ), patch.object(
             technical_procurement, "_validate_source_line"
         ), patch.object(
-            technical_procurement, "_delivered_stock_qty", return_value=delivered
+            technical_procurement, "delivered_stock_qty", return_value=delivered
         ):
             technical_procurement.validate_procurement_document(doc)
 
@@ -894,18 +899,18 @@ class TestTechnicalProcurement(unittest.TestCase):
         subtracted in full from every line sharing the key."""
         revision = self._shared_key_revision()
         with patch.object(
-            technical_procurement, "_delivered_stock_qty", return_value={"item::I-2": 3}
+            technical_allocation, "delivered_stock_qty", return_value={"item::I-2": 3}
         ):
-            remaining = technical_procurement._delivery_remaining_by_line(revision)
+            remaining = technical_allocation.delivery_remaining_by_line(revision)
 
         self.assertEqual(remaining["R1"], 3)
         self.assertEqual(remaining["R2"], 0)
         self.assertEqual(sum(remaining.values()), 3)
 
         with patch.object(
-            technical_procurement, "_delivered_stock_qty", return_value={"item::I-2": 4}
+            technical_allocation, "delivered_stock_qty", return_value={"item::I-2": 4}
         ):
-            remaining = technical_procurement._delivery_remaining_by_line(revision)
+            remaining = technical_allocation.delivery_remaining_by_line(revision)
         self.assertEqual(remaining["R1"], 2)
         self.assertEqual(remaining["R2"], 0)
 
@@ -921,7 +926,7 @@ class TestTechnicalProcurement(unittest.TestCase):
             )
         )
         self.assertEqual(
-            dict(technical_procurement._delivery_budget_by_key(revision)),
+            dict(technical_allocation.delivery_budget_by_key(revision)),
             {"item::I-2": 6},
         )
 
@@ -1008,40 +1013,61 @@ class TestTechnicalProcurement(unittest.TestCase):
         self.assertIn("allocated_by_revision = {}", body)
         self.assertLess(body.index('if doctype == "Delivery Note":'), body.index("allocated_by_revision = {}"))
 
+    def test_allocation_helpers_live_in_their_own_module(self):
+        from orderlift.orderlift_logistics import technical_allocation
+
+        for name in (
+            "ALLOCATION_ITEM_DOCTYPES",
+            "ADAPTER_POOLS",
+            "allocation_key",
+            "line_stock_qty",
+            "row_stock_qty",
+            "allocated_stock_qty",
+            "delivered_stock_qty",
+            "delivery_budget_by_key",
+            "delivery_remaining_by_line",
+            "remaining_by_line",
+            "remaining_for_adapter",
+        ):
+            self.assertTrue(hasattr(technical_allocation, name), name)
+
     def test_pool_selection_is_expressed_once_for_every_adapter(self):
         """The UI payload and the adapter must agree on remaining quantity. Two
         separate expressions of the same choice is how they drift, and a mismatch
         offers the user a quantity the adapter then refuses."""
-        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        self.assertIn("def _remaining_for_adapter(", source)
-        # Exactly one definition and two call sites.
-        self.assertEqual(source.count("_remaining_for_adapter("), 3)
+        allocation_source = (APP_ROOT / "orderlift_logistics" / "technical_allocation.py").read_text()
+        procurement_source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        self.assertIn("def remaining_for_adapter(", allocation_source)
+        # Exactly one definition (in technical_allocation) and two call sites (the
+        # UI payload and the adapter, both in technical_procurement).
+        self.assertEqual(allocation_source.count("remaining_for_adapter("), 1)
+        self.assertEqual(procurement_source.count("remaining_for_adapter("), 2)
 
     def test_remaining_for_adapter_maps_each_adapter_to_its_pool(self):
         calls = []
         with patch.object(
-            technical_procurement, "_remaining_by_line",
+            technical_allocation, "remaining_by_line",
             side_effect=lambda r: calls.append("procurement") or {"R1": 1},
         ), patch.object(
-            technical_procurement, "_delivery_remaining_by_line",
+            technical_allocation, "delivery_remaining_by_line",
             side_effect=lambda r: calls.append("delivery") or {"R1": 2},
         ):
             revision = revision_stub(name="TLR-1", technical_list="TL-1", items=[])
             cache = {}
             self.assertEqual(
-                technical_procurement._remaining_for_adapter(
+                technical_allocation.remaining_for_adapter(
                     "revision_to_delivery_note", revision, cache
                 ),
                 {"R1": 2},
             )
             self.assertEqual(
-                technical_procurement._remaining_for_adapter(
+                technical_allocation.remaining_for_adapter(
                     "revision_to_material_request", revision, cache
                 ),
                 {"R1": 1},
             )
             # Cached: a second lookup must not re-run the SQL-backed pool.
-            technical_procurement._remaining_for_adapter(
+            technical_allocation.remaining_for_adapter(
                 "revision_to_delivery_note", revision, cache
             )
         self.assertEqual(calls, ["delivery", "procurement"])
