@@ -64,11 +64,16 @@ def on_sales_order_submit(doc, method=None):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def create_project_from_sales_order(sales_order_name: str) -> str:
+def create_project_from_sales_order(sales_order_name: str) -> dict:
     """
     Create an ERPNext Project pre-filled with data from a Sales Order.
     Links the project back to the Sales Order through its native project field.
-    Returns the new Project name.
+
+    A Sales Order belongs to only one project. When the order (or its source
+    Opportunity) already has a project, no duplicate is created: the existing
+    project is returned with a friendly "Project already created" message.
+
+    Returns {"name": project_name, "already_exists": 0|1}.
     """
     frappe.db.sql(
         "SELECT name FROM `tabSales Order` WHERE name = %s FOR UPDATE",
@@ -86,16 +91,39 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
             title=_("Missing Company"),
         )
 
-    # Prevent duplicate projects
-    existing = frappe.db.get_value(
-        "Sales Order", sales_order_name, "project"
-    )
+    # A Sales Order belongs to only one project: reuse the existing link.
+    existing = (so.get("project") or "").strip()
+    if not existing:
+        opportunity = None
+        if project_linkage_available():
+            from orderlift.orderlift_crm.project_linkage import (
+                _project_for_opportunity,
+                sales_order_source_opportunity,
+            )
+
+            opportunity = sales_order_source_opportunity(so.name)
+            if opportunity:
+                existing = _project_for_opportunity(opportunity) or ""
+        if existing and project_linkage_available():
+            from orderlift.orderlift_crm.project_linkage import (
+                link_sales_orders_to_project_as_system,
+            )
+
+            link_sales_orders_to_project_as_system(
+                existing,
+                [{"name": so.name}],
+                expected_opportunity=opportunity,
+            )
     if existing:
-        frappe.throw(
-            _("A project already exists for this Sales Order: "
-              "<b>{0}</b>").format(existing),
-            title=_("Duplicate Project"),
+        frappe.msgprint(
+            _("Project already created for Sales Order <b>{0}</b>: <b>{1}</b>").format(
+                so.name, existing
+            ),
+            title=_("Project Already Created"),
+            indicator="blue",
+            alert=True,
         )
+        return {"name": existing, "already_exists": 1}
 
     project = frappe.new_doc("Project")
     project.project_name = "{0} - {1}".format(so.customer, so.name)
@@ -142,4 +170,9 @@ def create_project_from_sales_order(sales_order_name: str) -> str:
         indicator="green",
         alert=True,
     )
-    return project.name
+    return {"name": project.name, "already_exists": 0}
+
+
+def project_linkage_available() -> bool:
+    """True when the CRM project linkage module is installed (schema present)."""
+    return bool(frappe.db.exists("DocType", "Project"))

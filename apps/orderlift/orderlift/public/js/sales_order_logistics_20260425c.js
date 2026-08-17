@@ -12,6 +12,7 @@ frappe.ui.form.on("Sales Order", {
         _load_so_status_names().then(() => _render_so_status_bar(frm));
 
         // SIG - create or open the linked project
+        _install_sales_order_make_methods(frm);
         _sig_project_button(frm);
 
         frm.add_custom_button(__("Forecast Container"), async () => {
@@ -67,25 +68,69 @@ function _sig_project_button(frm) {
         if (frm.doc.docstatus !== 1) return;
 
         frm.add_custom_button(__("Create Project"), () => {
-            frappe.confirm(
-                __("Create a project for Sales Order {0}?", [frm.doc.name]),
-                () => {
-                    frappe.call({
-                        method: "orderlift.orderlift_sig.utils.project_status_guard.create_project_from_sales_order",
-                        args: { sales_order_name: frm.doc.name },
-                        freeze: true,
-                        freeze_message: __("Creating project…"),
-                        callback(r) {
-                            if (!r.exc && r.message) {
-                                frm.reload_doc();
-                                frappe.set_route("Form", "Project", r.message);
-                            }
-                        },
-                    });
-                }
-            );
+            _create_project_for_sales_order(frm);
         }, __("SIG"));
     }
+}
+
+// Intercept the native Create dropdown → Project so it never opens a blank
+// new Project form: an SO belongs to only one project.
+function _install_sales_order_make_methods(frm) {
+    frm.make_methods = frm.make_methods || {};
+    frm.make_methods["Project"] = () => {
+        if (frm.doc.project) {
+            frappe.show_alert({
+                message: __("Project already created!"),
+                indicator: "blue",
+            });
+            frappe.set_route("Form", "Project", frm.doc.project);
+            return;
+        }
+        if (frm.doc.docstatus !== 1) {
+            frappe.show_alert({
+                message: __("Submit the Sales Order before creating a Project."),
+                indicator: "orange",
+            });
+            return;
+        }
+        _create_project_for_sales_order(frm);
+    };
+}
+
+function _create_project_for_sales_order(frm) {
+    if (frm.doc.project) {
+        frappe.show_alert({
+            message: __("Project already created!"),
+            indicator: "blue",
+        });
+        frappe.set_route("Form", "Project", frm.doc.project);
+        return;
+    }
+    frappe.confirm(
+        __("Create a project for Sales Order {0}?", [frm.doc.name]),
+        () => {
+            frappe.call({
+                method: "orderlift.orderlift_sig.utils.project_status_guard.create_project_from_sales_order",
+                args: { sales_order_name: frm.doc.name },
+                freeze: true,
+                freeze_message: __("Creating project…"),
+                callback(r) {
+                    if (r.exc) return;
+                    const payload = r.message || {};
+                    const projectName = payload.name || (typeof r.message === "string" ? r.message : "");
+                    if (!projectName) return;
+                    if (payload.already_exists) {
+                        frappe.show_alert({
+                            message: __("Project already created!"),
+                            indicator: "blue",
+                        });
+                    }
+                    frm.reload_doc();
+                    frappe.set_route("Form", "Project", projectName);
+                },
+            });
+        }
+    );
 }
 
 function _render_so_scenario_badge(frm) {

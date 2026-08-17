@@ -65,6 +65,54 @@ def link_sales_order_to_project(doc, method=None) -> None:
     _set_so_project_on_doc(doc, project)
 
 
+def block_duplicate_project_for_sales_order(doc, method=None) -> None:
+    """Project validate: a Sales Order belongs to only one project.
+
+    Any creation path that sets Project.sales_order (native Create dropdown,
+    quick entry, import, API) is blocked when that Sales Order already has a
+    Project. Editing the already-linked project itself stays allowed.
+    """
+    sales_order = (doc.get("sales_order") or "").strip()
+    if not sales_order:
+        return
+    if not frappe.db.exists("Sales Order", sales_order):
+        return
+    existing = (frappe.db.get_value("Sales Order", sales_order, "project") or "").strip()
+    if not existing:
+        return
+    if (doc.get("name") or "").strip() and (doc.get("name") or "").strip() == existing:
+        return
+    frappe.throw(
+        frappe._("Project already created for Sales Order {0}: {1}").format(sales_order, existing),
+        title=frappe._("Project Already Created"),
+    )
+
+
+@frappe.whitelist()
+def override_sales_order_make_project(source_name, target_doc=None):
+    """ERPNext make_project override: keep the button, block the action.
+
+    The native Create → Project flow calls ``erpnext...sales_order.make_project``
+    before rendering its dialog. When the Sales Order already belongs to a
+    project, the action is blocked with a friendly message instead of opening a
+    duplicate project form. Unlinked orders keep the original ERPNext behavior.
+    """
+    existing = (frappe.db.get_value("Sales Order", source_name, "project") or "").strip()
+    if existing:
+        frappe.throw(
+            frappe._("Project already created for Sales Order {0}: {1}").format(source_name, existing),
+            title=frappe._("Project Already Created"),
+        )
+    try:
+        from erpnext.selling.doctype.sales_order.sales_order import make_project as erpnext_make_project
+    except ImportError:
+        frappe.throw(
+            frappe._("The ERPNext project creation flow is unavailable. Please create the Project from the SIG menu."),
+            title=frappe._("Project Creation Unavailable"),
+        )
+    return erpnext_make_project(source_name, target_doc)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

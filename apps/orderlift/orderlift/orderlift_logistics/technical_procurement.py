@@ -285,9 +285,17 @@ def _ensure_ungated_route_steps() -> None:
 
 @frappe.whitelist()
 def get_available_actions(reference_doctype: str, reference_name: str) -> dict:
-    reference, technical_list, revision = _resolve_current_revision(
-        _text(reference_doctype), _text(reference_name)
-    )
+    # Read-only discovery, called on every Sales Order page load. A user who cannot read
+    # the revision simply gets no actions, the same way a list query filters rows it may
+    # not show -- throwing here breaks the whole Sales Order form with a permission modal
+    # over a feature that is only an enhancement to it. Enforcement is unaffected: the
+    # create_* entrypoints each re-check permissions before building anything.
+    try:
+        reference, technical_list, revision = _resolve_current_revision(
+            _text(reference_doctype), _text(reference_name)
+        )
+    except frappe.PermissionError:
+        return _action_payload(None, None, None, [])
     if not technical_list or not revision:
         return _action_payload(reference, technical_list, revision, [])
 
@@ -1349,9 +1357,19 @@ def _validate_warehouse(warehouse, company, required, row):
         frappe.throw(_("Row {0}: Warehouse is required for stock items.").format(_row_label(row)))
     if not warehouse:
         return
-    warehouse_company = frappe.db.get_value("Warehouse", warehouse, "company")
+    values = frappe.db.get_value("Warehouse", warehouse, ["company", "is_group"], as_dict=True) or {}
+    warehouse_company = _text(values.get("company"))
     if not warehouse_company or warehouse_company != company:
         frappe.throw(_("Row {0}: Warehouse must belong to the revision company.").format(_row_label(row)))
+    if cint(values.get("is_group")):
+        # A group warehouse is a tree node, not a location: nothing can be stocked in
+        # it, and a document referencing one becomes unreadable to any user whose
+        # Warehouse user permissions cover only real warehouses.
+        frappe.throw(
+            _("Row {0}: {1} is a group warehouse. Select the warehouse that holds the stock.").format(
+                _row_label(row), warehouse
+            )
+        )
 
 
 def _procurement_source(doc, row):

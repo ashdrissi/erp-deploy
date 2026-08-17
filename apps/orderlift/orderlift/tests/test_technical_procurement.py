@@ -192,6 +192,25 @@ class TestTechnicalProcurement(unittest.TestCase):
         # Copied from the Sales Order, not the session or the customer.
         self.assertIn("_get(sales_order, fieldname)", branch)
 
+    def test_group_warehouses_are_rejected_on_revision_lines(self):
+        """A group warehouse is a tree node, not a location: nothing can be stocked in
+        it, and the document becomes unreadable to any user whose Warehouse permissions
+        cover only real warehouses -- which is the only kind the Access Command Center
+        can grant. Observed live on TLR-11275 rows for SEFD-00021 / SEFD-00022."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def _validate_warehouse", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('"is_group"', body)
+        self.assertIn("group warehouse", body)
+
+    def test_available_actions_fail_soft_when_the_revision_is_unreadable(self):
+        """get_available_actions runs on every Sales Order page load. A permission error
+        must yield no actions rather than breaking the whole form -- enforcement stays on
+        the create_* entrypoints, which re-check before building anything."""
+        source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
+        body = source.split("def get_available_actions", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("except frappe.PermissionError:", body)
+        self.assertIn("_action_payload(None, None, None, [])", body)
+
     def test_pick_list_parent_is_a_delivery_purpose_pick_list(self):
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
         branch = source.split('if target_doctype == "Pick List":', 1)[1].split(
