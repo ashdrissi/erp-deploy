@@ -635,7 +635,13 @@ def get_sales_order_summary(sales_order: str) -> dict:
         parent.check_permission("read")
     summary = _technical_list_summary(parent) if parent else None
     if summary:
-        summary["active_revision"] = _active_revision_display(parent)
+        try:
+            summary["active_revision"] = _active_revision_display(parent)
+        except frappe.PermissionError:
+            # Display-only panel on a page the user is allowed to open. A revision the
+            # user cannot read is simply not shown, rather than failing the whole Sales
+            # Order form with a permission modal. Every write path re-checks separately.
+            summary["active_revision"] = None
     return {
         "sales_order": source.name,
         "docstatus": cint(source.docstatus),

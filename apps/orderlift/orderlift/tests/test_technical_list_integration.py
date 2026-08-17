@@ -57,6 +57,15 @@ class TestTechnicalListIntegration(unittest.TestCase):
             hooks.doctype_js["Project"],
         )
 
+    def test_sales_order_summary_survives_an_unreadable_revision(self):
+        """The Sales Order page calls get_sales_order_summary on load. A revision the
+        user cannot read must leave the panel empty, not fail the whole form -- observed
+        live as a permission modal on every open of SAL-ORD-2026-00103~BENFRAIH80."""
+        core = (APP_ROOT / "orderlift_sig" / "technical_list.py").read_text()
+        body = core.split("def get_sales_order_summary", 1)[1].split("\n@frappe", 1)[0]
+        self.assertIn("except frappe.PermissionError:", body)
+        self.assertIn('summary["active_revision"] = None', body)
+
     def test_material_request_qty_limit_mixin_is_wired(self):
         """Rule 20: without this, ERPNext caps a Material Request at the sold quantity
         and a revision that raised a quantity cannot be procured at all. Purchase Order
