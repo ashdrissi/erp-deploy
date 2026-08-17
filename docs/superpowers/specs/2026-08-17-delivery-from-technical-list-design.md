@@ -185,6 +185,24 @@ Recorded so they are not reintroduced.
 - **The draft's `stamp_delivery_lineage` workaround is unnecessary** now that Pick
   List is revision-aware in the same change. It existed only to recover lineage for
   Delivery Notes derived from SO-based Pick Lists.
+
+  **Corrected 2026-08-17, after implementation.** The reasoning above was wrong. A
+  revision-aware Pick List does *not* pass its lineage to the Delivery Note for sold
+  lines: ERPNext's `map_pl_locations` sets `source_doc = sales_order_item or location`
+  (`pick_list.py`), so a location with a `sales_order_item` is mapped from the Sales
+  Order Item — which carries no `custom_technical_*` fields. Only engineering
+  additions, whose locations have no `sales_order_item`, inherit lineage through the
+  mapper. Without a copy step, every ordinary Pick-List-route delivery is rejected for
+  missing lineage.
+
+  What was rightly rejected was the *heuristic*: the draft recovered lineage by
+  matching a row's `sales_order_item` against the current approved revision, which can
+  select the wrong line and fails on substitutions and partials. The implemented
+  `stamp_pick_list_lineage` is a deterministic copy instead — `pick_list_item` names
+  the exact Pick List row, whose lineage was already validated when the Pick List was
+  saved. It runs on Delivery Note `before_validate` ahead of
+  `validate_procurement_document`, skips rows that already carry lineage, and skips
+  returns.
 - **`_validate_target_row` (lines 932-937) requires `custom_technical_procurement_route`
   and `custom_technical_procurement_action`** to be non-empty on any row carrying
   lineage. Any row-stamping path must set them, not just the revision fields.

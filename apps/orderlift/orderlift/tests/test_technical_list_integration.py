@@ -38,6 +38,12 @@ class TestTechnicalListIntegration(unittest.TestCase):
         self.assertIn(operational_guard, delivery)
         # Row validation must run before company scoping rewrites the company.
         self.assertLess(delivery.index(guard), delivery.index("orderlift.company_scope.apply_transaction_company_scope"))
+        # ERPNext maps a Pick List delivery row from the Sales Order Item for sold
+        # lines, so the Pick List row's lineage must be copied across before the
+        # validator looks for it -- otherwise every such delivery is rejected.
+        stamp = "orderlift.orderlift_logistics.technical_procurement.stamp_pick_list_lineage"
+        self.assertIn(stamp, delivery)
+        self.assertLess(delivery.index(stamp), delivery.index(guard))
         self.assertNotIn(
             "technical_procurement",
             json.dumps(hooks.doc_events.get("Sales Invoice", {})),

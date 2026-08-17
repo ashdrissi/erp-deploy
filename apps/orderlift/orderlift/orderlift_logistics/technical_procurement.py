@@ -62,16 +62,6 @@ TARGET_CHILD_TABLES = {
     "Pick List": "locations",
 }
 
-# Doctype -> (consumed-pool function name, over-cap message). Both consume the
-# approved execution qty but from independent pools, so a pick and its own Delivery
-# Note do not double-consume (spec rule 15). Keyed by doctype, distinct from
-# technical_allocation.ADAPTER_POOLS which is keyed by adapter.
-#
-# The pool is held by name and resolved through this module's globals at call time.
-# Storing the function object would freeze the binding into the dict, so patching
-# delivered_stock_qty or picked_stock_qty on this module -- how the pools are
-# substituted in tests, and the only way to see through the imported binding --
-# would silently have no effect on the cap.
 # Doctypes capped by a consumed-quantity pool rather than by procurement allowance.
 # Both draw on the approved execution qty but from independent pools, so a pick and
 # the Delivery Note it becomes do not double-consume it (spec rule 15).
@@ -427,6 +417,49 @@ def create_pick_list(revision, selected_row_ids=None, quantities=None) -> dict:
         selected_row_ids,
         quantities,
     )
+
+
+def stamp_pick_list_lineage(doc, method=None) -> None:
+    """Copy technical lineage from the Pick List row onto a Delivery Note row.
+
+    ERPNext's ``map_pl_locations`` builds each Delivery Note row from the *Sales Order
+    Item* whenever the picked location has one (``pick_list.py``: ``source_doc =
+    sales_order_item or location``). Sales Order Item carries no ``custom_technical_*``
+    fields, so the lineage stamped on the Pick List row never reaches the Delivery Note
+    for a sold line. It does reach it for an engineering addition, whose location has no
+    ``sales_order_item`` and is therefore mapped from the location itself.
+
+    This is a deterministic copy, not a guess: ``pick_list_item`` names the exact Pick
+    List row, and that row's lineage was already validated against the approved revision
+    when the Pick List was saved. It must run before ``validate_procurement_document``.
+    """
+    if not doc or _text(_get(doc, "doctype")) != "Delivery Note":
+        return
+    if cint(_get(doc, "is_return")):
+        return
+    target_meta = _meta("Delivery Note Item")
+    source_meta = _meta("Pick List Item")
+    if not target_meta or not source_meta:
+        return
+    fieldnames = [
+        fieldname
+        for fieldname in LINEAGE_FIELDS
+        if target_meta.get_field(fieldname) and source_meta.get_field(fieldname)
+    ]
+    if not fieldnames:
+        return
+    for row in _get(doc, "items") or []:
+        pick_list_item = _text(_get(row, "pick_list_item"))
+        if not pick_list_item or _has_technical_lineage(row):
+            continue
+        source = (
+            frappe.db.get_value("Pick List Item", pick_list_item, fieldnames, as_dict=True)
+            or {}
+        )
+        for fieldname in fieldnames:
+            value = _text(source.get(fieldname))
+            if value:
+                row.set(fieldname, value)
 
 
 def _consumed_stock_qty(doctype, technical_list, *, exclude_doctype="", exclude_name=""):

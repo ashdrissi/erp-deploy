@@ -1187,6 +1187,74 @@ class TestTechnicalProcurement(unittest.TestCase):
             body,
         )
 
+    def test_pick_list_lineage_is_copied_onto_sold_delivery_rows(self):
+        """ERPNext maps a Pick List delivery row from the Sales Order Item whenever the
+        location has one, and Sales Order Item has no custom_technical_* fields -- so a
+        sold line's lineage never reaches the Delivery Note on its own. Without this
+        copy, every ordinary Pick-List-route delivery is rejected for missing lineage.
+
+        A deterministic copy, not a guess: pick_list_item names the exact Pick List row,
+        whose lineage was already validated when the Pick List was saved."""
+        row = AttrDict(idx=1, item_code="I-1", pick_list_item="PL-1-ROW-1")
+        row.set = lambda field, value: row.__setitem__(field, value)
+        doc = AttrDict(doctype="Delivery Note", is_return=0, items=[row])
+        stored = {
+            "custom_technical_list": "TL-1",
+            "custom_technical_revision": "TLR-2",
+            "custom_technical_revision_item": "R1",
+            "custom_technical_line_key": "SOI-1",
+            "custom_technical_approval_hash": "abc",
+            "custom_technical_procurement_route": "Route A",
+            "custom_technical_procurement_action": "Pick",
+        }
+        meta = FakeMeta(technical_procurement.LINEAGE_FIELDS)
+        with patch.object(technical_procurement, "_meta", return_value=meta), patch.object(
+            frappe_stub.db, "get_value", return_value=dict(stored)
+        ):
+            technical_procurement.stamp_pick_list_lineage(doc)
+
+        for fieldname, value in stored.items():
+            self.assertEqual(row[fieldname], value, fieldname)
+
+    def test_pick_list_lineage_copy_leaves_unrelated_rows_alone(self):
+        """A direct-delivery row has no pick_list_item, and a row that already carries
+        lineage must not be overwritten -- the copy fills a gap, it does not re-stamp."""
+        direct = AttrDict(idx=1, item_code="I-1")
+        direct.set = lambda field, value: direct.__setitem__(field, value)
+        already = AttrDict(
+            idx=2,
+            item_code="I-2",
+            pick_list_item="PL-1-ROW-2",
+            custom_technical_revision="TLR-KEEP",
+        )
+        already.set = lambda field, value: already.__setitem__(field, value)
+        doc = AttrDict(doctype="Delivery Note", is_return=0, items=[direct, already])
+        meta = FakeMeta(technical_procurement.LINEAGE_FIELDS)
+        calls = []
+        with patch.object(technical_procurement, "_meta", return_value=meta), patch.object(
+            frappe_stub.db,
+            "get_value",
+            side_effect=lambda *a, **k: calls.append(a) or {"custom_technical_revision": "X"},
+        ):
+            technical_procurement.stamp_pick_list_lineage(doc)
+
+        self.assertEqual(calls, [])
+        self.assertIsNone(direct.get("custom_technical_revision"))
+        self.assertEqual(already["custom_technical_revision"], "TLR-KEEP")
+
+    def test_pick_list_lineage_copy_skips_returns(self):
+        """validate_procurement_document exits early for returns, so there is nothing
+        for the copy to enable and a return must not be rewritten."""
+        row = AttrDict(idx=1, item_code="I-1", pick_list_item="PL-1-ROW-1")
+        row.set = lambda field, value: row.__setitem__(field, value)
+        doc = AttrDict(doctype="Delivery Note", is_return=1, items=[row])
+        calls = []
+        with patch.object(
+            frappe_stub.db, "get_value", side_effect=lambda *a, **k: calls.append(a)
+        ):
+            technical_procurement.stamp_pick_list_lineage(doc)
+        self.assertEqual(calls, [])
+
     def test_a_pick_list_sourced_delivery_row_now_needs_lineage(self):
         """Rule 17: the interim allowance let a Delivery Note row sourced from a Pick
         List through without lineage, because Pick Lists had none. Pick Lists are now
@@ -1217,8 +1285,12 @@ class TestTechnicalProcurement(unittest.TestCase):
                 technical_procurement.validate_procurement_document(doc)
 
     def test_the_interim_pick_list_allowance_is_gone(self):
+        """Scoped to the validator: stamp_pick_list_lineage legitimately reads
+        pick_list_item, so an assertion over the whole file would forbid the very
+        mechanism that replaced the allowance."""
         source = (APP_ROOT / "orderlift_logistics" / "technical_procurement.py").read_text()
-        self.assertNotIn('_text(_get(row, "pick_list_item"))', source)
+        body = source.split("def validate_procurement_document", 1)[1].split("\ndef ", 1)[0]
+        self.assertNotIn("pick_list_item", body)
         self.assertNotIn("Remove this skip in Plan 2.", source)
 
     def _project_check_row(self, *, row_meta):

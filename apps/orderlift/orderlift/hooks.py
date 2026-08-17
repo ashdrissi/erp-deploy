@@ -452,6 +452,10 @@ doc_events = {
     "Delivery Note": {
         "before_print": "orderlift.orderlift_sales.print_controls.require_submitted_document_print",
         "before_validate": [
+            # Must precede validate_procurement_document: ERPNext maps a Pick List
+            # delivery row from the Sales Order Item for sold lines, so the Pick
+            # List row's lineage has to be copied across before it is validated.
+            "orderlift.orderlift_logistics.technical_procurement.stamp_pick_list_lineage",
             "orderlift.orderlift_logistics.technical_procurement.validate_procurement_document",
             "orderlift.orderlift_logistics.technical_procurement.validate_operational_document",
             "orderlift.company_scope.apply_transaction_company_scope",
