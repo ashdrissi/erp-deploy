@@ -606,6 +606,23 @@ class TestQuotationFormSimplify(unittest.TestCase):
             self.assertIn(token, pricing_sheet_js)
         self.assertNotIn("frm.doc.custom_warehouse_stock_snapshot = (rows || []).map(", pricing_sheet_js)
 
+    def test_stock_overview_restores_the_toolbar_after_a_live_sync(self):
+        """Writing the item grid fires frm.dirty(), which flips the primary action to
+        Save. Clearing __unsaved alone does not change it back, so the document stayed
+        stuck on Save and could never be submitted (observed on
+        PUR-ORD-2026-00061~TESTOPP). toolbar.refresh() re-runs set_primary_action and
+        set_indicator, which is what actually restores the button and the pill."""
+        for filename in (
+            "sales_order_stock_overview_20260817a.js",
+            "purchase_order_stock_overview_20260817a.js",
+        ):
+            source = (APP_ROOT / "public" / "js" / filename).read_text()
+            self.assertIn("frm.doc.__unsaved = 0", source, filename)
+            self.assertIn("frm.toolbar.refresh()", source, filename)
+            # The old workaround deleted the indicator from the DOM, which left the
+            # primary action untouched and hid the symptom rather than fixing it.
+            self.assertNotIn("indicator-pill", source, filename)
+
     def test_sales_order_and_purchase_order_live_stock_overview_wired(self):
         hooks = (APP_ROOT / "hooks.py").read_text()
         so_js = (APP_ROOT / "public" / "js" / "sales_order_stock_overview_20260817a.js").read_text()

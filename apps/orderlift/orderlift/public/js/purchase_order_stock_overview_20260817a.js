@@ -127,8 +127,14 @@ function setPurchaseOrderStockOverview(frm, rows, totals, itemTotals, sharedRows
         if (changed) frm.refresh_field("items");
     }
     if (changed && !wasUnsaved && frm.doc) {
+        // These are live display values, not user edits, so the document is restored to
+        // clean. The toolbar must then be recomputed: writing the grid fires frm.dirty(),
+        // which flips the primary action to Save, and clearing __unsaved alone does not
+        // change it back -- the document stays stuck on Save and can never be submitted.
+        // toolbar.refresh() re-runs set_primary_action() and set_indicator(), so it fixes
+        // both the button and the "Not Saved" pill from the real state.
         frm.doc.__unsaved = 0;
-        frm.wrapper && $(frm.wrapper).find(".indicator-pill.red, .indicator-pill.orange").remove();
+        if (frm.toolbar && frm.toolbar.refresh) frm.toolbar.refresh();
     }
 }
 
