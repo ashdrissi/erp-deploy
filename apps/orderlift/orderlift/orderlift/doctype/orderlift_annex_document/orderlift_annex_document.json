@@ -20,7 +20,7 @@
     {"fieldname": "reference_name", "fieldtype": "Dynamic Link", "label": "Reference Name", "options": "reference_doctype", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
     {"fieldname": "reference_key", "fieldtype": "Data", "label": "Reference Key", "read_only": 1, "unique": 1, "search_index": 1},
     {"fieldname": "provenance_section", "fieldtype": "Section Break", "label": "Frozen Provenance"},
-    {"fieldname": "origin", "fieldtype": "Select", "label": "Origin", "options": "Native\nOpportunity Snapshot\nQuotation Snapshot\nSales Order Snapshot\nExecution Copy", "default": "Native", "reqd": 1, "in_standard_filter": 1},
+    {"fieldname": "origin", "fieldtype": "Select", "label": "Origin", "options": "Native\nOpportunity Snapshot\nQuotation Snapshot\nSales Order Snapshot\nExecution Copy\nSubmitted Copy", "default": "Native", "reqd": 1, "in_standard_filter": 1},
     {"fieldname": "source_annex", "fieldtype": "Link", "label": "Source Annex", "options": "Orderlift Annex Document", "read_only": 1},
     {"fieldname": "source_reference_doctype", "fieldtype": "Link", "label": "Source Reference DocType", "options": "DocType", "read_only": 1},
     {"fieldname": "source_reference_name", "fieldtype": "Dynamic Link", "label": "Source Reference", "options": "source_reference_doctype", "read_only": 1},

@@ -2,6 +2,11 @@
     const STATE = { targets: [], availableTargets: [], template: null, activeStep: "basics", expandedFields: new Set(), loading: false };
     const FIELD_TYPES = ["Section Break", "Column Break", "Data", "Small Text", "Text", "Text Editor", "Date", "Datetime", "Time", "Int", "Float", "Currency", "Check", "Select", "Link", "Attach", "Attach Image", "Signature", "HTML"];
     const STATUS_COLORS = ["Gray", "Blue", "Green", "Orange", "Red", "Purple"];
+    const COPY_DESTINATIONS = {
+        Opportunity: ["Sales Order", "Sales Order Technical List Revision"],
+        Quotation: ["Sales Order", "Sales Order Technical List Revision"],
+        "Sales Order": ["Project", "Sales Order Technical List Revision"],
+    };
     const STEPS = [
         ["basics", "Basics"],
         ["targets", "Target Documents"],
@@ -73,12 +78,34 @@
         const rows = template.targets || [];
         const selected = new Set(rows.map((target) => target.target_doctype || target.doctype));
         const available = STATE.availableTargets.filter((doctype) => !selected.has(doctype));
-        return `<article class="odtb-card"><div class="odtb-card-head with-action"><div><h2>${esc(__("Target Documents"))}</h2><p>${esc(__("Choose the business documents where this annex template is available."))}</p></div><div class="odtb-mini-actions"><select data-new-target><option value="">${esc(__("Select DocType"))}</option>${options(available, "")}</select><button type="button" class="odtb-secondary" data-add-target="1">${esc(__("Add Target"))}</button></div></div><div class="odtb-status-builder">${rows.length ? rows.map(targetRow).join("") : emptyRow(__("Add at least one target DocType."))}</div></article>`;
+        return `<article class="odtb-card"><div class="odtb-card-head with-action"><div><h2>${esc(__("Target Documents"))}</h2><p>${esc(__("Choose where this annex is filled, then choose where its filled copy goes after submit."))}</p></div><div class="odtb-mini-actions"><select data-new-target><option value="">${esc(__("Select DocType"))}</option>${options(available, "")}</select><button type="button" class="odtb-secondary" data-add-target="1">${esc(__("Add Target"))}</button></div></div><div class="odtb-status-builder">${rows.length ? rows.map(targetRow).join("") : emptyRow(__("Add at least one target DocType."))}</div></article>`;
     }
 
     function targetRow(row, index) {
         const doctype = row.target_doctype || row.doctype || "";
-        return `<article class="odtb-status-card" data-target-index="${index}"><div class="odtb-status-fields"><label><span>${esc(__("DocType"))}</span><input data-row-field="target_doctype" value="${esc(doctype)}" readonly /></label>${input("display_order", __("Order"), row.display_order || index + 1, "number", false, true)}${check("allow_direct_creation", __("Direct Creation"), row.allow_direct_creation !== 0, __("The annex can be created and edited directly on this document."))}${check("allow_execution_copy", __("Execution Copy from Upstream"), row.allow_execution_copy || row.allow_import_from_sales_order, __("An upstream Quotation or Sales Order annex can be copied into a revision as an editable execution copy."))}${check("required_for_revision", __("Required for Revision"), row.required_for_revision, __("The revision cannot be submitted without this annex."))}${check("must_be_complete", __("Must Be Complete"), row.must_be_complete, __("The annex must be fully completed before the revision can be submitted."))}${check("default_selected", __("Selected by Default"), row.default_selected, __("The annex is created or copied automatically when a new revision is initialized."))}</div><button type="button" class="odtb-danger" data-remove-target="${index}">&times;</button></article>`;
+        return `<article class="odtb-status-card" data-target-index="${index}"><div class="odtb-status-fields target-settings"><label><span>${esc(__("DocType"))}</span><input data-row-field="target_doctype" value="${esc(doctype)}" readonly /></label>${input("display_order", __("Order"), row.display_order || index + 1, "number", false, true)}${copyDestinationControls(row, doctype)}${check("must_be_complete", __("Must Be Complete Before Submit"), row.must_be_complete, __("This document cannot be submitted until this annex, or its configured copy, is complete."))}</div><button type="button" class="odtb-danger" data-remove-target="${index}">&times;</button></article>`;
+    }
+
+    function copyDestinationControls(row, doctype) {
+        const destinations = COPY_DESTINATIONS[doctype] || [];
+        const selected = new Set(parseCopyDestinations(row));
+        if (!destinations.length) {
+            return `<div class="odtb-copy-targets muted"><span>${esc(__("Copy To After Submit"))}</span><p>${esc(__("No downstream copy target for this document."))}</p></div>`;
+        }
+        const hint = doctype === "Opportunity"
+            ? __("Opportunity annexes are shared to draft Quotations automatically. On Quotation submit, copy the filled annex to:")
+            : __("When this document is submitted, copy the filled annex to:");
+        return `<div class="odtb-copy-targets"><span>${esc(__("Copy To After Submit"))}</span><p>${esc(hint)}</p><div>${destinations.map((target) => `<label class="odtb-copy-chip"><input type="checkbox" data-copy-destination="${esc(target)}" ${selected.has(target) ? "checked" : ""}/><span>${esc(__(target))}</span></label>`).join("")}</div></div>`;
+    }
+
+    function parseCopyDestinations(row) {
+        const raw = row.copy_to_doctypes || "";
+        if (Array.isArray(raw)) return raw.filter(Boolean);
+        const values = String(raw || "").split(/[\n,]+/).map((value) => value.trim()).filter(Boolean);
+        if (!values.length && (row.copy_after_submit || row.allow_execution_copy || row.allow_import_from_sales_order)) {
+            return COPY_DESTINATIONS[row.target_doctype || row.doctype] || [];
+        }
+        return values;
     }
 
     function fieldsStep(template) {
@@ -163,7 +190,7 @@
         page.main.find("[data-back]").on("click", () => frappe.set_route("document-template-manager"));
         page.main.find("[data-step]").on("click", function () { collect(page); STATE.activeStep = $(this).data("step"); render(page); });
         page.main.find("[data-add-field]").on("click", () => { collect(page); const index = STATE.template.fields.length; STATE.template.fields.push({ field_label: "", field_key: "", fieldtype: "Data", display_order: index + 1 }); STATE.expandedFields = new Set([index]); render(page); });
-        page.main.find("[data-add-target]").on("click", () => { collect(page); const doctype = page.main.find("[data-new-target]").val(); if (!doctype) return; STATE.template.targets.push({ target_doctype: doctype, allow_direct_creation: 1, display_order: STATE.template.targets.length + 1 }); render(page); });
+        page.main.find("[data-add-target]").on("click", () => { collect(page); const doctype = page.main.find("[data-new-target]").val(); if (!doctype) return; STATE.template.targets.push({ target_doctype: doctype, allow_direct_creation: 1, copy_after_submit: 0, must_be_complete: 0, display_order: STATE.template.targets.length + 1 }); render(page); });
         page.main.find("[data-add-layout]").on("click", function () { collect(page); const type = $(this).data("add-layout"); const index = STATE.template.fields.length; const labels = { "Section Break": "New Section", "Column Break": "New Column", HTML: "Advanced HTML" }; STATE.template.fields.push({ field_label: labels[type] || type, field_key: "", fieldtype: type, display_order: index + 1 }); STATE.expandedFields = new Set([index]); render(page); });
         page.main.find("[data-add-special]").on("click", function () { collect(page); const type = $(this).data("add-special"); const index = STATE.template.fields.length; STATE.template.fields.push({ field_label: type === "Signature" ? "New Signature" : "New Attachment", field_key: "", fieldtype: type, display_order: index + 1 }); STATE.expandedFields = new Set([index]); render(page); });
         page.main.find("[data-toggle-field]").on("click", function () { collect(page); const index = Number($(this).data("toggle-field")); const expanded = new Set(STATE.expandedFields); expanded.has(index) ? expanded.delete(index) : expanded.add(index); STATE.expandedFields = expanded; render(page); });
@@ -186,7 +213,7 @@
         if (!STATE.template) STATE.template = blankTemplate();
         ["template_name", "display_order", "print_title", "print_header", "print_footer"].forEach((field) => { const el = root.find(`[data-field="${field}"]`); if (el.length) STATE.template[field] = el.val(); });
         if (root.find('[data-field="is_active"]').length) STATE.template.is_active = root.find('[data-field="is_active"]').is(":checked") ? 1 : 0;
-        if (root.find("[data-target-index]").length) STATE.template.targets = root.find("[data-target-index]").map(function () { const index = Number($(this).data("target-index")); return collectRow($(this), ["target_doctype", "allow_direct_creation", "allow_execution_copy", "required_for_revision", "must_be_complete", "default_selected", "display_order"], STATE.template.targets[index]); }).get();
+        if (root.find("[data-target-index]").length) STATE.template.targets = root.find("[data-target-index]").map(function () { const index = Number($(this).data("target-index")); const row = collectRow($(this), ["target_doctype", "must_be_complete", "display_order"], STATE.template.targets[index]); const copyTo = $(this).find("[data-copy-destination]:checked").map(function () { return $(this).data("copy-destination"); }).get(); row.copy_to_doctypes = copyTo.join("\n"); row.allow_direct_creation = 1; row.copy_after_submit = copyTo.length ? 1 : 0; row.allow_execution_copy = copyTo.includes("Sales Order Technical List Revision") ? 1 : 0; row.allow_import_from_sales_order = 0; row.required_for_revision = 0; row.default_selected = 0; return row; }).get();
         if (root.find("[data-field-index]").length) STATE.template.fields = root.find("[data-field-index]").map(function () { const index = Number($(this).data("field-index")); return collectRow($(this), ["field_label", "field_key", "fieldtype", "options", "source_field", "is_required", "required_value_mode", "default_value", "display_order"], STATE.template.fields[index]); }).get();
         if (root.find("[data-status-index]").length) STATE.template.statuses = root.find("[data-status-index]").map(function () { return collectRow($(this), ["status_label", "color", "is_default", "is_complete", "display_order"]); }).get();
     }
@@ -423,6 +450,14 @@
             .odtb-check.inline { min-height: 31px; }
             .odtb-status-card { padding: 10px; border-radius: 11px; }
             .odtb-status-fields { gap: 8px; }
+            .odtb-status-fields.target-settings { grid-template-columns: minmax(180px, .9fr) 78px minmax(300px, 1.3fr) minmax(220px, .9fr); }
+            .odtb-copy-targets { display: grid; gap: 5px; min-height: 34px; padding: 7px 9px; border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; }
+            .odtb-copy-targets > span { color: #475569; font-size: 10px; font-weight: 900; }
+            .odtb-copy-targets p { margin: 0; color: #64748b; font-size: 10px; line-height: 1.35; }
+            .odtb-copy-targets > div { display: flex; flex-wrap: wrap; gap: 6px; }
+            .odtb-copy-targets.muted { align-content: center; }
+            .odtb-copy-chip { display: inline-flex !important; grid-template-columns: none !important; align-items: center; gap: 6px !important; min-height: 28px; padding: 4px 8px; border: 1px solid #dbeafe; border-radius: 999px; background: #fff; font-size: 10px !important; }
+            .odtb-copy-chip input[type="checkbox"] { width: 14px !important; height: 14px !important; min-width: 14px !important; min-height: 14px !important; }
             .odtb-empty { padding: 24px; font-size: 11px; }
             .odtb-root input[type="checkbox"] { appearance: none !important; -webkit-appearance: none !important; width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; max-width: 16px !important; margin: 0 !important; padding: 0 !important; border: 1px solid #cbd2df !important; border-radius: 4px !important; background: #fff !important; box-shadow: none !important; }
             .odtb-root input[type="checkbox"]::before, .odtb-root input[type="checkbox"]::after { content: none !important; display: none !important; }

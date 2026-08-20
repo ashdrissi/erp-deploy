@@ -46,6 +46,7 @@ CHAIN_DOCTYPES = {
 }
 LOCKED_REFERENCE_DOCTYPES = {"Quotation", "Sales Order", TECHNICAL_REVISION_DOCTYPE}
 SYNCED_ORIGINS = {"Opportunity Snapshot", "Quotation Snapshot"}
+SUBMITTED_COPY_ORIGIN = "Submitted Copy"
 PROVENANCE_FIELDS = (
     "template",
     "company",
@@ -132,6 +133,46 @@ def after_migrate() -> None:
             SET allow_execution_copy = 1
             WHERE IFNULL(allow_import_from_sales_order, 0) = 1
               AND IFNULL(allow_execution_copy, 0) = 0
+            """
+        )
+    if frappe.db.has_column("Orderlift Document Template Target", "copy_after_submit"):
+        frappe.db.sql(
+            """
+            UPDATE `tabOrderlift Document Template Target`
+            SET copy_after_submit = 1
+            WHERE IFNULL(copy_after_submit, 0) = 0
+              AND (
+                IFNULL(allow_execution_copy, 0) = 1
+                OR IFNULL(allow_import_from_sales_order, 0) = 1
+              )
+            """
+        )
+    if frappe.db.has_column("Orderlift Document Template Target", "copy_to_doctypes"):
+        frappe.db.sql(
+            """
+            UPDATE `tabOrderlift Document Template Target`
+            SET copy_to_doctypes = CASE
+                WHEN target_doctype = 'Opportunity' THEN 'Sales Order\nSales Order Technical List Revision'
+                WHEN target_doctype = 'Quotation' THEN 'Sales Order\nSales Order Technical List Revision'
+                WHEN target_doctype = 'Sales Order' THEN 'Project\nSales Order Technical List Revision'
+                ELSE IFNULL(copy_to_doctypes, '')
+            END
+            WHERE IFNULL(copy_to_doctypes, '') = ''
+              AND (
+                IFNULL(copy_after_submit, 0) = 1
+                OR IFNULL(allow_execution_copy, 0) = 1
+                OR IFNULL(allow_import_from_sales_order, 0) = 1
+              )
+            """
+        )
+        frappe.db.sql(
+            """
+            UPDATE `tabOrderlift Document Template Target`
+            SET copy_to_doctypes = CONCAT(copy_to_doctypes, '\nSales Order Technical List Revision')
+            WHERE target_doctype IN ('Opportunity', 'Quotation')
+              AND IFNULL(copy_after_submit, 0) = 1
+              AND IFNULL(copy_to_doctypes, '') != ''
+              AND copy_to_doctypes NOT LIKE '%Sales Order Technical List Revision%'
             """
         )
     _backfill_annex_integrity()
@@ -446,6 +487,8 @@ def _definition_for_snapshot(source_annex, target_doctype: str, *, require_execu
     if require_execution and not (
         current_target.get("allow_import_from_sales_order")
         or current_target.get("allow_execution_copy")
+        or current_target.get("copy_after_submit")
+        or target_doctype in _copy_destination_doctypes_for_annex(source_annex)
     ):
         frappe.throw(
             _("Template {0} does not allow execution copies.").format(template.template_name)
@@ -458,12 +501,43 @@ def _definition_for_snapshot(source_annex, target_doctype: str, *, require_execu
         for row in definition.get("targets") or []
         if row.get("target_doctype") != target_doctype
     ]
-    definition["targets"].append(
-        current_target or {"target_doctype": target_doctype, "allow_direct_creation": 0}
-    )
+    appended_target = current_target or {"target_doctype": target_doctype, "allow_direct_creation": 0}
+    if not current_target:
+        source_rule = _source_target_definition_for_annex(source_annex, definition)
+        appended_target["must_be_complete"] = int(source_rule.get("must_be_complete") or 0)
+        appended_target["copy_to_doctypes"] = ""
+        appended_target["copy_after_submit"] = 0
+    definition["targets"].append(appended_target)
     if target_doctype == TECHNICAL_REVISION_DOCTYPE:
         definition["revision_owned"] = True
     return definition
+
+
+def _source_rule_doctype_for_annex(annex) -> str:
+    origin = _value(annex, "origin", "") or ""
+    source_reference_doctype = (_value(annex, "source_reference_doctype", "") or "").strip()
+    if origin in {"Opportunity Snapshot", "Quotation Snapshot"} and source_reference_doctype:
+        return source_reference_doctype
+    return (_value(annex, "reference_doctype", "") or "").strip()
+
+
+def _source_target_definition_for_annex(annex, definition: dict | None = None) -> dict:
+    from orderlift.document_templates import _target_definition, _template_definition_for_annex
+
+    definition = definition or _template_definition_for_annex(annex)
+    return _target_definition(definition, _source_rule_doctype_for_annex(annex))
+
+
+def _copy_destination_doctypes_for_annex(annex) -> list[str]:
+    from orderlift.document_templates import get_default_copy_destinations, parse_copy_to_doctypes
+
+    source_target = _source_target_definition_for_annex(annex)
+    destinations = parse_copy_to_doctypes(source_target.get("copy_to_doctypes"))
+    if destinations:
+        return destinations
+    if source_target.get("copy_after_submit"):
+        return get_default_copy_destinations(_source_rule_doctype_for_annex(annex))
+    return []
 
 
 def _copy_snapshot_files(annex) -> None:
@@ -496,7 +570,7 @@ def _synchronize_snapshot(
     annex = frappe.get_doc(ANNEX_DOCTYPE, existing_name) if existing_name else frappe.new_doc(ANNEX_DOCTYPE)
     source_hash = _value(source_annex, "content_hash", "") or compute_annex_content_hash(source_annex)
     if existing_name and (
-        origin == "Execution Copy"
+        origin in {"Execution Copy", SUBMITTED_COPY_ORIGIN}
         or _value(annex, "source_content_hash", "") == source_hash
     ):
         return annex
@@ -679,24 +753,207 @@ def sync_sales_order_annexes(doc, method=None, *, allow_submitted: bool = False)
         return []
     if cint(_value(doc, "docstatus", 0)) != 0 and not allow_submitted:
         return []
-    sources = _annexes_for_references(
-        [("Quotation", name) for name in _source_quotations(doc)]
+    return sync_submitted_annex_copies_to_doc(doc)
+
+
+def sync_project_annexes(doc, method=None) -> list[str]:
+    if not doc or _value(doc, "doctype") != "Project" or not _value(doc, "name"):
+        return []
+    return sync_submitted_annex_copies_to_doc(doc)
+
+
+def _submitted_source_references_for_target(target_doc) -> list[tuple[str, str]]:
+    if _value(target_doc, "doctype", "") == "Sales Order":
+        return [
+            ("Quotation", name)
+            for name in _source_quotations(target_doc)
+            if cint(frappe.db.get_value("Quotation", name, "docstatus")) == 1
+        ]
+    if _value(target_doc, "doctype", "") == "Project":
+        return [
+            ("Sales Order", name)
+            for name in _project_sales_orders(target_doc.name)
+            if cint(frappe.db.get_value("Sales Order", name, "docstatus")) == 1
+        ]
+    if _value(target_doc, "doctype", "") == TECHNICAL_REVISION_DOCTYPE:
+        lineage = _lineage(TECHNICAL_REVISION_DOCTYPE, target_doc.name)
+        references = [
+            *(("Opportunity", name) for name in lineage["opportunities"]),
+            *(("Quotation", name) for name in lineage["quotations"]),
+            *(("Sales Order", name) for name in lineage["sales_orders"]),
+        ]
+        return list(dict.fromkeys(references))
+    return []
+
+
+def _copy_target_enabled(source_annex, target_doctype: str) -> bool:
+    try:
+        from orderlift.document_templates import _target_definition, build_template_snapshot
+
+        template = frappe.get_doc(TEMPLATE_DOCTYPE, source_annex.template)
+        target = _target_definition(build_template_snapshot(template), target_doctype)
+        destinations = _copy_destination_doctypes_for_annex(source_annex)
+        return bool(
+            target_doctype in destinations
+            or (
+                target_doctype == TECHNICAL_REVISION_DOCTYPE
+                and (target.get("allow_execution_copy") or target.get("allow_import_from_sales_order"))
+            )
+        )
+    except frappe.DoesNotExistError:
+        return False
+
+
+def sync_submitted_annex_copies_to_doc(doc, method=None) -> list[str]:
+    if not doc or not _value(doc, "doctype") or not _value(doc, "name"):
+        return []
+    if _value(doc, "doctype") in LOCKED_REFERENCE_DOCTYPES and cint(_value(doc, "docstatus", 0)) != 0:
+        return []
+    references = _submitted_source_references_for_target(doc)
+    if not references:
+        return []
+    if _value(doc, "doctype") in LOCKED_REFERENCE_DOCTYPES:
+        lock_annex_reference(doc.doctype, doc.name)
+    created = []
+    for source in _annexes_for_references(references):
+        if not _copy_target_enabled(source, doc.doctype):
+            continue
+        created.append(
+            _synchronize_snapshot(
+                doc,
+                source,
+                SUBMITTED_COPY_ORIGIN,
+            ).name
+        )
+    return list(dict.fromkeys(created))
+
+
+def _draft_sales_orders_for_quotation(quotation: str) -> list[str]:
+    direct = frappe.get_all(
+        "Sales Order Item",
+        filters={"prevdoc_docname": quotation, "parenttype": "Sales Order"},
+        pluck="parent",
+        limit_page_length=0,
     )
-    return _sync_reference_snapshots(doc, sources, "Quotation Snapshot")
+    if not direct:
+        return []
+    return frappe.get_all(
+        "Sales Order",
+        filters={"name": ["in", list(dict.fromkeys(direct))], "docstatus": 0},
+        pluck="name",
+        order_by="creation asc",
+        limit_page_length=0,
+    )
+
+
+def copy_submitted_annexes_to_downstream(source_doc) -> list[str]:
+    if not source_doc or not _value(source_doc, "doctype") or not _value(source_doc, "name"):
+        return []
+    downstream = []
+    if source_doc.doctype == "Quotation":
+        downstream.extend(("Sales Order", name) for name in _draft_sales_orders_for_quotation(source_doc.name))
+    elif source_doc.doctype == "Sales Order":
+        project = (_value(source_doc, "project", "") or "").strip()
+        if project and frappe.db.exists("Project", project):
+            downstream.append(("Project", project))
+        context = _technical_context(source_doc.name)
+        downstream.extend(
+            (TECHNICAL_REVISION_DOCTYPE, name)
+            for name in context.get("revisions", [])
+            if cint(frappe.db.get_value(TECHNICAL_REVISION_DOCTYPE, name, "docstatus")) == 0
+        )
+    created = []
+    for doctype, name in downstream:
+        created.extend(sync_submitted_annex_copies_to_doc(frappe.get_doc(doctype, name)))
+    return list(dict.fromkeys(created))
+
+
+def get_document_annex_submit_diagnostics(reference_doctype: str, reference_name: str) -> dict:
+    from orderlift.document_templates import (
+        _active_templates_for_doctype,
+        _target_definition,
+        _template_definition_for_annex,
+        build_template_snapshot,
+        get_annex_completion_diagnostics,
+    )
+
+    required_templates = {}
+    for template in _active_templates_for_doctype(reference_doctype):
+        target = _target_definition(build_template_snapshot(template), reference_doctype)
+        if target.get("must_be_complete"):
+            required_templates[template.name] = template.template_name
+
+    annexes = _annexes_for_references([(reference_doctype, reference_name)])
+    by_template = {}
+    incomplete = []
+    for annex in annexes:
+        by_template.setdefault(annex.template, []).append(annex)
+        definition = _template_definition_for_annex(annex)
+        target = _target_definition(definition, reference_doctype)
+        if not target.get("must_be_complete"):
+            continue
+        diagnostics = get_annex_completion_diagnostics(annex)
+        if not diagnostics["is_complete"]:
+            incomplete.append(
+                {
+                    "annex": annex.name,
+                    "template": annex.template,
+                    "template_name": annex.template_name,
+                    "status": diagnostics["status"],
+                    "missing_required_values": diagnostics["missing_required_values"],
+                    "status_is_complete": diagnostics["status_is_complete"],
+                }
+            )
+
+    missing = [
+        {"template": template, "template_name": template_name}
+        for template, template_name in required_templates.items()
+        if template not in by_template
+    ]
+    return {
+        "is_complete": not missing and not incomplete,
+        "missing_templates": missing,
+        "incomplete_annexes": incomplete,
+    }
+
+
+def validate_document_annexes_for_submit(doc, method=None) -> None:
+    if not doc or not _value(doc, "doctype") or not _value(doc, "name"):
+        return
+    diagnostics = get_document_annex_submit_diagnostics(doc.doctype, doc.name)
+    if diagnostics["is_complete"]:
+        return
+    labels = []
+    labels.extend(row["template_name"] for row in diagnostics["missing_templates"])
+    labels.extend(row["template_name"] for row in diagnostics["incomplete_annexes"])
+    frappe.throw(
+        _("Complete the required annexes before submitting {0}: {1}.").format(
+            doc.doctype,
+            ", ".join(dict.fromkeys(labels)),
+        )
+    )
 
 
 def on_quotation_submit(doc, method=None) -> list[str]:
     sync_quotation_annexes(doc, allow_submitted=True)
-    return freeze_reference_annexes("Quotation", doc.name)
+    validate_document_annexes_for_submit(doc)
+    frozen = freeze_reference_annexes("Quotation", doc.name)
+    copy_submitted_annexes_to_downstream(doc)
+    return frozen
 
 
 def on_sales_order_submit(doc, method=None) -> list[str]:
-    return freeze_reference_annexes("Sales Order", doc.name)
+    sync_sales_order_annexes(doc)
+    validate_document_annexes_for_submit(doc)
+    frozen = freeze_reference_annexes("Sales Order", doc.name)
+    copy_submitted_annexes_to_downstream(doc)
+    return frozen
 
 
 def on_technical_revision_submit(doc, method=None) -> list[str]:
     if not doc or _value(doc, "doctype") != TECHNICAL_REVISION_DOCTYPE:
         return []
+    validate_document_annexes_for_submit(doc)
     return freeze_reference_annexes(TECHNICAL_REVISION_DOCTYPE, doc.name)
 
 
@@ -844,7 +1101,8 @@ def _execution_target_allowed(annex) -> bool:
         template = frappe.get_doc(TEMPLATE_DOCTYPE, annex.template)
         target = _revision_target(template, TECHNICAL_REVISION_DOCTYPE)
         return bool(
-            target.get("allow_execution_copy")
+            TECHNICAL_REVISION_DOCTYPE in _copy_destination_doctypes_for_annex(annex)
+            or target.get("allow_execution_copy")
             or target.get("allow_import_from_sales_order")
         )
     except frappe.DoesNotExistError:
@@ -942,7 +1200,7 @@ def _phase(
         source_entries = [_entry(annex, execution_revision, force_read_only) for annex in annexes]
         if include_placeholders and not force_read_only:
             existing_direct_templates = {
-                annex.template for annex in annexes if not (_value(annex, "source_annex", "") or "")
+                annex.template for annex in annexes
             }
             for template in _active_templates_for_doctype(doctype):
                 target = next(
@@ -1007,6 +1265,7 @@ def get_annex_workspace(reference_doctype: str, reference_name: str) -> dict:
     sales_order_refs = [("Sales Order", name) for name in lineage["sales_orders"]]
     opportunity_snapshot = lambda annex: annex.origin == "Opportunity Snapshot"
     direct_owned = lambda annex: not (_value(annex, "source_annex", "") or "")
+    locally_owned = lambda annex: direct_owned(annex) or annex.origin == SUBMITTED_COPY_ORIGIN
 
     if reference_doctype == "Quotation":
         if cint(source.docstatus) == 0 and lineage["opportunities"]:
@@ -1054,7 +1313,7 @@ def get_annex_workspace(reference_doctype: str, reference_name: str) -> dict:
                 _("Sales Order"),
                 [("Sales Order", reference_name)],
                 lineage,
-                annex_filter=direct_owned,
+                annex_filter=locally_owned,
                 include_placeholders=cint(source.docstatus) == 0,
             )
         )
@@ -1102,7 +1361,7 @@ def get_annex_workspace(reference_doctype: str, reference_name: str) -> dict:
                 _("Project"),
                 [("Project", reference_name)],
                 lineage,
-                annex_filter=direct_owned,
+                annex_filter=locally_owned,
                 include_placeholders=True,
             )
         )
@@ -1192,8 +1451,12 @@ def initialize_revision_execution_copies(revision) -> list[str]:
 
             template = frappe.get_doc(TEMPLATE_DOCTYPE, source.template)
             target = _revision_target(template, TECHNICAL_REVISION_DOCTYPE)
-            if not target.get("default_selected") or not (
-                target.get("allow_execution_copy") or target.get("allow_import_from_sales_order")
+            if not (
+                TECHNICAL_REVISION_DOCTYPE in _copy_destination_doctypes_for_annex(source)
+                or (
+                    target.get("default_selected")
+                    and (target.get("allow_execution_copy") or target.get("allow_import_from_sales_order"))
+                )
             ):
                 continue
             sources.append(source)

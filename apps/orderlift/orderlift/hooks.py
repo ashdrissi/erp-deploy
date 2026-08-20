@@ -232,10 +232,14 @@ doc_events = {
             "orderlift.orderlift_logistics.stock_planning.sync_sales_order_demand_plans",
             "orderlift.orderlift_sig.technical_list.on_sales_order_submit_or_project_link",
         ],
-        "after_insert": "orderlift.orderlift_crm.attachment_propagation.copy_quotation_attachments_to_sales_order",
+        "after_insert": [
+            "orderlift.orderlift_crm.attachment_propagation.copy_quotation_attachments_to_sales_order",
+            "orderlift.annex_chain.sync_sales_order_annexes",
+        ],
         "on_update": [
             "orderlift.orderlift_crm.api.campaign.sync_doc_campaign_rollup",
             "orderlift.orderlift_crm.api.pipeline.sync_pipeline_assignment_on_update",
+            "orderlift.annex_chain.sync_sales_order_annexes",
         ],
         "before_update_after_submit": "orderlift.orderlift_finance.cash_flow_setup.protect_forecast_finality",
         "on_cancel": [
@@ -586,10 +590,12 @@ doc_events = {
         "after_insert": [
             "orderlift.orderlift_crm.project_linkage.link_opportunity_family_to_project",
             "orderlift.orderlift_sig.technical_list.on_sales_order_submit_or_project_link",
+            "orderlift.annex_chain.sync_project_annexes",
         ],
         "on_update": [
             "orderlift.orderlift_crm.project_linkage.link_opportunity_family_to_project",
             "orderlift.orderlift_sig.technical_list.on_sales_order_submit_or_project_link",
+            "orderlift.annex_chain.sync_project_annexes",
             "orderlift.orderlift_crm.api.pipeline.sync_pipeline_assignment_on_update",
         ],
     },
@@ -614,6 +620,7 @@ doctype_js = {
     "Delivery Note": [
         "public/js/delivery_note_logistics.js",
         "public/js/generic_ttc_field_sync_20260805b.js",
+        "public/js/connected_documents_20260818a.js",
         "public/js/submitted_print_guard_20260728a.js",
         "public/js/logistics_quantity_only_20260804a.js",
     ],
@@ -621,6 +628,7 @@ doctype_js = {
     "Role": "public/js/role_capability_picker_20260721a.js",
     "Opportunity": [
         "public/js/dimensioning_document_tool_20260724d.js",
+        "public/js/connected_documents_20260818a.js",
         "public/js/opportunity_lost_action_20260726a.js",
     ],
     "Material Request": [
@@ -650,6 +658,7 @@ doctype_js = {
     "Item Price": "public/js/item_price_uom_default_20260506a.js",
     "Price List": "public/js/price_list_import_20260602c.js",
     "Quotation": [
+        "public/js/connected_documents_20260818a.js",
         "public/js/quotation_form_simplify_20260802a.js",
         "public/js/quotation_detail_template_dialog_20260809d.js",
         "public/js/submitted_print_guard_20260728a.js",
@@ -694,6 +703,7 @@ doctype_js = {
         "public/js/finance_account_guard_20260501a.js",
         "public/js/payment_schedule_sync_20260724a.js",
         "public/js/generic_ttc_field_sync_20260805b.js",
+        "public/js/connected_documents_20260818a.js",
         "public/js/submitted_print_guard_20260728a.js",
     ],
     "Purchase Invoice": [
@@ -705,6 +715,7 @@ doctype_js = {
     "Payment Entry": [
         "public/js/finance_account_guard_20260501a.js",
         "public/js/payment_entry_source_currency_20260805a.js",
+        "public/js/connected_documents_20260818a.js",
         "public/js/submitted_print_guard_20260728a.js",
     ],
     "Request for Quotation": "public/js/submitted_print_guard_20260728a.js",
@@ -835,6 +846,7 @@ has_permission = {
     "Request for Quotation": "orderlift.company_access.has_company_permission",
     "Supplier Quotation": "orderlift.company_access.has_company_permission",
     "Project": "orderlift.company_access.has_company_permission",
+    "Project Update": "orderlift.company_access.has_project_update_permission",
     "Sales Commission": "orderlift.company_access.has_company_permission",
     "SAV Ticket": "orderlift.company_access.has_company_permission",
     "Forecast Load Plan": "orderlift.company_access.has_company_permission",
@@ -928,6 +940,7 @@ permission_query_conditions = {
     "Request for Quotation": "orderlift.company_access.request_for_quotation_query",
     "Supplier Quotation": "orderlift.company_access.supplier_quotation_query",
     "Project": "orderlift.company_access.project_query",
+    "Project Update": "orderlift.company_access.project_update_query",
     "Purchase Agent Rules": "orderlift.company_access.purchase_agent_rules_query",
     "Stock Planning Settings": "orderlift.company_access.stock_planning_settings_query",
     "Stock Demand Plan": "orderlift.company_access.stock_demand_plan_query",

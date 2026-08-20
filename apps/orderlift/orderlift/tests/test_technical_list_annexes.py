@@ -42,6 +42,8 @@ class TestTechnicalListAnnexes(unittest.TestCase):
                 "allow_direct_creation",
                 "allow_execution_copy",
                 "allow_import_from_sales_order",
+                "copy_after_submit",
+                "copy_to_doctypes",
                 "required_for_revision",
                 "must_be_complete",
                 "default_selected",

@@ -28,6 +28,7 @@ class TestAnnexChain(unittest.TestCase):
             self.assertIn(fieldname, fields)
         self.assertIn("Opportunity Snapshot", fields["origin"]["options"])
         self.assertIn("Execution Copy", fields["origin"]["options"])
+        self.assertIn("Submitted Copy", fields["origin"]["options"])
 
     def test_template_target_supports_general_execution_copy(self):
         payload = json.loads(
@@ -41,7 +42,11 @@ class TestAnnexChain(unittest.TestCase):
         )
         fields = {row["fieldname"]: row for row in payload["fields"]}
         self.assertIn("allow_execution_copy", fields)
+        self.assertIn("copy_after_submit", fields)
+        self.assertIn("copy_to_doctypes", fields)
         self.assertTrue(fields["allow_import_from_sales_order"].get("hidden"))
+        self.assertTrue(fields["allow_execution_copy"].get("hidden"))
+        self.assertTrue(fields["copy_after_submit"].get("hidden"))
 
     def test_revision_has_fixed_annex_tab_and_hash_manifest(self):
         revision = json.loads(
@@ -77,6 +82,8 @@ class TestAnnexChain(unittest.TestCase):
         self.assertIn("orderlift.annex_chain.on_quotation_submit", hooks.doc_events["Quotation"]["before_submit"])
         self.assertIn("orderlift.annex_chain.on_sales_order_submit", hooks.doc_events["Sales Order"]["before_submit"])
         self.assertIn("orderlift.annex_chain.sync_quotation_annexes", hooks.doc_events["Quotation"]["on_update"])
+        self.assertIn("orderlift.annex_chain.sync_sales_order_annexes", hooks.doc_events["Sales Order"]["on_update"])
+        self.assertIn("orderlift.annex_chain.sync_project_annexes", hooks.doc_events["Project"]["on_update"])
 
         source = (APP_ROOT / "annex_chain.py").read_text()
         for doctype in ("Quotation", "Sales Order", "Project"):

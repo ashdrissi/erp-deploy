@@ -28,6 +28,35 @@ DOCUMENT_TEMPLATE_TARGET_DOCTYPES = [
     TECHNICAL_LIST_REVISION_DOCTYPE,
 ]
 
+DEFAULT_COPY_DESTINATIONS = {
+    "Opportunity": ["Sales Order", TECHNICAL_LIST_REVISION_DOCTYPE],
+    "Quotation": ["Sales Order", TECHNICAL_LIST_REVISION_DOCTYPE],
+    "Sales Order": ["Project", TECHNICAL_LIST_REVISION_DOCTYPE],
+}
+
+
+def get_default_copy_destinations(source_doctype: str) -> list[str]:
+    return list(DEFAULT_COPY_DESTINATIONS.get(source_doctype, []))
+
+
+def parse_copy_to_doctypes(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = re.split(r"[\n,]+", str(value))
+    destinations = []
+    for item in raw_values:
+        doctype = str(item or "").strip()
+        if doctype and doctype not in destinations:
+            destinations.append(doctype)
+    return destinations
+
+
+def serialize_copy_to_doctypes(value) -> str:
+    return "\n".join(parse_copy_to_doctypes(value))
+
 
 def get_supported_document_template_targets() -> list[dict[str, str]]:
     """Return the distinct targets configured on active templates."""
@@ -165,6 +194,8 @@ def build_template_snapshot(template_doc) -> dict:
                 "allow_direct_creation": int(_row_get(row, "allow_direct_creation", 0) or 0),
                 "allow_execution_copy": int(_row_get(row, "allow_execution_copy", 0) or 0),
                 "allow_import_from_sales_order": int(_row_get(row, "allow_import_from_sales_order", 0) or 0),
+                "copy_after_submit": int(_row_get(row, "copy_after_submit", 0) or 0),
+                "copy_to_doctypes": serialize_copy_to_doctypes(_row_get(row, "copy_to_doctypes", "")),
                 "required_for_revision": int(_row_get(row, "required_for_revision", 0) or 0),
                 "must_be_complete": int(_row_get(row, "must_be_complete", 0) or 0),
                 "default_selected": int(_row_get(row, "default_selected", 0) or 0),
@@ -288,7 +319,7 @@ def _template_summary(row) -> dict:
     targets = frappe.get_all(
         "Orderlift Document Template Target",
         filters={"parent": row.name},
-        fields=["target_doctype", "allow_direct_creation", "allow_execution_copy", "allow_import_from_sales_order", "required_for_revision", "must_be_complete", "default_selected", "display_order"],
+        fields=["target_doctype", "allow_direct_creation", "allow_execution_copy", "allow_import_from_sales_order", "copy_after_submit", "copy_to_doctypes", "required_for_revision", "must_be_complete", "default_selected", "display_order"],
         order_by="display_order asc, idx asc",
     )
     return {
@@ -305,6 +336,8 @@ def _template_summary(row) -> dict:
                 "allow_direct_creation": int(target.allow_direct_creation or 0),
                 "allow_execution_copy": int(target.allow_execution_copy or 0),
                 "allow_import_from_sales_order": int(target.allow_import_from_sales_order or 0),
+                "copy_after_submit": int(target.copy_after_submit or 0),
+                "copy_to_doctypes": target.copy_to_doctypes or "",
                 "required_for_revision": int(target.required_for_revision or 0),
                 "must_be_complete": int(target.must_be_complete or 0),
                 "default_selected": int(target.default_selected or 0),
@@ -332,6 +365,8 @@ def _template_payload(doc) -> dict:
                 "allow_direct_creation": int(row.allow_direct_creation or 0),
                 "allow_execution_copy": int(row.allow_execution_copy or 0),
                 "allow_import_from_sales_order": int(row.allow_import_from_sales_order or 0),
+                "copy_after_submit": int(row.copy_after_submit or 0),
+                "copy_to_doctypes": row.copy_to_doctypes or "",
                 "required_for_revision": int(row.required_for_revision or 0),
                 "must_be_complete": int(row.must_be_complete or 0),
                 "default_selected": int(row.default_selected or 0),
@@ -448,6 +483,8 @@ def update_template_targets(name: str, targets: str | list) -> dict:
             "allow_direct_creation": row.allow_direct_creation,
             "allow_execution_copy": row.allow_execution_copy,
             "allow_import_from_sales_order": row.allow_import_from_sales_order,
+            "copy_after_submit": row.copy_after_submit,
+            "copy_to_doctypes": row.copy_to_doctypes,
             "required_for_revision": row.required_for_revision,
             "must_be_complete": row.must_be_complete,
             "default_selected": row.default_selected,
@@ -504,16 +541,19 @@ def save_template(payload: str | dict) -> dict:
         if not frappe.db.exists("DocType", target_doctype):
             frappe.throw(_("Target DocType {0} was not found.").format(target_doctype))
         seen_targets.add(target_doctype)
+        copy_to_doctypes = serialize_copy_to_doctypes(target.get("copy_to_doctypes"))
         doc.append(
             "targets",
             {
                 "target_doctype": target_doctype,
                 "allow_direct_creation": cint(target.get("allow_direct_creation", 1)),
-                "allow_execution_copy": cint(target.get("allow_execution_copy")),
+                "allow_execution_copy": 1 if TECHNICAL_LIST_REVISION_DOCTYPE in parse_copy_to_doctypes(copy_to_doctypes) else cint(target.get("allow_execution_copy")),
                 "allow_import_from_sales_order": cint(target.get("allow_import_from_sales_order")),
-                "required_for_revision": cint(target.get("required_for_revision")),
+                "copy_after_submit": 1 if copy_to_doctypes else 0,
+                "copy_to_doctypes": copy_to_doctypes,
+                "required_for_revision": 0,
                 "must_be_complete": cint(target.get("must_be_complete")),
-                "default_selected": cint(target.get("default_selected")),
+                "default_selected": 0,
                 "display_order": cint(target.get("display_order")) or index,
             },
         )
@@ -669,6 +709,7 @@ def _is_revision_owned(annex, definition: dict) -> bool:
             "allow_direct_creation",
             "allow_execution_copy",
             "allow_import_from_sales_order",
+            "copy_after_submit",
             "required_for_revision",
             "must_be_complete",
             "default_selected",
@@ -1124,8 +1165,14 @@ def clone_selected_sales_order_annexes(
             frappe.throw(_("Annex {0} is not owned by this revision's Sales Order.").format(source_annex.name))
         template_doc = frappe.get_doc("Orderlift Document Template", source_annex.template)
         target = _revision_target(template_doc, reference_doctype)
+        source_target = _target_definition(build_template_snapshot(template_doc), source_annex.reference_doctype)
+        source_allows_copy = reference_doctype in parse_copy_to_doctypes(source_target.get("copy_to_doctypes"))
         if not template_doc.is_active or not target or not (
-            target.get("allow_execution_copy") or target.get("allow_import_from_sales_order")
+            source_allows_copy
+            or reference_doctype in parse_copy_to_doctypes(target.get("copy_to_doctypes"))
+            or target.get("copy_after_submit")
+            or target.get("allow_execution_copy")
+            or target.get("allow_import_from_sales_order")
         ):
             frappe.throw(_("Template {0} does not allow Sales Order import for {1}.").format(template_doc.template_name, reference_doctype))
         created.append(_clone_revision_annex(revision, source_annex, template_doc).name)
@@ -1149,7 +1196,14 @@ def _eligible_sales_order_annexes(reference_doctype: str, sales_order_name: str 
     for row in rows:
         template_doc = frappe.get_doc("Orderlift Document Template", row.template)
         target = _revision_target(template_doc, reference_doctype)
-        if target.get("allow_execution_copy") or target.get("allow_import_from_sales_order"):
+        source_target = _target_definition(build_template_snapshot(template_doc), "Sales Order")
+        if (
+            reference_doctype in parse_copy_to_doctypes(source_target.get("copy_to_doctypes"))
+            or reference_doctype in parse_copy_to_doctypes(target.get("copy_to_doctypes"))
+            or target.get("copy_after_submit")
+            or target.get("allow_execution_copy")
+            or target.get("allow_import_from_sales_order")
+        ):
             eligible.append(
                 {
                     "annex": row.name,
@@ -1158,7 +1212,12 @@ def _eligible_sales_order_annexes(reference_doctype: str, sales_order_name: str 
                     "status": row.status,
                     "is_complete": int(row.is_complete or 0),
                     "source_modified": row.modified,
-                    "default_selected": int(target.get("default_selected") or 0),
+                    "default_selected": int(
+                        reference_doctype in parse_copy_to_doctypes(source_target.get("copy_to_doctypes"))
+                        or target.get("copy_after_submit")
+                        or target.get("default_selected")
+                        or 0
+                    ),
                     "display_order": target.get("display_order") or 0,
                 }
             )
@@ -1274,7 +1333,7 @@ def get_technical_revision_completion_diagnostics(reference_doctype: str, refere
     missing_templates = []
     for template_doc in _active_templates_for_doctype(reference_doctype):
         target = _revision_target(template_doc, reference_doctype)
-        if target.get("required_for_revision") and template_doc.name not in by_template:
+        if (target.get("required_for_revision") or target.get("must_be_complete")) and template_doc.name not in by_template:
             missing_templates.append(
                 {"template": template_doc.name, "template_name": template_doc.template_name}
             )

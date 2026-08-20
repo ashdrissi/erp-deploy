@@ -6,9 +6,11 @@ from orderlift.document_templates import (
     _annex_is_read_only,
     _is_revision_owned,
     _target_allows_direct_creation,
+    get_default_copy_destinations,
     get_template_prefill_values,
     get_document_template_target_label,
     normalize_field_key,
+    parse_copy_to_doctypes,
     resolve_template_field_value,
 )
 
@@ -31,17 +33,28 @@ class TestDocumentTemplates(unittest.TestCase):
         target = self._read_doctype("orderlift_document_template_target")
         fields = {row["fieldname"]: row for row in target["fields"]}
         for fieldname in (
-            "allow_direct_creation",
-            "allow_execution_copy",
-            "required_for_revision",
+            "copy_to_doctypes",
             "must_be_complete",
-            "default_selected",
         ):
             self.assertTrue(fields[fieldname].get("description"), fieldname)
+        for fieldname in ("copy_after_submit", "allow_direct_creation", "allow_execution_copy", "required_for_revision", "default_selected"):
+            self.assertTrue(fields[fieldname].get("hidden"), fieldname)
         builder = (APP_ROOT / "orderlift" / "page" / "document_template_builder" / "document_template_builder.js").read_text()
-        self.assertIn('check("required_for_revision", __("Required for Revision")', builder)
-        self.assertIn('check("must_be_complete", __("Must Be Complete")', builder)
-        self.assertIn('check("default_selected", __("Selected by Default")', builder)
+        self.assertIn('__("Copy To After Submit")', builder)
+        self.assertIn('data-copy-destination', builder)
+        self.assertIn('check("must_be_complete", __("Must Be Complete Before Submit")', builder)
+        self.assertNotIn('Receive Copy After Submit"), receiveCopy', builder)
+        self.assertNotIn('check("required_for_revision", __("Required for Revision")', builder)
+        self.assertNotIn('check("default_selected", __("Selected by Default")', builder)
+        self.assertNotIn('check("allow_direct_creation", __("Direct Creation")', builder)
+
+    def test_copy_destination_helpers_are_source_based(self):
+        self.assertEqual(
+            get_default_copy_destinations("Opportunity"),
+            ["Sales Order", "Sales Order Technical List Revision"],
+        )
+        self.assertEqual(parse_copy_to_doctypes("Sales Order\nProject"), ["Sales Order", "Project"])
+        self.assertEqual(parse_copy_to_doctypes("Sales Order, Sales Order"), ["Sales Order"])
 
     def test_normalize_field_key_is_stable(self):
         self.assertEqual(normalize_field_key("Fiche de Mesure / Hauteur"), "fiche_de_mesure_hauteur")
@@ -134,6 +147,7 @@ class TestDocumentTemplates(unittest.TestCase):
         self.assertTrue(_annex_is_read_only({"origin": "Opportunity Snapshot"}))
         self.assertTrue(_annex_is_read_only({"origin": "Quotation Snapshot"}))
         self.assertFalse(_annex_is_read_only({"origin": "Execution Copy"}))
+        self.assertFalse(_annex_is_read_only({"origin": "Submitted Copy"}))
 
     def test_direct_creation_uses_target_policy(self):
         template = {
